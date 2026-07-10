@@ -1929,11 +1929,12 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     }
 
     const nSeqs = state.seqs.length;
+    const SCALE_H = CHAR_H; // one row at top, matching Full/Block .scale-ruler-line
     let _lastOffX = -1, _lastOffY = -1, _dirty = false;
     function _markDirty() { _dirty = true; }
 
     const totalContentW = NAME_W + len * CHAR_W + 4;
-    const totalContentH = nSeqs * CHAR_H + 4;
+    const totalContentH = SCALE_H + nSeqs * CHAR_H + 4;
     // Exposed so the persistent horizontal scrollbar (a real DOM element,
     // since Canvas mode's own content isn't natively scrollable) can size
     // its thumb and mirror pan position.
@@ -1982,8 +1983,8 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         const oy = _canvasState.offsetY;
         const firstCol = Math.max(0, Math.floor((ox - NAME_W) / CHAR_W));
         const lastCol = Math.min(len - 1, Math.ceil((ox - NAME_W + w) / CHAR_W));
-        const firstRow = Math.max(0, Math.floor(oy / CHAR_H));
-        const lastRow = Math.min(nSeqs - 1, Math.ceil((oy + h) / CHAR_H));
+        const firstRow = Math.max(0, Math.floor((oy - SCALE_H) / CHAR_H));
+        const lastRow = Math.min(nSeqs - 1, Math.floor((oy - SCALE_H + h - 1) / CHAR_H));
 
         ctx.clearRect(0, 0, w, h);
         ctx.font = fontStr;
@@ -1995,8 +1996,30 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         const drawScheme = getEffectiveColorScheme();
         const pal = _getCanvasShadePalette();
 
+        // Position scale (10, *, 20, * …) — only the visible column window, same
+        // generateScale() as Full/Block mode; cost is O(visible cols), not alignment length.
+        const scaleY = -oy;
+        if (scaleY + SCALE_H > 0 && scaleY < h && firstCol <= lastCol) {
+            const visCols = lastCol - firstCol + 1;
+            const scaleText = generateScale(visCols, _canvasScaleInterval(CHAR_W), firstCol);
+            if (stickyNames) {
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, scaleY, NAME_W, SCALE_H);
+            }
+            ctx.fillStyle = '#666';
+            for (let j = 0; j < scaleText.length; j++) {
+                const ch = scaleText[j];
+                if (ch === ' ') continue;
+                const x = NAME_W + (firstCol + j) * CHAR_W - ox;
+                if (x + CHAR_W < 0 || x > w) continue;
+                ctx.fillText(ch, x, scaleY);
+            }
+            ctx.fillStyle = '#ddd';
+            ctx.fillRect(Math.max(0, NAME_W - ox), scaleY + SCALE_H - 1, w, 1);
+        }
+
         for (let i = firstRow; i <= lastRow; i++) {
-            const y = i * CHAR_H - oy;
+            const y = SCALE_H + i * CHAR_H - oy;
             const seq = state.seqs[i].seq;
             const consPos = conservationData;
 
@@ -2445,6 +2468,14 @@ function generateScale(maxLength, interval = 10, startPos = 0) {
     }
 
     return scaleArray.join('');
+}
+
+/** Scale tick spacing for Canvas mode: wider intervals when zoomed out so labels stay readable. */
+function _canvasScaleInterval(charW) {
+    if (charW >= 8) return 10;
+    if (charW >= 5) return 20;
+    if (charW >= 3) return 50;
+    return 100;
 }
 
 const CONSERVATION_MIN_COVERAGE = 0.3; // Require at least 30% non-gap sequences for coloring
