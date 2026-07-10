@@ -53,6 +53,7 @@ const state = {
     consensusSeq: '',
     consensusCache: null,
     conservationDataCache: null,
+    alignmentIndex: null, // { nSeqs, maxLen, totalResidues, mode, flags } from pre-parse scan
     deletedHistory: [],
     redoHistory: [],
     currentFilename: '',
@@ -4409,9 +4410,202 @@ function debounce(func, delay) {
     };
 }
 const debounceRender = debounce(renderAlignment, 50);
+
+// ── Large-alignment pre-parse index & mode classification ──────────────────
+// Three viewing strategies (chunking implemented in later phases):
+//   tall  — many sequences  → vertical page chunks (PDF-like)
+//   long  — few seqs, wide   → horizontal column windows
+//   crazy — both dimensions  → warn before parse; user can cancel
+const ALIGN_TALL_SEQ_THRESHOLD = 500;
+const ALIGN_LONG_COL_THRESHOLD = 3000;
+const ALIGN_CRAZY_VOLUME = 5_000_000;
+
+/** Single-pass FASTA scan: counts sequences and lengths without building seq objects. */
+function scanFastaIndex(text) {
+    let nSeqs = 0, maxLen = 0, totalResidues = 0, curLen = 0;
+    let i = 0;
+    const len = text.length;
+    while (i < len) {
+        const lineStart = i;
+        while (i < len && text[i] !== '\n' && text[i] !== '\r') i++;
+        const line = text.slice(lineStart, i).trim();
+        while (i < len && (text[i] === '\n' || text[i] === '\r')) i++;
+        if (!line) continue;
+        if (line[0] === '>') {
+            if (curLen > 0) {
+                maxLen = Math.max(maxLen, curLen);
+                totalResidues += curLen;
+                curLen = 0;
+            }
+            nSeqs++;
+        } else {
+            for (let j = 0; j < line.length; j++) {
+                const c = line[j];
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c === '-' || c === '.' || c === '*') curLen++;
+            }
+        }
+    }
+    if (curLen > 0) {
+        maxLen = Math.max(maxLen, curLen);
+        totalResidues += curLen;
+    }
+    return { nSeqs, maxLen, totalResidues };
+}
+
+/** MSF header scan: sequence count from Name: lines, width from Len: in header. */
+function scanMsfIndex(text) {
+    let nSeqs = 0, maxLen = 0;
+    let i = 0;
+    const len = text.length;
+    while (i < len) {
+        const lineStart = i;
+        while (i < len && text[i] !== '\n' && text[i] !== '\r') i++;
+        const line = text.slice(lineStart, i).trim();
+        while (i < len && (text[i] === '\n' || text[i] === '\r')) i++;
+        if (!line) continue;
+        if (line.startsWith('Name:')) nSeqs++;
+        const m = line.match(/Len:\s*(\d+)/i);
+        if (m) maxLen = Math.max(maxLen, parseInt(m[1], 10));
+    }
+    return { nSeqs, maxLen, totalResidues: nSeqs * maxLen };
+}
+
+/**
+ * Cheap pre-parse index for FASTA/MSF. Returns null for formats we cannot
+ * scan without a full parse (SAM, GenBank, etc.).
+ */
+function scanAlignmentText(text) {
+    const t = text.trim();
+    if (!t) return null;
+    const isMsf = (t.includes('MSF:') && t.includes('Check:'))
+        || t.includes('!!AA_MULTIPLE_ALIGNMENT')
+        || t.includes('!!NA_MULTIPLE_ALIGNMENT');
+    if (isMsf) return scanMsfIndex(text);
+    if (t[0] === '>' || /^[A-Za-z*.\-]+$/m.test(t.split(/\r?\n/)[0] || '')) {
+        return scanFastaIndex(text);
+    }
+    return null;
+}
+
+/**
+ * Classify alignment dimensions into viewing mode.
+ * @returns {{ mode: 'normal'|'tall'|'long'|'crazy', isTall: boolean, isLong: boolean, isCrazy: boolean }}
+ */
+function classifyAlignmentSize(stats) {
+    const isTall = stats.nSeqs > ALIGN_TALL_SEQ_THRESHOLD;
+    const isLong = stats.maxLen > ALIGN_LONG_COL_THRESHOLD;
+    const isCrazy = (isTall && isLong) || stats.totalResidues > ALIGN_CRAZY_VOLUME;
+    let mode = 'normal';
+    if (isCrazy) mode = 'crazy';
+    else if (isTall) mode = 'tall';
+    else if (isLong) mode = 'long';
+    return { mode, isTall, isLong, isCrazy };
+}
+
+function _formatResidueCount(n) {
+    return (n >= 1_000_000)
+        ? (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M'
+        : n.toLocaleString();
+}
+
+/**
+ * Modal shown for "crazy" alignments before any heavy parse work.
+ * @returns {Promise<'cancel'|'proceed'>}
+ */
+function showLargeAlignmentDialog(stats, classification) {
+    return new Promise((resolve) => {
+        const backdrop = document.createElement('div');
+        backdrop.className = 'blast-modal-backdrop align-load-dialog';
+        const dialog = document.createElement('div');
+        dialog.className = 'blast-dialog';
+        dialog.style.maxWidth = '460px';
+
+        const title = document.createElement('div');
+        title.className = 'blast-dialog-title';
+        title.textContent = 'Large alignment';
+
+        const content = document.createElement('div');
+        content.className = 'blast-dialog-content';
+        content.style.fontSize = '12px';
+        content.style.lineHeight = '1.55';
+
+        const reasons = [];
+        if (classification.isTall && classification.isLong) {
+            reasons.push('both sequence count and alignment width are very large');
+        }
+        if (stats.totalResidues > ALIGN_CRAZY_VOLUME) {
+            reasons.push(`total size exceeds ${_formatResidueCount(ALIGN_CRAZY_VOLUME)} residues`);
+        }
+        const reasonText = reasons.length ? reasons.join(' and ') : 'this alignment is very large';
+
+        content.innerHTML = `
+            <p style="margin:0 0 10px;">
+                <strong>${stats.nSeqs.toLocaleString()}</strong> sequences &times;
+                <strong>${stats.maxLen.toLocaleString()}</strong> columns
+                (<strong>${_formatResidueCount(stats.totalResidues)}</strong> residues)
+            </p>
+            <p style="margin:0 0 12px;color:#555;">
+                Loading may be slow or briefly freeze the browser because ${reasonText}.
+                Canvas mode is recommended for viewing; switch to Block/Full only for editing.
+            </p>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button type="button" id="alignLoadCancel" style="padding:6px 14px;font-size:12px;cursor:pointer;">Cancel</button>
+                <button type="button" id="alignLoadProceed" style="padding:6px 14px;font-size:12px;cursor:pointer;background:#1a73e8;color:#fff;border:1px solid #1557b0;border-radius:3px;">Load anyway</button>
+            </div>
+        `;
+
+        dialog.appendChild(title);
+        dialog.appendChild(content);
+        backdrop.appendChild(dialog);
+        document.body.appendChild(backdrop);
+
+        const finish = (choice) => {
+            backdrop.remove();
+            document.removeEventListener('keydown', onKey);
+            resolve(choice);
+        };
+        const onKey = (e) => {
+            if (e.key === 'Escape') finish('cancel');
+        };
+        document.addEventListener('keydown', onKey);
+        content.querySelector('#alignLoadCancel').addEventListener('click', () => finish('cancel'));
+        content.querySelector('#alignLoadProceed').addEventListener('click', () => finish('proceed'));
+        backdrop.addEventListener('click', (e) => {
+            if (e.target === backdrop) finish('cancel');
+        });
+    });
+}
+
+/** Run pre-parse scan; for crazy alignments prompt before parse. Returns false if cancelled. */
+async function runAlignmentPreflight(inputText) {
+    const stats = scanAlignmentText(inputText);
+    if (!stats || stats.nSeqs < 1) {
+        state.alignmentIndex = null;
+        return true;
+    }
+    const classification = classifyAlignmentSize(stats);
+    state.alignmentIndex = { ...stats, ...classification };
+
+    if (classification.mode === 'crazy') {
+        const choice = await showLargeAlignmentDialog(stats, classification);
+        if (choice === 'cancel') return false;
+    } else if (classification.mode === 'tall') {
+        showMessage(
+            `Large alignment (${stats.nSeqs.toLocaleString()} sequences) — vertical paging when enabled.`,
+            3500
+        );
+    } else if (classification.mode === 'long') {
+        showMessage(
+            `Long alignment (${stats.maxLen.toLocaleString()} columns) — horizontal chunking when enabled.`,
+            3500
+        );
+    }
+    return true;
+}
+
 // CORE FUNCTIONS
-function parseAndRender(isFromDrop = false) {
-    showMessage("Parsing file...", 0);
+async function parseAndRender(isFromDrop = false) {
+    showMessage("Scanning alignment...", 0);
     _proteinSchemeRemapWarned = false;
     const inputText = fastaInput.value.trim();
     if (!inputText) {
@@ -4419,6 +4613,15 @@ function parseAndRender(isFromDrop = false) {
         statusMessage.style.display = 'none';
         return;
     }
+
+    const proceed = await runAlignmentPreflight(inputText);
+    if (!proceed) {
+        statusMessage.style.display = 'none';
+        showMessage('Load cancelled.', 2500);
+        return;
+    }
+
+    showMessage("Parsing file...", 0);
     try {
         let parsed;
     // PRIORITIZE CONTENT-BASED DETECTION.
