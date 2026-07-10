@@ -457,8 +457,8 @@
                             </div>
                             <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 4px;">
                                 <label style="font-size: 11px; white-space: nowrap;">Sensitivity:</label>
-                                <input type="range" id="colourSimilarityThreshold" value="3" min="0" max="10" style="flex: 1;" title="Levenshtein distance threshold (0=very strict, 10=very loose)">
-                                <span id="colourThresholdValue" style="font-size: 11px; min-width: 20px; text-align: right;">3</span>
+                                <input type="range" id="colourSimilarityThreshold" value="3" min="0" max="10" style="flex: 1;" title="N-gram Jaccard similarity threshold (0=strict 90%, 10=loose 40%)">
+                                <span id="colourThresholdValue" style="font-size: 11px; min-width: 30px; text-align: right;">70%</span>
                             </div>
                             <div style="display: flex; gap: 4px; align-items: center; margin-bottom: 4px;">
                                 <label style="font-size: 11px; white-space: nowrap;">Mode:</label>
@@ -551,6 +551,13 @@
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <div class="quick-mode-switch" id="quickModeSwitch" title="Display mode: Full / Block / Canvas / Reads">
+                <input type="radio" name="quickMode" id="qmSingle" data-target="modeSingle"><label for="qmSingle">Full</label>
+                <input type="radio" name="quickMode" id="qmBlocks" data-target="modeBlocks"><label for="qmBlocks">Block</label>
+                <input type="radio" name="quickMode" id="qmCanvas" data-target="modeCanvas"><label for="qmCanvas">Canvas</label>
+                <input type="radio" name="quickMode" id="qmReads" data-target="modeReads"><label for="qmReads" id="qmReadsLabel" style="display:none;">Reads</label>
             </div>
 
             <div class="menu-section" id="shortcuts-section">
@@ -948,6 +955,12 @@ B: —</pre>
                 <span style="color:#777;">Method:</span>
                 <label title="Unweighted Pair Group Method with Arithmetic Mean"><input type="radio" name="treeMethod" value="upgma" checked> UPGMA</label>
                 <label title="Neighbor-Joining — Saitou &amp; Nei 1987"><input type="radio" name="treeMethod" value="nj"> NJ</label>
+            <span style="color:#777;margin-left:16px;">Model:</span>
+            <select id="treeDistanceModel" style="font-size:11px;padding:0 2px;height:18px;" title="Distance correction model">
+                <option value="raw">p-distance (raw)</option>
+                <option value="jc69">Jukes-Cantor (JC69)</option>
+                <option value="k80">Kimura 2-param (K80)</option>
+            </select>
             </div>
             <textarea id="treeNewickOutput" readonly style="width:100%;height:130px;box-sizing:border-box;font-family:'Courier New',monospace;font-size:11px;white-space:pre;resize:vertical;"></textarea>
             <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin:8px 0;">
@@ -975,11 +988,11 @@ B: —</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=81"></script>
+    <script src="script.js?v=101"></script>
     <script src="tree-draw.js"></script>
     <script>
-// All functionality moved to script.js
-</script>
+    // All functionality moved to script.js
+    </script>
     <div id="hotkeysTooltip" style="display:none;position:fixed;z-index:10060;background:#fff;border:1px solid #888;border-radius:6px;box-shadow:0 4px 18px rgba(0,0,0,0.35);padding:10px 14px;font-size:11px;font-family:monospace;max-width:300px;pointer-events:auto;">
         <div style="font-weight:bold;margin-bottom:6px;font-size:12px;">⌨ Keyboard Shortcuts</div>
         <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;">

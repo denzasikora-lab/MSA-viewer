@@ -53,6 +53,7 @@ const state = {
     consensusSeq: '',
     consensusCache: null,
     conservationDataCache: null,
+    alignmentIndex: null, // { nSeqs, maxLen, totalResidues, mode, flags } from pre-parse scan
     deletedHistory: [],
     redoHistory: [],
     currentFilename: '',
@@ -1136,6 +1137,10 @@ function toggleStickyNames() {
         name.classList.toggle('static', !sticky);
     });
     alignmentContainer.offsetHeight; // Force reflow
+    // DOM mode picks this up via the CSS class toggle above (no .seq-name
+    // elements exist in Canvas mode); Canvas bakes stickyNames into its
+    // render closure instead, so it needs an explicit re-render to take effect.
+    if (document.getElementById('modeCanvas')?.checked) debounceRender();
 }
 function calculateGaplessPositions(sequence) {
     const positions = [];
@@ -1275,48 +1280,83 @@ function iupacToBases(code) {
 //  - Copy Selected Consensus
 // Options derive from current UI controls so all paths stay identical.
 // Returns full length consensus string (with gaps retained); caller can strip gaps if needed.
+function _getConsensusOptions() {
+    return {
+        threshold: clampConsensusPercent(el('consensusThreshold').value) / 100,
+        coverageMin: clampMinCoverage(el('consensusMinCoverage')?.value) / 100,
+        consType: document.querySelector('input[name="consensusType"]:checked').value,
+        fallbackMode: (document.getElementById('consensusFallback')?.value) || 'gap',
+    };
+}
+
+function _computeConsensusCharForColumn(seqArray, pos, opts) {
+    const { threshold, coverageMin, consType, fallbackMode } = opts;
+    const col = seqArray.map(s => (s[pos] || '-').toUpperCase());
+    const nonGapCol = col.filter(b => b !== '-' && b !== '.');
+    if (nonGapCol.length === 0) return '-';
+    const coverage = nonGapCol.length / seqArray.length;
+    if (coverage < coverageMin) return '-';
+    const counts = {};
+    nonGapCol.forEach(b => counts[b] = (counts[b] || 0) + 1);
+    const maxCount = Math.max(...Object.values(counts));
+    const maxBases = Object.keys(counts).filter(b => counts[b] === maxCount);
+    const freq = maxCount / col.length; // denominator includes gaps for consistency with display
+    if (freq >= threshold) {
+        const stdTop = maxBases.map(b => (b === 'U' ? 'T' : b)).filter(b => ['A','C','G','T'].includes(b));
+        if (consType === 'ambiguous') {
+            if (stdTop.length >= 2) return iupacFromBases(stdTop);
+            if (stdTop.length === 1) return stdTop[0];
+            return maxBases.sort()[0];
+        }
+        const normalBases = ['A','C','G','T'].filter(b => counts[b]);
+        if (normalBases.length > 0) {
+            const maxNormal = Math.max(...normalBases.map(b => counts[b] || 0));
+            return normalBases.filter(b => (counts[b] || 0) === maxNormal).sort()[0];
+        }
+        return maxBases.sort()[0];
+    }
+    const presentStd = Object.keys(counts).map(b => (b === 'U' ? 'T' : b)).filter(b => ['A','C','G','T'].includes(b));
+    const uniqueStd = Array.from(new Set(presentStd));
+    if (fallbackMode === 'iupac' && uniqueStd.length >= 2) return iupacFromBases(uniqueStd);
+    if (fallbackMode === 'n' && uniqueStd.length >= 2) return 'N';
+    return '-';
+}
+
 function computeConsensusForSequences(seqArray) {
     if (!seqArray || seqArray.length === 0) return '';
     const len = Math.max(...seqArray.map(s => s.length));
-    const threshold = clampConsensusPercent(el('consensusThreshold').value) / 100; // frequency threshold
-    const coverageMin = clampMinCoverage(el('consensusMinCoverage')?.value) / 100;
-    const consType = document.querySelector('input[name="consensusType"]:checked').value;
-    const fallbackMode = (document.getElementById('consensusFallback')?.value) || 'gap';
+    const opts = _getConsensusOptions();
     let out = '';
     for (let pos = 0; pos < len; pos++) {
-        const col = seqArray.map(s => (s[pos] || '-').toUpperCase());
-        const nonGapCol = col.filter(b => b !== '-' && b !== '.');
-        if (nonGapCol.length === 0) { out += '-'; continue; }
-        const coverage = nonGapCol.length / seqArray.length;
-        if (coverage < coverageMin) { out += '-'; continue; }
-        const counts = {};
-        nonGapCol.forEach(b => counts[b] = (counts[b] || 0) + 1);
-        const maxCount = Math.max(...Object.values(counts));
-        const maxBases = Object.keys(counts).filter(b => counts[b] === maxCount);
-        const freq = maxCount / col.length; // denominator includes gaps for consistency with display
-        if (freq >= threshold) {
-            const stdTop = maxBases.map(b => (b === 'U' ? 'T' : b)).filter(b => ['A','C','G','T'].includes(b));
-            if (consType === 'ambiguous') {
-                if (stdTop.length >= 2) out += iupacFromBases(stdTop);
-                else if (stdTop.length === 1) out += stdTop[0];
-                else out += maxBases.sort()[0];
-            } else {
-                const normalBases = ['A','C','G','T'].filter(b => counts[b]);
-                if (normalBases.length > 0) {
-                    const maxNormal = Math.max(...normalBases.map(b => counts[b] || 0));
-                    const topNormal = normalBases.filter(b => (counts[b] || 0) === maxNormal).sort()[0];
-                    out += topNormal;
-                } else out += maxBases.sort()[0];
-            }
-        } else {
-            const presentStd = Object.keys(counts).map(b => (b === 'U' ? 'T' : b)).filter(b => ['A','C','G','T'].includes(b));
-            const uniqueStd = Array.from(new Set(presentStd));
-            if (fallbackMode === 'iupac' && uniqueStd.length >= 2) out += iupacFromBases(uniqueStd);
-            else if (fallbackMode === 'n' && uniqueStd.length >= 2) out += 'N';
-            else out += '-';
-        }
+        out += _computeConsensusCharForColumn(seqArray, pos, opts);
     }
     return out;
+}
+
+// Timesliced twin of computeConsensusForSequences, for the Canvas-mode
+// deferred path where consensus isn't displayed but is still computed lazily
+// for features like "Copy Consensus". Never blocks the main thread for more
+// than ~8ms per slice, regardless of alignment size.
+function computeConsensusForSequencesChunked(seqArray, onDone, token) {
+    if (!seqArray || seqArray.length === 0) { onDone(''); return; }
+    const len = Math.max(...seqArray.map(s => s.length));
+    const opts = _getConsensusOptions();
+    const chars = new Array(len);
+    let pos = 0;
+    function step() {
+        if (token && token.cancelled) return;
+        const t0 = performance.now();
+        while (pos < len && (performance.now() - t0) < 8) {
+            chars[pos] = _computeConsensusCharForColumn(seqArray, pos, opts);
+            pos++;
+        }
+        if (pos < len) {
+            setTimeout(step, 0);
+        } else {
+            onDone(chars.join(''));
+        }
+    }
+    step();
 }
 // PARSING FUNCTIONS
 
@@ -1803,14 +1843,40 @@ function _computeMultiFrameCodonAnalysis(seqs, len) {
 // CANVAS-BASED RENDERER - for large alignments
 // Draws only visible area, no per-residue DOM nodes
 // =====================================================================
-const _canvasState = { offsetX: 0, offsetY: 0, ctx: null, metrics: null, seqsLen: 0 };
+// totalContentW: current alignment's full pixel width (for the persistent scrollbar's thumb sizing).
+// onOffsetChange: optional callback (registered by setupPersistentScrollbar) invoked after each
+// draw() so the scrollbar can mirror wheel-scroll/drag-pan that didn't originate from the bar itself.
+const _canvasState = { offsetX: 0, offsetY: 0, ctx: null, metrics: null, seqsLen: 0, scheduleDraw: null, totalContentW: 0, onOffsetChange: null };
+// Cancellation token for the Canvas mode's deferred (chunked) conservation/
+// consensus jobs; reassigned + old one cancelled on every render so a
+// superseded background job can't clobber a newer one's results.
+let _canvasDeferredToken = null;
 
-function _initCanvasMetrics(ctx) {
-    if (_canvasState.metrics) return _canvasState.metrics;
-    ctx.font = '12px "Courier New", monospace';
+function _initCanvasMetrics(ctx, fontSizePx) {
+    // Cache is keyed on font size so zoom changes (which resize the DOM font)
+    // invalidate stale metrics instead of leaving Canvas mode stuck at 12px.
+    if (_canvasState.metrics && _canvasState.metrics.fontSizePx === fontSizePx) return _canvasState.metrics;
+    ctx.font = fontSizePx + 'px "Courier New", monospace';
     const m = ctx.measureText('X');
-    _canvasState.metrics = { charW: m.width, charH: m.fontBoundingBoxAscent + m.fontBoundingBoxDescent || 14 };
+    const charH = (m.fontBoundingBoxAscent && m.fontBoundingBoxDescent)
+        ? m.fontBoundingBoxAscent + m.fontBoundingBoxDescent
+        : Math.ceil(fontSizePx * 1.15);
+    _canvasState.metrics = { charW: Math.ceil(m.width), charH: Math.ceil(charH), fontSizePx };
     return _canvasState.metrics;
+}
+
+// Reads the shading palette from the same CSS custom properties the DOM
+// renderer uses (customizable via the black/dark/light colour pickers), so
+// Canvas mode's conservation colours stay in sync with Normal mode instead
+// of drifting to a hardcoded, unrelated palette.
+function _getCanvasShadePalette() {
+    const rs = getComputedStyle(document.documentElement);
+    const v = (name, fallback) => (rs.getPropertyValue(name) || '').trim() || fallback;
+    return {
+        blackBg: v('--blackShading', '#000'), blackFg: v('--blackText', 'white'),
+        darkBg: v('--darkShading', '#555'), darkFg: v('--darkText', 'white'),
+        lightBg: v('--lightShading', '#ccc'), lightFg: v('--lightText', 'black'),
+    };
 }
 
 function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, darkThresh, lightThresh,
@@ -1831,26 +1897,70 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     alignmentContainer.appendChild(canvas);
 
     const ctx = canvas.getContext('2d');
-    const m = _initCanvasMetrics(ctx);
+    const dpr = window.devicePixelRatio || 1;
+    // Match the current zoom level so Canvas mode's text size tracks Normal
+    // mode's font-size (set on this same container by setZoom) instead of
+    // staying pinned at a hardcoded size regardless of the zoom slider.
+    const fontSizePx = parseFloat(getComputedStyle(alignmentContainer).fontSize) || 13;
+    const fontStr = fontSizePx + 'px "Courier New", monospace';
+    const nameFontStr = 'bold ' + fontStr; // matches Normal mode's bold .seq-name
+    const m = _initCanvasMetrics(ctx, fontSizePx);
     const CHAR_W = m.charW;
     const CHAR_H = m.charH;
     const NAME_W = nameLen * CHAR_W + 8;
+    // Glyph cache: pre-rendered (char, bg-color, fg-color) → off-screen canvas
+    // Turns fillRect()+fillText() into a single drawImage() per cell after warm-up
+    const _glyphCache = new Map();
+    function _makeGlyph(ch, bg, fg) {
+        const k = ch + '| ' + (bg||' ') + '| ' + fg + '| ' + dpr;
+        let g = _glyphCache.get(k);
+        if (!g) {
+            g = document.createElement('canvas');
+            g.width = Math.ceil(CHAR_W * dpr);
+            g.height = Math.ceil(CHAR_H * dpr);
+            const c2 = g.getContext('2d');
+            c2.setTransform(dpr, 0, 0, dpr, 0, 0);
+            c2.font = fontStr; c2.textBaseline = 'top';
+            if (bg) { c2.fillStyle = bg; c2.fillRect(0, 0, CHAR_W, CHAR_H); }
+            c2.fillStyle = fg; c2.fillText(ch, 0, 0);
+            _glyphCache.set(k, g);
+        }
+        return g;
+    }
+
     const nSeqs = state.seqs.length;
+    const SCALE_H = CHAR_H; // one row at top, matching Full/Block .scale-ruler-line
+    let _lastOffX = -1, _lastOffY = -1, _dirty = false;
+    function _markDirty() { _dirty = true; }
+
     const totalContentW = NAME_W + len * CHAR_W + 4;
-    const totalContentH = nSeqs * CHAR_H + 4;
+    const totalContentH = SCALE_H + nSeqs * CHAR_H + 4;
+    // Exposed so the persistent horizontal scrollbar (a real DOM element,
+    // since Canvas mode's own content isn't natively scrollable) can size
+    // its thumb and mirror pan position.
+    _canvasState.totalContentW = totalContentW;
 
     // Resize canvas to viewport
     function resize() {
         const rect = alignmentContainer.getBoundingClientRect();
-        canvas.width = rect.width * (window.devicePixelRatio || 1);
-        canvas.height = rect.height * (window.devicePixelRatio || 1);
+        canvas.width = rect.width * dpr;
+        canvas.height = rect.height * dpr;
         canvas.style.width = rect.width + 'px';
         canvas.style.height = rect.height + 'px';
-        ctx.setTransform(window.devicePixelRatio || 1, 0, 0, window.devicePixelRatio || 1, 0, 0);
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
+    let drawRaf = 0;
+    function scheduleDraw() {
+        if (drawRaf) return;
+        drawRaf = requestAnimationFrame(() => {
+            drawRaf = 0;
+            draw();
+        });
+    }
+    _canvasState.scheduleDraw = scheduleDraw;
+
     resize();
-    draw(); // Initial render after resize
-    window.addEventListener('resize', () => { resize(); draw(); });
+    window.addEventListener('resize', () => { resize(); _markDirty(); scheduleDraw(); });
     setAlignmentColorSchemeClass();
 
     // Clamp offsets
@@ -1864,45 +1974,65 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     // Draw
     function draw() {
         clampOffsets();
+        // Skip if offset hasn't changed and not explicitly marked dirty
+        if (!_dirty && _canvasState.offsetX === _lastOffX && _canvasState.offsetY === _lastOffY) return;
+        _lastOffX = _canvasState.offsetX; _lastOffY = _canvasState.offsetY; _dirty = false;
         const w = parseInt(canvas.style.width) || 800;
         const h = parseInt(canvas.style.height) || 600;
         const ox = _canvasState.offsetX;
         const oy = _canvasState.offsetY;
         const firstCol = Math.max(0, Math.floor((ox - NAME_W) / CHAR_W));
         const lastCol = Math.min(len - 1, Math.ceil((ox - NAME_W + w) / CHAR_W));
-        const firstRow = Math.max(0, Math.floor(oy / CHAR_H));
-        const lastRow = Math.min(nSeqs - 1, Math.ceil((oy + h) / CHAR_H));
+        const firstRow = Math.max(0, Math.floor((oy - SCALE_H) / CHAR_H));
+        const lastRow = Math.min(nSeqs - 1, Math.floor((oy - SCALE_H + h - 1) / CHAR_H));
 
         ctx.clearRect(0, 0, w, h);
-        ctx.font = '12px "Courier New", monospace';
+        ctx.font = fontStr;
         ctx.textBaseline = 'top';
 
+        // Resolve the colour scheme and shading palette once per frame, not per
+        // visible cell (getResidueSchemeStyle/getComputedStyle would otherwise be
+        // recomputed for every glyph).
+        const drawScheme = getEffectiveColorScheme();
+        const pal = _getCanvasShadePalette();
+
+        // Position scale (10, *, 20, * …) — only the visible column window, same
+        // generateScale() as Full/Block mode; cost is O(visible cols), not alignment length.
+        const scaleY = -oy;
+        if (scaleY + SCALE_H > 0 && scaleY < h && firstCol <= lastCol) {
+            const visCols = lastCol - firstCol + 1;
+            const scaleText = generateScale(visCols, _canvasScaleInterval(CHAR_W), firstCol);
+            if (stickyNames) {
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, scaleY, NAME_W, SCALE_H);
+            }
+            ctx.fillStyle = '#666';
+            for (let j = 0; j < scaleText.length; j++) {
+                const ch = scaleText[j];
+                if (ch === ' ') continue;
+                const x = NAME_W + (firstCol + j) * CHAR_W - ox;
+                if (x + CHAR_W < 0 || x > w) continue;
+                ctx.fillText(ch, x, scaleY);
+            }
+            ctx.fillStyle = '#ddd';
+            ctx.fillRect(Math.max(0, NAME_W - ox), scaleY + SCALE_H - 1, w, 1);
+        }
+
         for (let i = firstRow; i <= lastRow; i++) {
-            const y = i * CHAR_H - oy;
+            const y = SCALE_H + i * CHAR_H - oy;
             const seq = state.seqs[i].seq;
             const consPos = conservationData;
 
-            // Sequence name
-            if (ox < NAME_W) {
-                ctx.save();
-                ctx.beginPath();
-                ctx.rect(0, y, NAME_W, CHAR_H);
-                ctx.clip();
-                ctx.fillStyle = '#555';
-                const name = state.seqs[i].header || ('Seq' + (i + 1));
-                const displayName = name.length > nameLen ? name.substring(0, nameLen) + '\u2026' : name;
-                ctx.fillText(displayName, 4 - ox, y);
-                ctx.restore();
-            }
-
-            // Residues
+            // Residues (glyph-cached: 1 drawImage per cell vs fillRect+fillText)
             for (let p = firstCol; p <= lastCol; p++) {
                 const x = NAME_W + p * CHAR_W - ox;
                 const base = seq[p] || '-';
                 const baseUp = base.toUpperCase();
                 const pd = consPos[p];
-                const schemeStyle = getResidueSchemeStyle(base);
-                let textFill = '#333';
+                const schemeStyle = getResidueSchemeStyle(base, drawScheme);
+                // Defaults match Normal mode's ".other"/".gap" CSS classes so
+                // unshaded residues render identically between the two modes.
+                let textFill = '#000';
                 let bgFill = null;
 
                 if (schemeStyle) {
@@ -1910,9 +2040,9 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                     textFill = schemeStyle.fg;
                 } else if (pd && pd.hasData && pd.hasValidCoverage) {
                     if (baseUp !== '-' && baseUp !== '.' && pd.consensusBases && pd.consensusBases.has(baseUp)) {
-                        if (enableBlack && pd.conservation >= blackThresh) textFill = '#fff', bgFill = '#000';
-                        else if (enableDark && pd.conservation >= darkThresh) textFill = '#fff', bgFill = '#444';
-                        else if (enableLight && pd.conservation >= lightThresh) textFill = '#000', bgFill = '#888';
+                        if (enableBlack && pd.conservation >= blackThresh) textFill = pal.blackFg, bgFill = pal.blackBg;
+                        else if (enableDark && pd.conservation >= darkThresh) textFill = pal.darkFg, bgFill = pal.darkBg;
+                        else if (enableLight && pd.conservation >= lightThresh) textFill = pal.lightFg, bgFill = pal.lightBg;
                     } else if (baseUp === '-' || baseUp === '.') {
                         textFill = '#888';
                         bgFill = '#fff';
@@ -1922,30 +2052,53 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                     bgFill = '#fff';
                 }
 
-                if (bgFill) {
-                    ctx.fillStyle = bgFill;
-                    ctx.fillRect(x, y, CHAR_W, CHAR_H);
-                }
-                ctx.fillStyle = textFill;
-                ctx.fillText(base, x, y);
+                // Single blit from glyph cache (eliminates fillStyle+fillRect+fillStyle+fillText)
+                ctx.drawImage(_makeGlyph(base, bgFill, textFill), x, y, CHAR_W, CHAR_H);
             }
 
-            // Row separator
-            ctx.fillStyle = '#eee';
-            ctx.fillRect(0, y + CHAR_H - 1, totalContentW - ox, 1);
+            // Sequence name — drawn last so it sits on top of any residues that
+            // scrolled underneath it. Sticky mode pins it at a fixed screen x=0
+            // with an opaque backing (matching Normal mode's sticky name column,
+            // position:sticky + white background); non-sticky mode scrolls it
+            // away with the content, like .seq-name.static.
+            const name = state.seqs[i].header || ('Seq' + (i + 1));
+            const displayName = name.length > nameLen ? name.substring(0, nameLen) + '\u2026' : name;
+            ctx.font = nameFontStr;
+            if (stickyNames) {
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(0, y, NAME_W, CHAR_H);
+                ctx.fillStyle = '#333';
+                ctx.fillText(displayName, 4, y);
+            } else if (ox < NAME_W) {
+                ctx.save();
+                ctx.beginPath();
+                ctx.rect(0, y, NAME_W, CHAR_H);
+                ctx.clip();
+                ctx.fillStyle = '#333';
+                ctx.fillText(displayName, 4 - ox, y);
+                ctx.restore();
+            }
+            ctx.font = fontStr;
         }
 
-        // Name column separator
+        // Name column separator (fixed on-screen when sticky, scrolls with
+        // content otherwise, matching the name column's own behaviour above)
         ctx.fillStyle = '#ddd';
-        ctx.fillRect(NAME_W - ox - 2, 0, 1, totalContentH - oy);
+        ctx.fillRect((stickyNames ? NAME_W : NAME_W - ox) - 2, 0, 1, totalContentH - oy);
+
+        // Canvas mode has no native scrollable DOM node, so notify the
+        // persistent horizontal scrollbar to mirror our internal pan offset.
+        _canvasState.onOffsetChange?.();
     }
+    resize();
+    draw();
 
     // Scroll handling
     canvas.addEventListener('wheel', (e) => {
         e.preventDefault();
         _canvasState.offsetX += e.deltaX;
         _canvasState.offsetY += e.deltaY;
-        draw();
+        scheduleDraw();
     }, { passive: false });
 
     // Touch/drag pan
@@ -1958,20 +2111,21 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             dragOx = _canvasState.offsetX;
             dragOy = _canvasState.offsetY;
             canvas.style.cursor = 'grabbing';
+                   _markDirty();
         }
     });
     window.addEventListener('mousemove', (e) => {
         if (!dragging) return;
         _canvasState.offsetX = dragOx - (e.clientX - dragStartX);
         _canvasState.offsetY = dragOy - (e.clientY - dragStartY);
-        draw();
+        scheduleDraw();
     });
     window.addEventListener('mouseup', () => {
         dragging = false;
         canvas.style.cursor = 'default';
     });
 
-    draw();
+    scheduleDraw();
 }
 
 // Clustal (.aln) format parser
@@ -2316,55 +2470,85 @@ function generateScale(maxLength, interval = 10, startPos = 0) {
     return scaleArray.join('');
 }
 
-function preCalculateConservation(seqs, len, shadeMode) {
-    const conservationData = new Array(len);
-    const minCoverage = 0.3; // Require at least 30% non-gap sequences for coloring
-    const seqCount = seqs.length;
+/** Scale tick spacing for Canvas mode: wider intervals when zoomed out so labels stay readable. */
+function _canvasScaleInterval(charW) {
+    if (charW >= 8) return 10;
+    if (charW >= 5) return 20;
+    if (charW >= 3) return 50;
+    return 100;
+}
 
-    for (let pos = 0; pos < len; pos++) {
-        // Count bases directly without creating intermediate arrays
-        const counts = {};
-        let nonGapCount = 0;
+const CONSERVATION_MIN_COVERAGE = 0.3; // Require at least 30% non-gap sequences for coloring
 
-        for (let s = 0; s < seqCount; s++) {
-            const rawBase = seqs[s].seq[pos] || '-';
-            const base = rawBase.toUpperCase();
-            if (base !== '-' && base !== '.') {
-                counts[base] = (counts[base] || 0) + 1;
-                nonGapCount++;
-            }
-        }
+function _computeConservationForColumn(seqs, seqCount, pos, shadeMode) {
+    // Count bases directly without creating intermediate arrays
+    const counts = {};
+    let nonGapCount = 0;
 
-        if (nonGapCount > 0) {
-            // Find max count
-            let maxCount = 0;
-            for (const count of Object.values(counts)) {
-                if (count > maxCount) maxCount = count;
-            }
-
-            // Get all bases with max count
-            const consensusBases = new Set();
-            for (const [base, count] of Object.entries(counts)) {
-                if (count === maxCount) consensusBases.add(base);
-            }
-
-            const denominator = shadeMode === 'all' ? seqCount : nonGapCount;
-            const conservation = maxCount / denominator;
-            const coverage = nonGapCount / seqCount;
-            const hasValidCoverage = coverage >= minCoverage;
-
-            conservationData[pos] = {
-                consensusBases,
-                conservation,
-                hasData: true,
-                hasValidCoverage: hasValidCoverage
-            };
-        } else {
-            conservationData[pos] = { hasData: false, hasValidCoverage: false };
+    for (let s = 0; s < seqCount; s++) {
+        const rawBase = seqs[s].seq[pos] || '-';
+        const base = rawBase.toUpperCase();
+        if (base !== '-' && base !== '.') {
+            counts[base] = (counts[base] || 0) + 1;
+            nonGapCount++;
         }
     }
 
+    if (nonGapCount === 0) return { hasData: false, hasValidCoverage: false };
+
+    let maxCount = 0;
+    for (const count of Object.values(counts)) {
+        if (count > maxCount) maxCount = count;
+    }
+
+    const consensusBases = new Set();
+    for (const [base, count] of Object.entries(counts)) {
+        if (count === maxCount) consensusBases.add(base);
+    }
+
+    const denominator = shadeMode === 'all' ? seqCount : nonGapCount;
+    const conservation = maxCount / denominator;
+    const coverage = nonGapCount / seqCount;
+
+    return {
+        consensusBases,
+        conservation,
+        hasData: true,
+        hasValidCoverage: coverage >= CONSERVATION_MIN_COVERAGE
+    };
+}
+
+function preCalculateConservation(seqs, len, shadeMode) {
+    const conservationData = new Array(len);
+    const seqCount = seqs.length;
+    for (let pos = 0; pos < len; pos++) {
+        conservationData[pos] = _computeConservationForColumn(seqs, seqCount, pos, shadeMode);
+    }
     return conservationData;
+}
+
+// Same computation as preCalculateConservation, but spread across timeslices
+// (via setTimeout yields) so a very large alignment can never hold the main
+// thread for more than ~8ms at a stretch. Used by the Canvas mode deferred
+// shading pass, where the "freeze" reports came from.
+function preCalculateConservationChunked(seqs, len, shadeMode, onDone, token) {
+    const conservationData = new Array(len);
+    const seqCount = seqs.length;
+    let pos = 0;
+    function step() {
+        if (token && token.cancelled) return;
+        const t0 = performance.now();
+        while (pos < len && (performance.now() - t0) < 8) {
+            conservationData[pos] = _computeConservationForColumn(seqs, seqCount, pos, shadeMode);
+            pos++;
+        }
+        if (pos < len) {
+            setTimeout(step, 0);
+        } else {
+            onDone(conservationData);
+        }
+    }
+    step();
 }
 
 function getDeferredConservationData(len, shadeMode) {
@@ -3096,7 +3280,18 @@ function renderCompactAlignment(len, conservationData, shadeMode, blackThresh, d
     if (typeof updateSourceInfo === 'function') updateSourceInfo();
 }
 
+// Set whenever the user explicitly picks a display mode (see onModeChange),
+// so the auto-switch-to-Canvas heuristic below stops overriding their choice
+// back to Canvas on every subsequent render. Reset per-file in parseAndRender
+// so a newly loaded large alignment still gets the initial suggestion.
+let _userDismissedAutoCanvas = false;
+
 function renderAlignment(options = {}) {
+    // Catch-all sync: covers every path that flips a mode radio programmatically
+    // (BAM load, snapshot/session restore, the auto-switch heuristic below,
+    // etc.) without going through onModeChange, so the top-bar quick switcher
+    // never drifts from whichever mode is actually about to render.
+    syncQuickModeSwitch();
     if (!state.seqs || state.seqs.length === 0) {
         alignmentContainer.innerHTML = '<div style="padding:20px; color:#666; font-style:italic;">No sequences loaded. Paste FASTA/MSF and click Load.</div>';
         return;
@@ -3158,13 +3353,16 @@ function renderAlignment(options = {}) {
 
     // Ã¢â€â‚¬Ã¢â€â‚¬ Auto-detect: Canvas for large alignments Ã¢â€â‚¬Ã¢â€â‚¬
     const TOTAL_RESIDUES = state.seqs.length * len;
+    // Disable span cache for large alignments (>80K residues) during view-only rendering
+    state._enableSpanCache = (TOTAL_RESIDUES <= 80000);
     const CANVAS_AUTO_THRESHOLD = 150000; // ~100 seq Ãƒâ€” 1500 col
+    let _renderStartTime = performance.now();
     const userWantsCanvas = document.getElementById('modeCanvas')?.checked;
-    const userPickedDom = document.getElementById('modeAutoCanvasDismissed')?.checked; // hidden flag
 
-    if (!userWantsCanvas && !userPickedDom && TOTAL_RESIDUES > CANVAS_AUTO_THRESHOLD) {
+    if (!userWantsCanvas && !_userDismissedAutoCanvas && TOTAL_RESIDUES > CANVAS_AUTO_THRESHOLD) {
         const canvasRadio = document.getElementById('modeCanvas');
         if (canvasRadio) canvasRadio.checked = true;
+        syncQuickModeSwitch(); // this bypasses onModeChange, so sync explicitly
         showMessage(
             `Auto-switched to Canvas mode for ${TOTAL_RESIDUES.toLocaleString()} residues. ` +
             `Switch back to Block/Full for editing.`,
@@ -3195,6 +3393,70 @@ function renderAlignment(options = {}) {
 
     // (len is declared above, before TOTAL_RESIDUES calculation)
 
+    const shadeMode = document.querySelector('input[name="shadeMode"]:checked').value;
+    const useCompact = document.getElementById('modeCompact')?.checked;
+    const useCanvas = document.getElementById('modeCanvas')?.checked;
+
+    // ── Canvas fast path (UGENE-style: first paint costs only the visible region) ──
+    // Canvas shows no consensus row, so consensus is skipped entirely here.
+    // Conservation shading is deferred: draw an unshaded frame immediately, then
+    // compute conservation off the critical path (idle, time-sliced) and repaint shaded.
+    if (useCanvas) {
+        const cachedConservation = (state.conservationDataCache?.len === len
+            && state.conservationDataCache?.shadeMode === shadeMode)
+            ? state.conservationDataCache.data : null;
+        _renderCanvasAlignment(len, cachedConservation || [], shadeMode, blackThresh, darkThresh, lightThresh,
+            enableBlack, enableDark, enableLight, nameLen, stickyNames);
+
+        // Invalidate any still-running chunked jobs from a previous load/render
+        // so they don't write stale results (or fight over the main thread)
+        // once a new file/render supersedes them.
+        if (_canvasDeferredToken) _canvasDeferredToken.cancelled = true;
+        const myToken = { cancelled: false };
+        _canvasDeferredToken = myToken;
+
+        if (!cachedConservation) {
+            const computeShadingAndRepaint = () => {
+                if (myToken.cancelled) return;
+                if (!state.seqs || !state.seqs.length) return;
+                if (Math.max(...state.seqs.map(s => s.seq.length)) !== len) return; // alignment changed
+                preCalculateConservationChunked(state.seqs, len, shadeMode, (data) => {
+                    if (myToken.cancelled) return;
+                    state.conservationDataCache = { len, shadeMode, data };
+                    if (document.getElementById('modeCanvas')?.checked) renderAlignment(options);
+                }, myToken);
+            };
+            if (typeof requestIdleCallback === 'function') {
+                requestIdleCallback(computeShadingAndRepaint, { timeout: 1500 });
+            } else {
+                setTimeout(computeShadingAndRepaint, 30);
+            }
+        }
+
+        // Consensus is not displayed in Canvas mode. Compute it lazily (time-sliced)
+        // so features that consume it (Copy Consensus, etc.) still work without
+        // blocking paint.
+        if (showConsensus && state.consensusCache?.len !== len) {
+            const computeConsensusIdle = () => {
+                if (myToken.cancelled) return;
+                if (!state.seqs || !state.seqs.length) return;
+                if (Math.max(...state.seqs.map(s => s.seq.length)) !== len) return;
+                computeConsensusForSequencesChunked(state.seqs.map(s => s.seq), (consStr) => {
+                    if (myToken.cancelled) return;
+                    const cons = consStr.split('');
+                    state.consensusCache = { len, values: cons.slice() };
+                    state.consensusSeq = consStr.replace(/-/g, '');
+                }, myToken);
+            };
+            if (typeof requestIdleCallback === 'function') {
+                requestIdleCallback(computeConsensusIdle, { timeout: 2000 });
+            } else {
+                setTimeout(computeConsensusIdle, 60);
+            }
+        }
+        return;
+    }
+
     let consensus = [];
     if (showConsensus) {
         const deferredConsensus = options.deferConservation ? getDeferredConsensus(len) : null;
@@ -3214,27 +3476,17 @@ function renderAlignment(options = {}) {
         document.getElementById('statusMessage').textContent = `Consensus: ${consensusPosition} | ${consensus.length} cols`;
     }
 
-    // *** NEW: Pre-calculate conservation for ALL columns ONCE ***
-    const shadeMode = document.querySelector('input[name="shadeMode"]:checked').value;
+    // *** Pre-calculate conservation for ALL columns ONCE (DOM / Compact paths) ***
     const conservationData = (options.deferConservation && getDeferredConservationData(len, shadeMode))
         || preCalculateConservation(state.seqs, len, shadeMode);
     if (!options.deferConservation) {
         state.conservationDataCache = { len, shadeMode, data: conservationData };
     }
 
-
-    const useCompact = document.getElementById('modeCompact')?.checked;
     if (useCompact) {
         renderCompactAlignment(len, conservationData, shadeMode, blackThresh, darkThresh, lightThresh,
             enableBlack, enableDark, enableLight, nameLen, stickyNames, standard, ambiguous, ambiguousMap,
             showConsensus, consType, threshold, fallbackMode, coverageMin);
-        return;
-    }
-
-    const useCanvas = document.getElementById('modeCanvas')?.checked;
-    if (useCanvas) {
-        _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, darkThresh, lightThresh,
-            enableBlack, enableDark, enableLight, nameLen, stickyNames);
         return;
     }
 
@@ -3382,56 +3634,16 @@ function renderAlignment(options = {}) {
         updateSourceInfo();
     }
     // Re-apply sequence name colours if any mappings exist
-    if (typeof applyColourToSeqNames === 'function' && colourState && colourState.mappings.size > 0) {
+    const _renderMs = performance.now() - _renderStartTime;
+    if (_renderMs > 50 && TOTAL_RESIDUES > 10000) console.warn('[PERF] render: '+_renderMs.toFixed(0)+'ms | '+TOTAL_RESIDUES.toLocaleString()+' residues');
+
+        if (typeof applyColourToSeqNames === 'function' && colourState && colourState.mappings.size > 0) {
         applyColourToSeqNames(colourState.mappings);
     }
 
-    // Post-process: apply diff-highlight dimming to columns that match consensus
-    if (state._diffColumns && state._diffColumns.size > 0) {
-        const allSpans = alignmentContainer.querySelectorAll('.seq-data > span[data-pos]');
-        allSpans.forEach(span => {
-            const pos = parseInt(span.dataset.pos);
-            if (state._diffColumns.has(pos)) {
-                span.classList.add('diff-highlight');
-            }
-        });
-    }
-
-    // Post-process: codon analysis overlay
+    // Post-process: AA translation rows (phase/stops now built inline)
     if (state._codonData) {
         const cd = state._codonData;
-        const allSpans = alignmentContainer.querySelectorAll('.seq-data > span[data-pos]');
-        allSpans.forEach(span => {
-            const pos = parseInt(span.dataset.pos);
-            const rowEl = span.closest('.seq-line');
-            const seqIdx = rowEl ? parseInt(rowEl.dataset.seqIndex) : -1;
-            if (seqIdx < 0) return;
-
-            // Codon phase coloring
-            if (cd.phase[seqIdx] && cd.phase[seqIdx][pos] >= 0) {
-                span.classList.add('codon-p' + cd.phase[seqIdx][pos]);
-            }
-
-            // Stop codon positions
-            if (cd.stops[seqIdx] && cd.stops[seqIdx].includes(pos)) {
-                span.classList.add('codon-stop');
-            }
-
-            // Frameshift positions
-            if (cd.frameShifts[seqIdx]) {
-                for (const fs of cd.frameShifts[seqIdx]) {
-                    if (fs.pos === pos && fs.type === 'incomplete') {
-                        span.classList.add('codon-fs');
-                    }
-                }
-            }
-
-            // Syn/non-syn annotations
-            if (cd.synNonSyn[seqIdx] && cd.synNonSyn[seqIdx][pos]) {
-                span.classList.add('codon-' + cd.synNonSyn[seqIdx][pos]);
-            }
-        });
-
         // Add AA translation rows below each sequence
         const seqRows = alignmentContainer.querySelectorAll('.seq-line');
         seqRows.forEach(rowEl => {
@@ -3698,11 +3910,20 @@ const RESIDUE_SCHEME_CLASS_PRIORITY = [
 ];
 let _proteinSchemeRemapWarned = false;
 
+let _proteinMemoArr = null, _proteinMemoType = null, _proteinMemoVal = false;
 function isProteinAlignment(seqs = state.seqs) {
     if (!seqs || seqs.length === 0) return false;
     const seqType = el('mafftSeqType')?.value;
     if (seqType === '0' || seqType === '1') return true;
-    return seqs.some(entry => _isProteinFastaSequence(entry.seq));
+    // Scanning every sequence is O(seqs Ã— cols). This runs once per glyph in the
+    // canvas hot loops, so memoize by array identity (a new array is created on
+    // load; edits mutate in place and never flip nucleotide/protein status).
+    if (seqs === _proteinMemoArr && seqType === _proteinMemoType) return _proteinMemoVal;
+    const value = seqs.some(entry => _isProteinFastaSequence(entry.seq));
+    _proteinMemoArr = seqs;
+    _proteinMemoType = seqType;
+    _proteinMemoVal = value;
+    return value;
 }
 
 function usesMonochromeShading(colorScheme = getAlignmentColorScheme()) {
@@ -3979,19 +4200,38 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
     };
 
     for (let pos = start; pos < end; pos++) {
-        const base = seq[pos] || '-';
-        const baseUp = base.toUpperCase();
-        const baseClass = getResidueAnnotationClasses(base, standard, ambiguous, effectiveColorScheme);
+            const base = seq[pos] || '-';
+            const baseUp = base.toUpperCase();
+            const baseClass = getResidueAnnotationClasses(base, standard, ambiguous, effectiveColorScheme);
 
-        const posData = conservationData[pos] || { hasData: false, hasValidCoverage: false };
-        let cls = applyConservationShadeClass(baseUp, posData, renderConfig);
+            const posData = conservationData[pos] || { hasData: false, hasValidCoverage: false };
+            let cls = applyConservationShadeClass(baseUp, posData, renderConfig);
 
-        const colSelected = selectedCols.has(pos) ? ' column-selected' : '';
-        const tsdDisplay = getTsdMarkDisplay(index, pos);
-        const finalClass = `${cls}${baseClass ? ' ' + baseClass : ''}${colSelected}${tsdDisplay.className}`;
-        htmlParts.push(`<span class="${finalClass}" data-pos="${pos}"${tsdDisplay.style}>${base}</span>`);
-    }
+            // Codon analysis classes built inline (avoids 160K-node DOM scan)
+            if (state._codonData && state._codonData.phase && state._codonData.phase[index]) {
+                const ph = state._codonData.phase[index][pos];
+                if (ph >= 0) cls += ' codon-p' + ph;
+            }
+            if (state._codonData && state._codonData.stops && state._codonData.stops[index]) {
+                if (state._codonData.stops[index].includes(pos)) cls += ' codon-stop';
+            }
+            if (state._codonData && state._codonData.frameShifts && state._codonData.frameShifts[index]) {
+                for (const fs of state._codonData.frameShifts[index]) {
+                    if (fs.pos === pos && fs.type === 'incomplete') { cls += ' codon-fs'; break; }
+                }
+            }
+            if (state._codonData && state._codonData.synNonSyn && state._codonData.synNonSyn[index]) {
+                if (state._codonData.synNonSyn[index][pos]) cls += ' codon-' + state._codonData.synNonSyn[index][pos];
+            }
+            if (state._diffColumns && state._diffColumns.has(pos)) {
+                cls += ' diff-highlight';
+            }
 
+            const colSelected = selectedCols.has(pos) ? ' column-selected' : '';
+            const tsdDisplay = getTsdMarkDisplay(index, pos);
+            const finalClass = `${cls}${baseClass ? ' ' + baseClass : ''}${colSelected}${tsdDisplay.className}`;
+            htmlParts.push(`<span class="${finalClass}" data-pos="${pos}"${tsdDisplay.style}>${base}</span>`);
+        }
     // Add sequence length at the end (only for last block)
     if (showLength) {
         const gaplessLength = gaplessPositions[gaplessPositions.length - 1] || 0;
@@ -4001,13 +4241,15 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
     // *** PERFORMANCE: Set innerHTML once instead of many appendChild calls ***
     dataSpan.innerHTML = htmlParts.join('');
 
-    // Register spans in cache for selection features
-    const spans = dataSpan.children;
-    for (let i = 0; i < spans.length; i++) {
-        const span = spans[i];
-        const pos = span.dataset.pos;
-        if (pos !== undefined) {
-            registerSpanInCache(index, parseInt(pos), span);
+    // Register spans in cache for selection features (skipped for large view-only renders)
+    if (state._enableSpanCache !== false) {
+        const spans = dataSpan.children;
+        for (let i = 0; i < spans.length; i++) {
+            const span = spans[i];
+            const pos = span.dataset.pos;
+            if (pos !== undefined) {
+                registerSpanInCache(index, parseInt(pos), span);
+            }
         }
     }
 
@@ -4168,6 +4410,10 @@ function setZoom(percent) {
     alignmentContainer.style.fontSize = size + 'px';
     el('zoomVal').textContent = percent + '%';
     el('zoomVal').classList.toggle('not-default', percent !== 100);
+    // DOM mode picks up the new font-size via CSS inheritance automatically,
+    // but Canvas mode measures/bakes glyphs at a fixed size on render, so it
+    // needs an explicit re-render to track the zoom slider.
+    if (document.getElementById('modeCanvas')?.checked) debounceRender();
 }
 function setZoomFromSlider() {
     const slider = el('zoomSlider');
@@ -4195,9 +4441,202 @@ function debounce(func, delay) {
     };
 }
 const debounceRender = debounce(renderAlignment, 50);
+
+// ── Large-alignment pre-parse index & mode classification ──────────────────
+// Three viewing strategies (chunking implemented in later phases):
+//   tall  — many sequences  → vertical page chunks (PDF-like)
+//   long  — few seqs, wide   → horizontal column windows
+//   crazy — both dimensions  → warn before parse; user can cancel
+const ALIGN_TALL_SEQ_THRESHOLD = 500;
+const ALIGN_LONG_COL_THRESHOLD = 3000;
+const ALIGN_CRAZY_VOLUME = 5_000_000;
+
+/** Single-pass FASTA scan: counts sequences and lengths without building seq objects. */
+function scanFastaIndex(text) {
+    let nSeqs = 0, maxLen = 0, totalResidues = 0, curLen = 0;
+    let i = 0;
+    const len = text.length;
+    while (i < len) {
+        const lineStart = i;
+        while (i < len && text[i] !== '\n' && text[i] !== '\r') i++;
+        const line = text.slice(lineStart, i).trim();
+        while (i < len && (text[i] === '\n' || text[i] === '\r')) i++;
+        if (!line) continue;
+        if (line[0] === '>') {
+            if (curLen > 0) {
+                maxLen = Math.max(maxLen, curLen);
+                totalResidues += curLen;
+                curLen = 0;
+            }
+            nSeqs++;
+        } else {
+            for (let j = 0; j < line.length; j++) {
+                const c = line[j];
+                if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c === '-' || c === '.' || c === '*') curLen++;
+            }
+        }
+    }
+    if (curLen > 0) {
+        maxLen = Math.max(maxLen, curLen);
+        totalResidues += curLen;
+    }
+    return { nSeqs, maxLen, totalResidues };
+}
+
+/** MSF header scan: sequence count from Name: lines, width from Len: in header. */
+function scanMsfIndex(text) {
+    let nSeqs = 0, maxLen = 0;
+    let i = 0;
+    const len = text.length;
+    while (i < len) {
+        const lineStart = i;
+        while (i < len && text[i] !== '\n' && text[i] !== '\r') i++;
+        const line = text.slice(lineStart, i).trim();
+        while (i < len && (text[i] === '\n' || text[i] === '\r')) i++;
+        if (!line) continue;
+        if (line.startsWith('Name:')) nSeqs++;
+        const m = line.match(/Len:\s*(\d+)/i);
+        if (m) maxLen = Math.max(maxLen, parseInt(m[1], 10));
+    }
+    return { nSeqs, maxLen, totalResidues: nSeqs * maxLen };
+}
+
+/**
+ * Cheap pre-parse index for FASTA/MSF. Returns null for formats we cannot
+ * scan without a full parse (SAM, GenBank, etc.).
+ */
+function scanAlignmentText(text) {
+    const t = text.trim();
+    if (!t) return null;
+    const isMsf = (t.includes('MSF:') && t.includes('Check:'))
+        || t.includes('!!AA_MULTIPLE_ALIGNMENT')
+        || t.includes('!!NA_MULTIPLE_ALIGNMENT');
+    if (isMsf) return scanMsfIndex(text);
+    if (t[0] === '>' || /^[A-Za-z*.\-]+$/m.test(t.split(/\r?\n/)[0] || '')) {
+        return scanFastaIndex(text);
+    }
+    return null;
+}
+
+/**
+ * Classify alignment dimensions into viewing mode.
+ * @returns {{ mode: 'normal'|'tall'|'long'|'crazy', isTall: boolean, isLong: boolean, isCrazy: boolean }}
+ */
+function classifyAlignmentSize(stats) {
+    const isTall = stats.nSeqs > ALIGN_TALL_SEQ_THRESHOLD;
+    const isLong = stats.maxLen > ALIGN_LONG_COL_THRESHOLD;
+    const isCrazy = (isTall && isLong) || stats.totalResidues > ALIGN_CRAZY_VOLUME;
+    let mode = 'normal';
+    if (isCrazy) mode = 'crazy';
+    else if (isTall) mode = 'tall';
+    else if (isLong) mode = 'long';
+    return { mode, isTall, isLong, isCrazy };
+}
+
+function _formatResidueCount(n) {
+    return (n >= 1_000_000)
+        ? (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M'
+        : n.toLocaleString();
+}
+
+/**
+ * Modal shown for "crazy" alignments before any heavy parse work.
+ * @returns {Promise<'cancel'|'proceed'>}
+ */
+function showLargeAlignmentDialog(stats, classification) {
+    return new Promise((resolve) => {
+        const backdrop = document.createElement('div');
+        backdrop.className = 'blast-modal-backdrop align-load-dialog';
+        const dialog = document.createElement('div');
+        dialog.className = 'blast-dialog';
+        dialog.style.maxWidth = '460px';
+
+        const title = document.createElement('div');
+        title.className = 'blast-dialog-title';
+        title.textContent = 'Large alignment';
+
+        const content = document.createElement('div');
+        content.className = 'blast-dialog-content';
+        content.style.fontSize = '12px';
+        content.style.lineHeight = '1.55';
+
+        const reasons = [];
+        if (classification.isTall && classification.isLong) {
+            reasons.push('both sequence count and alignment width are very large');
+        }
+        if (stats.totalResidues > ALIGN_CRAZY_VOLUME) {
+            reasons.push(`total size exceeds ${_formatResidueCount(ALIGN_CRAZY_VOLUME)} residues`);
+        }
+        const reasonText = reasons.length ? reasons.join(' and ') : 'this alignment is very large';
+
+        content.innerHTML = `
+            <p style="margin:0 0 10px;">
+                <strong>${stats.nSeqs.toLocaleString()}</strong> sequences &times;
+                <strong>${stats.maxLen.toLocaleString()}</strong> columns
+                (<strong>${_formatResidueCount(stats.totalResidues)}</strong> residues)
+            </p>
+            <p style="margin:0 0 12px;color:#555;">
+                Loading may be slow or briefly freeze the browser because ${reasonText}.
+                Canvas mode is recommended for viewing; switch to Block/Full only for editing.
+            </p>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <button type="button" id="alignLoadCancel" style="padding:6px 14px;font-size:12px;cursor:pointer;">Cancel</button>
+                <button type="button" id="alignLoadProceed" style="padding:6px 14px;font-size:12px;cursor:pointer;background:#1a73e8;color:#fff;border:1px solid #1557b0;border-radius:3px;">Load anyway</button>
+            </div>
+        `;
+
+        dialog.appendChild(title);
+        dialog.appendChild(content);
+        backdrop.appendChild(dialog);
+        document.body.appendChild(backdrop);
+
+        const finish = (choice) => {
+            backdrop.remove();
+            document.removeEventListener('keydown', onKey);
+            resolve(choice);
+        };
+        const onKey = (e) => {
+            if (e.key === 'Escape') finish('cancel');
+        };
+        document.addEventListener('keydown', onKey);
+        content.querySelector('#alignLoadCancel').addEventListener('click', () => finish('cancel'));
+        content.querySelector('#alignLoadProceed').addEventListener('click', () => finish('proceed'));
+        backdrop.addEventListener('click', (e) => {
+            if (e.target === backdrop) finish('cancel');
+        });
+    });
+}
+
+/** Run pre-parse scan; for crazy alignments prompt before parse. Returns false if cancelled. */
+async function runAlignmentPreflight(inputText) {
+    const stats = scanAlignmentText(inputText);
+    if (!stats || stats.nSeqs < 1) {
+        state.alignmentIndex = null;
+        return true;
+    }
+    const classification = classifyAlignmentSize(stats);
+    state.alignmentIndex = { ...stats, ...classification };
+
+    if (classification.mode === 'crazy') {
+        const choice = await showLargeAlignmentDialog(stats, classification);
+        if (choice === 'cancel') return false;
+    } else if (classification.mode === 'tall') {
+        showMessage(
+            `Large alignment (${stats.nSeqs.toLocaleString()} sequences) — vertical paging when enabled.`,
+            3500
+        );
+    } else if (classification.mode === 'long') {
+        showMessage(
+            `Long alignment (${stats.maxLen.toLocaleString()} columns) — horizontal chunking when enabled.`,
+            3500
+        );
+    }
+    return true;
+}
+
 // CORE FUNCTIONS
-function parseAndRender(isFromDrop = false) {
-    showMessage("Parsing file...", 0);
+async function parseAndRender(isFromDrop = false) {
+    showMessage("Scanning alignment...", 0);
     _proteinSchemeRemapWarned = false;
     const inputText = fastaInput.value.trim();
     if (!inputText) {
@@ -4205,6 +4644,15 @@ function parseAndRender(isFromDrop = false) {
         statusMessage.style.display = 'none';
         return;
     }
+
+    const proceed = await runAlignmentPreflight(inputText);
+    if (!proceed) {
+        statusMessage.style.display = 'none';
+        showMessage('Load cancelled.', 2500);
+        return;
+    }
+
+    showMessage("Parsing file...", 0);
     try {
         let parsed;
     // PRIORITIZE CONTENT-BASED DETECTION.
@@ -4261,6 +4709,7 @@ function parseAndRender(isFromDrop = false) {
             state.currentFilePath = '';
         }
         state.seqs = parsed;
+        _userDismissedAutoCanvas = false; // fresh file: allow the Canvas suggestion again if it's large
         state.selectedRows.clear();
         state.selectedColumns.clear();
         state.selectedNucs.clear();
@@ -4318,7 +4767,46 @@ function parseAndRender(isFromDrop = false) {
         el('sourceInfo').innerHTML = 'No file loaded';
     }
 }
+// Mirrors the canonical mode radios' checked state onto the always-visible
+// top-bar quick switcher. Called after any change to the real radios,
+// including ones the quick switcher itself didn't trigger (Display dropdown,
+// the auto-switch-to-Canvas heuristic, snapshot/session restore, etc).
+function syncQuickModeSwitch() {
+    const map = { modeSingle: 'qmSingle', modeBlocks: 'qmBlocks', modeCanvas: 'qmCanvas', modeReads: 'qmReads' };
+    for (const [canonicalId, quickId] of Object.entries(map)) {
+        const canonical = document.getElementById(canonicalId);
+        const quick = document.getElementById(quickId);
+        if (canonical && quick) quick.checked = canonical.checked;
+    }
+
+    // Only surface this switcher once you've actually left Full/Block (i.e. as
+    // a way back from a "special" mode) - it stays out of the way otherwise.
+    const isReadsMode = document.getElementById('modeReads')?.checked;
+    const isCanvasMode = document.getElementById('modeCanvas')?.checked;
+    const switchEl = document.getElementById('quickModeSwitch');
+    if (switchEl) switchEl.style.display = (isCanvasMode || isReadsMode) ? '' : 'none';
+
+    // Reads is only a real option once a reads (BAM/SAM) file has actually
+    // been loaded - it's not a mode you'd otherwise want to switch into blind.
+    const readsLabel = document.getElementById('qmReadsLabel');
+    if (readsLabel) readsLabel.style.display = (bamState?.reads?.length > 0 || isReadsMode) ? '' : 'none';
+}
+
 function onModeChange() {
+    // This only fires from a real user click on a mode radio (the auto-switch
+    // heuristic in renderAlignment sets .checked programmatically, which does
+    // not dispatch 'change'), so this is an unambiguous signal to stop
+    // auto-switching back to Canvas for the rest of this file's session.
+    _userDismissedAutoCanvas = true;
+    if (document.getElementById('modeCanvas')?.checked) {
+        // Entering Canvas mode: these caches are keyed only by length/shadeMode,
+        // so any same-length edit made while away from Canvas (residue edits,
+        // gap ops, sorts, realigns, etc.) would otherwise go undetected and
+        // Canvas would silently keep showing stale shading/consensus.
+        state.conservationDataCache = null;
+        state.consensusCache = null;
+    }
+    syncQuickModeSwitch();
     // Keep block size row visible but gray it out when not in Block mode - prevents layout jump
     const container = el('blockSizeContainer');
     const isBlocks = el('modeBlocks')?.checked;
@@ -4371,9 +4859,16 @@ function setBlockSizeToScreen() {
     // Update slider and input
     const slider = el('blockSizeSlider');
     const input = el('blockSizeInput');
+    const prev = parseInt(slider?.value || '200', 10);
     if (slider) slider.value = chars;
     if (input) input.value = chars;
-    renderAlignment();
+    // Block size only affects Block mode. Canvas/Full/Compact don't reflow to it,
+    // so avoid a redundant second full render on load for those modes. In Block
+    // mode, re-render only when the computed size actually changed.
+    const inBlockMode = !!el('modeBlocks')?.checked;
+    if (inBlockMode && chars !== prev) {
+        renderAlignment();
+    }
 }
 function onShadeModeChange() {
     validateThresholds();
@@ -7030,7 +7525,8 @@ function clusterSequences() {
         qualityLarge: clusterParams.qualityLarge,
         sizeSmallMedium: clusterParams.sizeSmallMedium,
         sizeMediumLarge: clusterParams.sizeMediumLarge,
-        minOccurrences: clusterParams.minOccurrences
+        minOccurrences: clusterParams.minOccurrences,
+        onProgress: (msg) => updateClusteringStatus(msg)
     });
 
     // Store results in state
@@ -7850,18 +8346,68 @@ function _treeIsBase(char) {
     return /^[ACGTU]$/i.test(char || '');
 }
 
-function _alignmentPairDistance(seqOne, seqTwo) {
+// Pairwise distance metrics for phylogenetic trees
+// Returns { pDistance, transitions, transversions, compared } for model corrections
+function _alignmentPairMetrics(seqOne, seqTwo) {
+    // Purine = A,G; Pyrimidine = C,T
+    const isPurine = c => c === 'A' || c === 'G';
+    const isPyrimidine = c => c === 'C' || c === 'T';
     const maxLen = Math.max(seqOne.length, seqTwo.length);
-    let compared = 0;
-    let mismatches = 0;
+    let compared = 0, mismatches = 0, transitions = 0, transversions = 0;
     for (let position = 0; position < maxLen; position++) {
-        const baseOne = (seqOne[position] || '-').toUpperCase().replace('U', 'T');
-        const baseTwo = (seqTwo[position] || '-').toUpperCase().replace('U', 'T');
-        if (!_treeIsBase(baseOne) || !_treeIsBase(baseTwo)) continue;
+        const b1 = (seqOne[position] || '-').toUpperCase().replace('U', 'T');
+        const b2 = (seqTwo[position] || '-').toUpperCase().replace('U', 'T');
+        if (!_treeIsBase(b1) || !_treeIsBase(b2)) continue;
         compared++;
-        if (baseOne !== baseTwo) mismatches++;
+        if (b1 !== b2) {
+            mismatches++;
+            if ((isPurine(b1) && isPurine(b2)) || (isPyrimidine(b1) && isPyrimidine(b2))) {
+                transitions++;
+            } else {
+                transversions++;
+            }
+        }
     }
-    return compared > 0 ? mismatches / compared : 1;
+    const p = compared > 0 ? mismatches / compared : 0;
+    return { p, compared, mismatches, transitions, transversions };
+}
+
+// Jukes-Cantor (JC69) correction for multiple hits
+// d = -3/4 * ln(1 - 4/3 * p)
+function _jc69Distance(p) {
+    if (p >= 0.75) return Infinity; // saturation
+    if (p <= 0) return 0;
+    return -0.75 * Math.log(1 - (4 / 3) * p);
+}
+
+// Kimura 2-parameter (K80) correction
+// P = transitions/compared, Q = transversions/compared
+// d = -0.5 * ln(1 - 2P - Q) - 0.25 * ln(1 - 2Q)
+function _k80Distance(P, Q) {
+    if (P < 0) P = 0; if (Q < 0) Q = 0;
+    const t1 = 1 - 2 * P - Q;
+    const t2 = 1 - 2 * Q;
+    if (t1 <= 0 || t2 <= 0) return Infinity; // saturation
+    return -0.5 * Math.log(t1) - 0.25 * Math.log(t2);
+}
+
+// Compute pairwise distance using the selected model
+function _modelPairDistance(seqOne, seqTwo, model) {
+    const m = _alignmentPairMetrics(seqOne, seqTwo);
+    if (m.compared === 0) return 1;
+    switch (model) {
+        case 'jc69': return _jc69Distance(m.p);
+        case 'k80':
+            const P = m.transitions / m.compared;
+            const Q = m.transversions / m.compared;
+            return _k80Distance(P, Q);
+        default: return m.p; // 'raw': uncorrected p-distance
+    }
+}
+
+// Backward-compat wrapper
+function _alignmentPairDistance(seqOne, seqTwo) {
+    return _alignmentPairMetrics(seqOne, seqTwo).p;
 }
 
 function _newickName(name) {
@@ -7894,7 +8440,8 @@ function _treeNodeToText(node, indent = '', isRoot = true) {
     return text;
 }
 
-function buildUPGMATreeFromAlignment(seqObjects) {
+function buildUPGMATreeFromAlignment(seqObjects, model) {
+    model = model || 'raw';
     const sequenceCount = seqObjects.length;
     const baseDistances = Array.from({ length: sequenceCount }, () => new Array(sequenceCount).fill(0));
     let distanceTotal = 0;
@@ -7904,7 +8451,7 @@ function buildUPGMATreeFromAlignment(seqObjects) {
 
     for (let firstIndex = 0; firstIndex < sequenceCount; firstIndex++) {
         for (let secondIndex = firstIndex + 1; secondIndex < sequenceCount; secondIndex++) {
-            const distance = _alignmentPairDistance(seqObjects[firstIndex].seq, seqObjects[secondIndex].seq);
+            const distance = _modelPairDistance(seqObjects[firstIndex].seq, seqObjects[secondIndex].seq, model);
             baseDistances[firstIndex][secondIndex] = distance;
             baseDistances[secondIndex][firstIndex] = distance;
             distanceTotal += distance;
@@ -7995,14 +8542,15 @@ function buildUPGMATreeFromAlignment(seqObjects) {
  * Neighbor-Joining tree from pairwise alignment distances.
  * Saitou & Nei (1987). Same distance matrix as UPGMA, different clustering.
  */
-function buildNJTreeFromAlignment(seqObjects) {
+function buildNJTreeFromAlignment(seqObjects, model) {
+    model = model || 'raw';
     const n = seqObjects.length;
     // Compute pairwise distances
     const baseDist = Array.from({ length: n }, () => new Array(n).fill(0));
     let distanceTotal = 0, distancePairs = 0, distanceMin = Infinity, distanceMax = 0;
     for (let i = 0; i < n; i++) {
         for (let j = i + 1; j < n; j++) {
-            const d = _alignmentPairDistance(seqObjects[i].seq, seqObjects[j].seq);
+            const d = _modelPairDistance(seqObjects[i].seq, seqObjects[j].seq, model);
             baseDist[i][j] = d;
             baseDist[j][i] = d;
             distanceTotal += d;
@@ -8145,19 +8693,22 @@ function openTreeBuilder() {
         return;
     }
     const method = document.querySelector('input[name="treeMethod"]:checked')?.value || 'upgma';
-    showMessage(`Building ${method.toUpperCase()} tree...`, 0);
+    const modelEl = document.getElementById('treeDistanceModel');
+    const model = modelEl ? modelEl.value : 'raw';
+    const modelName = model === 'raw' ? 'p-distance' : model.toUpperCase();
+    showMessage(`Building ${method.toUpperCase()} tree (${modelName})...`, 0);
     setTimeout(() => {
         try {
             const result = method === 'nj'
-                ? buildNJTreeFromAlignment(seqObjects)
-                : buildUPGMATreeFromAlignment(seqObjects);
+                ? buildNJTreeFromAlignment(seqObjects, model)
+                : buildUPGMATreeFromAlignment(seqObjects, model);
             const modal = document.getElementById('treeBuilderModal');
             const summary = document.getElementById('treeBuilderSummary');
             const newickOutput = document.getElementById('treeNewickOutput');
             const textOutput = document.getElementById('treeTextOutput');
             const scope = state.selectedRows.size >= 2 ? 'selected sequences' : 'all sequences';
             if (summary) {
-                summary.textContent = `${result.stats.count} ${scope} Ã‚Â· alignment p-distance Ã‚Â· ${method.toUpperCase()} Ã‚Â· avg ${result.stats.averageDistance.toFixed(4)} Ã‚Â· range ${result.stats.minDistance.toFixed(4)}-${result.stats.maxDistance.toFixed(4)}`;
+                summary.textContent = `${result.stats.count} ${scope} Ã‚Â· ${modelName} Ã‚Â· ${method.toUpperCase()} Ã‚Â· avg ${result.stats.averageDistance.toFixed(4)} Ã‚Â· range ${result.stats.minDistance.toFixed(4)}-${result.stats.maxDistance.toFixed(4)}`;
             }
             if (newickOutput) newickOutput.value = result.newick;
             if (textOutput) textOutput.textContent = result.text;
@@ -10643,6 +11194,21 @@ function attachUIListeners() {
         });
     });
 
+    // Always-visible top-bar mode switcher (mirrors the canonical mode radios
+    // buried in the Display dropdown): clicking it drives the real radio +
+    // onModeChange; syncQuickModeSwitch() keeps it reflecting the real state
+    // whenever that changes from elsewhere (Display dropdown, auto-switch, etc).
+    document.querySelectorAll('#quickModeSwitch input[type="radio"]').forEach(radio => {
+        radio.addEventListener('change', () => {
+            const target = document.getElementById(radio.dataset.target);
+            if (target && !target.checked) {
+                target.checked = true;
+                onModeChange();
+            }
+        });
+    });
+    syncQuickModeSwitch();
+
     // Set up checkbox listeners
     const checkboxes = ['enableBlack', 'enableDark', 'enableLight', 'showConsensus',
                         'compactDiffOnly', 'compactPairs', 'highlightDiffs', 'varSitesOnly', 'codonAnalysis'];
@@ -11811,30 +12377,40 @@ function getCanonicalPrefix(name, maxChars = 10) {
     return match ? match[1] : n;
 }
 
-function levenshteinDistance(a, b) {
-    if (a === b) return 0;
-    if (!a.length) return b.length;
-    if (!b.length) return a.length;
-    const dp = new Array(b.length + 1);
-    for (let j = 0; j <= b.length; j++) dp[j] = j;
-    for (let i = 1; i <= a.length; i++) {
-        let prev = dp[0];
-        dp[0] = i;
-        for (let j = 1; j <= b.length; j++) {
-            const tmp = dp[j];
-            const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-            dp[j] = Math.min(
-                dp[j] + 1,
-                dp[j - 1] + 1,
-                prev + cost
-            );
-            prev = tmp;
+// Position-weighted n-gram Jaccard similarity for sequence name clustering.
+// Bigram + trigram with position boost (first 3 chars x2) handles
+// organism prefixes, element names, and subfamily suffixes robustly.
+function ngramJaccardSimilarity(a, b) {
+    if (a === b) return 1;
+    // Build weighted n-gram multiset for string s
+    const buildNgrams = (s) => {
+        const ngrams = new Map();
+        const add = (ng, w) => ngrams.set(ng, (ngrams.get(ng) || 0) + w);
+        // Bigrams (weight 1)
+        for (let i = 0; i < s.length - 1; i++) add(s.substring(i, i + 2), 1);
+        // Trigrams (weight 1.5 - more discriminative)
+        for (let i = 0; i < s.length - 2; i++) add(s.substring(i, i + 3), 1.5);
+        // Position boost: ngrams covering first 3 chars x2 (organism prefix)
+        for (const [ng, w] of ngrams) {
+            const idx = s.indexOf(ng);
+            if (idx >= 0 && idx <= 2) ngrams.set(ng, w * 2);
         }
+        return ngrams;
+    };
+    const na = buildNgrams(a), nb = buildNgrams(b);
+    let shared = 0, total = 0;
+    const all = new Set([...na.keys(), ...nb.keys()]);
+    for (const ng of all) {
+        const wa = na.get(ng) || 0, wb = nb.get(ng) || 0;
+        shared += Math.min(wa, wb);
+        total += Math.max(wa, wb);
     }
-    return dp[b.length];
+    return total > 0 ? shared / total : 0;
 }
 
-// Cluster sequences by normalized prefix
+// Cluster sequences by normalized prefix using position-weighted n-gram Jaccard.
+// Hard guarantee: identical normalized keys always share the same bucket.
+// Sensitivity 0 = strict (merge only >= 90% similar), 10 = loose (merge >= 40% similar).
 function clusterByName(seqNames, maxChars = 10, threshold = 3) {
     const nChars = Math.max(1, parseInt(maxChars, 10) || 10);
     const sensitivity = Math.max(0, Math.min(10, parseInt(threshold, 10) || 0));
@@ -11849,23 +12425,23 @@ function clusterByName(seqNames, maxChars = 10, threshold = 3) {
 
     const uniqueKeys = Array.from(keyToNames.keys()).sort((a, b) => a.localeCompare(b));
 
-    // 2) Sensitivity controls optional merge between near keys (never splitting identical keys).
-    //    threshold 0 = permissive (up to half of selected length), threshold 10 = strict (no merge).
-    const mergeCap = Math.floor(((10 - sensitivity) / 10) * Math.max(1, nChars) * 0.5);
+    // 2) Sensitivity controls optional merge between near keys.
+    //    sensitivity 0 = strict (0.90 similarity), sensitivity 10 = loose (0.40 similarity).
+    const minSim = 0.90 - (sensitivity / 10) * 0.50; // range: 0.90 -> 0.40
 
     const clusters = []; // [{ repKey, keys: [] }]
     for (const key of uniqueKeys) {
-        if (mergeCap <= 0) {
+        if (sensitivity >= 10 || minSim >= 1.0) {
             clusters.push({ repKey: key, keys: [key] });
             continue;
         }
 
         let bestCluster = -1;
-        let bestDist = Number.POSITIVE_INFINITY;
+        let bestSim = -1;
         for (let i = 0; i < clusters.length; i++) {
-            const dist = levenshteinDistance(key, clusters[i].repKey);
-            if (dist <= mergeCap && dist < bestDist) {
-                bestDist = dist;
+            const sim = ngramJaccardSimilarity(key, clusters[i].repKey);
+            if (sim >= minSim && sim > bestSim) {
+                bestSim = sim;
                 bestCluster = i;
             }
         }
@@ -12210,10 +12786,14 @@ function initColourSeqs() {
     }
 
     // Update threshold display
+    const updateThresholdLabel = () => {
+        const sens = parseInt(thresholdSlider.value) || 3;
+        const pct = Math.round((0.90 - (sens / 10) * 0.50) * 100);
+        el('colourThresholdValue').textContent = pct + '%';
+    };
     if (thresholdSlider) {
-        thresholdSlider.addEventListener('input', (e) => {
-            el('colourThresholdValue').textContent = e.target.value;
-        });
+        thresholdSlider.addEventListener('input', updateThresholdLabel);
+        updateThresholdLabel();
     }
 
     // Load initial presets list
@@ -12234,28 +12814,52 @@ function initColourSeqs() {
     if (!alignment || !bar || !thumb) return;
 
     let syncing = false;
+    // Canvas mode's content is a single absolutely-positioned <canvas> panned via
+    // _canvasState.offsetX (alignment.scrollLeft/scrollWidth are meaningless there),
+    // so this bar drives that offset directly instead of the DOM scroll position.
+    const isCanvasMode = () => document.getElementById('modeCanvas')?.checked;
 
     function syncSizes() {
-        const w = alignment.scrollWidth || alignment.clientWidth;
-        thumb.style.width = Math.max(w, alignment.clientWidth + 1) + 'px';
         syncing = true;
-        bar.scrollLeft = alignment.scrollLeft;
+        if (isCanvasMode()) {
+            const w = _canvasState.totalContentW || alignment.clientWidth;
+            thumb.style.width = Math.max(w, alignment.clientWidth + 1) + 'px';
+            bar.scrollLeft = _canvasState.offsetX || 0;
+        } else {
+            const w = alignment.scrollWidth || alignment.clientWidth;
+            thumb.style.width = Math.max(w, alignment.clientWidth + 1) + 'px';
+            bar.scrollLeft = alignment.scrollLeft;
+        }
         syncing = false;
     }
 
     function onBarScroll() {
         if (syncing) return;
         syncing = true;
-        alignment.scrollLeft = bar.scrollLeft;
+        if (isCanvasMode()) {
+            _canvasState.offsetX = bar.scrollLeft;
+            _canvasState.scheduleDraw?.();
+        } else {
+            alignment.scrollLeft = bar.scrollLeft;
+        }
         syncing = false;
     }
 
     function onAlignmentScroll() {
-        if (syncing) return;
+        if (syncing || isCanvasMode()) return;
         syncing = true;
         bar.scrollLeft = alignment.scrollLeft;
         syncing = false;
     }
+
+    // Registered once; Canvas's draw() calls this after every repaint so wheel-
+    // scroll/drag-pan inside the canvas keeps the bar's thumb position in sync.
+    _canvasState.onOffsetChange = () => {
+        if (syncing || !isCanvasMode()) return;
+        syncing = true;
+        bar.scrollLeft = _canvasState.offsetX || 0;
+        syncing = false;
+    };
 
     syncSizes();
     bar.addEventListener('scroll', onBarScroll, { passive: true });
@@ -12284,7 +12888,12 @@ function initColourSeqs() {
         dragRaf = window.requestAnimationFrame(() => {
             const newScroll = startScroll - lastDx;
             syncing = true;
-            alignment.scrollLeft = newScroll;
+            if (isCanvasMode()) {
+                _canvasState.offsetX = newScroll;
+                _canvasState.scheduleDraw?.();
+            } else {
+                alignment.scrollLeft = newScroll;
+            }
             bar.scrollLeft = newScroll;
             syncing = false;
             dragRaf = null;

@@ -36,12 +36,11 @@ class SINEClusterer {
 
         let upperBound = availableSeqs.length;
         
-        // Upper bound: cap cluster size to avoid degenerate "everything" clusters.
-        // A cluster larger than 15% of the dataset is not a subfamily — it is noise.
+        // Upper bound: cap cluster size at 50% of available sequences.
+        // Prevent degenerate "everything" clusters while allowing large legitimate subfamilies
+        // (e.g. a dominant Alu subfamily can be 30-40% of many SINE datasets).
         if (!options.relaxUpperBound) {
-            if (availableSeqs.length > 80)  upperBound = Math.floor(availableSeqs.length * 0.15);
-            else if (availableSeqs.length > 50) upperBound = Math.floor(availableSeqs.length * 0.20);
-            else if (availableSeqs.length > 30) upperBound = Math.floor(availableSeqs.length * 0.25);
+            upperBound = Math.floor(availableSeqs.length * 0.50);
         }
 
         const candidates = new Map();
@@ -151,31 +150,64 @@ class SINEClusterer {
         }
 
         // FIX: Prune outliers (The "Seq 270" Fix)
-        // If a sequence matches < 50% of the group's features, kick it out.
+        // Size-aware threshold: small groups (< 6 features) need >= 2 matches;
+        // larger groups need >= ceil(30% of features).
         if (best && best.occurrences.length > 2) {
             const originalSize = best.sequences.length;
             const robustSequences = [];
+            const minMatches = best.occurrences.length <= 5
+                ? 2
+                : Math.ceil(best.occurrences.length * 0.30);
             
             for (const seqIdx of best.sequences) {
                 let matchCount = 0;
                 for (const {pos, ch} of best.occurrences) {
                     if (this.matrix[seqIdx][pos] === ch) matchCount++;
                 }
-                
-                // Requirement: Must match at least 50% of the cluster's features
-                if (matchCount / best.occurrences.length >= 0.5) {
+                if (matchCount >= minMatches) {
                     robustSequences.push(seqIdx);
                 }
             }
 
-            // Update the group if we pruned anyone
             if (robustSequences.length < originalSize) {
-                console.log(`[PRUNE] Removed ${originalSize - robustSequences.length} outliers from candidate group (e.g. seq 270 case)`);
+                console.log(`[PRUNE] Removed ${originalSize - robustSequences.length} outliers (min ${minMatches}/${best.occurrences.length} matches)`);
                 best.sequences = robustSequences;
                 best.size = robustSequences.length;
                 
                 // Re-verify if the group is still valid after pruning
-                if (best.size < minSize) best = null; 
+                if (best.size < minSize) {
+                    best = null;
+                } else {
+                    // Re-validate features after prune: recalculate nPerfect and score
+                    const gsize = best.size;
+                    const thresh = gsize < options.sizeSmallMedium ? options.qualitySmall
+                        : gsize < options.sizeMediumLarge ? options.qualityMedium : options.qualityLarge;
+                    let good = 0, score = 0;
+                    const validFeats = [];
+                    for (const {pos, ch} of best.occurrences) {
+                        let inside = 0, outside = 0;
+                        for (const i of best.sequences) if (this.matrix[i][pos] === ch) inside++;
+                        for (let i = 0; i < this.nSeqs; i++) {
+                            if (!best.sequences.includes(i) && this.matrix[i][pos] === ch) outside++;
+                        }
+                        const inP = inside / gsize * 100;
+                        const outP = outside / (this.nSeqs - gsize) * 100 || 0;
+                        const qual = Math.max(0, inP - outP);
+                        if (outside === 0) {
+                            good++;
+                            score += inside === gsize ? 3 : inside >= gsize * 0.8 ? 2 : 1.5;
+                            validFeats.push({pos, ch});
+                        } else if (qual >= thresh) {
+                            good++;
+                            score += 1;
+                            validFeats.push({pos, ch});
+                        }
+                    }
+                    best.nPerfect = good;
+                    best.nOccurrences = validFeats.length;
+                    best.occurrences = validFeats;
+                    if (good < options.minPerfect) best = null;
+                }
             }
         }
 
@@ -212,6 +244,7 @@ class SINEClusterer {
 
         const clusters = [];
         let avail = Array.from({length:this.nSeqs},(_,i)=>i);
+        const onProgress = o.onProgress || (() => {});
 
         console.log('Starting SINE clustering — final stable version');
 
@@ -235,6 +268,8 @@ class SINEClusterer {
                 qualitySmall: curQS,
                 qualityMedium: curQM,
                 qualityLarge: curQL,
+                sizeSmallMedium: o.sizeSmallMedium,
+                sizeMediumLarge: o.sizeMediumLarge,
                 datasetSize: this.nSeqs,
                 assignedSeqs: assigned,
                 relaxUpperBound: false,
@@ -265,6 +300,7 @@ class SINEClusterer {
 
                 clusters.push(group);
                 avail = avail.filter(i => !group.sequences.includes(i));
+                onProgress(`Cluster ${clusters.length}: ${group.size} seqs, ${clusters.reduce((a,c)=>a+c.size,0)} assigned, ${avail.length} remaining`);
                 console.log(`Cluster ${clusters.length}: size=${group.size} perfect=${f.perfectFeatures.length} total=${group.nOccurrences}`);
             } else {
                 if (avail.length >= o.minSize) console.log(`Stopped — ${avail.length} left as noise`);
