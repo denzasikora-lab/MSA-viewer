@@ -23,6 +23,7 @@ snapshots/*.json
 
 # Test/temp files
 test.fasta
+nextclade.aligned.fasta
 todo
 snake_in_other_SINEs.fas
 
