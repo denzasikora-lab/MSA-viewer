@@ -1,5 +1,6 @@
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-// ViewAlign Ã¢â‚¬â€ browser-based multiple sequence alignment viewer & editor
+// ViewAlign — browser-based multiple sequence alignment viewer & editor
+const BUILD_TAG = 'v104';
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 //
 // EXTERNAL CODE & ATTRIBUTION
@@ -231,15 +232,15 @@ function _getDragIndicatorEl() {
 function updateVersionIndicator() {
     const elVersion = document.getElementById('versionIndicator');
     if (!elVersion) return;
-    elVersion.textContent = 'version ...';
+    elVersion.textContent = `version ${BUILD_TAG} …`;
     fetch('https://api.github.com/repos/Toki-bio/MSA-viewer/commits/main?per_page=1')
         .then(r => r.json())
         .then(data => {
             const sha = (data.sha || '').substring(0, 7);
             const url = data.html_url || 'https://github.com/Toki-bio/MSA-viewer';
-            elVersion.innerHTML = 'version <a href="' + url + '" target="_blank" style="color:#888;">' + sha + '</a>';
+            elVersion.innerHTML = `version ${BUILD_TAG} (<a href="${url}" target="_blank" style="color:#888;">${sha}</a>)`;
         })
-        .catch(() => { elVersion.textContent = 'version --'; });
+        .catch(() => { elVersion.textContent = `version ${BUILD_TAG}`; });
 }
 
 function updateControlsOffset() {
@@ -4795,6 +4796,20 @@ async function parseAndRender(isFromDrop = false) {
 // top-bar quick switcher. Called after any change to the real radios,
 // including ones the quick switcher itself didn't trigger (Display dropdown,
 // the auto-switch-to-Canvas heuristic, snapshot/session restore, etc).
+function ensureCanvasModeNotice() {
+    let notice = document.getElementById('canvasModeNotice');
+    const viewer = document.getElementById('viewer-container');
+    const align = document.getElementById('alignmentContainer');
+    if (!notice && viewer && align) {
+        notice = document.createElement('div');
+        notice.id = 'canvasModeNotice';
+        notice.className = 'canvas-mode-notice';
+        notice.innerHTML = 'Canvas mode is view-only — switch to <strong>Full</strong> or <strong>Block</strong> to edit sequences, select columns (Ctrl+Alt+click), or use other interactive tools.';
+        viewer.insertBefore(notice, align);
+    }
+    return notice;
+}
+
 function syncQuickModeSwitch() {
     const map = { modeSingle: 'qmSingle', modeBlocks: 'qmBlocks', modeCanvas: 'qmCanvas', modeReads: 'qmReads' };
     for (const [canonicalId, quickId] of Object.entries(map)) {
@@ -4815,8 +4830,11 @@ function syncQuickModeSwitch() {
     const readsLabel = document.getElementById('qmReadsLabel');
     if (readsLabel) readsLabel.style.display = (bamState?.reads?.length > 0 || isReadsMode) ? '' : 'none';
 
-    const canvasNotice = document.getElementById('canvasModeNotice');
-    if (canvasNotice) canvasNotice.hidden = !isCanvasMode;
+    const canvasNotice = ensureCanvasModeNotice();
+    if (canvasNotice) {
+        canvasNotice.hidden = !isCanvasMode;
+        canvasNotice.style.display = isCanvasMode ? '' : 'none';
+    }
 }
 
 function onModeChange() {
