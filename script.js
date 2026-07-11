@@ -1,6 +1,6 @@
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // ViewAlign — browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v105';
+const BUILD_TAG = 'v106';
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 //
 // EXTERNAL CODE & ATTRIBUTION
@@ -1889,21 +1889,20 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     const top = alignmentContainer.getBoundingClientRect().top;
     alignmentContainer.style.height = (window.innerHeight - top - 28) + 'px';
 
+    // Banner first (DOM order + z-index) so it is never covered by the canvas
+    const inlineNotice = document.createElement('div');
+    inlineNotice.className = 'canvas-mode-notice canvas-mode-notice-inline is-visible';
+    inlineNotice.textContent = 'View-only — switch to Full or Block to edit or select columns (Ctrl+Alt+click).';
+    alignmentContainer.appendChild(inlineNotice);
+    const inlineNoticeH = inlineNotice.offsetHeight || 28;
+
     const canvas = document.createElement('canvas');
     canvas.id = 'alignmentCanvas';
     canvas.style.display = 'block';
     canvas.style.position = 'absolute';
-    canvas.style.top = '0';
+    canvas.style.top = inlineNoticeH + 'px';
     canvas.style.left = '0';
     alignmentContainer.appendChild(canvas);
-
-    // Inline banner so Canvas limitations are visible even if cached HTML omitted the outer notice
-    const inlineNotice = document.createElement('div');
-    inlineNotice.className = 'canvas-mode-notice canvas-mode-notice-inline';
-    inlineNotice.textContent = 'View-only — switch to Full or Block to edit or select columns (Ctrl+Alt+click).';
-    alignmentContainer.appendChild(inlineNotice);
-    const inlineNoticeH = inlineNotice.offsetHeight || 28;
-    canvas.style.top = inlineNoticeH + 'px';
 
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
@@ -2114,7 +2113,12 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     // Touch/drag pan
     let dragging = false, dragStartX, dragStartY, dragOx, dragOy;
     canvas.addEventListener('mousedown', (e) => {
-        if (e.button === 0) { // left button only for pan
+        if (e.button === 0) {
+            if (isCtrlModifier(e) || isAltModifier(e)) {
+                showMessage('Selection and editing need Full or Block mode — use the mode switcher above the alignment.', 4500);
+                e.preventDefault();
+                return;
+            }
             dragging = true;
             dragStartX = e.clientX;
             dragStartY = e.clientY;
@@ -2136,11 +2140,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     });
 
     ensureCanvasModeNotice();
-    const extNotice = document.getElementById('canvasModeNotice');
-    if (extNotice) {
-        extNotice.hidden = false;
-        extNotice.style.display = 'block';
-    }
+    setCanvasNoticeVisible(true);
 
     scheduleDraw();
 }
@@ -4153,13 +4153,13 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
     // Using mousedown to precede potential drag initiation; stops propagation so global handler won't double toggle.
     nameSpan.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
-        if (e.ctrlKey || e.metaKey || state.ctrlPressed) {
+        if (isCtrlModifier(e)) {
             toggleRowSelection(index);
             e.preventDefault();
             e.stopPropagation();
             return;
         }
-        if (!e.shiftKey && !e.altKey) {
+        if (!e.shiftKey && !isAltModifier(e)) {
             _startRowReorderDrag(e, index);
             e.preventDefault();
             e.stopPropagation();
@@ -4847,11 +4847,7 @@ function syncQuickModeSwitch() {
     if (readsLabel) readsLabel.style.display = (bamState?.reads?.length > 0 || isReadsMode) ? '' : 'none';
 
     const canvasNotice = ensureCanvasModeNotice();
-    if (canvasNotice) {
-        canvasNotice.hidden = !isCanvasMode;
-        canvasNotice.style.display = isCanvasMode ? 'block' : 'none';
-        canvasNotice.setAttribute('aria-hidden', isCanvasMode ? 'false' : 'true');
-    }
+    setCanvasNoticeVisible(!!isCanvasMode);
 }
 
 function onModeChange() {
@@ -5036,11 +5032,28 @@ function onShadeModeChange() {
 
 // EVENT HANDLERS
 function isCtrlModifier(e) {
-    return !!(e.ctrlKey || e.metaKey || state.ctrlPressed);
+    if (typeof e.getModifierState === 'function') {
+        return e.getModifierState('Control') || e.getModifierState('Meta');
+    }
+    return !!(e.ctrlKey || e.metaKey);
 }
 
 function isAltModifier(e) {
-    return !!(e.altKey || state.altPressed);
+    if (typeof e.getModifierState === 'function') {
+        return e.getModifierState('Alt');
+    }
+    return !!e.altKey;
+}
+
+function setCanvasNoticeVisible(visible) {
+    const notice = ensureCanvasModeNotice();
+    if (!notice) return;
+    notice.classList.toggle('is-visible', visible);
+    if (visible) {
+        notice.removeAttribute('hidden');
+    } else {
+        notice.setAttribute('hidden', '');
+    }
 }
 
 function handleColumnSelectMouseDown(e) {
@@ -5423,6 +5436,11 @@ function handleKeyUp(e) {
         state.altPressed = false;
     }
 }
+
+window.addEventListener('blur', () => {
+    state.ctrlPressed = false;
+    state.altPressed = false;
+});
 // ACTION FUNCTIONS
 function reverseComplementSelected() {
     if (state.selectedRows.size === 0) {
@@ -11328,15 +11346,26 @@ function attachUIListeners() {
         });
     }
 
-    // Alignment container events
+    // Alignment container events (document capture: survives innerHTML clears and
+    // always sees reliable modifier state via getModifierState on the mouse event)
     const controls = el('controls');
+    if (!state._alignmentPointerBound) {
+        state._alignmentPointerBound = true;
+        document.addEventListener('mousedown', (e) => {
+            const container = document.getElementById('alignmentContainer');
+            if (!container || !container.contains(e.target)) return;
+            handleColumnSelectMouseDown(e);
+        }, true);
+        document.addEventListener('mousedown', (e) => {
+            const container = document.getElementById('alignmentContainer');
+            if (!container || !container.contains(e.target)) return;
+            handleGeneDocEditMouseDown(e);
+            if (!e.defaultPrevented) handleMouseDown(e);
+            handleAlignmentPanStart(e);
+        });
+        document.addEventListener('mousemove', handleMouseMove);
+    }
     if (alignmentContainer) {
-        alignmentContainer.addEventListener('mousedown', handleColumnSelectMouseDown, true);
-        alignmentContainer.addEventListener('mousedown', handleGeneDocEditMouseDown);
-        alignmentContainer.addEventListener('mousedown', handleMouseDown);
-        alignmentContainer.addEventListener('mousemove', handleMouseMove);
-        alignmentContainer.addEventListener('mousedown', handleAlignmentPanStart);
-
         // *** PERFORMANCE: Event delegation for nucleotide tooltips ***
         alignmentContainer.addEventListener('mouseover', (e) => {
             const span = e.target.closest('.seq-data > span[data-pos]');

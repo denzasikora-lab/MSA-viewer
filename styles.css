@@ -1581,16 +1581,22 @@ span.column-selected {
 }
 
 .canvas-mode-notice {
-    padding: 5px 10px;
-    font-size: 11px;
+    display: none;
+    padding: 6px 12px;
+    font-size: 12px;
     line-height: 1.35;
     color: #5c4a00;
     background: #fff8e1;
-    border-bottom: 1px solid #ffe082;
+    border-bottom: 2px solid #ff9800;
     flex: 0 0 auto;
     position: sticky;
     top: 0;
     z-index: 500;
+    font-weight: 600;
+}
+
+.canvas-mode-notice.is-visible {
+    display: block;
 }
 
 .canvas-mode-notice-inline {
@@ -1599,6 +1605,7 @@ span.column-selected {
     left: 0;
     right: 0;
     z-index: 20;
+    display: block;
     pointer-events: none;
 }
 
