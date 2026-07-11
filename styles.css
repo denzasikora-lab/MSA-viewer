@@ -194,9 +194,14 @@ html {
 }
 
 /* Actions section: align dropdown to the right so it stays on-screen */
-#actions-section .control-group {
+#actions-section .control-group,
+.menu-section.menu-align-right .control-group {
     left: auto;
     right: 0;
+    border-radius: 4px 0 4px 4px;
+}
+
+#actions-section .control-group {
     min-width: 300px;
     max-width: min(380px, calc(100vw - 12px));
     padding: 0;
@@ -1602,11 +1607,18 @@ span.column-selected {
     align-items: center;
 }
 
+#shortcuts-section .control-group {
+    min-width: 260px;
+    max-width: min(340px, calc(100vw - 12px));
+    padding: 6px;
+}
+
 /* Top-bar codon analysis controls (visible when Codon analysis is enabled) */
 .codon-mode-panel {
-    display: none;
+    display: none !important;
     align-self: center;
     flex: 0 0 auto;
+    flex-shrink: 0;
     align-items: center;
     gap: 4px;
     height: 18px;
@@ -1615,9 +1627,13 @@ span.column-selected {
     border-radius: 4px;
     background: #e8f5e9;
     white-space: nowrap;
+    overflow: hidden;
 }
 .codon-mode-panel.is-visible {
-    display: inline-flex;
+    display: inline-flex !important;
+}
+.codon-mode-panel[hidden] {
+    display: none !important;
 }
 .codon-panel-label {
     font-size: 10px;

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=108">
+    <link rel="stylesheet" href="styles.css?v=116">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -563,7 +563,7 @@
 
             <span id="canvasModeNotice" class="canvas-mode-chip" title="Canvas mode is view-only. Switch to Full or Block to edit sequences or select columns (Ctrl+Alt+click).">Canvas | view-only</span>
 
-            <div class="codon-mode-panel" id="codonModePanel" title="Reading frame: which alignment column starts the first codon (Pos 1 = column 1)">
+            <div class="codon-mode-panel" id="codonModePanel" hidden title="Reading frame: which alignment column starts the first codon (Pos 1 = column 1)">
                 <span class="codon-panel-label">Codon</span>
                 <div class="codon-frame-switch" id="codonFrameSwitch">
                     <input type="radio" name="codonFrameQuick" id="cfPos1" value="0"><label for="cfPos1" title="Read codons starting at alignment column 1">Pos 1</label>
@@ -575,7 +575,7 @@
                 <button type="button" class="codon-panel-btn" onclick="downloadAATranslation()" title="Download amino acid translation(s) as FASTA">Save AA</button>
             </div>
 
-            <div class="menu-section" id="shortcuts-section">
+            <div class="menu-section menu-align-right" id="shortcuts-section">
                 <div class="section-header" data-section="shortcuts">
                     <span title="Keyboard shortcuts (hover to view)">Keys</span>
                     <span class="toggle-icon">v</span>
@@ -655,7 +655,7 @@
                             <div class="button-group">
                                 <button id="buildTreeButton" title="Build a phylogenetic tree from selected sequences">Tree</button>
                                 <button id="statsButton" title="Alignment statistics: distance matrix, pairwise identity, summary">Statistics</button>
-                                <button id="repeatFinderMenuButton" title="Find tandem, direct, and inverted repeats in sequences">Repeats</button>
+                                <button id="repeatFinderMenuButton" title="Find tandem/direct/inverted repeats or SINE target-site duplications (TSD)">Repeats</button>
                             </div>
                         </div>
                         <div class="action-section action-section-settings">
@@ -935,8 +935,9 @@ B: -</pre>
                     <label title="Adjacent repeated units (e.g., ATGATGATG)"><input type="radio" name="repeatMode" value="tandem" checked> Tandem repeats</label>
                     <label title="Two copies of same sequence in same orientation, anywhere in the sequence"><input type="radio" name="repeatMode" value="direct"> Direct repeats</label>
                     <label title="Two copies in opposite orientation (reverse-complement)"><input type="radio" name="repeatMode" value="inverted"> Inverted repeats</label>
+                    <label title="Target site duplications flanking a SINE/TE element in aligned sequences"><input type="radio" name="repeatMode" value="tsd"> TSD (SINE)</label>
                 </div>
-                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
+                <div id="repeatScopeRow" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
                     <strong title="Which sequences to search for repeats">Scope:</strong>
                     <label title="Search a single sequence"><input type="radio" name="repeatScope" value="single" checked> Single</label>
                     <label title="Search all loaded sequences"><input type="radio" name="repeatScope" value="all"> All</label>
@@ -949,8 +950,52 @@ B: -</pre>
                     <label title="Minimum repeat unit length in base pairs">Min length: <input type="number" id="repeatMinLen" value="10" min="3" max="50" style="width:45px;" title="Shorter repeats are ignored"></label>
                     <label title="Maximum allowed divergence between repeat copies (0=identical, 50=half mismatched)">Max divergence: <input type="number" id="repeatMaxDiv" value="15" min="0" max="50" style="width:45px;" title="Higher values allow more mismatches">%</label>
                 </div>
+                <div id="repeatParamsTsd" style="display:none;font-size:11px;margin-bottom:6px;border:1px solid #c8e6c9;background:#f1f8e9;border-radius:4px;padding:6px;">
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
+                        <strong title="How to locate the conserved SINE body between host flanks">SINE boundary:</strong>
+                        <label title="Detect conserved SINE block from column conservation across alignment"><input type="radio" name="tsdMode" value="auto" checked> Auto</label>
+                        <label title="Use first sequence non-gap span as SINE body"><input type="radio" name="tsdMode" value="topseq"> Top seq</label>
+                        <label title="Specify pre-SINE and post-SINE column ranges manually"><input type="radio" name="tsdMode" value="manual"> Manual</label>
+                    </div>
+                    <div id="tsdManualRegions" style="display:none;margin-bottom:4px;">
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:3px;">
+                            <span title="Host sequence upstream of SINE where the 5-prime TSD copy is searched">Pre-SINE cols:</span>
+                            <input type="number" id="tsdUpStart" value="1" min="1" style="width:52px;" title="First column of pre-SINE region (1-based)">
+                            <span>-</span>
+                            <input type="number" id="tsdUpEnd" value="30" min="1" style="width:52px;" title="Last column of pre-SINE region (1-based)">
+                        </div>
+                        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:3px;">
+                            <span title="Host sequence downstream of SINE where the 3-prime TSD copy is searched">Post-SINE cols:</span>
+                            <input type="number" id="tsdDownStart" value="80" min="1" style="width:52px;" title="First column of post-SINE region (1-based)">
+                            <span>-</span>
+                            <input type="number" id="tsdDownEnd" value="110" min="1" style="width:52px;" title="Last column of post-SINE region (1-based)">
+                        </div>
+                        <button type="button" id="tsdFillFromSelectionBtn" style="font-size:10px;padding:1px 6px;" title="Use Ctrl+Alt-selected columns as SINE body; fill pre/post flank ranges">Use selected cols as SINE</button>
+                    </div>
+                    <div id="tsdAutoRegions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
+                        <label title="Columns to search on each flank of the auto-detected SINE body">Flank window: <input type="number" id="tsdFlankSize" value="30" min="5" max="200" style="width:45px;"> bp</label>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
+                        <label title="Minimum TSD length">Min TSD: <input type="number" id="tsdMinLen" value="4" min="2" max="30" style="width:40px;"> bp</label>
+                        <label title="Maximum TSD length">Max TSD: <input type="number" id="tsdMaxLen" value="20" min="2" max="50" style="width:40px;"> bp</label>
+                        <label title="Maximum mismatch fraction between upstream and downstream TSD copies">Max div: <input type="number" id="tsdMaxDiv" value="20" min="0" max="50" style="width:40px;">%</label>
+                    </div>
+                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
+                        <span>Mark TSD:</span>
+                        <select id="tsdMarkStyle" style="font-size:10px;height:20px;" title="How to highlight found TSDs in the alignment">
+                            <option value="color" selected>Color</option>
+                            <option value="bold">Bold</option>
+                            <option value="lowercase">Lowercase</option>
+                        </select>
+                        <input type="color" id="tsdMarkColor" value="#ffd54f" title="Highlight color" style="width:28px;height:20px;padding:0;border:1px solid #ccc;">
+                        <button type="button" id="tsdMarkBtn" style="font-size:10px;padding:2px 8px;" title="Highlight all found TSDs in the alignment">Mark</button>
+                        <button type="button" id="tsdUndoMarkBtn" style="font-size:10px;padding:2px 8px;" title="Undo TSD marking">Undo mark</button>
+                    </div>
+                </div>
+                <div id="repeatActionRow" style="margin-bottom:6px;">
                 <button id="repeatRunBtn" style="padding:4px 16px;font-size:13px;background:#4CAF50;color:white;border:none;border-radius:4px;cursor:pointer;" title="Search for repeats with current parameters">Run Analysis</button>
                 <button id="repeatClearHighlightsBtn" style="padding:4px 12px;font-size:12px;background:#f44336;color:white;border:none;border-radius:4px;cursor:pointer;margin-left:8px;" title="Remove all repeat highlights from the alignment">Clear Highlights</button>
+                </div>
             </div>
             <div id="repeatResults" style="max-height:50vh;overflow:auto;font-family:monospace;font-size:11px;white-space:pre-wrap;border:1px solid #ddd;padding:8px;background:#fafafa;min-height:60px;">
                 Click "Run Analysis" to start.
@@ -1003,7 +1048,7 @@ B: -</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=115"></script>
+    <script src="script.js?v=117"></script>
     <script src="tree-draw.js"></script>
     <script>
     // All functionality moved to script.js

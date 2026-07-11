@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v115';
+const BUILD_TAG = 'v117';
 // ASCII-safe UI symbols (avoid emoji / special Unicode in source files)
 const SYM = {
     sep: '|',
@@ -3397,6 +3397,7 @@ function renderAlignment(options = {}) {
     // etc.) without going through onModeChange, so the top-bar quick switcher
     // never drifts from whichever mode is actually about to render.
     syncQuickModeSwitch();
+    syncCodonModePanel();
     if (!state.seqs || state.seqs.length === 0) {
         alignmentContainer.innerHTML = '<div style="padding:20px; color:#666; font-style:italic;">No sequences loaded. Paste FASTA/MSF and click Load.</div>';
         syncCodonModePanel();
@@ -3470,7 +3471,8 @@ function renderAlignment(options = {}) {
     if (!userWantsCanvas && !_userDismissedAutoCanvas && TOTAL_RESIDUES > CANVAS_AUTO_THRESHOLD) {
         const canvasRadio = document.getElementById('modeCanvas');
         if (canvasRadio) canvasRadio.checked = true;
-        syncQuickModeSwitch(); // this bypasses onModeChange, so sync explicitly
+        syncQuickModeSwitch();
+        syncCodonModePanel(); // this bypasses onModeChange, so sync explicitly
         showMessage(
             `Auto-switched to Canvas mode for ${TOTAL_RESIDUES.toLocaleString()} residues. ` +
             `Switch back to Block/Full for editing.`,
@@ -4972,6 +4974,7 @@ function onModeChange() {
         state.consensusCache = null;
     }
     syncQuickModeSwitch();
+    syncCodonModePanel();
     // Keep block size row visible but gray it out when not in Block mode - prevents layout jump
     const container = el('blockSizeContainer');
     const isBlocks = el('modeBlocks')?.checked;
@@ -5162,9 +5165,12 @@ function syncCodonModePanel() {
     if (!panel) return;
     const codonOn = document.getElementById('codonAnalysis')?.checked;
     const hasData = !!(state._codonFrames && state._codonData);
+    const hasSeqs = !!(state.seqs && state.seqs.length > 0);
     const readsMode = document.getElementById('modeReads')?.checked;
-    const visible = codonOn && hasData && !readsMode;
+    const visible = codonOn && hasData && hasSeqs && !readsMode;
     panel.classList.toggle('is-visible', visible);
+    if (visible) panel.removeAttribute('hidden');
+    else panel.setAttribute('hidden', '');
     if (!visible) return;
 
     const frameSel = document.getElementById('codonFrame')?.value || 'auto';
@@ -10653,6 +10659,14 @@ function showContextMenu(e, index) {
             closeContextMenu();
         });
         contextMenu.appendChild(repeatItem);
+
+        const tsdItem = document.createElement('div');
+        tsdItem.textContent = 'Find TSD (SINE)';
+        tsdItem.addEventListener('click', () => {
+            openTsdFinder();
+            closeContextMenu();
+        });
+        contextMenu.appendChild(tsdItem);
     }
 
     // Dot-plot between two selected sequences
@@ -11490,6 +11504,7 @@ function attachUIListeners() {
         });
     });
     syncQuickModeSwitch();
+    syncCodonModePanel();
 
     // Set up checkbox listeners
     const checkboxes = ['enableBlack', 'enableDark', 'enableLight', 'showConsensus',
@@ -14794,10 +14809,80 @@ let _repeatFinderSeqIndex = -1;
 // Repeat highlighting state
 state.repeatHighlights = state.repeatHighlights || new Map(); // repeatId => {start, end, color}
 let _lastRepeatResults = [];
+let _lastTsdResults = [];
 const _repeatColorPalette = ["#ff6b6b","#ffa94d","#ffd43b","#69db7c","#4dabf7","#da77f2","#20c997","#ff8787","#74c0fc","#f783ac","#ffe066","#63e6be","#a9e34b","#e599f7","#66d9e8","#fcc419","#94d82d","#ff922b","#be4bdb","#339af0"];
 
+function _syncTsdModeSubUI() {
+    const tsdMode = document.querySelector('input[name="tsdMode"]:checked')?.value || 'auto';
+    const manual = document.getElementById('tsdManualRegions');
+    const auto = document.getElementById('tsdAutoRegions');
+    const isManual = tsdMode === 'manual';
+    if (manual) manual.style.display = isManual ? '' : 'none';
+    if (auto) auto.style.display = isManual ? 'none' : '';
+    const colorInput = document.getElementById('tsdMarkColor');
+    const style = document.getElementById('tsdMarkStyle')?.value || 'color';
+    if (colorInput) colorInput.style.display = style === 'color' ? '' : 'none';
+}
+
+function _initTsdColumnDefaults() {
+    if (!state.seqs?.length) return;
+    const aliLen = Math.max(...state.seqs.map(s => s.seq.length));
+    const flank = parseInt(document.getElementById('tsdFlankSize')?.value, 10) || 30;
+    const upEnd = document.getElementById('tsdUpEnd');
+    const downStart = document.getElementById('tsdDownStart');
+    const downEnd = document.getElementById('tsdDownEnd');
+    if (upEnd && upEnd.dataset.userSet !== '1') upEnd.value = Math.min(flank, aliLen);
+    if (downStart && downStart.dataset.userSet !== '1') downStart.value = Math.max(1, aliLen - flank + 1);
+    if (downEnd && downEnd.dataset.userSet !== '1') downEnd.value = aliLen;
+}
+
+function _readTsdParams() {
+    return {
+        minLen: parseInt(document.getElementById('tsdMinLen')?.value, 10) || 4,
+        maxLen: parseInt(document.getElementById('tsdMaxLen')?.value, 10) || 20,
+        maxDiv: parseInt(document.getElementById('tsdMaxDiv')?.value, 10) || 20,
+        flankSize: parseInt(document.getElementById('tsdFlankSize')?.value, 10) || 30,
+        upStart: parseInt(document.getElementById('tsdUpStart')?.value, 10) || 1,
+        upEnd: parseInt(document.getElementById('tsdUpEnd')?.value, 10) || 30,
+        downStart: parseInt(document.getElementById('tsdDownStart')?.value, 10) || 1,
+        downEnd: parseInt(document.getElementById('tsdDownEnd')?.value, 10) || 1
+    };
+}
+
+function _fillTsdRegionsFromSelection() {
+    if (!state.selectedColumns?.size) {
+        showMessage('Select SINE columns first (Ctrl+Alt+click).', 3000);
+        return;
+    }
+    const cols = [...state.selectedColumns].sort((a, b) => a - b);
+    const aliLen = Math.max(...state.seqs.map(s => s.seq.length));
+    const manual = document.querySelector('input[name="tsdMode"][value="manual"]');
+    if (manual) manual.checked = true;
+    const upStartEl = document.getElementById('tsdUpStart');
+    const upEndEl = document.getElementById('tsdUpEnd');
+    const downStartEl = document.getElementById('tsdDownStart');
+    const downEndEl = document.getElementById('tsdDownEnd');
+    if (upStartEl) { upStartEl.value = 1; upStartEl.dataset.userSet = '1'; }
+    if (upEndEl) { upEndEl.value = cols[0]; upEndEl.dataset.userSet = '1'; }
+    if (downStartEl) { downStartEl.value = cols[cols.length - 1] + 2; downStartEl.dataset.userSet = '1'; }
+    if (downEndEl) { downEndEl.value = aliLen; downEndEl.dataset.userSet = '1'; }
+    _syncTsdModeSubUI();
+    showMessage(`Pre-SINE: 1-${cols[0]}, Post-SINE: ${cols[cols.length - 1] + 2}-${aliLen}`, 3500);
+}
+
 function _syncRepeatFinderModeUI() {
-    // All modes use the same general params now - nothing to toggle
+    const mode = document.querySelector('input[name="repeatMode"]:checked')?.value || 'tandem';
+    const isTsd = mode === 'tsd';
+    const general = document.getElementById('repeatParamsGeneral');
+    const tsdPanel = document.getElementById('repeatParamsTsd');
+    const clearBtn = document.getElementById('repeatClearHighlightsBtn');
+    const scopeRow = document.getElementById('repeatScopeRow');
+    if (general) general.style.display = isTsd ? 'none' : '';
+    if (tsdPanel) tsdPanel.style.display = isTsd ? '' : 'none';
+    if (clearBtn) clearBtn.style.display = isTsd ? 'none' : '';
+    if (scopeRow) scopeRow.style.display = isTsd ? 'none' : '';
+    if (isTsd) _initTsdColumnDefaults();
+    _syncTsdModeSubUI();
 }
 
 function openRepeatFinder(seqIndex, preferredMode = null) {
@@ -14827,7 +14912,10 @@ function openRepeatFinder(seqIndex, preferredMode = null) {
         showExclusiveModal('repeatFinderModal');
         _initRepeatFinderDrag();
     }
-    document.getElementById('repeatResults').textContent = 'Click "Run Analysis" to start.';
+    const mode = document.querySelector('input[name="repeatMode"]:checked')?.value || 'tandem';
+    document.getElementById('repeatResults').textContent = mode === 'tsd'
+        ? 'Set pre/post-SINE regions (or use Auto), then click Run Analysis.'
+        : 'Click "Run Analysis" to start.';
 }
 
 function _initRepeatFinderDrag() {
@@ -15358,6 +15446,10 @@ function runRepeatAnalysis() {
     const resultsEl = document.getElementById('repeatResults');
     if (!resultsEl) return;
     const mode = document.querySelector('input[name="repeatMode"]:checked')?.value || 'tandem';
+    if (mode === 'tsd') {
+        runTsdAnalysis();
+        return;
+    }
     const scopeRadio = document.querySelector('input[name="repeatScope"]:checked');
     const scope = scopeRadio ? scopeRadio.value : 'single';
 
@@ -15428,6 +15520,91 @@ function runRepeatAnalysis() {
             resultsEl.textContent = `Error: ${e.message}`;
         }
     }, 50);
+}
+
+function runTsdAnalysis() {
+    const resultsEl = document.getElementById('repeatResults');
+    if (!resultsEl) return;
+    const tsdMode = document.querySelector('input[name="tsdMode"]:checked')?.value || 'auto';
+    const params = _readTsdParams();
+    const aliLen = Math.max(...state.seqs.map(s => s.seq.length));
+
+    if (tsdMode === 'manual') {
+        if (params.upStart < 1 || params.upEnd < params.upStart) {
+            resultsEl.textContent = 'Invalid pre-SINE region: check start/end columns.';
+            return;
+        }
+        if (params.downStart < 1 || params.downEnd < params.downStart) {
+            resultsEl.textContent = 'Invalid post-SINE region: check start/end columns.';
+            return;
+        }
+        if (params.upEnd >= params.downStart) {
+            resultsEl.textContent = 'Pre-SINE and post-SINE regions must not overlap (leave room for the SINE body between them).';
+            return;
+        }
+        if (params.downEnd > aliLen) {
+            resultsEl.textContent = `Post-SINE end column exceeds alignment length (${aliLen}).`;
+            return;
+        }
+    }
+
+    resultsEl.textContent = `Searching TSDs in ${state.seqs.length} sequence(s)...`;
+    setTimeout(() => {
+        try {
+            const results = _findTSD(state.seqs, tsdMode, params);
+            _lastTsdResults = results;
+            _renderTsdResultsHTML(resultsEl, results, tsdMode, params);
+        } catch (e) {
+            resultsEl.textContent = `Error: ${e.message}`;
+        }
+    }, 30);
+}
+
+function _renderTsdResultsHTML(el, results, tsdMode, params) {
+    if (!results.length) {
+        let hint = 'Try widening flank windows, increasing max divergence, or switching boundary mode.';
+        if (tsdMode === 'manual') {
+            hint = `No TSD found in pre-SINE cols ${params.upStart}-${params.upEnd} vs post-SINE cols ${params.downStart}-${params.downEnd}. ${hint}`;
+        }
+        el.textContent = hint;
+        return;
+    }
+
+    let html = `<div style="margin-bottom:6px;font-weight:bold;font-size:12px;">TSD results: ${results.length} / ${state.seqs.length} sequences</div>`;
+    html += '<div style="font-size:10px;color:#666;margin-bottom:4px;">Upstream and downstream copies of the target site duplication. Click a row to scroll to the upstream TSD.</div>';
+    html += `<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="background:#f0f0f0;">` +
+        `<th style="text-align:left;padding:2px 4px;">#</th>` +
+        `<th style="text-align:left;padding:2px 4px;">Sequence</th>` +
+        `<th style="text-align:right;padding:2px 4px;">Len</th>` +
+        `<th style="text-align:right;padding:2px 4px;">Div%</th>` +
+        `<th style="text-align:left;padding:2px 4px;">Up TSD</th>` +
+        `<th style="text-align:left;padding:2px 4px;">Cols</th>` +
+        `<th style="text-align:left;padding:2px 4px;">Down TSD</th>` +
+        `<th style="text-align:left;padding:2px 4px;">Cols</th>` +
+        `</tr></thead><tbody>`;
+
+    results.forEach((r, i) => {
+        const name = r.seqName.length > 28 ? r.seqName.substring(0, 28) + '...' : r.seqName;
+        const scrollCol = r.upPositions?.[0] ?? 0;
+        html += `<tr data-scroll-col="${scrollCol}" style="cursor:pointer;" ` +
+            `onmouseover="this.style.background='#e8f5e9'" onmouseout="this.style.background=''" ` +
+            `onclick="_scrollToColumn(parseInt(this.dataset.scrollCol))">` +
+            `<td style="padding:2px 4px;">${i + 1}</td>` +
+            `<td style="padding:2px 4px;" title="${r.seqName}">${name}</td>` +
+            `<td style="text-align:right;padding:2px 4px;">${r.tsdLen}</td>` +
+            `<td style="text-align:right;padding:2px 4px;">${r.divergence}%</td>` +
+            `<td style="padding:2px 4px;font-family:monospace;">${r.upTSD}</td>` +
+            `<td style="padding:2px 4px;">${r.upCols}</td>` +
+            `<td style="padding:2px 4px;font-family:monospace;">${r.downTSD}</td>` +
+            `<td style="padding:2px 4px;">${r.downCols}</td>` +
+            `</tr>`;
+    });
+    html += '</tbody></table>';
+    if (results[0]?.boundary) {
+        html += `<div style="font-size:10px;color:#666;margin-top:6px;">Boundary mode: ${tsdMode} (${results[0].boundary})</div>`;
+    }
+    html += '<div style="font-size:10px;color:#666;margin-top:4px;">Use <b>Mark</b> above to highlight TSDs in the alignment.</div>';
+    el.innerHTML = html;
 }
 
 function _renderRepeatResultsHTML(el, results, mode, seqName, seqLength) {
@@ -15645,6 +15822,21 @@ function _initRepeatFinderEvents() {
 
     document.querySelectorAll('input[name="repeatMode"]').forEach(radio => {
         radio.addEventListener('change', _syncRepeatFinderModeUI);
+    });
+    document.querySelectorAll('input[name="tsdMode"]').forEach(radio => {
+        radio.addEventListener('change', _syncTsdModeSubUI);
+    });
+    const tsdFillBtn = document.getElementById('tsdFillFromSelectionBtn');
+    if (tsdFillBtn) tsdFillBtn.addEventListener('click', _fillTsdRegionsFromSelection);
+    const tsdMarkBtn = document.getElementById('tsdMarkBtn');
+    if (tsdMarkBtn) tsdMarkBtn.addEventListener('click', applyTsdMarking);
+    const tsdUndoBtn = document.getElementById('tsdUndoMarkBtn');
+    if (tsdUndoBtn) tsdUndoBtn.addEventListener('click', undoTsdMarking);
+    const tsdMarkStyle = document.getElementById('tsdMarkStyle');
+    if (tsdMarkStyle) tsdMarkStyle.addEventListener('change', _syncTsdModeSubUI);
+    ['tsdUpStart', 'tsdUpEnd', 'tsdDownStart', 'tsdDownEnd'].forEach(id => {
+        const input = document.getElementById(id);
+        if (input) input.addEventListener('change', () => { input.dataset.userSet = '1'; });
     });
     _syncRepeatFinderModeUI();
 }
