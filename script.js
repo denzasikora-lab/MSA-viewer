@@ -1,6 +1,6 @@
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // ViewAlign — browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v104';
+const BUILD_TAG = 'v105';
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 //
 // EXTERNAL CODE & ATTRIBUTION
@@ -1897,6 +1897,14 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     canvas.style.left = '0';
     alignmentContainer.appendChild(canvas);
 
+    // Inline banner so Canvas limitations are visible even if cached HTML omitted the outer notice
+    const inlineNotice = document.createElement('div');
+    inlineNotice.className = 'canvas-mode-notice canvas-mode-notice-inline';
+    inlineNotice.textContent = 'View-only — switch to Full or Block to edit or select columns (Ctrl+Alt+click).';
+    alignmentContainer.appendChild(inlineNotice);
+    const inlineNoticeH = inlineNotice.offsetHeight || 28;
+    canvas.style.top = inlineNoticeH + 'px';
+
     const ctx = canvas.getContext('2d');
     const dpr = window.devicePixelRatio || 1;
     // Match the current zoom level so Canvas mode's text size tracks Normal
@@ -1941,13 +1949,14 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     // its thumb and mirror pan position.
     _canvasState.totalContentW = totalContentW;
 
-    // Resize canvas to viewport
+    // Resize canvas to viewport (below inline notice)
     function resize() {
         const rect = alignmentContainer.getBoundingClientRect();
+        const viewH = Math.max(1, rect.height - inlineNoticeH);
         canvas.width = rect.width * dpr;
-        canvas.height = rect.height * dpr;
+        canvas.height = viewH * dpr;
         canvas.style.width = rect.width + 'px';
-        canvas.style.height = rect.height + 'px';
+        canvas.style.height = viewH + 'px';
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     let drawRaf = 0;
@@ -2125,6 +2134,13 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         dragging = false;
         canvas.style.cursor = 'default';
     });
+
+    ensureCanvasModeNotice();
+    const extNotice = document.getElementById('canvasModeNotice');
+    if (extNotice) {
+        extNotice.hidden = false;
+        extNotice.style.display = 'block';
+    }
 
     scheduleDraw();
 }
@@ -4833,7 +4849,8 @@ function syncQuickModeSwitch() {
     const canvasNotice = ensureCanvasModeNotice();
     if (canvasNotice) {
         canvasNotice.hidden = !isCanvasMode;
-        canvasNotice.style.display = isCanvasMode ? '' : 'none';
+        canvasNotice.style.display = isCanvasMode ? 'block' : 'none';
+        canvasNotice.setAttribute('aria-hidden', isCanvasMode ? 'false' : 'true');
     }
 }
 
@@ -5018,6 +5035,46 @@ function onShadeModeChange() {
 });
 
 // EVENT HANDLERS
+function isCtrlModifier(e) {
+    return !!(e.ctrlKey || e.metaKey || state.ctrlPressed);
+}
+
+function isAltModifier(e) {
+    return !!(e.altKey || state.altPressed);
+}
+
+function handleColumnSelectMouseDown(e) {
+    if (e.button !== 0) return;
+    if (!isCtrlModifier(e) || !isAltModifier(e)) return;
+    const row = e.target.closest('.seq-line');
+    if (!row || row.classList.contains('consensus-line') || row.classList.contains('scale-ruler-line')) return;
+    const span = e.target.closest('.seq-data span[data-pos]');
+    if (!span) return;
+    const pos = parseInt(span.dataset.pos, 10);
+    if (!Number.isFinite(pos)) return;
+
+    state.isDragging = true;
+    state.dragStartCol = pos;
+    state.dragMode = 'col';
+
+    if (e.shiftKey && state.lastSelectedColumn !== null) {
+        const start = Math.min(state.lastSelectedColumn, pos);
+        const end = Math.max(state.lastSelectedColumn, pos);
+        for (let p = start; p <= end; p++) {
+            state.selectedColumns.add(p);
+        }
+    } else if (state.selectedColumns.has(pos)) {
+        state.selectedColumns.delete(pos);
+    } else {
+        state.selectedColumns.add(pos);
+    }
+
+    state.lastSelectedColumn = pos;
+    updateColumnSelections();
+    e.preventDefault();
+    e.stopPropagation();
+}
+
 function handleMouseDown(e) {
     if (e.button !== 0) return;
     const row = e.target.closest('.seq-line');
@@ -5026,7 +5083,7 @@ function handleMouseDown(e) {
     const name = e.target.closest('.seq-name');
     const span = e.target.closest('.seq-data span');
     if (name) {
-        if (e.ctrlKey || e.metaKey) {
+        if (isCtrlModifier(e)) {
             state.isDragging = true;
             state.dragStartRow = index;
             state.dragMode = 'row';
@@ -5042,7 +5099,7 @@ function handleMouseDown(e) {
             e.preventDefault();
         }
     // No else clause - click without Ctrl/Shift copies name (handled in nameSpan.click)
-    } else if (span && (e.ctrlKey || e.metaKey) && !e.altKey) {
+    } else if (span && isCtrlModifier(e) && !isAltModifier(e)) {
         const pos = parseInt(span.dataset.pos);
         if (isNaN(pos)) return;
 
@@ -5097,34 +5154,8 @@ function handleMouseDown(e) {
         }
 
         e.preventDefault();
-    } else if (span && (e.ctrlKey || e.metaKey) && e.altKey) {
-        const pos = parseInt(span.dataset.pos);
-        if (isNaN(pos)) return;
-        state.isDragging = true;
-        state.dragStartCol = pos;
-        state.dragMode = 'col';
-
-        if (e.shiftKey && state.lastSelectedColumn !== null) {
-            // Shift+Ctrl+Alt+Click: Select range from last selected column
-            const start = Math.min(state.lastSelectedColumn, pos);
-            const end = Math.max(state.lastSelectedColumn, pos);
-            for (let p = start; p <= end; p++) {
-                state.selectedColumns.add(p);
-            }
-        } else {
-            // Regular Ctrl+Alt+Click: Toggle single column
-            if (state.selectedColumns.has(pos)) {
-                state.selectedColumns.delete(pos);
-            } else {
-                state.selectedColumns.add(pos);
-            }
-        }
-
-        state.lastSelectedColumn = pos;
-        updateColumnSelections();
-        e.preventDefault();
     }
-    // No handler for plain click on span - do nothing
+    // Column selection: Ctrl+Alt+click handled in capture phase (handleColumnSelectMouseDown)
 }
 // Selection helper consolidating toggle behavior
 function toggleRowSelection(index) {
@@ -11300,6 +11331,7 @@ function attachUIListeners() {
     // Alignment container events
     const controls = el('controls');
     if (alignmentContainer) {
+        alignmentContainer.addEventListener('mousedown', handleColumnSelectMouseDown, true);
         alignmentContainer.addEventListener('mousedown', handleGeneDocEditMouseDown);
         alignmentContainer.addEventListener('mousedown', handleMouseDown);
         alignmentContainer.addEventListener('mousemove', handleMouseMove);
