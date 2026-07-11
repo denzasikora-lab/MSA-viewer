@@ -1772,7 +1772,7 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
 
         for (let pos = 0; pos < len; pos++) {
             const base = seq[pos];
-            const isGap = base === '-' || base === '.';
+            const isGap = base === undefined || base === '-' || base === '.';
 
             // Skip alignment columns before frameOffset
             if (pos < frameOffset) continue;
@@ -7634,7 +7634,7 @@ function clusterSequences() {
         debugLog(`Size: ${cluster.size} sequences`);
         debugLog(`Diagnostic features: ${cluster.nPerfect} (${cluster.nReliable || cluster.nPerfect} reliable)`);
         if (cluster.nFiltered) {
-            debugLog(`Ã¢Å¡Â Ã¯Â¸Â  Filtered (high-leakage): ${cluster.nFiltered} features`);
+            debugLog(`Ã¢Å¡Â Ã¯Â¸Â  Filtered (high-leakage): ${cluster.nFiltered} features`);
         }
         debugLog(`Color: ${color}`);
         console.log('Sequences:');
@@ -8358,7 +8358,7 @@ function _reorderByGuideTree(fasta) {
         }
     }
 
-    // UPGMA guide tree construction Ã¢â€ â€™ extract leaf order
+    // UPGMA guide tree construction Ã¢â€ â€™ extract leaf order
     // Represent clusters as arrays of leaf indices; merge closest pair
     const clusters = seqs.map((_, i) => [i]);
     const clusterDist = dist.map(row => new Float32Array(row)); // copy
@@ -8381,7 +8381,7 @@ function _reorderByGuideTree(fasta) {
 
         // Optimal leaf ordering at junction: try all 4 orientations of the two
         // clusters and pick the one where the junction elements are closest.
-        // A=[...aL, aR] B=[...bL, bR] Ã¢â€ â€™ try (A+B), (A+B'), (A'+B), (A'+B')
+        // A=[...aL, aR] B=[...bL, bR] Ã¢â€ â€™ try (A+B), (A+B'), (A'+B), (A'+B')
         // where A' = reversed A, B' = reversed B
         const cA = clusters[ci], cB = clusters[cj];
         const aFirst = cA[0], aLast = cA[cA.length - 1];
@@ -11517,7 +11517,7 @@ function initializeGeneDocEditToolbar() {
     el('editClearGapColumnsButton')?.addEventListener('click', removeGapColumns);
     el('editSeqEditorButton')?.addEventListener('click', () => openSeqEditor());
 
-    // Ã¢â€ Â» Cons button uses onclick=_recalcConservation in HTML
+    // Ã¢â€ Â» Cons button uses onclick=_recalcConservation in HTML
 
     updateGeneDocEditUI();
 }
@@ -12822,7 +12822,7 @@ function showColorHistory() {
             html += `<span style="color: #999; min-width: 20px;">${idx + 1}.</span>`;
             html += `<span style="display: inline-block; width: 14px; height: 14px; background: ${entry.color}; border: 1px solid #ccc; border-radius: 2px;"></span>`;
             html += `<span>${entry.color}</span>`;
-            html += `<span style="color: #0066cc; margin: 0 4px;">Ã¢â€ Â ${entry.method}</span>`;
+            html += `<span style="color: #0066cc; margin: 0 4px;">Ã¢â€ Â ${entry.method}</span>`;
             html += `<span style="color: #999; font-size: 9px;">${entry.timestamp}</span>`;
             html += `</div>`;
         });
