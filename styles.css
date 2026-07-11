@@ -1283,7 +1283,6 @@ span.column-highlighted::after {
 span.column-selected {
     background-color: var(--column-selected-bg) !important;
     color: #000 !important;
-    box-shadow: inset 0 0 0 1px #2e7d32;
 }
 
 /* Row highlight: top and bottom pseudo-element bars, no width expansion */
