@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>ViewAlign — Manual</title>
+<title>ViewAlign - Manual</title>
 <style>
 :root {
   --bg: #fafbfc;
@@ -378,7 +378,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
 
   <h3 id="gs-recent">1.5 Recent Files &amp; History</h3>
   <p>
-    Click the <strong>🕐 Recent</strong> button to open the history dropdown.
+    Click the <strong>Recent</strong> button to open the history dropdown.
     It tracks every alignment loaded - by paste, file, URL, SSH, or BLAST -
     and stores timestamps and sequence counts. Click any entry to reload it instantly.
     History persists across browser sessions via <code>localStorage</code>.
@@ -501,7 +501,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       <strong>Browser-based (MAFFT WASM)</strong> - runs MAFFT directly in the browser via
       WebAssembly. No server required. Select from the strategy dropdown (auto, FFT-NS-2,
       G-INS-i, L-INS-i, E-INS-i) and click <strong>Align</strong>. Suitable for alignments
-      up to ~200 sequences × ~2,000 columns.
+      up to ~200 sequences x ~2,000 columns.
     </li>
     <li>
       <strong>Server-based MAFFT</strong> - when the Node.js server is running, alignment
@@ -581,7 +581,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </p>
   <table>
     <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
-    <tr><td>Left Trim Gap %</td><td>50</td><td>If the sliding window at the left edge has ≥ this % gaps, trim those columns</td></tr>
+    <tr><td>Left Trim Gap %</td><td>50</td><td>If the sliding window at the left edge has >= this % gaps, trim those columns</td></tr>
     <tr><td>Right Trim Gap %</td><td>80</td><td>Same for right edge (more permissive by default, since right ends are often ragged)</td></tr>
     <tr><td>Edge Window</td><td>15</td><td>Number of consecutive columns checked at each edge</td></tr>
   </table>
@@ -622,8 +622,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="cl-breakpoints">4.4 Size Breakpoints</h3>
   <table>
     <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
-    <tr><td>Small → Medium</td><td>11</td><td>Clusters below this size use the Small quality threshold</td></tr>
-    <tr><td>Medium → Large</td><td>20</td><td>Clusters at or above this size use the Large quality threshold</td></tr>
+    <tr><td>Small -> Medium</td><td>11</td><td>Clusters below this size use the Small quality threshold</td></tr>
+    <tr><td>Medium -> Large</td><td>20</td><td>Clusters at or above this size use the Large quality threshold</td></tr>
     <tr><td>Min Occur</td><td>2</td><td>Minimum number of diagnostic positions required to form a cluster</td></tr>
   </table>
 
@@ -639,11 +639,11 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </ul>
   <p>Typical workflow:</p>
   <ol>
-    <li>Trim alignment ends with Preview → Trim</li>
+    <li>Trim alignment ends with Preview -> Trim</li>
     <li>Adjust clustering parameters or load a preset</li>
     <li>Click <strong>Cluster Now</strong></li>
     <li>Review results (cluster sizes, diagnostic features, feature tables)</li>
-    <li>Use Actions → <em>Colour by Cluster</em> to visualise groups</li>
+    <li>Use Actions -> <em>Colour by Cluster</em> to visualise groups</li>
     <li>Compute Group Consensus for selected clusters</li>
   </ol>
 
@@ -652,7 +652,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <ul>
     <li>At each alignment column, sequences are grouped by shared nucleotide</li>
     <li>Groups meeting the size and quality thresholds are collected as candidate clusters</li>
-    <li>Near-identical clusters are fuzzy-merged (Jaccard similarity ≥ 90%)</li>
+    <li>Near-identical clusters are fuzzy-merged (Jaccard similarity >= 90%)</li>
     <li>Perfect-unique positions (all cluster members share a base unique to that cluster) get highest weight</li>
     <li>Outliers matching &lt;50% of core cluster features are pruned</li>
     <li>The algorithm iterates with progressively relaxed thresholds to recover smaller families</li>
@@ -679,7 +679,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><th>Mode</th><th>Best For</th><th>Description</th></tr>
     <tr><td><strong>Full</strong></td><td>General browsing, small alignments</td><td>Continuous single-pane view. All sequences in one scrolling block.</td></tr>
     <tr><td><strong>Block</strong></td><td>Publication viewing, wide alignments</td><td>Fixed-width blocks (adjustable via Block Size slider, 40–300 chars). Sequence names repeat per block.</td></tr>
-    <tr><td><strong>Canvas</strong></td><td>Massive alignments (≥ 150,000 residues)</td><td>Auto-activates for very large datasets. Canvas-based rendering for performance.</td></tr>
+    <tr><td><strong>Canvas</strong></td><td>Massive alignments (>= 150,000 residues)</td><td>Auto-activates for very large datasets. Canvas-based rendering for performance.</td></tr>
   </table>
   <p>
     Mode switching is instant - no re-render delay. The Block Size slider adjusts
@@ -794,8 +794,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="co-thresholds">6.2 Thresholds &amp; Coverage</h3>
   <table>
     <tr><th>Parameter</th><th>Meaning</th></tr>
-    <tr><td>Consensus threshold</td><td>A residue must appear in ≥ this % of sequences at a column to be the consensus call. Below threshold, the position shows <code>?</code></td></tr>
-    <tr><td>Minimum coverage</td><td>A column must have ≥ this % of non-gap characters to be included. Below coverage, the position shows <code>·</code></td></tr>
+    <tr><td>Consensus threshold</td><td>A residue must appear in >= this % of sequences at a column to be the consensus call. Below threshold, the position shows <code>?</code></td></tr>
+    <tr><td>Minimum coverage</td><td>A column must have >= this % of non-gap characters to be included. Below coverage, the position shows <code>|</code></td></tr>
   </table>
 
   <h3 id="co-group">6.3 Group Consensus</h3>
@@ -879,7 +879,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>Duplicate</td><td><kbd>Ctrl+U</kbd></td><td>Duplicate selected sequences (undoable)</td></tr>
     <tr><td>Reverse complement</td><td><kbd>Ctrl+R</kbd></td><td>Reverse and complement selected DNA sequences</td></tr>
     <tr><td>Move up</td><td><kbd>Ctrl+↑</kbd></td><td>Move selected rows up by one position</td></tr>
-    <tr><td>Move down</td><td><kbd>Ctrl+↓</kbd></td><td>Move selected rows down by one position</td></tr>
+    <tr><td>Move down</td><td><kbd>Ctrl+v</kbd></td><td>Move selected rows down by one position</td></tr>
     <tr><td>Move to top</td><td><kbd>Ctrl+Home</kbd></td><td>Send selected rows to the top</td></tr>
     <tr><td>Move to bottom</td><td><kbd>Ctrl+End</kbd></td><td>Send selected rows to the bottom</td></tr>
     <tr><td>Undo</td><td><kbd>Ctrl+Z</kbd></td><td>Undo last editing operation</td></tr>
@@ -990,9 +990,9 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="ac-sort">9.2 Sort Functions</h3>
   <table>
     <tr><th>Sort</th><th>Description</th></tr>
-    <tr><td>A → Z</td><td>Sort sequences alphabetically by name</td></tr>
-    <tr><td>Len ↓</td><td>Sort by sequence length, longest first</td></tr>
-    <tr><td>Sim ↓</td><td>Sort by similarity to the first sequence, most similar first</td></tr>
+    <tr><td>A -> Z</td><td>Sort sequences alphabetically by name</td></tr>
+    <tr><td>Len v</td><td>Sort by sequence length, longest first</td></tr>
+    <tr><td>Sim v</td><td>Sort by similarity to the first sequence, most similar first</td></tr>
   </table>
 
   <h3 id="ac-order">9.3 Save / Load Order</h3>
@@ -1097,7 +1097,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td><kbd>Ctrl+R</kbd></td><td>Reverse complement selected</td></tr>
     <tr><td><kbd>Ctrl+U</kbd></td><td>Duplicate selected</td></tr>
     <tr><td><kbd>Ctrl+↑</kbd></td><td>Move selected rows up</td></tr>
-    <tr><td><kbd>Ctrl+↓</kbd></td><td>Move selected rows down</td></tr>
+    <tr><td><kbd>Ctrl+v</kbd></td><td>Move selected rows down</td></tr>
     <tr><td><kbd>Ctrl+Home</kbd></td><td>Move selected to top</td></tr>
     <tr><td><kbd>Ctrl+End</kbd></td><td>Move selected to bottom</td></tr>
     <tr><td><kbd>Ctrl+Shift+V</kbd></td><td>Copy selected columns</td></tr>
@@ -1133,7 +1133,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="sv-setup">11.1 Setup</h3>
   <p>Requirements:</p>
   <ul>
-    <li>Node.js ≥ 16</li>
+    <li>Node.js >= 16</li>
     <li><strong>MAFFT</strong> - for realignment (binary in PATH)</li>
     <li><strong>BLAST+</strong> - for local BLAST search (optional)</li>
     <li><strong>samtools</strong> - for BAM/CRAM conversion (optional)</li>
@@ -1197,8 +1197,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <!-- Compact mode removed -->
     <li>Turn on <strong>Highlight Diffs</strong> to visually compress conserved regions</li>
     <li>Use <strong>Block mode</strong> with smaller block sizes (20-30 columns) for very wide alignments</li>
-    <li>The <strong>Canvas</strong> mode auto-activates at ≥ 150,000 total residues for maximum performance</li>
-    <li>For extremely large files (&gt; 500 sequences × 5,000 columns), consider splitting the input</li>
+    <li>The <strong>Canvas</strong> mode auto-activates at >= 150,000 total residues for maximum performance</li>
+    <li>For extremely large files (&gt; 500 sequences x 5,000 columns), consider splitting the input</li>
     <li>Use <strong>Variable sites only</strong> to strip conserved columns and reduce visual noise</li>
   </ul>
 
@@ -1207,7 +1207,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li><strong>Block mode</strong> + <strong>Zappo shading</strong> for amino acid alignments</li>
     <li><strong>Export SVG</strong> for vector graphics - refine in Inkscape or Illustrator</li>
     <li><strong>Export RTF</strong> for Word-compatible alignments with conservation shading</li>
-    <li><strong>Dot plot → Export SVG</strong> for high-quality dot plots</li>
+    <li><strong>Dot plot -> Export SVG</strong> for high-quality dot plots</li>
     <li>Use <strong>Snapshots</strong> to save exact figure settings for reproducibility</li>
     <li>Set Name Length to a short value (e.g., 10-15 characters) for cleaner figures</li>
     <li>Adjust zoom to fit the alignment width on your target page</li>

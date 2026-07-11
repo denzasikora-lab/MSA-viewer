@@ -1602,6 +1602,80 @@ span.column-selected {
     align-items: center;
 }
 
+/* Top-bar codon analysis controls (visible when Codon analysis is enabled) */
+.codon-mode-panel {
+    display: none;
+    align-self: center;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 4px;
+    height: 18px;
+    padding: 0 5px;
+    border: 1px solid #81c784;
+    border-radius: 4px;
+    background: #e8f5e9;
+    white-space: nowrap;
+}
+.codon-mode-panel.is-visible {
+    display: inline-flex;
+}
+.codon-panel-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #2e7d32;
+    user-select: none;
+}
+.codon-frame-switch {
+    display: inline-flex;
+    align-items: stretch;
+    height: 16px;
+    border: 1px solid #a5d6a7;
+    border-radius: 3px;
+    overflow: hidden;
+    background: #f1f8e9;
+}
+.codon-frame-switch input[type="radio"] {
+    display: none;
+}
+.codon-frame-switch label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px;
+    font-size: 9px;
+    font-weight: bold;
+    color: #33691e;
+    cursor: pointer;
+    white-space: nowrap;
+    user-select: none;
+    border-right: 1px solid #c8e6c9;
+}
+.codon-frame-switch label:last-of-type {
+    border-right: none;
+}
+.codon-frame-switch label:hover {
+    background: #c8e6c9;
+}
+.codon-frame-switch input:checked + label {
+    background: #43a047;
+    color: #fff;
+}
+.codon-panel-btn {
+    height: 16px;
+    line-height: 14px;
+    padding: 0 5px;
+    font-size: 9px;
+    font-weight: 600;
+    cursor: pointer;
+    border: 1px solid #a5d6a7;
+    border-radius: 3px;
+    background: #fff;
+    color: #2e7d32;
+}
+.codon-panel-btn:hover {
+    background: #c8e6c9;
+}
+
 .mode-container {
     display: flex;
     align-items: flex-start;
@@ -2090,18 +2164,21 @@ body.codon-mode span.codon-nonsyn {
     text-underline-offset: 2px;
 }
 
-/* AA translation rows */
+/* AA translation rows - must match .seq-line font metrics for column alignment */
 body.codon-mode .aa-row {
     display: flex;
     align-items: flex-start;
-    font-size: 11px;
-    line-height: 14px;
+    font-family: 'Courier New', monospace;
+    font-size: inherit;
+    line-height: 1.0;
     color: #1a5276;
     background: #f8fdf8;
     border-bottom: 1px solid #d4efdf;
-    padding: 1px 0;
-    min-height: 16px;
-    font-family: 'Courier New', monospace;
+    padding: 0;
+    margin: 0;
+    min-height: 1em;
+    white-space: nowrap;
+    min-width: max-content;
 }
 
 body.codon-mode .aa-name {
@@ -2109,15 +2186,17 @@ body.codon-mode .aa-name {
     min-width: calc(var(--nameLen) * 1ch + 16px);
     width: calc(var(--nameLen) * 1ch + 16px);
     max-width: calc(var(--nameLen) * 1ch + 16px);
-    text-align: right;
+    text-align: left;
     padding: 0 4px 0 12px;
+    margin-right: 0;
+    margin-left: -12px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: 9px;
+    font-size: inherit;
     font-weight: bold;
     color: #95a5a6;
-    margin-left: -12px;
+    background: #f8fdf8;
     position: sticky;
     left: -15px;
     z-index: 45;
@@ -2125,10 +2204,13 @@ body.codon-mode .aa-name {
 
 body.codon-mode .aa-data {
     flex: 1 1 auto;
+    display: inline-block;
     white-space: nowrap;
     margin: 0;
     padding: 0;
     line-height: 1.0;
+    font-size: inherit;
+    letter-spacing: 0;
 }
 body.codon-mode .aa-row:empty { display: none; }
 

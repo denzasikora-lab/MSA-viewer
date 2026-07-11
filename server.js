@@ -23,12 +23,18 @@ app.use(express.static('.')); // Serve static files from current directory
 
 app.get('/api/viewer-info', (req, res) => {
     let scriptVersion = '?';
+    let buildTag = '?';
     try {
         const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
         const m = html.match(/script\.js\?v=(\d+)/);
         if (m) scriptVersion = m[1];
     } catch (_) {}
-    res.json({ root: __dirname, scriptVersion });
+    try {
+        const js = fs.readFileSync(path.join(__dirname, 'script.js'), 'utf8');
+        const m = js.match(/const BUILD_TAG = '(v\d+)'/);
+        if (m) buildTag = m[1];
+    } catch (_) {}
+    res.json({ root: __dirname, scriptVersion, buildTag });
 });
 
 const PORT = 3000;

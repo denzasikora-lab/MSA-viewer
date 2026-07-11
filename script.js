@@ -1,29 +1,46 @@
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
-// ViewAlign — browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v109';
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ============================================================================
+// ViewAlign - browser-based multiple sequence alignment viewer & editor
+const BUILD_TAG = 'v115';
+// ASCII-safe UI symbols (avoid emoji / special Unicode in source files)
+const SYM = {
+    sep: '|',
+    dot: '.',
+    times: 'x',
+    fileTag: '[F]',
+    pasteTag: '[P]',
+    ok: '[OK]',
+    err: '[ERR]',
+    close: 'x',
+    loaded: '*',
+    fwd: '>',
+    rev: '<',
+    del: '-',
+    arrow: '->',
+    menu: 'v',
+};
+// ============================================================================
 //
 // EXTERNAL CODE & ATTRIBUTION
 // ===========================
-// Ã¢â‚¬Â¢ MAFFT - alignment engine compiled to WebAssembly (disttbfast.js, mafft-wasm.js).
+// - MAFFT - alignment engine compiled to WebAssembly (disttbfast.js, mafft-wasm.js).
 //   Katoh K, Standley DM (2013) Mol Biol Evol 30:772-780. BSD license.
-// Ã¢â‚¬Â¢ GeneDoc - editing tools (Move NoGaps, Slide KeepGaps, RTF export) modeled after
+// - GeneDoc - editing tools (Move NoGaps, Slide KeepGaps, RTF export) modeled after
 //   GeneDoc's Arrange/MoveText and SlideText operations.
 //   Nicholas KB et al. (1997) EMBNEW.NEWS 4:14.
-// Ã¢â‚¬Â¢ IGV - Compact read-packing view inspired by the Integrative Genomics Viewer.
+// - IGV - Compact read-packing view inspired by the Integrative Genomics Viewer.
 //   Robinson JT et al. (2011) Nat Biotechnol 29:24-26.
-// Ã¢â‚¬Â¢ MACSE - Codon-aware visualization inspired by MACSE's approach.
+// - MACSE - Codon-aware visualization inspired by MACSE's approach.
 //   Ranwez V et al. (2011) PLoS ONE 6:e22594.
-// Ã¢â‚¬Â¢ Clustal - Clustal shading scheme and .aln format parser.
+// - Clustal - Clustal shading scheme and .aln format parser.
 //   Sievers F et al. (2011) Mol Syst Biol 7:539.
-// Ã¢â‚¬Â¢ BLOSUM62 - similarity matrix for amino acid grouping.
+// - BLOSUM62 - similarity matrix for amino acid grouping.
 //   Henikoff S, Henikoff JG (1992) PNAS 89:10915-10919.
-// Ã¢â‚¬Â¢ samtools - BAM/CRAM conversion (server-side).
+// - samtools - BAM/CRAM conversion (server-side).
 //   Li H et al. (2009) Bioinformatics 25:2078-2079.
 //
 // All external code is used under its original open-source license.
 // The remainder is original work.
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ============================================================================
 
 // DEFAULTS & STATE
 const DEBUG = false;
@@ -92,12 +109,12 @@ const state = {
     },
     trimBoundaries: null,
     trimBackup: null,
-    softTrimBoundaries: null, // { leftTrimEnd, rightTrimStart } Ã¢â‚¬â€ excluded from clustering only
+    softTrimBoundaries: null, // { leftTrimEnd, rightTrimStart } - excluded from clustering only
     groupConsensusCount: 0,
     _statsMatrices: null
 };
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Recent Files & Clipboard History Ã¢â€â‚¬Ã¢â€â‚¬
+// -- Recent Files & Clipboard History --
 const _historyManager = {
     maxItems: 10,
     items: [],
@@ -157,10 +174,10 @@ const _historyManager = {
             if (diffMin < 1440) return Math.floor(diffMin / 60) + 'h ago';
             return d.toLocaleDateString();
         };
-        const ICON_FILE = '\u{1F4C1}';
-        const ICON_CLIP = '\u{1F4CB}';
-        const MIDDOT = '\u00B7';
-        const TIMES = '\u00D7';
+        const ICON_FILE = SYM.fileTag;
+        const ICON_CLIP = SYM.pasteTag;
+        const MIDDOT = SYM.sep;
+        const TIMES = SYM.times;
         let html = '';
         for (const e of this.items.slice(0, this.maxItems)) {
             const icon = e.type === 'file' ? ICON_FILE : ICON_CLIP;
@@ -236,15 +253,28 @@ function _getDragIndicatorEl() {
 function updateVersionIndicator() {
     const elVersion = document.getElementById('versionIndicator');
     if (!elVersion) return;
-    elVersion.textContent = `version ${BUILD_TAG} …`;
+    elVersion.textContent = `version ${BUILD_TAG}`;
+    // Local script cache-bust tag (always available when served from our server)
+    fetch('/api/viewer-info')
+        .then(r => r.ok ? r.json() : null)
+        .then(info => {
+            if (!info) return;
+            const local = info.buildTag || info.scriptVersion;
+            if (local && local !== BUILD_TAG) {
+                elVersion.textContent = `version ${BUILD_TAG} (served js v${local})`;
+            }
+        })
+        .catch(() => {});
+    // Optional GitHub commit hash for deployed builds
     fetch('https://api.github.com/repos/Toki-bio/MSA-viewer/commits/main?per_page=1')
         .then(r => r.json())
         .then(data => {
             const sha = (data.sha || '').substring(0, 7);
+            if (!sha) return;
             const url = data.html_url || 'https://github.com/Toki-bio/MSA-viewer';
-            elVersion.innerHTML = `version ${BUILD_TAG} (<a href="${url}" target="_blank" style="color:#888;">${sha}</a>)`;
+            elVersion.innerHTML = `version ${BUILD_TAG} (<a href="${url}" target="_blank" style="color:#888;" title="Latest commit on main">${sha}</a>)`;
         })
-        .catch(() => { elVersion.textContent = `version ${BUILD_TAG}`; });
+        .catch(() => {});
 }
 
 function updateControlsOffset() {
@@ -458,14 +488,14 @@ async function fetchFileFromServer(filePath, serverKey) {
         state.currentFilename = fname;
         state.currentFilePath = filePath;
         parseAndRender(true);
-        _sshSuccess(`${fname} Ã‚Â· ${state.seqs.length} seq${state.seqs.length !== 1 ? 's' : ''} Ã‚Â· ${serverKey}`);
+        _sshSuccess(`${fname} | ${state.seqs.length} seq${state.seqs.length !== 1 ? 's' : ''} | ${serverKey}`);
         // Auto-focus browser window and bring to front
         window.focus();
         // Flash title bar to attract attention
         const origTitle = document.title;
         let flashCount = 0;
         const flashInterval = setInterval(() => {
-            document.title = (flashCount % 2 === 0) ? `Ã¢Ëœâ€¦ LOADED: ${fname}` : origTitle;
+            document.title = (flashCount % 2 === 0) ? `* LOADED: ${fname}` : origTitle;
             flashCount++;
             if (flashCount > 8 || document.hasFocus()) {
                 document.title = origTitle;
@@ -863,13 +893,13 @@ function _sshLog(msg, type = 'plain') {
     body.scrollTop = body.scrollHeight;
 }
 function _sshSuccess(msg) {
-    _sshLog('Ã¢Å“â€œ ' + msg, 'ok');
+    _sshLog('[OK] ' + msg, 'ok');
     _sshConsoleCloseTimer = setTimeout(() => {
         const cons = document.getElementById('sshConsole');
         if (cons) cons.style.display = 'none';
     }, 2500);
 }
-function _sshError(msg) { _sshLog('Ã¢Å“â€” ' + msg, 'err'); }
+function _sshError(msg) { _sshLog('[ERR] ' + msg, 'err'); }
 
 // Tooltip helper functions with viewport-aware positioning
 function showTooltipAt(content, target, options = {}) {
@@ -929,7 +959,7 @@ function hideTooltip() {
 
 // Menu stability: JS owns open state; short delay only when leaving a menu entirely
 const menuCloseDelays = new Map();
-const MENU_CLOSE_DELAY = 120; // milliseconds Ã¢â‚¬â€ gap tolerance when moving to dropdown
+const MENU_CLOSE_DELAY = 120; // milliseconds - gap tolerance when moving to dropdown
 
 function clearMenuCloseDelay(section) {
     if (menuCloseDelays.has(section)) {
@@ -1746,12 +1776,13 @@ for (const [codon, aa] of Object.entries(_GENETIC_CODE)) {
 function _computeCodonAnalysis(seqs, len, frameOffset) {
     frameOffset = frameOffset || 0;
     if (seqs.length < 1) return null;
-    const ntRe = /^[ACGTUacgtuNn-]+$/;
+    const ntRe = /^[ACGTUacgtuNn.\s-]+$/;
     for (const s of seqs) {
-        const cleaned = s.seq.replace(/[-.]/g, '');
+        const cleaned = s.seq.replace(/[-.\s]/g, '');
         if (cleaned.length > 0 && !ntRe.test(cleaned)) return null;
     }
-    if (len % 3 !== 0) { len -= len % 3; if (len < 3) return null; }
+    // Do not truncate alignment length; gapped CDS alignments are often not multiples of 3.
+    if (len < 3) return null;
 
     const activeCode = _getActiveCode();
     const nSeqs = seqs.length;
@@ -1762,23 +1793,44 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
     const aaSeq = new Array(nSeqs).fill(null).map(() => []);
 
     const refIdx = 0;
-    const refSeq = seqs[refIdx].seq;
 
     for (let i = 0; i < nSeqs; i++) {
         const seq = seqs[i].seq;
         let codonPhase = 0;
         let codonBuf = '';
         let codonCols = [];
+        let gapRunStart = -1;
+        let gapRunLen = 0;
+        let outOfFrame = false; // set after indel gaps whose length is not a multiple of 3
+
+        const flushGapRun = () => {
+            if (gapRunLen <= 0) return;
+            if (gapRunLen % 3 !== 0) {
+                for (let g = gapRunStart; g < gapRunStart + gapRunLen; g++) {
+                    frameShifts[i].push({ pos: g, type: 'indel' });
+                }
+                outOfFrame = true;
+            }
+            gapRunStart = -1;
+            gapRunLen = 0;
+        };
 
         for (let pos = 0; pos < len; pos++) {
             const base = seq[pos];
-            const isGap = base === '-' || base === '.';
+            // Shorter sequences in the MSA: missing columns behave like gaps
+            const isMissing = base === undefined || base === '';
+            const isGap = isMissing || base === '-' || base === '.';
 
             // Skip alignment columns before frameOffset
             if (pos < frameOffset) continue;
 
-            // Gaps are skipped (preserve reading frame); no frameshift on gaps
-            if (isGap) continue;
+            // Gaps: count run length; multiples of 3 preserve frame, 1 or 2 bp indels mark frameshift
+            if (isGap) {
+                if (gapRunStart < 0) gapRunStart = pos;
+                gapRunLen++;
+                continue;
+            }
+            flushGapRun();
 
             // Non-gap base - add to codon
             phase[i][pos] = codonPhase;
@@ -1789,26 +1841,26 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
             if (codonPhase >= 3) {
                 const codon = codonBuf.replace(/[Nn]/g, 'N');
                 const aa = activeCode[codon] || 'X';
+                const codonIdx = aaSeq[i].length;
                 aaSeq[i].push({ cols: codonCols.slice(), codon, aa });
 
                 if (aa === '*') {
                     for (const c of codonCols) stops[i].push(c);
                 }
 
-                // Syn/non-syn check vs reference (frame 0 only for consistency)
-                if (i !== refIdx && frameOffset === 0) {
-                    const refCodon = codonCols.map(c => (refSeq[c] || '-').toUpperCase()).join('');
-                    const refAA = activeCode[refCodon] || 'X';
-                    if (aa === refAA && codon !== refCodon) {
-                        for (const c of codonCols) synNonSyn[i][c] = 'syn';
-                    } else if (aa !== refAA) {
-                        for (let k = 0; k < 3; k++) {
-                            const mutCodon = refCodon.substring(0,k) + codon[k] + refCodon.substring(k+1);
-                            const mutAA = activeCode[mutCodon] || 'X';
-                            if (mutAA !== refAA) {
-                                synNonSyn[i][codonCols[k]] = 'nonsyn';
-                            } else {
-                                synNonSyn[i][codonCols[k]] = 'syn';
+                // Syn/non-syn vs reference codon at same ordinal (skip after frameshift indels)
+                if (i !== refIdx && frameOffset === 0 && !outOfFrame) {
+                    const refEntry = aaSeq[refIdx][codonIdx];
+                    if (refEntry) {
+                        const refCodon = refEntry.codon;
+                        const refAA = refEntry.aa;
+                        if (aa === refAA && codon !== refCodon) {
+                            for (const c of codonCols) synNonSyn[i][c] = 'syn';
+                        } else if (aa !== refAA) {
+                            for (let k = 0; k < 3; k++) {
+                                const mutCodon = refCodon.substring(0, k) + codon[k] + refCodon.substring(k + 1);
+                                const mutAA = activeCode[mutCodon] || 'X';
+                                synNonSyn[i][codonCols[k]] = (mutAA !== refAA) ? 'nonsyn' : 'syn';
                             }
                         }
                     }
@@ -1819,6 +1871,7 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
                 codonCols = [];
             }
         }
+        flushGapRun();
 
         if (codonPhase > 0 && codonPhase < 3) {
             frameShifts[i].push({ pos: len - 1, phase: codonPhase, type: 'incomplete' });
@@ -1835,14 +1888,61 @@ function _computeMultiFrameCodonAnalysis(seqs, len) {
     for (let fr = 0; fr < 3; fr++) {
         frames.push(_computeCodonAnalysis(seqs, len, fr));
     }
-    // Auto-detect best frame: fewest total stop codons
-    const stopSums = frames.map((f, fi) => ({
-        frame: fi,
-        totalStops: f.stops.reduce((a, b) => a + b.length, 0)
-    }));
-    stopSums.sort((a, b) => a.totalStops - b.totalStops);
-    const bestFrame = stopSums[0].frame;
+    if (!frames[0] && !frames[1] && !frames[2]) return null;
+
+    // Auto-detect best frame: most sequences starting with ATG/M, then fewest stops, then frame 0
+    const frameScores = frames.map((f, fi) => {
+        if (!f) return { frame: fi, totalStops: Infinity, atgStarts: 0 };
+        const totalStops = f.stops.reduce((a, b) => a + b.length, 0);
+        let atgStarts = 0;
+        for (const aaList of f.aaSeq) {
+            const first = aaList[0];
+            if (first && (first.codon === 'ATG' || first.aa === 'M')) atgStarts++;
+        }
+        return { frame: fi, totalStops, atgStarts };
+    });
+    frameScores.sort((a, b) => {
+        if (a.atgStarts !== b.atgStarts) return b.atgStarts - a.atgStarts;
+        if (a.totalStops !== b.totalStops) return a.totalStops - b.totalStops;
+        return a.frame - b.frame;
+    });
+    const bestFrame = frameScores[0].frame;
     return { frames, refIdx: 0, bestFrame };
+}
+
+// Build AA translation row aligned to alignment columns (handles gaps + reading-frame offset).
+function _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd) {
+    dataCol.textContent = '';
+    if (!aaSeqData || aaSeqData.length === 0) return;
+
+    const codonAt = new Map();
+    for (const entry of aaSeqData) {
+        if (!entry.cols || entry.cols.length === 0) continue;
+        codonAt.set(entry.cols[0], entry);
+    }
+
+    let pos = viewStart;
+    while (pos < viewEnd) {
+        const entry = codonAt.get(pos);
+        if (entry) {
+            const endCol = entry.cols[entry.cols.length - 1] + 1;
+            const width = endCol - entry.cols[0];
+            const aaSpan = document.createElement('span');
+            const aa = entry.aa;
+            aaSpan.style.cssText = 'display:inline-block;text-align:center;' +
+                `width:${width}ch;` + (aa === '*' ? 'color:#e74c3c;font-weight:bold;' : '');
+            aaSpan.textContent = aa;
+            aaSpan.dataset.col = String(entry.cols[0]);
+            dataCol.appendChild(aaSpan);
+            pos = endCol;
+        } else {
+            const gapSpan = document.createElement('span');
+            gapSpan.style.cssText = 'display:inline-block;width:1ch;';
+            gapSpan.textContent = '\u00A0';
+            dataCol.appendChild(gapSpan);
+            pos++;
+        }
+    }
 }
 
 // CANVAS-BASED RENDERER - for large alignments
@@ -1913,7 +2013,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     const CHAR_W = m.charW;
     const CHAR_H = m.charH;
     const NAME_W = nameLen * CHAR_W + 8;
-    // Glyph cache: pre-rendered (char, bg-color, fg-color) → off-screen canvas
+    // Glyph cache: pre-rendered (char, bg-color, fg-color) -> off-screen canvas
     // Turns fillRect()+fillText() into a single drawImage() per cell after warm-up
     const _glyphCache = new Map();
     function _makeGlyph(ch, bg, fg) {
@@ -2001,7 +2101,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         const drawScheme = getEffectiveColorScheme();
         const pal = _getCanvasShadePalette();
 
-        // Position scale (10, *, 20, * …) — only the visible column window, same
+        // Position scale (10, *, 20, * ...) - only the visible column window, same
         // generateScale() as Full/Block mode; cost is O(visible cols), not alignment length.
         const scaleY = -oy;
         if (scaleY + SCALE_H > 0 && scaleY < h && firstCol <= lastCol) {
@@ -2061,7 +2161,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                 ctx.drawImage(_makeGlyph(base, bgFill, textFill), x, y, CHAR_W, CHAR_H);
             }
 
-            // Sequence name — drawn last so it sits on top of any residues that
+            // Sequence name - drawn last so it sits on top of any residues that
             // scrolled underneath it. Sticky mode pins it at a fixed screen x=0
             // with an opaque backing (matching Normal mode's sticky name column,
             // position:sticky + white background); non-sticky mode scrolls it
@@ -2570,7 +2670,7 @@ function getDeferredConsensus(len) {
     return Array.from({ length: len }, (_, pos) => cached.values[pos] || '-');
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ BAM / Reads Display Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+// -- BAM / Reads Display --
 
 // BAM state
 let bamState = {
@@ -2597,18 +2697,18 @@ async function handleBamFile(event) {
     const file = event.target.files[0];
     if (!file) return;
 
-    showMessage('Loading BAMÃ¢â‚¬Â¦', 0);
+    showMessage('Loading BAM...', 0);
 
     try {
         const ext = file.name.split('.').pop().toLowerCase();
         let buf;
 
         if (ext === 'sam') {
-            // SAM is plain text Ã¢â‚¬â€ parse directly
+            // SAM is plain text - parse directly
             const text = await file.text();
             buf = parseSAMToBuffer(text);
         } else {
-            // BAM binary Ã¢â‚¬â€ decompress with browser's DecompressionStream
+            // BAM binary - decompress with browser's DecompressionStream
             buf = await BamParser.decompressBAM(file);
         }
 
@@ -2706,7 +2806,7 @@ async function handleBamFile(event) {
 
         renderAlignment();
         statusMessage.style.display = 'none';
-        showMessage(`Loaded ${matchedReads.length} reads on ${matchedRef} (${minPos + 1}Ã¢â‚¬â€œ${maxPos})`, 2500);
+        showMessage(`Loaded ${matchedReads.length} reads on ${matchedRef} (${minPos + 1}-${maxPos})`, 2500);
 
     } catch (err) {
         statusMessage.style.display = 'none';
@@ -2738,7 +2838,7 @@ function computeReadSpan(cigar) {
  * In practice, we parse SAM as text and build record objects directly.
  */
 function parseSAMToBuffer(text) {
-    // Parse SAM as plain text Ã¢â‚¬â€ we'll build a pseudo-BAM buffer
+    // Parse SAM as plain text - we'll build a pseudo-BAM buffer
     // This is simpler than trying to create binary BAM from SAM
     const lines = text.split('\n').filter(l => l.trim());
     const headerLines = [];
@@ -2766,7 +2866,7 @@ function parseSAMToBuffer(text) {
  */
 function renderReadsAlignment() {
     if (!bamState.reads.length || !bamState.refSeq) {
-        alignmentContainer.innerHTML = '<div style="padding:20px;color:#888;">No reads loaded. Open a BAM file with the Ã°Å¸Â§Â¬ BAM button.</div>';
+        alignmentContainer.innerHTML = '<div style="padding:20px;color:#888;">No reads loaded. Open a BAM file with the BAM button.</div>';
         return;
     }
 
@@ -2780,7 +2880,7 @@ function renderReadsAlignment() {
     const container = alignmentContainer;
     const cellW = 12; // px per base
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Reference track Ã¢â€â‚¬Ã¢â€â‚¬
+    // -- Reference track --
     const refLine = document.createElement('div');
     refLine.className = 'seq-line ref-track-line';
     refLine.style.display = 'flex';
@@ -2818,7 +2918,7 @@ function renderReadsAlignment() {
     refLine.appendChild(refData);
     container.appendChild(refLine);
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Scale ruler Ã¢â€â‚¬Ã¢â€â‚¬
+    // -- Scale ruler --
     const scaleLine = document.createElement('div');
     scaleLine.className = 'seq-line scale-line';
     scaleLine.style.display = 'flex';
@@ -2845,14 +2945,14 @@ function renderReadsAlignment() {
         if ((p + 1) % 10 === 0) {
             span.textContent = p + 1;
         } else if ((p + 1) % 5 === 0) {
-            span.textContent = 'Ã‚Â·';
+            span.textContent = '.';
         }
         scaleData.appendChild(span);
     }
     scaleLine.appendChild(scaleData);
     container.appendChild(scaleLine);
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Read tracks Ã¢â€â‚¬Ã¢â€â‚¬
+    // -- Read tracks --
     for (let i = 0; i < reads.length; i++) {
         const read = reads[i];
         const readCols = columns[i];
@@ -2869,7 +2969,7 @@ function renderReadsAlignment() {
         const nameSpan = document.createElement('span');
         nameSpan.className = 'seq-name';
         nameSpan.style.cssText = 'width:160px;min-width:160px;font-size:9px;padding:0 4px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#555;';
-        nameSpan.textContent = isReverse ? 'Ã¢â€”â‚¬ ' + read.name : read.name + ' Ã¢â€“Â¶';
+        nameSpan.textContent = isReverse ? '< ' + read.name : read.name + ' >';
         nameSpan.title = `${read.name} pos=${read.pos + 1} mapq=${read.mapq} cigar=${BamParser.cigarToString(read.cigar)}`;
         readLine.appendChild(nameSpan);
 
@@ -2885,7 +2985,7 @@ function renderReadsAlignment() {
 
             switch (col.type) {
                 case 'match':
-                    span.textContent = 'Ã‚Â·'; // dot for match (clean IGV-like)
+                    span.textContent = '.'; // dot for match (clean IGV-like)
                     span.style.color = '#ccc';
                     break;
                 case 'mismatch':
@@ -2899,7 +2999,7 @@ function renderReadsAlignment() {
                     span.style.fontSize = '9px';
                     break;
                 case 'deletion':
-                    span.textContent = 'Ã¢Ë†â€™';
+                    span.textContent = '-';
                     span.style.color = '#999';
                     span.style.fontSize = '11px';
                     break;
@@ -2909,7 +3009,7 @@ function renderReadsAlignment() {
                     span.style.opacity = '0.5';
                     break;
                 case 'intron':
-                    span.textContent = 'Ã‚Â·';
+                    span.textContent = '.';
                     span.style.color = '#ddd';
                     break;
             }
@@ -3160,7 +3260,7 @@ function renderCompactAlignment(len, conservationData, shadeMode, blackThresh, d
                 svg.appendChild(mark);
             }
 
-            // Read name label (only when enough space Ã¢â‚¬â€ not in diffOnly thin-line mode)
+            // Read name label (only when enough space - not in diffOnly thin-line mode)
             if (!diffOnly && NAME_W > 30) {
                 const name = read.name;
                 const maxChars = Math.max(3, Math.floor(rw / 6));
@@ -3299,15 +3399,18 @@ function renderAlignment(options = {}) {
     syncQuickModeSwitch();
     if (!state.seqs || state.seqs.length === 0) {
         alignmentContainer.innerHTML = '<div style="padding:20px; color:#666; font-style:italic;">No sequences loaded. Paste FASTA/MSF and click Load.</div>';
+        syncCodonModePanel();
         return;
     }
     // Reads mode: delegate to BAM renderer
     if (document.getElementById('modeReads')?.checked) {
         if (!bamState.reads || bamState.reads.length === 0) {
-            alignmentContainer.innerHTML = '<div style="padding:20px;color:#888;">No reads loaded. Open a BAM file with the Ã°Å¸Â§Â¬ BAM button (after loading a reference FASTA).</div>';
+            alignmentContainer.innerHTML = '<div style="padding:20px;color:#888;">No reads loaded. Open a BAM file with the BAM button (after loading a reference FASTA).</div>';
+            syncCodonModePanel();
             return;
         }
         renderReadsAlignment();
+        syncCodonModePanel();
         return;
     }
     const coverageMin = clampMinCoverage(el('consensusMinCoverage')?.value) / 100;
@@ -3356,11 +3459,11 @@ function renderAlignment(options = {}) {
     // Calculate sequence length for consensus and scale (must be before any use of len)
     const len = Math.max(...state.seqs.map(s => s.seq.length));
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Auto-detect: Canvas for large alignments Ã¢â€â‚¬Ã¢â€â‚¬
+    // -- Auto-detect: Canvas for large alignments --
     const TOTAL_RESIDUES = state.seqs.length * len;
     // Disable span cache for large alignments (>80K residues) during view-only rendering
     state._enableSpanCache = (TOTAL_RESIDUES <= 80000);
-    const CANVAS_AUTO_THRESHOLD = 150000; // ~100 seq Ãƒâ€” 1500 col
+    const CANVAS_AUTO_THRESHOLD = 150000; // ~100 seq x 1500 col
     let _renderStartTime = performance.now();
     const userWantsCanvas = document.getElementById('modeCanvas')?.checked;
 
@@ -3402,7 +3505,7 @@ function renderAlignment(options = {}) {
     const useCompact = document.getElementById('modeCompact')?.checked;
     const useCanvas = document.getElementById('modeCanvas')?.checked;
 
-    // ── Canvas fast path (UGENE-style: first paint costs only the visible region) ──
+    // -- Canvas fast path (UGENE-style: first paint costs only the visible region) --
     // Canvas shows no consensus row, so consensus is skipped entirely here.
     // Conservation shading is deferred: draw an unshaded frame immediately, then
     // compute conservation off the critical path (idle, time-sliced) and repaint shaded.
@@ -3531,29 +3634,41 @@ function renderAlignment(options = {}) {
 // Codon analysis
     const codonAnalysis = document.getElementById('codonAnalysis')?.checked;
     if (codonAnalysis) {
-        // Compute all three frames; select active frame based on codonFrame dropdown
-        state._codonFrames = _computeMultiFrameCodonAnalysis(state.seqs, len);
-        const frameSel = document.getElementById('codonFrame')?.value || 'auto';
-        if (state._codonFrames) {
-            let activeFrame;
-            if (frameSel === 'auto') {
-                activeFrame = state._codonFrames.bestFrame;
-            } else if (frameSel === 'all') {
-                activeFrame = -1; // special: show all frames in AA rows
+        try {
+            state._codonFrames = _computeMultiFrameCodonAnalysis(state.seqs, len);
+            const frameSel = document.getElementById('codonFrame')?.value || 'auto';
+            const validFrames = state._codonFrames?.frames?.filter(Boolean);
+            if (state._codonFrames && validFrames && validFrames.length > 0) {
+                let activeFrame;
+                if (frameSel === 'auto') {
+                    activeFrame = state._codonFrames.bestFrame;
+                } else if (frameSel === 'all') {
+                    activeFrame = -1;
+                } else {
+                    activeFrame = parseInt(frameSel) || 0;
+                }
+                const displayFrame = activeFrame >= 0 ? activeFrame : 0;
+                state._codonData = state._codonFrames.frames[displayFrame] || validFrames[0];
+                state._codonActiveFrame = activeFrame;
+                document.body.classList.add('codon-mode');
+                if (frameSel === 'auto') {
+                    const bf = state._codonFrames.bestFrame;
+                    showMessage(`Codon analysis: auto-selected frame ${bf} (ATG start)`, 2500);
+                }
             } else {
-                activeFrame = parseInt(frameSel) || 0;
+                state._codonFrames = null;
+                state._codonData = null;
+                state._codonActiveFrame = 0;
+                document.body.classList.remove('codon-mode');
+                showMessage('Codon analysis requires a nucleotide alignment', 4000);
             }
-            // Set backward-compat _codonData to the active frame (or frame 0 for 'all')
-            const displayFrame = activeFrame >= 0 ? activeFrame : 0;
-            state._codonData = state._codonFrames.frames[displayFrame];
-            state._codonActiveFrame = activeFrame;
-            document.body.classList.add('codon-mode');
-        } else {
+        } catch (codonErr) {
+            console.error('Codon analysis failed:', codonErr);
             state._codonFrames = null;
             state._codonData = null;
             state._codonActiveFrame = 0;
             document.body.classList.remove('codon-mode');
-            showMessage('Codon analysis requires a nucleotide alignment', 4000);
+            showMessage('Codon analysis failed: ' + codonErr.message, 4000);
         }
     } else {
         state._codonData = null;
@@ -3657,51 +3772,51 @@ function renderAlignment(options = {}) {
             // Check if already has AA rows
             if (rowEl.nextElementSibling?.classList.contains('aa-row')) return;
 
-            const buildAARow = (aaSeqData, frameLabel, isBest) => {
+            const buildAARow = (aaSeqData, frameLabel, isBest, viewStart, viewEnd) => {
                 const aaRow = document.createElement('div');
                 aaRow.className = 'aa-row';
                 if (frameLabel !== null) aaRow.classList.add('aa-row-f' + frameLabel);
                 if (isBest) aaRow.classList.add('aa-row-best');
-                // Name column spacer - matches .seq-name width exactly
                 const nameCol = document.createElement('div');
                 nameCol.className = 'aa-name';
                 if (frameLabel !== null) {
-                    nameCol.textContent = 'F' + frameLabel + ':';
+                    nameCol.textContent = 'Pos ' + (frameLabel + 1) + ':';
+                } else {
+                    const fr = state._codonActiveFrame >= 0 ? state._codonActiveFrame : (state._codonFrames?.bestFrame ?? 0);
+                    nameCol.textContent = 'Pos ' + (fr + 1) + ':';
+                    nameCol.title = 'Amino acid translation (reading from alignment column ' + (fr + 1) + ')';
                 }
                 aaRow.appendChild(nameCol);
-                // Data column - matches .seq-data
                 const dataCol = document.createElement('div');
                 dataCol.className = 'aa-data';
-                if (aaSeqData) {
-                    for (const entry of aaSeqData) {
-                        const aa = entry.aa;
-                        const startCol = entry.cols[0];
-                        const aaSpan = document.createElement('span');
-                        aaSpan.style.cssText = 'width:3ch;display:inline-block;text-align:center;' + (aa==='*'?'color:#e74c3c;font-weight:bold;':'');
-                        aaSpan.textContent = aa;
-                        aaSpan.dataset.col = startCol;
-                        dataCol.appendChild(aaSpan);
-                    }
-                }
+                _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd);
                 aaRow.appendChild(dataCol);
                 return aaRow;
             };
 
+            const ntSpans = rowEl.querySelectorAll('.seq-data > span[data-pos]');
+            let viewStart = 0;
+            let viewEnd = len;
+            if (ntSpans.length > 0) {
+                viewStart = parseInt(ntSpans[0].dataset.pos) || 0;
+                viewEnd = (parseInt(ntSpans[ntSpans.length - 1].dataset.pos) || 0) + 1;
+            }
+
             if (state._codonFrames && state._codonActiveFrame === -1) {
-                // All-frames mode: show three AA rows
                 const best = state._codonFrames.bestFrame;
                 for (let fr = 2; fr >= 0; fr--) {
                     const frData = state._codonFrames.frames[fr];
-                    const aaRow = buildAARow(frData.aaSeq[seqIdx], fr, fr === best);
+                    if (!frData) continue;
+                    const aaRow = buildAARow(frData.aaSeq[seqIdx], fr, fr === best, viewStart, viewEnd);
                     rowEl.insertAdjacentElement('afterend', aaRow);
                 }
             } else {
-                // Single-frame mode (frame 0, 1, 2, or auto)
-                const activeFrame = state._codonActiveFrame >= 0 ? state._codonActiveFrame : 0;
-                const aaRow = buildAARow(cd.aaSeq[seqIdx], null, false);
+                const aaRow = buildAARow(cd.aaSeq[seqIdx], null, false, viewStart, viewEnd);
                 rowEl.insertAdjacentElement('afterend', aaRow);
             }
-        });    }
+        });
+    }
+    syncCodonModePanel();
 }
 
 // Unified source info updater so counts stay accurate after deletions/insertions
@@ -3944,7 +4059,7 @@ function isProteinAlignment(seqs = state.seqs) {
     if (!seqs || seqs.length === 0) return false;
     const seqType = el('mafftSeqType')?.value;
     if (seqType === '0' || seqType === '1') return true;
-    // Scanning every sequence is O(seqs Ã— cols). This runs once per glyph in the
+    // Scanning every sequence is O(seqs x cols). This runs once per glyph in the
     // canvas hot loops, so memoize by array identity (a new array is created on
     // load; edits mutate in place and never flip nucleotide/protein status).
     if (seqs === _proteinMemoArr && seqType === _proteinMemoType) return _proteinMemoVal;
@@ -3963,7 +4078,7 @@ function getEffectiveColorScheme(scheme = getAlignmentColorScheme()) {
     if (isProteinAlignment() && NUCLEOTIDE_ORIENTED_SCHEMES.has(scheme)) {
         if (!_proteinSchemeRemapWarned) {
             _proteinSchemeRemapWarned = true;
-            showMessage('Nucleotide colour scheme selected for protein alignment Ã¢â‚¬â€ using amino-acid colours', 3500);
+            showMessage('Nucleotide colour scheme selected for protein alignment - using amino-acid colours', 3500);
         }
         return 'aa-clustal';
     }
@@ -4246,7 +4361,10 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
             }
             if (state._codonData && state._codonData.frameShifts && state._codonData.frameShifts[index]) {
                 for (const fs of state._codonData.frameShifts[index]) {
-                    if (fs.pos === pos && fs.type === 'incomplete') { cls += ' codon-fs'; break; }
+                    if (fs.pos === pos && (fs.type === 'incomplete' || fs.type === 'indel')) {
+                        cls += ' codon-fs';
+                        break;
+                    }
                 }
             }
             if (state._codonData && state._codonData.synNonSyn && state._codonData.synNonSyn[index]) {
@@ -4471,11 +4589,11 @@ function debounce(func, delay) {
 }
 const debounceRender = debounce(renderAlignment, 50);
 
-// ── Large-alignment pre-parse index & mode classification ──────────────────
+// -- Large-alignment pre-parse index & mode classification ------------------
 // Three viewing strategies (chunking implemented in later phases):
-//   tall  — many sequences  → vertical page chunks (PDF-like)
-//   long  — few seqs, wide   → horizontal column windows
-//   crazy — both dimensions  → warn before parse; user can cancel
+//   tall  - many sequences  -> vertical page chunks (PDF-like)
+//   long  - few seqs, wide   -> horizontal column windows
+//   crazy - both dimensions  -> warn before parse; user can cancel
 const ALIGN_TALL_SEQ_THRESHOLD = 500;
 const ALIGN_LONG_COL_THRESHOLD = 3000;
 const ALIGN_CRAZY_VOLUME = 5_000_000;
@@ -4651,12 +4769,12 @@ async function runAlignmentPreflight(inputText) {
         if (choice === 'cancel') return false;
     } else if (classification.mode === 'tall') {
         showMessage(
-            `Large alignment (${stats.nSeqs.toLocaleString()} sequences) — vertical paging when enabled.`,
+            `Large alignment (${stats.nSeqs.toLocaleString()} sequences) - vertical paging when enabled.`,
             3500
         );
     } else if (classification.mode === 'long') {
         showMessage(
-            `Long alignment (${stats.maxLen.toLocaleString()} columns) — horizontal chunking when enabled.`,
+            `Long alignment (${stats.maxLen.toLocaleString()} columns) - horizontal chunking when enabled.`,
             3500
         );
     }
@@ -4788,7 +4906,7 @@ async function parseAndRender(isFromDrop = false) {
         }, 100);
     } catch (e) {
         console.error("Error in parseAndRender:", e);
-    alignmentContainer.innerHTML = `<div class="error-message">Ã¢Å“â€“ ${e.message}</div>`;
+    alignmentContainer.innerHTML = `<div class="error-message">Error: ${e.message}</div>`;
         showMessage(`Error: ${e.message}`, 5000);
     // Reset filename on error to avoid poisoning future loads
         state.currentFilename = '';
@@ -4810,7 +4928,7 @@ function ensureCanvasModeNotice() {
     notice.id = 'canvasModeNotice';
     notice.className = 'canvas-mode-chip';
     notice.title = 'Canvas mode is view-only. Switch to Full or Block to edit sequences or select columns (Ctrl+Alt+click).';
-    notice.textContent = 'Canvas · view-only';
+    notice.textContent = `Canvas ${SYM.sep} view-only`;
     quickSwitch.parentNode.insertBefore(notice, shortcuts);
     return notice;
 }
@@ -5039,6 +5157,22 @@ function setCanvasNoticeVisible(visible) {
     if (notice) notice.classList.toggle('is-visible', visible);
 }
 
+function syncCodonModePanel() {
+    const panel = document.getElementById('codonModePanel');
+    if (!panel) return;
+    const codonOn = document.getElementById('codonAnalysis')?.checked;
+    const hasData = !!(state._codonFrames && state._codonData);
+    const readsMode = document.getElementById('modeReads')?.checked;
+    const visible = codonOn && hasData && !readsMode;
+    panel.classList.toggle('is-visible', visible);
+    if (!visible) return;
+
+    const frameSel = document.getElementById('codonFrame')?.value || 'auto';
+    document.querySelectorAll('#codonFrameSwitch input[name="codonFrameQuick"]').forEach(r => {
+        r.checked = (r.value === frameSel);
+    });
+}
+
 function handleColumnSelectMouseDown(e) {
     if (e.button !== 0) return;
     if (!isCtrlModifier(e) || !isAltModifier(e)) return;
@@ -5235,7 +5369,7 @@ function handleKeyDown(e) {
     }
 
     // If focus is in an input/textarea, block unmodified keypresses (normal typing),
-    // but allow Ctrl/Meta/Alt shortcuts to pass through Ã¢â‚¬â€ EXCEPT in TEXTAREA
+    // but allow Ctrl/Meta/Alt shortcuts to pass through - EXCEPT in TEXTAREA
     // where browser-native shortcuts (Ctrl+A select-all-text, Ctrl+C copy, etc.) should work.
     const activeEl = document.activeElement;
     if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
@@ -5243,11 +5377,11 @@ function handleKeyDown(e) {
             return; // let browser handle all keys in textarea (Input window etc.)
         }
         if (e.ctrlKey || e.metaKey || e.altKey) {
-            // modifier key held Ã¢â‚¬â€ treat as shortcut, let it fall through
+            // modifier key held - treat as shortcut, let it fall through
         } else if (state.editModeActive && state.editTool === 'residue' && state.editCell) {
-            // GeneDoc residue editing mode Ã¢â‚¬â€ allow unmodified keys
+            // GeneDoc residue editing mode - allow unmodified keys
         } else {
-            return; // normal typing in input Ã¢â‚¬â€ don't intercept
+            return; // normal typing in input - don't intercept
         }
     }
     if (handleGeneDocResidueKey(e)) {
@@ -5447,7 +5581,7 @@ function reverseComplementSelected() {
     showMessage("Reverse complement applied!", 2000);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Sort functions Ã¢â€â‚¬Ã¢â€â‚¬
+// -- Sort functions --
 function sortByName() {
     pushUndo();
     const indices = state.seqs.map((s, i) => ({ idx: i, name: s.header.toLowerCase() }));
@@ -5485,7 +5619,7 @@ function sortBySimilarity() {
     showMessage('Sorted by similarity to first sequence', 2000);
 }
 
-// Ã¢â€â‚¬Ã¢â€â‚¬ Save / Load sequence order Ã¢â€â‚¬Ã¢â€â‚¬
+// -- Save / Load sequence order --
 function exportOrder() {
     if (!state.seqs.length) { showMessage('No sequences loaded', 2000); return; }
     const order = state.seqs.map(s => s.header);
@@ -5748,6 +5882,78 @@ function downloadAlignment() {
     a.click();
     URL.revokeObjectURL(a.href);
     showMessage(`Saved ${state.seqs.length} sequences as ${filename}`, 2000);
+}
+
+function _aaStringFromCodonFrameData(frameData, seqIdx) {
+    const entries = frameData?.aaSeq?.[seqIdx];
+    if (!entries || !entries.length) return '';
+    return entries.map(e => e.aa).join('');
+}
+
+function buildAATranslationFasta() {
+    if (!state._codonFrames?.frames || !state.seqs?.length) return null;
+    const frameSel = document.getElementById('codonFrame')?.value || 'auto';
+    const parts = [];
+    const pushFrame = (fr, headerSuffix) => {
+        const frData = state._codonFrames.frames[fr];
+        if (!frData) return;
+        for (let i = 0; i < state.seqs.length; i++) {
+            const s = state.seqs[i];
+            const aa = _aaStringFromCodonFrameData(frData, i);
+            const hdr = s.fullHeader || s.header;
+            parts.push(`>${headerSuffix ? hdr + headerSuffix : hdr}`);
+            parts.push(aa);
+        }
+    };
+    if (frameSel === 'all') {
+        for (let fr = 0; fr < 3; fr++) pushFrame(fr, `_pos${fr + 1}`);
+    } else {
+        let fr;
+        if (frameSel === 'auto') fr = state._codonFrames.bestFrame ?? 0;
+        else fr = parseInt(frameSel, 10) || 0;
+        pushFrame(fr, '');
+    }
+    return parts.length ? parts.join('\n') : null;
+}
+
+function frameSelCount() {
+    const frameSel = document.getElementById('codonFrame')?.value || 'auto';
+    const n = state.seqs?.length || 0;
+    return frameSel === 'all' ? n * 3 : n;
+}
+
+function copyAATranslation() {
+    const fasta = buildAATranslationFasta();
+    if (!fasta) {
+        showMessage('No amino acid translation available. Enable Codon analysis first.', 3000);
+        return;
+    }
+    const seqCount = frameSelCount();
+    navigator.clipboard.writeText(fasta).then(() => {
+        showMessage(`Copied ${seqCount} amino acid sequence(s) to clipboard!`, 2000);
+    }).catch(err => {
+        console.error('Copy failed:', err);
+        showMessage('Failed to copy. Check console.', 5000);
+    });
+}
+
+function downloadAATranslation() {
+    const fasta = buildAATranslationFasta();
+    if (!fasta) {
+        showMessage('No amino acid translation available. Enable Codon analysis first.', 3000);
+        return;
+    }
+    const base = (state.currentFilename || 'alignment').replace(/\.[^.]+$/, '');
+    const frameSel = document.getElementById('codonFrame')?.value || 'auto';
+    const suffix = frameSel === 'all' ? '_aa_all_frames' : '_aa';
+    const filename = base + suffix + '.fasta';
+    const blob = new Blob([fasta], { type: 'text/plain;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+    showMessage(`Saved ${frameSelCount()} amino acid sequence(s) as ${filename}`, 2000);
 }
 function copyPlainSingle(index) {
     const s = state.seqs[index];
@@ -6953,7 +7159,7 @@ function minimizeMenu() {
     controls.style.right = '';
     controls.style.zIndex = '';
     controls.style.boxShadow = '';
-    // Batch all visual changes in one animation frame Ã¢â‚¬â€ no intermediate paint
+    // Batch all visual changes in one animation frame - no intermediate paint
     requestAnimationFrame(() => {
         controls.style.display = 'none';
         minimizeBar.style.display = 'block';
@@ -7395,7 +7601,7 @@ function updateActiveSearchesPanel() {
 
         const remove = document.createElement('button');
         remove.className = 'search-remove';
-    remove.innerHTML = 'Ãƒâ€”';
+    remove.innerHTML = 'x';
         remove.title = 'Remove this search';
         remove.addEventListener('click', () => {
             // Remove this specific search
@@ -7511,7 +7717,7 @@ function executeTrimming() {
         state.trimBackup = null;
         const clearBtn = document.getElementById('clearSoftTrimButton');
         if (clearBtn) clearBtn.style.display = '';
-        const status = `Ã¢Å“â€œ Soft trim: ${leftRemoved}L + ${rightRemoved}R marked for clustering. Alignment unchanged.`;
+        const status = `[OK] Soft trim: ${leftRemoved}L + ${rightRemoved}R marked for clustering. Alignment unchanged.`;
         updateClusteringStatus(status);
         showMessage(status, 3000);
         state.trimBoundaries = null;
@@ -7538,7 +7744,7 @@ function executeTrimming() {
     }
 
     const newLen = trimEnd - trimStart;
-    const status = `Ã¢Å“â€œ Hard trim: ${leftRemoved}L + ${rightRemoved}R = ${leftRemoved + rightRemoved} cols. New length: ${newLen}`;
+    const status = `[OK] Hard trim: ${leftRemoved}L + ${rightRemoved}R = ${leftRemoved + rightRemoved} cols. New length: ${newLen}`;
     updateClusteringStatus(status);
     showMessage(status, 3000);
     state.trimBoundaries = null;
@@ -7565,7 +7771,7 @@ function undoTrimming() {
     state.trimBoundaries = null;
     state.softTrimBoundaries = null;
 
-    updateClusteringStatus('Ã¢Å“â€œ Trimming reverted');
+    updateClusteringStatus('[OK] Trimming reverted');
     showMessage('Trimming reverted - original alignment restored', 3000);
     debounceRender();
 }
@@ -7578,7 +7784,7 @@ function clusterSequences() {
 
     updateClusteringStatus('Running clustering algorithm...');
 
-    // Prepare sequences for clustering Ã¢â‚¬â€ respect soft trim if active
+    // Prepare sequences for clustering - respect soft trim if active
     const stb = state.softTrimBoundaries;
     const seqsForClustering = state.seqs.map(seq => {
         let s = seq.seq;
@@ -7634,13 +7840,13 @@ function clusterSequences() {
         debugLog(`Size: ${cluster.size} sequences`);
         debugLog(`Diagnostic features: ${cluster.nPerfect} (${cluster.nReliable || cluster.nPerfect} reliable)`);
         if (cluster.nFiltered) {
-            debugLog(`Ã¢Å¡Â Ã¯Â¸Â  Filtered (high-leakage): ${cluster.nFiltered} features`);
+            debugLog(`WARN:  Filtered (high-leakage): ${cluster.nFiltered} features`);
         }
         debugLog(`Color: ${color}`);
         console.log('Sequences:');
 
         cluster.sequences.forEach(seq => {
-            debugLog(`  Ã¢â‚¬Â¢ ${seq.id} (index ${seq.index})`);
+            debugLog(`  - ${seq.id} (index ${seq.index})`);
             state.clusterMap[seq.index] = {
                 cluster: idx,
                 color: color,
@@ -7666,7 +7872,7 @@ function clusterSequences() {
     if (clusterResults.unassigned.length > 0) {
         debugLog(`\n--- UNASSIGNED (${clusterResults.unassigned.length} sequences) ---`);
         clusterResults.unassigned.forEach(seq => {
-            debugLog(`  Ã¢â‚¬Â¢ ${seq.id} (index ${seq.index})`);
+            debugLog(`  - ${seq.id} (index ${seq.index})`);
             state.clusterMap[seq.index] = {
                 cluster: -1,
                 color: '#cccccc',
@@ -8141,13 +8347,13 @@ function displayClusteringResults(results) {
         html += `
             <div style="margin-bottom: 12px; padding: 8px; border: 1px solid #ddd; border-left: 4px solid ${color}; border-radius: 2px;">
                 <div style="cursor: pointer; font-weight: bold; user-select: none; margin-bottom: 4px;" onclick="document.getElementById('cluster${idx}').style.display = document.getElementById('cluster${idx}').style.display === 'none' ? 'block' : 'none';">
-                    Ã¢â€“Â¶ Cluster ${idx + 1}: ${cluster.size} sequences, ${cluster.nPerfect} diagnostic features
+                    > Cluster ${idx + 1}: ${cluster.size} sequences, ${cluster.nPerfect} diagnostic features
                 </div>
                 <div id="cluster${idx}" style="display: none; margin-left: 8px; margin-top: 8px;">
                     <div style="margin-bottom: 8px;">
                         <strong>Sequences:</strong>
                         <div style="margin: 4px 0; padding: 4px; background: #f9f9f9; border-radius: 2px;">
-                            ${cluster.sequences.map((s, i) => `<div style="font-family: monospace; font-size: 10px;">Ã¢â‚¬Â¢ ${s.id}</div>`).join('')}
+                            ${cluster.sequences.map((s, i) => `<div style="font-family: monospace; font-size: 10px;">- ${s.id}</div>`).join('')}
                         </div>
                     </div>
                     <div style="margin-bottom: 8px;">
@@ -8167,11 +8373,11 @@ function displayClusteringResults(results) {
         html += `
             <div style="margin-bottom: 12px; padding: 8px; border: 1px solid #ddd; border-left: 4px solid #999999; border-radius: 2px;">
                 <div style="cursor: pointer; font-weight: bold; user-select: none; margin-bottom: 4px;" onclick="document.getElementById('unassignedCluster').style.display = document.getElementById('unassignedCluster').style.display === 'none' ? 'block' : 'none';">
-                    Ã¢â€“Â¶ Unassigned: ${results.unassigned.length} sequences
+                    > Unassigned: ${results.unassigned.length} sequences
                 </div>
                 <div id="unassignedCluster" style="display: none; margin-left: 8px; margin-top: 8px;">
                     <div style="margin: 4px 0; padding: 4px; background: #f9f9f9; border-radius: 2px;">
-                        ${results.unassigned.map(s => `<div style="font-family: monospace; font-size: 10px;">Ã¢â‚¬Â¢ ${s.id}</div>`).join('')}
+                        ${results.unassigned.map(s => `<div style="font-family: monospace; font-size: 10px;">- ${s.id}</div>`).join('')}
                     </div>
                     <button onclick="highlightCluster(-1)" style="padding: 4px 8px; font-size: 11px; background: #999999; color: white; border: none; border-radius: 2px; cursor: pointer; margin-top: 4px;">Highlight in alignment</button>
                 </div>
@@ -8358,7 +8564,7 @@ function _reorderByGuideTree(fasta) {
         }
     }
 
-    // UPGMA guide tree construction Ã¢â€ â€™ extract leaf order
+    // UPGMA guide tree construction -> extract leaf order
     // Represent clusters as arrays of leaf indices; merge closest pair
     const clusters = seqs.map((_, i) => [i]);
     const clusterDist = dist.map(row => new Float32Array(row)); // copy
@@ -8381,7 +8587,7 @@ function _reorderByGuideTree(fasta) {
 
         // Optimal leaf ordering at junction: try all 4 orientations of the two
         // clusters and pick the one where the junction elements are closest.
-        // A=[...aL, aR] B=[...bL, bR] Ã¢â€ â€™ try (A+B), (A+B'), (A'+B), (A'+B')
+        // A=[...aL, aR] B=[...bL, bR] -> try (A+B), (A+B'), (A'+B), (A'+B')
         // where A' = reversed A, B' = reversed B
         const cA = clusters[ci], cB = clusters[cj];
         const aFirst = cA[0], aLast = cA[cA.length - 1];
@@ -8787,7 +8993,7 @@ function openTreeBuilder() {
             const textOutput = document.getElementById('treeTextOutput');
             const scope = state.selectedRows.size >= 2 ? 'selected sequences' : 'all sequences';
             if (summary) {
-                summary.textContent = `${result.stats.count} ${scope} Ã‚Â· ${modelName} Ã‚Â· ${method.toUpperCase()} Ã‚Â· avg ${result.stats.averageDistance.toFixed(4)} Ã‚Â· range ${result.stats.minDistance.toFixed(4)}-${result.stats.maxDistance.toFixed(4)}`;
+                summary.textContent = `${result.stats.count} ${scope} | ${modelName} | ${method.toUpperCase()} | avg ${result.stats.averageDistance.toFixed(4)} | range ${result.stats.minDistance.toFixed(4)}-${result.stats.maxDistance.toFixed(4)}`;
             }
             if (newickOutput) newickOutput.value = result.newick;
             if (textOutput) textOutput.textContent = result.text;
@@ -8929,7 +9135,7 @@ function openStats() {
         `</div></div>`;
 
     // Render Distance Matrix tab
-    let dm = `<b>Pairwise p-distance (1 Ã¢Ë†â€™ identity)</b><br><br>`;
+    let dm = `<b>Pairwise p-distance (1 - identity)</b><br><br>`;
     dm += ' '.repeat(nameLen);
     for (let i = 0; i < nseq; i++) dm += ` ${String(i + 1).padStart(4)} `;
     dm += '\n';
@@ -8939,7 +9145,7 @@ function openStats() {
         for (let j = 0; j < nseq; j++) dm += ` ${distMatrix[i][j].padStart(6)}`;
         dm += '\n';
     }
-    dm += `\nColumns: 1Ã¢â‚¬â€œ${nseq} = ${seqNames.slice(0, 4).join(', ')}${nseq > 4 ? '...' : ''}`;
+    dm += `\nColumns: 1-${nseq} = ${seqNames.slice(0, 4).join(', ')}${nseq > 4 ? '...' : ''}`;
     // Append distance matrix and identity to summary
     const dmControls = `<div style="margin:4px 0;"><button id="copyDistanceMatrixBtn" style="font-size:11px;padding:2px 8px;">Copy distance matrix</button></div>`;
     const dmContent = `<details style="margin-top:6px;"><summary style="cursor:pointer;font-weight:bold;font-size:11px;">Distance Matrix (p-distance)</summary>${dmControls}<pre style="font-size:10px;white-space:pre;overflow:auto;max-height:200px;">${dm}</pre></details>`;
@@ -8954,7 +9160,7 @@ function openStats() {
         for (let j = 0; j < nseq; j++) im += ` ${identityMatrix[i][j].padStart(5)}`;
         im += '\n';
     }
-    im += `\nColumns: 1Ã¢â‚¬â€œ${nseq} = ${seqNames.slice(0, 4).join(', ')}${nseq > 4 ? '...' : ''}`;
+    im += `\nColumns: 1-${nseq} = ${seqNames.slice(0, 4).join(', ')}${nseq > 4 ? '...' : ''}`;
     state._statsMatrices = { distance: dm, identity: im };
     const imControls = `<div style="margin:4px 0;"><button id="copyIdentityMatrixBtn" style="font-size:11px;padding:2px 8px;">Copy identity matrix</button></div>`;
     const imContent = `<details style="margin-top:4px;"><summary style="cursor:pointer;font-weight:bold;font-size:11px;">Pairwise Identity (%)</summary>${imControls}<pre style="font-size:10px;white-space:pre;overflow:auto;max-height:200px;">${im}</pre></details>`;
@@ -10770,7 +10976,7 @@ function initializeAppUI() {
                 parseAndRender(true);
             };
             reader.onerror = () => {
-                alignmentContainer.innerHTML = '<div class="error-message">Ã¢ÂÅ’ Error reading file.</div>';
+                alignmentContainer.innerHTML = '<div class="error-message">Error:Error reading file.</div>';
                 showMessage("Error reading file.", 5000);
             };
             reader.readAsText(file);
@@ -10803,7 +11009,7 @@ function initializeAppUI() {
             parseAndRender(true);
         };
         reader.onerror = () => {
-            alignmentContainer.innerHTML = '<div class="error-message">Ã¢ÂÅ’ Error reading file.</div>';
+            alignmentContainer.innerHTML = '<div class="error-message">Error:Error reading file.</div>';
             showMessage("Error reading file.", 5000);
         };
         reader.readAsText(file);
@@ -11034,7 +11240,7 @@ function initializeAppUI() {
     onModeChange();
     toggleStickyNames();
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ Residue case toggle (GeneDoc-style upper/lower/asis) Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // -- Residue case toggle (GeneDoc-style upper/lower/asis) --
     const caseSel = el('residueCase');
     if (caseSel) {
         const applyCase = () => {
@@ -11067,7 +11273,7 @@ function initializeAppUI() {
     // Setup menu stability to prevent flickering on mouse movement
     setupMenuStability();
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ :has() fallback for Firefox < 121 Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // -- :has() fallback for Firefox < 121 --
     // CSS :has(.control-group:hover) is not supported in Firefox < 121.
     // We add .hover-active class via JS as a fallback.
     if (!CSS.supports('selector(:has(*))')) {
@@ -11085,7 +11291,7 @@ function initializeAppUI() {
     // Initialize Dot Plot & Repeat Finder modals
     _initDotPlotEvents();    _initRepeatFinderEvents();
 
-    // Ã¢â€â‚¬Ã¢â€â‚¬ URL parameter auto-loading Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬Ã¢â€â‚¬
+    // -- URL parameter auto-loading --
     // ...
 
     // Click-outside to close recent dropdown
@@ -11304,6 +11510,17 @@ function attachUIListeners() {
     const codonFrame = el('codonFrame');
     if (codonFrame) codonFrame.addEventListener('change', debounceRender);
 
+    document.querySelectorAll('#codonFrameSwitch input[name="codonFrameQuick"]').forEach(r => {
+        r.addEventListener('change', () => {
+            if (!r.checked) return;
+            const sel = document.getElementById('codonFrame');
+            if (sel && sel.value !== r.value) {
+                sel.value = r.value;
+                debounceRender();
+            }
+        });
+    });
+
     const colorSchemeSelect = el('colorSchemeSelect');
     if (colorSchemeSelect) colorSchemeSelect.addEventListener('change', debounceRender);
 
@@ -11517,7 +11734,7 @@ function initializeGeneDocEditToolbar() {
     el('editClearGapColumnsButton')?.addEventListener('click', removeGapColumns);
     el('editSeqEditorButton')?.addEventListener('click', () => openSeqEditor());
 
-    // Ã¢â€ Â» Cons button uses onclick=_recalcConservation in HTML
+    // Cons button uses onclick=_recalcConservation in HTML
 
     updateGeneDocEditUI();
 }
@@ -12233,7 +12450,7 @@ function handleAlignmentPanContextMenu(e) {
     }
 }
 
-// Ctrl+A on fastaInput handled by main capture-phase handler Ã¢â‚¬â€ no special override needed
+// Ctrl+A on fastaInput handled by main capture-phase handler - no special override needed
 
 // Drag handlers are defined at top of file (window.handleDragStart / window.handleDragEnd)
 
@@ -12786,7 +13003,7 @@ function updateColourPresetList() {
                 applyColourToSeqNames(colourState.mappings);
                 showMessage('Loaded ${name}', 2000);
               })()">
-            ${name} <span style="float: right; cursor: pointer; color: #888;" onclick="(function(e) { e.stopPropagation(); delete colourState.presets['${name}']; localStorage.setItem('seqColourPresets', JSON.stringify(colourState.presets)); updateColourPresetList(); })(event)">Ã¢Å“â€¢</span>
+            ${name} <span style="float: right; cursor: pointer; color: #888;" onclick="(function(e) { e.stopPropagation(); delete colourState.presets['${name}']; localStorage.setItem('seqColourPresets', JSON.stringify(colourState.presets)); updateColourPresetList(); })(event)">x</span>
         </div>`
     ).join('');
 }
@@ -12822,7 +13039,7 @@ function showColorHistory() {
             html += `<span style="color: #999; min-width: 20px;">${idx + 1}.</span>`;
             html += `<span style="display: inline-block; width: 14px; height: 14px; background: ${entry.color}; border: 1px solid #ccc; border-radius: 2px;"></span>`;
             html += `<span>${entry.color}</span>`;
-            html += `<span style="color: #0066cc; margin: 0 4px;">Ã¢â€ Â ${entry.method}</span>`;
+            html += `<span style="color: #0066cc; margin: 0 4px;"><- ${entry.method}</span>`;
             html += `<span style="color: #999; font-size: 9px;">${entry.timestamp}</span>`;
             html += `</div>`;
         });
@@ -13655,9 +13872,9 @@ function displayBlastResults(queryName, queryLen, results) {
     });
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ============================================================================
 // RE-ALIGN AGAINST CONSENSUS
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ============================================================================
 
 async function realignSequenceAgainstConsensus(index) {
     if (!state.seqs || state.seqs.length < 2) {
@@ -13697,9 +13914,9 @@ async function realignSequenceAgainstConsensus(index) {
     }
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ============================================================================
 // DOT-PLOT (integrated from Doter)
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ============================================================================
 
 let _dotPlotWorker = null;
 let _dotPlotState = {
@@ -14180,7 +14397,7 @@ function _dotDrawOverlay(row, col) {
     oCtx.moveTo(DOT_AXIS_PAD, cy); oCtx.lineTo(DOT_AXIS_PAD + plotW, cy);
     oCtx.moveTo(cx, DOT_AXIS_PAD); oCtx.lineTo(cx, DOT_AXIS_PAD + plotH);
     oCtx.stroke();
-    // Diagonal trace â€” snap to pixel grid for crisp alignment with dot image
+    // Diagonal trace - snap to pixel grid for crisp alignment with dot image
     const range = S.scoreMax - S.scoreMin || 1;
     oCtx.fillStyle = 'rgba(100,230,160,0.85)';
     const pxSz = Math.max(1, Math.round(colW));
@@ -14402,7 +14619,7 @@ function _initDotPlotEvents() {
                 _dotDrawOverlay(row, col);
                 const bar = document.getElementById('dotPlotSpinScroll');
                 if (bar) bar.style.display = 'block';
-                showMessage('FROZEN — double-click to unfreeze.', 3000);
+                showMessage('FROZEN - double-click to unfreeze.', 3000);
             }
         });
         const viewport = document.getElementById('dotPlotViewport');
@@ -14486,7 +14703,7 @@ function _initDotPlotEvents() {
                 fasta = `>${region.nameA}_${region.aStart + 1}-${region.aStart + region.aSlice.length}\n${region.aSlice}\n` +
                         `>${region.nameB}_${region.bStart + 1}-${region.bStart + region.bSlice.length}\n${region.bSlice}`;
             } else {
-                // Use pinned position Ã¢â‚¬â€ walk diagonal to find match extent
+                // Use pinned position - walk diagonal to find match extent
                 const range = S.scoreMax - S.scoreMin || 1;
                 const threshold = S.threshold;
                 let rBack = S.pinnedRow, cBack = S.pinnedCol;
@@ -14569,9 +14786,9 @@ function _initDotPlotEvents() {
     });
 }
 
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ============================================================================
 // REPEAT FINDER (Direct, Inverted, Tandem) & TSD FINDER
-// Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
+// ============================================================================
 
 let _repeatFinderSeqIndex = -1;
 // Repeat highlighting state
@@ -14580,7 +14797,7 @@ let _lastRepeatResults = [];
 const _repeatColorPalette = ["#ff6b6b","#ffa94d","#ffd43b","#69db7c","#4dabf7","#da77f2","#20c997","#ff8787","#74c0fc","#f783ac","#ffe066","#63e6be","#a9e34b","#e599f7","#66d9e8","#fcc419","#94d82d","#ff922b","#be4bdb","#339af0"];
 
 function _syncRepeatFinderModeUI() {
-    // All modes use the same general params now Ã¢â‚¬â€ nothing to toggle
+    // All modes use the same general params now - nothing to toggle
 }
 
 function openRepeatFinder(seqIndex, preferredMode = null) {
@@ -15217,7 +15434,7 @@ function _renderRepeatResultsHTML(el, results, mode, seqName, seqLength) {
     const colors = _repeatColorPalette;
     const hl = state.repeatHighlights;
 
-    let html = `<div style="margin-bottom:8px;font-weight:bold;font-size:12px;">${mode} repeats in ${seqName} (${seqLength} bp) Ã¢â‚¬â€ ${results.length} found</div>`;
+    let html = `<div style="margin-bottom:8px;font-weight:bold;font-size:12px;">${mode} repeats in ${seqName} (${seqLength} bp) - ${results.length} found</div>`;
     html += '<div style="font-size:11px;color:#666;margin-bottom:4px;">Click a row to highlight in alignment. Click again to remove.</div>';
 
     if (mode === 'tandem') {
@@ -15247,10 +15464,10 @@ function _renderRepeatResultsHTML(el, results, mode, seqName, seqLength) {
                 `<td style="text-align:right;padding:2px 4px;">${r.start+1}</td>` +
                 `<td style="text-align:right;padding:2px 4px;">${r.end}</td>` +
                 `<td style="text-align:right;padding:2px 4px;">${r.unitLen}bp</td>` +
-                `<td style="text-align:right;padding:2px 4px;">${r.copies}Ãƒâ€”</td>` +
+                `<td style="text-align:right;padding:2px 4px;">${r.copies}x</td>` +
                 `<td style="text-align:right;padding:2px 4px;">${r.divergence}%</td>` +
                 `<td style="padding:2px 4px;font-family:monospace;">${r.unit}</td>` +
-                `<td style="padding:2px 4px;text-align:center;"><button class="repeat-remove-btn" style="background:none;border:none;color:#c00;font-size:14px;cursor:pointer;line-height:1;padding:0 2px;" title="Remove this highlight" onclick="event.stopPropagation();_removeRepeatHighlight(this.closest('tr'))">Ãƒâ€”</button></td>` +
+                `<td style="padding:2px 4px;text-align:center;"><button class="repeat-remove-btn" style="background:none;border:none;color:#c00;font-size:14px;cursor:pointer;line-height:1;padding:0 2px;" title="Remove this highlight" onclick="event.stopPropagation();_removeRepeatHighlight(this.closest('tr'))">x</button></td>` +
                 `</tr>`;
         });
         html += '</tbody></table>';
@@ -15283,7 +15500,7 @@ function _renderRepeatResultsHTML(el, results, mode, seqName, seqLength) {
                 `<td style="text-align:right;padding:2px 4px;">${r.length}</td>` +
                 `<td style="text-align:right;padding:2px 4px;">${r.divergence}%</td>` +
                 `<td style="padding:2px 4px;font-family:monospace;">${r.seqA.length > 50 ? r.seqA.substring(0,50)+'...' : r.seqA}</td>` +
-                `<td style="padding:2px 4px;text-align:center;"><button class="repeat-remove-btn" style="background:none;border:none;color:#c00;font-size:14px;cursor:pointer;line-height:1;padding:0 2px;" title="Remove this highlight" onclick="event.stopPropagation();_removeRepeatHighlight(this.closest('tr'))">Ãƒâ€”</button></td>` +
+                `<td style="padding:2px 4px;text-align:center;"><button class="repeat-remove-btn" style="background:none;border:none;color:#c00;font-size:14px;cursor:pointer;line-height:1;padding:0 2px;" title="Remove this highlight" onclick="event.stopPropagation();_removeRepeatHighlight(this.closest('tr'))">x</button></td>` +
                 `</tr>`;
         });
         html += '</tbody></table>';
@@ -15363,7 +15580,7 @@ function _applyLineHighlights(dataSpan) {
         const span = spans[i];
         const pos = parseInt(span.dataset.pos);
         if (isNaN(pos)) continue;
-        // Skip gap characters Ã¢â‚¬â€ do not colour gaps within repeats
+        // Skip gap characters - do not colour gaps within repeats
         const ch = span.textContent;
         if (ch === '-' || ch === '.') continue;
         for (const [rid, info] of hl) {

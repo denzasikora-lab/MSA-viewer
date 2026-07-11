@@ -18,11 +18,11 @@
             <div class="menu-section side-section" id="input-section">
                 <div class="section-header" data-section="input">
                         <span>Input</span>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon">v</span>
                     </div>
                     <button id="addSeqPlusButton" onclick="event.stopPropagation()" title="Add sequence(s)" style="margin-left:3px;padding:0 4px;font-size:9px;font-weight:bold;height:14px;line-height:12px;cursor:pointer;border:1px solid #bbb;background:#f5f5f5;border-radius:3px;box-sizing:border-box;vertical-align:middle;">+</button>
                 <div class="control-group" id="input-controls">
-                    <div id="dropZone" style="width: 100%; padding: 20px; min-height: 100px; margin-bottom: 8px;" title="Drop FASTA/MSF or click to browse for file">📁 Drop FASTA/MSF file here or click to browse
+                    <div id="dropZone" style="width: 100%; padding: 20px; min-height: 100px; margin-bottom: 8px;" title="Drop FASTA/MSF or click to browse for file">Drop FASTA/MSF file here or click to browse
                         <input type="file" id="fileInput" accept="*" style="display: none;">
                     </div>
                     <div style="display: flex; gap: 6px; align-items: start;">
@@ -30,7 +30,7 @@
                         <div style="display: flex; flex-direction: column; gap: 4px;">
                             <button id="loadButton" style="height: 20px; font-size: 10px;" title="Load the pasted or dropped FASTA/MSF data (shortcut: Ctrl+L)">Load</button>
                             <button id="clearButton" style="height: 24px; font-size: 12px;" title="Clear the sequence input">Clear</button>
-                            <button id="recentButton" style="height: 20px; font-size: 10px; position: relative;" title="Recent files and clipboard pastes" onclick="event.stopPropagation(); var d=document.getElementById('recentDropdown'); d.style.display=d.style.display==='block'?'none':'block'; _historyManager.renderDropdown();">🕐 Recent</button>
+                            <button id="recentButton" style="height: 20px; font-size: 10px; position: relative;" title="Recent files and clipboard pastes" onclick="event.stopPropagation(); var d=document.getElementById('recentDropdown'); d.style.display=d.style.display==='block'?'none':'block'; _historyManager.renderDropdown();">Recent</button>
                         </div>
                     </div>
                     <div id="sshLoadRow" style="display: none; margin-top: 4px;">
@@ -66,15 +66,15 @@
                 </div>
             </div>
 
-            <button id="copyAlignToolbarButton" class="edit-toggle-button" title="Copy entire alignment to clipboard (FASTA)" onclick="copyAlignment()" style="font-size:10px;padding:0 5px;margin-left:6px;font-weight:normal;">📋 Copy</button>
-            <button id="saveAlignToolbarButton" class="edit-toggle-button" title="Download alignment as FASTA file" onclick="downloadAlignment()" style="font-size:10px;padding:0 5px;margin-left:2px;font-weight:normal;margin-right:6px;">💾 Save</button>
+            <button id="copyAlignToolbarButton" class="edit-toggle-button" title="Copy entire alignment to clipboard (FASTA)" onclick="copyAlignment()" style="font-size:10px;padding:0 5px;margin-left:6px;font-weight:normal;">Copy</button>
+            <button id="saveAlignToolbarButton" class="edit-toggle-button" title="Download alignment as FASTA file" onclick="downloadAlignment()" style="font-size:10px;padding:0 5px;margin-left:2px;font-weight:normal;margin-right:6px;">Save</button>
             <input type="file" id="bamFileInput" accept=".bam,.sam" style="display:none;" onchange="handleBamFile(event)">
 
             <div class="undo-redo-bar" style="display: inline-flex; gap: 1px; vertical-align: middle;">
-                <button id="undoButton" title="Undo (Ctrl+Z)" style="padding: 0 3px; font-size: 12px; height: 18px; line-height: 16px; cursor: pointer; border: 1px solid #ccc; background: #f0f0f0; border-radius: 3px 0 0 3px; min-width: 18px;">↩</button>
-                <button id="undoDropdownBtn" title="Undo history" style="padding: 0 2px; font-size: 8px; height: 18px; line-height: 16px; cursor: pointer; border: 1px solid #ccc; border-left: none; background: #f0f0f0; min-width: 10px;">▼</button>
-                <button id="redoButton" title="Redo (Ctrl+Y)" style="padding: 0 3px; font-size: 12px; height: 18px; line-height: 16px; cursor: pointer; border: 1px solid #ccc; background: #f0f0f0; min-width: 18px;">↪</button>
-                <button id="redoDropdownBtn" title="Redo history" style="padding: 0 2px; font-size: 8px; height: 18px; line-height: 16px; cursor: pointer; border: 1px solid #ccc; border-left: none; background: #f0f0f0; border-radius: 0 3px 3px 0; min-width: 10px;">▼</button>
+                <button id="undoButton" title="Undo (Ctrl+Z)" style="padding: 0 3px; font-size: 12px; height: 18px; line-height: 16px; cursor: pointer; border: 1px solid #ccc; background: #f0f0f0; border-radius: 3px 0 0 3px; min-width: 18px;"><-</button>
+                <button id="undoDropdownBtn" title="Undo history" style="padding: 0 2px; font-size: 8px; height: 18px; line-height: 16px; cursor: pointer; border: 1px solid #ccc; border-left: none; background: #f0f0f0; min-width: 10px;">v</button>
+                <button id="redoButton" title="Redo (Ctrl+Y)" style="padding: 0 3px; font-size: 12px; height: 18px; line-height: 16px; cursor: pointer; border: 1px solid #ccc; background: #f0f0f0; min-width: 18px;">-></button>
+                <button id="redoDropdownBtn" title="Redo history" style="padding: 0 2px; font-size: 8px; height: 18px; line-height: 16px; cursor: pointer; border: 1px solid #ccc; border-left: none; background: #f0f0f0; border-radius: 0 3px 3px 0; min-width: 10px;">v</button>
             </div>
 
             <button id="editToggleButton" class="edit-toggle-button" aria-pressed="false" title="Toggle GeneDoc-style sequence editing tools">Edit</button>
@@ -86,7 +86,7 @@
                 <div class="menu-section">
                     <div class="section-header" data-section="shade">
                         <span>Shade</span>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon">v</span>
                     </div>
                     <div class="control-group" id="shade-controls">
                         <div class="slider-container shade-row">
@@ -141,7 +141,7 @@
                 <div class="menu-section">
                     <div class="section-header" data-section="display">
                         <span>Display</span>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon">v</span>
                     </div>
                     <div class="control-group" id="display-controls" style="max-height: 60vh; overflow-y: auto;">
                         <div class="slider-container display-slider-row">
@@ -152,7 +152,7 @@
                         </div>
                         <div class="slider-container display-slider-row" style="flex: 1; max-width: 500px;">
                             <span class="slider-label" title="Zoom controls for alignment display">Zoom</span>
-                            <button id="zoomOutButton" class="zoom-button" title="Zoom out (shortcut: Ctrl+-)">−</button>
+                            <button id="zoomOutButton" class="zoom-button" title="Zoom out (shortcut: Ctrl+-)">-</button>
                             <input type="range" id="zoomSlider" class="normal-slider" min="0" max="100" value="50" title="Zoom level for alignment display (50-200%)" style="flex: 1; min-width: 100px; max-width: 200px;">
                             <span id="zoomVal" class="zoom-value" title="Click to reset to 100%" style="min-width: 42px; text-align: center; cursor: pointer;" onclick="resetZoom()">100%</span>
                             <button id="zoomInButton" class="zoom-button" title="Zoom in (shortcut: Ctrl++)">+</button>
@@ -177,11 +177,11 @@
                             </div>
                             <div style="display:flex;align-items:center;gap:6px;margin-left:74px;">
                                 <label style="font-size:10px;"><input type="checkbox" id="codonAnalysis"> Codon analysis</label>
-                                <select id="codonFrame" style="font-size:10px;padding:0 2px;height:18px;" title="Reading frame">
+                                <select id="codonFrame" style="font-size:10px;padding:0 2px;height:18px;" title="Reading frame (also in top bar when codon analysis is on)">
                                     <option value="auto" selected>Auto</option>
-                                    <option value="0">Frame 0</option>
-                                    <option value="1">Frame 1</option>
-                                    <option value="2">Frame 2</option>
+                                    <option value="0">Pos 1</option>
+                                    <option value="1">Pos 2</option>
+                                    <option value="2">Pos 3</option>
                                     <option value="all">All 3</option>
                                 </select>
                                 <select id="codonCode" style="font-size:10px;padding:0 2px;height:18px;">
@@ -227,7 +227,7 @@
                 <div class="menu-section">
                     <div class="section-header" data-section="consensus">
                         <span>Consensus</span>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon">v</span>
                     </div>
                     <div class="control-group" id="consensus-controls">
                         <div class="slider-container">
@@ -284,7 +284,7 @@
                 <div class="menu-section">
                     <div class="section-header" data-section="clustering">
                         <span>Clustering</span>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon">v</span>
                     </div>
                     <div class="control-group" id="clustering-controls">
                         <div style="padding: 8px;">
@@ -344,7 +344,7 @@
                                         <input type="number" id="qualityMediumInput" min="0" max="100" value="70" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Higher = stricter, fewer but cleaner clusters">
                                     </div>
                                     <div>
-                                        <label for="qualityLargeInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Quality threshold for large clusters (20+ sequences)">Large ≥20:</label>
+                                        <label for="qualityLargeInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Quality threshold for large clusters (20+ sequences)">Large >=20:</label>
                                         <input type="number" id="qualityLargeInput" min="0" max="100" value="60" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Higher = stricter, fewer but cleaner clusters">
                                     </div>
                                 </div>
@@ -352,11 +352,11 @@
                                 <div style="font-weight: bold; font-size: 11px; margin-bottom: 6px;">Size Breakpoints</div>
                                 <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px;">
                                     <div>
-                                        <label for="sizeSmallMediumInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Sequence count at which clusters transition from small to medium quality tier">Small→Med:</label>
+                                        <label for="sizeSmallMediumInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Sequence count at which clusters transition from small to medium quality tier">Small->Med:</label>
                                         <input type="number" id="sizeSmallMediumInput" min="1" max="50" value="11" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Groups below this size use the Small quality threshold">
                                     </div>
                                     <div>
-                                        <label for="sizeMediumLargeInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Sequence count at which clusters transition from medium to large quality tier">Med→Large:</label>
+                                        <label for="sizeMediumLargeInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Sequence count at which clusters transition from medium to large quality tier">Med->Large:</label>
                                         <input type="number" id="sizeMediumLargeInput" min="1" max="50" value="20" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Groups at or above this size use the Large quality threshold">
                                     </div>
                                     <div>
@@ -365,7 +365,7 @@
                                     </div>
                                 </div>
                                 <div style="display: flex; gap: 4px; flex-wrap: wrap;">
-                                    <button id="clusterNowButton" style="flex: 1; min-width: 70px; height: 24px; font-size: 11px; background: #4CAF50; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Run clustering with current parameters — results shown below">Cluster Now</button>
+                                    <button id="clusterNowButton" style="flex: 1; min-width: 70px; height: 24px; font-size: 11px; background: #4CAF50; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Run clustering with current parameters - results shown below">Cluster Now</button>
                                 </div>
                             </div>
                             <!-- Presets Section -->
@@ -390,7 +390,7 @@
                 <div class="menu-section">
                     <div class="section-header" data-section="search">
                         <span>Search</span>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon">v</span>
                     </div>
                     <div class="control-group" id="search-controls">
                         <div class="slider-container search-row">
@@ -437,7 +437,7 @@
                 <div class="menu-section">
                     <div class="section-header" data-section="colourseqs">
                         <span>Colour Names</span>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon">v</span>
                     </div>
                     <div class="control-group" id="colourseqs-controls">
                         <!-- Pattern Matching Section -->
@@ -502,7 +502,7 @@
                 <div class="menu-section">
                     <div class="section-header" data-section="alignment">
                         <span>Alignment</span>
-                        <span class="toggle-icon">▼</span>
+                        <span class="toggle-icon">v</span>
                     </div>
                     <div class="control-group" id="alignment-controls">
                         <div class="action-section">
@@ -511,8 +511,8 @@
                                 <button id="realignSelectedButton" title="Realign only selected sequences (keeps others unchanged)">Realign Selected</button>
                                 <button id="realignBlockButton" title="Realign selected columns block (Ctrl+Shift+R)">Realign Block</button>
                                 <button id="addSequencesButton" title="Add new sequences and align with existing">Add Seqs & Align</button>
-                                <button id="degapBlockLeftButton" title="Degap selected continuous column block and compact residues to LEFT">Degap Block ←</button>
-                                <button id="degapBlockRightButton" title="Degap selected continuous column block and compact residues to RIGHT">Degap Block →</button>
+                                <button id="degapBlockLeftButton" title="Degap selected continuous column block and compact residues to LEFT">Degap Block <-</button>
+                                <button id="degapBlockRightButton" title="Degap selected continuous column block and compact residues to RIGHT">Degap Block -></button>
                             </div>
                             <div style="padding: 4px 0; border-top: 1px solid #eee;">
                                 <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
@@ -561,12 +561,24 @@
                 <input type="radio" name="quickMode" id="qmReads" data-target="modeReads"><label for="qmReads" id="qmReadsLabel" style="display:none;">Reads</label>
             </div>
 
-            <span id="canvasModeNotice" class="canvas-mode-chip" title="Canvas mode is view-only. Switch to Full or Block to edit sequences or select columns (Ctrl+Alt+click).">Canvas · view-only</span>
+            <span id="canvasModeNotice" class="canvas-mode-chip" title="Canvas mode is view-only. Switch to Full or Block to edit sequences or select columns (Ctrl+Alt+click).">Canvas | view-only</span>
+
+            <div class="codon-mode-panel" id="codonModePanel" title="Reading frame: which alignment column starts the first codon (Pos 1 = column 1)">
+                <span class="codon-panel-label">Codon</span>
+                <div class="codon-frame-switch" id="codonFrameSwitch">
+                    <input type="radio" name="codonFrameQuick" id="cfPos1" value="0"><label for="cfPos1" title="Read codons starting at alignment column 1">Pos 1</label>
+                    <input type="radio" name="codonFrameQuick" id="cfPos2" value="1"><label for="cfPos2" title="Read codons starting at alignment column 2">Pos 2</label>
+                    <input type="radio" name="codonFrameQuick" id="cfPos3" value="2"><label for="cfPos3" title="Read codons starting at alignment column 3">Pos 3</label>
+                    <input type="radio" name="codonFrameQuick" id="cfAuto" value="auto" checked><label for="cfAuto" title="Auto-detect frame from ATG/M start codon">Auto</label>
+                </div>
+                <button type="button" class="codon-panel-btn" onclick="copyAATranslation()" title="Copy amino acid translation(s) as FASTA">Copy AA</button>
+                <button type="button" class="codon-panel-btn" onclick="downloadAATranslation()" title="Download amino acid translation(s) as FASTA">Save AA</button>
+            </div>
 
             <div class="menu-section" id="shortcuts-section">
                 <div class="section-header" data-section="shortcuts">
-                    <span title="Keyboard shortcuts (hover to view)">⌨</span>
-                    <span class="toggle-icon">▼</span>
+                    <span title="Keyboard shortcuts (hover to view)">Keys</span>
+                    <span class="toggle-icon">v</span>
                 </div>
                 <div class="control-group" id="shortcuts-controls">
                     <div style="display:grid; grid-template-columns: auto 1fr; gap: 2px 12px; font-family: monospace; font-size: 10px; padding: 4px 6px;">
@@ -582,11 +594,11 @@
                         <strong>Ctrl+F</strong><span>Find motif</span>
                         <strong>Ctrl+Shift+S</strong><span>Save preset</span>
                         <strong>Ctrl+O</strong><span>Load preset</span>
-                        <strong>Ctrl+↑↓</strong><span>Move selected</span>
+                        <strong>Ctrl+Up/Down</strong><span>Move selected</span>
                         <strong>Ctrl+Home/End</strong><span>Move to top/bottom</span>
                         <strong>Ctrl+Shift+V</strong><span>Copy columns</span>
                         <strong>Ctrl+Shift+D</strong><span>Delete columns</span>
-                        <strong>Ctrl++/−</strong><span>Zoom in/out</span>
+                        <strong>Ctrl++/-</strong><span>Zoom in/out</span>
                         <strong>Ctrl+H</strong><span>Hide/show menu</span>
                         <strong>Ctrl+I</strong><span>Full info</span>
                     </div>
@@ -596,7 +608,7 @@
             <div class="menu-section side-section" id="actions-section">
                 <div class="section-header" data-section="actions">
                     <span>Actions</span>
-                    <span class="toggle-icon">▼</span>
+                    <span class="toggle-icon">v</span>
                 </div>
                 <div class="control-group" id="actions-controls">
                     <div class="actions-menu-body">
@@ -617,9 +629,9 @@
                                 <button id="moveDownButton" title="Move selected down (Ctrl+Down)">Down</button>
                                 <button id="moveToTopButton" title="Move selected to top (Ctrl+Home)">To Top</button>
                                 <button id="moveToBottomButton" title="Move selected to bottom (Ctrl+End)">To Bottom</button>
-                                <button id="sortByNameButton" title="Sort all sequences alphabetically" onclick="sortByName()">A→Z</button>
-                                <button id="sortByLengthButton" title="Sort by sequence length (longest first)" onclick="sortByLength()">Len↓</button>
-                                <button id="sortBySimButton" title="Sort by similarity to 1st sequence" onclick="sortBySimilarity()">Sim↓</button>
+                                <button id="sortByNameButton" title="Sort all sequences alphabetically" onclick="sortByName()">A->Z</button>
+                                <button id="sortByLengthButton" title="Sort by sequence length (longest first)" onclick="sortByLength()">Lenv</button>
+                                <button id="sortBySimButton" title="Sort by similarity to 1st sequence" onclick="sortBySimilarity()">Simv</button>
                                 <button id="exportOrderButton" title="Export current sequence order as JSON" onclick="exportOrder()">Export</button>
                                 <button id="importOrderButton" title="Import sequence order from JSON file" onclick="importOrder()">Import</button>
                             </div>
@@ -663,7 +675,7 @@
                 </div>
             </div>
             <div id="headerInfoPanel">
-                <div id="versionIndicator">version v109 …</div>
+                <div id="versionIndicator">version v114</div>
                 <div id="sourceInfo">No file loaded</div>
             </div>
         </div>
@@ -674,7 +686,7 @@
                 <input id="editLiveConservationToggle" type="checkbox">
                 Live conservation
             </label>
-            <button id="editRecalcConsButton" class="edit-command-button" title="Recalculate conservation now (in case Live conservation is off)" style="font-size:10px;" onclick="_recalcConservation()">↻ Cons</button>
+            <button id="editRecalcConsButton" class="edit-command-button" title="Recalculate conservation now (in case Live conservation is off)" style="font-size:10px;" onclick="_recalcConservation()">R Cons</button>
             <span class="edit-tool-separator"></span>
             <button id="editInsertGapButton" class="edit-tool-button" data-edit-tool="insertGapSeq" title="GeneDoc Insert Dash: click a sequence position">Ins Gap Seq</button>
             <button id="editDeleteGapButton" class="edit-tool-button" data-edit-tool="deleteGapSeq" title="GeneDoc Delete Dash: click a gap in one sequence">Del Gap Seq</button>
@@ -695,7 +707,7 @@
     </div>
     
     <div id="minimizeBar" style="display: none; position: sticky; top: 0; height: 16px; background: #ccc; cursor: pointer; z-index: 100; text-align: center; line-height: 16px;" title="Click to show menu (Ctrl+H)" onclick="expandMenu()">
-        <span style="font-size: 10px; color: #666; user-select: none;">▼ menu</span>
+        <span style="font-size: 10px; color: #666; user-select: none;">v menu</span>
     </div>
     
     <div id="viewer-container">
@@ -711,7 +723,7 @@
     <div id="sshConsole">
         <div id="sshConsoleHeader">
             <span id="sshConsoleTitle">SSH</span>
-            <button onclick="document.getElementById('sshConsole').style.display='none'" title="Close">×</button>
+            <button onclick="document.getElementById('sshConsole').style.display='none'" title="Close">x</button>
         </div>
         <div id="sshConsoleBody"></div>
     </div>
@@ -735,11 +747,11 @@
                 <strong>Ctrl+Alt+F</strong><span>Clear all searches</span>
                 <strong>Ctrl+Shift+S</strong><span>Save preset</span>
                 <strong>Ctrl+O</strong><span>Load preset</span>
-                <strong>Ctrl+↑ / Ctrl+↓</strong><span>Move selected up/down</span>
+                <strong>Ctrl+Up / Ctrl+Down</strong><span>Move selected up/down</span>
                 <strong>Ctrl+Home / End</strong><span>Move to top/bottom</span>
                 <strong>Ctrl+Shift+V</strong><span>Copy selected columns</span>
                 <strong>Ctrl+Shift+D</strong><span>Delete selected columns</span>
-                <strong>Ctrl++ / Ctrl+−</strong><span>Zoom in/out</span>
+                <strong>Ctrl++ / Ctrl+-</strong><span>Zoom in/out</span>
                 <strong>Ctrl+0</strong><span>Reset zoom to 100%</span>
                 <strong>Ctrl+M</strong><span>Toggle all menu sections</span>
                 <strong>Ctrl+H</strong><span>Hide/show menu</span>
@@ -748,7 +760,7 @@
                 <strong>PgUp / PgDn</strong><span>Scroll alignment page</span>
             </div>
             <div style="margin-top: 20px; text-align: right;">
-                <button onclick="window.open('manual.html','_blank')" style="padding: 8px 16px; cursor: pointer; margin-right: 8px;">📖 Full Manual</button>
+                <button onclick="window.open('manual.html','_blank')" style="padding: 8px 16px; cursor: pointer; margin-right: 8px;">Full Manual</button>
                 <button onclick="document.getElementById('infoModal').style.display='none'" style="padding: 8px 16px; cursor: pointer;">Close</button>
             </div>
         </div>
@@ -758,7 +770,7 @@
     <div id="colourInspectorModal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 2px solid #333; border-radius: 4px; max-width: 500px; width: 90%; max-height: 60vh; overflow: auto; z-index: 10000; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
         <div style="background: #f5f5f5; padding: 12px; border-bottom: 1px solid #ccc; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0;">
             <h3 style="margin: 0; font-size: 14px;">Color Assignment History</h3>
-            <button onclick="document.getElementById('colourInspectorModal').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px;">×</button>
+            <button onclick="document.getElementById('colourInspectorModal').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px;">x</button>
         </div>
         <div id="colourHistoryContent" style="padding: 12px; font-size: 11px;">
             <!-- Populated by JavaScript -->
@@ -769,7 +781,7 @@
     <div id="clusteringModal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 2px solid #333; border-radius: 4px; max-width: 700px; width: 95%; max-height: 80vh; overflow: auto; z-index: 10000; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
         <div style="background: #f5f5f5; padding: 12px; border-bottom: 1px solid #ccc; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0;">
             <h3 style="margin: 0; font-size: 14px;">Sequence Clustering Results</h3>
-            <button onclick="document.getElementById('clusteringModal').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px;">×</button>
+            <button onclick="document.getElementById('clusteringModal').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px;">x</button>
         </div>
         <div id="clusteringContent" style="padding: 12px; font-size: 11px;">
             <!-- Populated by JavaScript -->
@@ -781,7 +793,7 @@
         <div style="background: white; margin: 30px auto; padding: 20px; max-width: 700px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
                 <h2 style="margin: 0;">Sequence Editor</h2>
-                <button id="seqEditCloseBtn" style="background: none; border: none; font-size: 20px; cursor: pointer;" title="Close">✕</button>
+                <button id="seqEditCloseBtn" style="background: none; border: none; font-size: 20px; cursor: pointer;" title="Close">x</button>
             </div>
             <div style="font-size: 12px; color: #555; margin-bottom: 8px;">
                 <span id="seqEditIndex" style="display:none;"></span>
@@ -791,8 +803,8 @@
             </div>
             <div style="margin-bottom: 8px; display: flex; gap: 4px; flex-wrap: wrap;">
                 <button id="seqEditDegap" title="Remove all gap characters (- and .)" style="font-size: 11px; padding: 3px 8px;">Degap</button>
-                <button id="seqEditReverse" title="Reverse the sequence (5'→3' becomes 3'→5')" style="font-size: 11px; padding: 3px 8px;">Reverse</button>
-                <button id="seqEditComplement" title="Complement bases (A↔T, C↔G)" style="font-size: 11px; padding: 3px 8px;">Complement</button>
+                <button id="seqEditReverse" title="Reverse the sequence (5'->3' becomes 3'->5')" style="font-size: 11px; padding: 3px 8px;">Reverse</button>
+                <button id="seqEditComplement" title="Complement bases (A<->T, C<->G)" style="font-size: 11px; padding: 3px 8px;">Complement</button>
                 <button id="seqEditRevComp" title="Reverse Complement" style="font-size: 11px; padding: 3px 8px;">Rev Comp</button>
                 <button id="seqEditUppercase" title="Convert to uppercase" style="font-size: 11px; padding: 3px 8px;">Uppercase</button>
                 <button id="seqEditLowercase" title="Convert to lowercase" style="font-size: 11px; padding: 3px 8px;">Lowercase</button>
@@ -807,8 +819,8 @@
                     <input type="checkbox" id="seqEditPadGaps" checked> Pad/trim to alignment length
                 </label>
                 <div>
-                    <button id="seqEditUndoBtn" onclick="_seqEditUndo()" disabled style="padding: 4px 8px; font-size: 12px; cursor: pointer;" title="Undo last edit in textarea (Ctrl+Z)">↩ Undo</button>
-                    <button id="seqEditRedoBtn" onclick="_seqEditRedo()" disabled style="padding: 4px 8px; font-size: 12px; margin-left: 2px; cursor: pointer;" title="Redo undone edit (Ctrl+Y)">↪ Redo</button>
+                    <button id="seqEditUndoBtn" onclick="_seqEditUndo()" disabled style="padding: 4px 8px; font-size: 12px; cursor: pointer;" title="Undo last edit in textarea (Ctrl+Z)"><- Undo</button>
+                    <button id="seqEditRedoBtn" onclick="_seqEditRedo()" disabled style="padding: 4px 8px; font-size: 12px; margin-left: 2px; cursor: pointer;" title="Redo undone edit (Ctrl+Y)">-> Redo</button>
                     <button id="seqEditApplyBtn" style="padding: 4px 16px; font-size: 13px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 12px;">Apply to Alignment</button>
                     <button id="seqEditCancelBtn" style="padding: 4px 16px; font-size: 13px; margin-left: 8px;">Cancel</button>
                 </div>
@@ -827,7 +839,7 @@
             </div>
             <textarea id="addSeqInput" placeholder=">new_sequence_1&#10;ACGTACGTACGT...&#10;>new_sequence_2&#10;TGCATGCATGCA..." style="width: 100%; height: 200px; font-family: 'Courier New', monospace; font-size: 12px; resize: vertical; box-sizing: border-box;"></textarea>
             <div style="margin-top: 4px; font-size: 11px;">
-                <button id="addSeqBrowseButton" style="padding: 2px 8px; font-size: 11px; background: #f5f5f5; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; margin-right: 6px;">📂 Browse Files</button>
+                <button id="addSeqBrowseButton" style="padding: 2px 8px; font-size: 11px; background: #f5f5f5; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; margin-right: 6px;">Browse Files</button>
                 <input type="file" id="addSeqFileInput" multiple accept=".fasta,.fa,.fas,.fna,.ffn,.faa,.frn,.aln,.msf,.nex,.nexus,.sto,.stockholm,.txt,.gb,.gbk" style="display:none;">
                 <span id="addSeqFileLabel" style="color: #888;"></span>
             </div>
@@ -844,7 +856,7 @@
         <div id="dotPlotDialog" style="background:white;margin:30px auto;padding:16px;max-width:95vw;max-height:92vh;width:900px;min-width:560px;min-height:420px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);position:relative;display:flex;flex-direction:column;overflow:hidden;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <h3 style="margin:0;" id="dotPlotTitle">Dot Plot</h3>
-                <button id="dotPlotCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;padding:0 4px;">✕</button>
+                <button id="dotPlotCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;padding:0 4px;">x</button>
             </div>
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px;flex-wrap:wrap;">
                 <span style="font-weight:bold;">Mode:</span>
@@ -856,7 +868,7 @@
                 <label>Context: <input type="number" id="dotPlotContextRadius" value="30" min="0" max="100" step="5" style="width:45px;" title="Extra bases to show around the hover position"> bp</label>
                 <label><input type="checkbox" id="dotPlotRevComp"> RevComp B</label>
                 <button id="dotPlotRecalc" style="font-size:11px;padding:2px 8px;">Recalculate</button>
-                <button id="dotPlotZoomOut" style="font-size:11px;padding:2px 8px;" title="Zoom out (Ctrl+wheel)">−</button>
+                <button id="dotPlotZoomOut" style="font-size:11px;padding:2px 8px;" title="Zoom out (Ctrl+wheel)">-</button>
                 <button id="dotPlotZoomIn" style="font-size:11px;padding:2px 8px;" title="Zoom in (Ctrl+wheel)">+</button>
                 <button id="dotPlotExport" style="font-size:11px;padding:2px 8px;">Export PNG</button>
                 <button id="dotPlotExportSvg" style="font-size:11px;padding:2px 8px;">Export SVG</button>
@@ -874,11 +886,11 @@
             <div id="dotPlotStatus" style="font-size:11px;color:#666;margin-top:4px;"></div>
             <div id="dotPlotHover" style="font-size:11px;color:#555;font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:16px;"></div>
             <div id="dotPlotAlignMeta" style="font-size:11px;color:#666;font-family:monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-height:16px;margin-top:2px;"></div>
-            <pre id="dotPlotAlignPanel" style="margin:4px 0 0;padding:8px;border-radius:6px;border:1px solid #d8d8d8;background:#f7f7f7;font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;white-space:pre;overflow-x:auto;min-height:58px;">A: —
+            <pre id="dotPlotAlignPanel" style="margin:4px 0 0;padding:8px;border-radius:6px;border:1px solid #d8d8d8;background:#f7f7f7;font:12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;white-space:pre;overflow-x:auto;min-height:58px;">A: -
    
-B: —</pre>
+B: -</pre>
             <div id="dotPlotSpinScroll" style="display:none;font-size:11px;color:#4a9eff;font-weight:bold;margin-top:3px;">Frozen - double-click to unfreeze</div>
-                <button id="dotPlotCopyRegion" style="margin-top:6px;padding:4px 10px;font-size:12px;cursor:pointer;" title="Copy aligned region as FASTA">📋 Copy Region</button>
+                <button id="dotPlotCopyRegion" style="margin-top:6px;padding:4px 10px;font-size:12px;cursor:pointer;" title="Copy aligned region as FASTA">Copy Region</button>
                 <button id="dotPlotHelpBtn" style="margin-top:6px;padding:4px 10px;font-size:12px;cursor:pointer;" title="Local help for dot plot">?</button>
             <div id="dotPlotHelp" style="display:none;margin-top:8px;border:1px solid #ddd;padding:10px;background:#fafafa;max-height:36vh;overflow:auto;font-size:11px;line-height:1.35;">
                 <div style="font-weight:bold;margin-bottom:6px;">Dot Plot Help (local)</div>
@@ -888,7 +900,7 @@ B: —</pre>
                 </p>
                 <p style="margin:0 0 8px;"><b>SPIN vs Dotter</b></p>
                 <ul style="margin:0 0 10px;padding-left:18px;">
-                    <li><b>SPIN (word)</b>: exact k-mer (“word”) matches. Small word sizes find fewer/stricter matches; larger word sizes are slower but more specific.</li>
+                    <li><b>SPIN (word)</b>: exact k-mer ("word") matches. Small word sizes find fewer/stricter matches; larger word sizes are slower but more specific.</li>
                     <li><b>Dotter (window)</b>: sliding-window identity scoring along diagonals. Threshold controls which similarities are shown as dots.</li>
                 </ul>
                 <p style="margin:0 0 8px;"><b>Controls</b></p>
@@ -904,7 +916,7 @@ B: —</pre>
                     <li><b>Double-click</b> a cell to <b>freeze</b> the alignment panel so it stays locked for copying. Double-click again to unfreeze.</li>
                     <li><b>Copy Region</b>: copies the FASTA slice corresponding to the frozen/pinned match.</li>
                     <li><b>Zoom</b>: use <b>Ctrl+wheel</b> (or +/- buttons) to zoom the plot only.</li>
-                    <li><b>Pan</b>: when zoomed, use the plot’s scrollbars (or wheel) to move around.</li>
+                    <li><b>Pan</b>: when zoomed, use the plot's scrollbars (or wheel) to move around.</li>
                 </ul>
             </div>
         </div>
@@ -915,7 +927,7 @@ B: —</pre>
         <div id="repeatFinderModalInner" style="background:white;position:absolute;top:40px;right:20px;padding:16px;max-width:520px;width:480px;max-height:90vh;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);overflow:auto;">
             <div id="repeatFinderDragHandle" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;cursor:move;user-select:none;padding:2px 0;" title="Drag to reposition">
                 <h3 style="margin:0;pointer-events:none;">Repeat Finder</h3>
-                <button id="repeatFinderCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;">✕</button>
+                <button id="repeatFinderCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;">x</button>
             </div>
             <div style="font-size:12px;margin-bottom:8px;">
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
@@ -951,13 +963,13 @@ B: —</pre>
         <div style="background:white;margin:30px auto;padding:16px;max-width:760px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <h3 style="margin:0;">Alignment Tree</h3>
-                <button id="treeBuilderCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;">✕</button>
+                <button id="treeBuilderCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;">x</button>
             </div>
             <div id="treeBuilderSummary" style="font-size:12px;color:#555;margin-bottom:8px;"></div>
             <div style="margin-bottom:6px;font-size:11px;display:flex;gap:12px;align-items:center;">
                 <span style="color:#777;">Method:</span>
                 <label title="Unweighted Pair Group Method with Arithmetic Mean"><input type="radio" name="treeMethod" value="upgma" checked> UPGMA</label>
-                <label title="Neighbor-Joining — Saitou &amp; Nei 1987"><input type="radio" name="treeMethod" value="nj"> NJ</label>
+                <label title="Neighbor-Joining - Saitou &amp; Nei 1987"><input type="radio" name="treeMethod" value="nj"> NJ</label>
             <span style="color:#777;margin-left:16px;">Model:</span>
             <select id="treeDistanceModel" style="font-size:11px;padding:0 2px;height:18px;" title="Distance correction model">
                 <option value="raw">p-distance (raw)</option>
@@ -979,10 +991,10 @@ B: —</pre>
         <div style="background:white;margin:30px auto;padding:16px;max-width:960px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <h3 style="margin:0;">Alignment Statistics</h3>
-                <button id="statsCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;">✕</button>
+                <button id="statsCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;">x</button>
             </div>
             <div id="statsSummaryTab" style="max-height:60vh;overflow:auto;font-size:12px;"></div>
-            <div style="margin-top:8px;font-size:10px;color:#999;">Statistics computed using methods from Easel library (Eddy lab, HHMI Janelia) — esl-alistat / esl-alipid.</div>
+            <div style="margin-top:8px;font-size:10px;color:#999;">Statistics computed using methods from Easel library (Eddy lab, HHMI Janelia) - esl-alistat / esl-alipid.</div>
         </div>
     </div>
 
@@ -991,13 +1003,13 @@ B: —</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=109"></script>
+    <script src="script.js?v=115"></script>
     <script src="tree-draw.js"></script>
     <script>
     // All functionality moved to script.js
     </script>
     <div id="hotkeysTooltip" style="display:none;position:fixed;z-index:10060;background:#fff;border:1px solid #888;border-radius:6px;box-shadow:0 4px 18px rgba(0,0,0,0.35);padding:10px 14px;font-size:11px;font-family:monospace;max-width:300px;pointer-events:auto;">
-        <div style="font-weight:bold;margin-bottom:6px;font-size:12px;">⌨ Keyboard Shortcuts</div>
+        <div style="font-weight:bold;margin-bottom:6px;font-size:12px;">Keys Keyboard Shortcuts</div>
         <div style="display:grid;grid-template-columns:auto 1fr;gap:3px 10px;">
             <strong>Ctrl+A</strong><span>Select/deselect all</span>
             <strong>Ctrl+C</strong><span>Copy nucleotides</span>
@@ -1008,13 +1020,13 @@ B: —</pre>
             <strong>Ctrl+B</strong><span>Consensus below</span>
             <strong>Ctrl+T</strong><span>New tab</span>
             <strong>Ctrl+F</strong><span>Find motif</span>
-            <strong>Ctrl+↑↓</strong><span>Move selected</span>
+            <strong>Ctrl+Up/Down</strong><span>Move selected</span>
             <strong>Ctrl+Home/End</strong><span>Move to top/bottom</span>
-            <strong>Ctrl++/−</strong><span>Zoom in/out</span>
+            <strong>Ctrl++/-</strong><span>Zoom in/out</span>
             <strong>Ctrl+H</strong><span>Hide/show menu</span>
             <strong>Ctrl+I</strong><span>Full shortcuts list</span>
         </div>
-        <div style="margin-top:4px;font-size:10px;color:#888;font-family:sans-serif;">Click ⌨ for full list</div>
+        <div style="margin-top:4px;font-size:10px;color:#888;font-family:sans-serif;">Click Keys for full list</div>
     </div>
 </body>
 </html>
