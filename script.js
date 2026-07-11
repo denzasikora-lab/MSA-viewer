@@ -1,6 +1,6 @@
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 // ViewAlign — browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v106';
+const BUILD_TAG = 'v107';
 // Ã¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢ÂÃ¢â€¢Â
 //
 // EXTERNAL CODE & ATTRIBUTION
@@ -1889,18 +1889,11 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     const top = alignmentContainer.getBoundingClientRect().top;
     alignmentContainer.style.height = (window.innerHeight - top - 28) + 'px';
 
-    // Banner first (DOM order + z-index) so it is never covered by the canvas
-    const inlineNotice = document.createElement('div');
-    inlineNotice.className = 'canvas-mode-notice canvas-mode-notice-inline is-visible';
-    inlineNotice.textContent = 'View-only — switch to Full or Block to edit or select columns (Ctrl+Alt+click).';
-    alignmentContainer.appendChild(inlineNotice);
-    const inlineNoticeH = inlineNotice.offsetHeight || 28;
-
     const canvas = document.createElement('canvas');
     canvas.id = 'alignmentCanvas';
     canvas.style.display = 'block';
     canvas.style.position = 'absolute';
-    canvas.style.top = inlineNoticeH + 'px';
+    canvas.style.top = '0';
     canvas.style.left = '0';
     alignmentContainer.appendChild(canvas);
 
@@ -1948,14 +1941,13 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     // its thumb and mirror pan position.
     _canvasState.totalContentW = totalContentW;
 
-    // Resize canvas to viewport (below inline notice)
+    // Resize canvas to viewport
     function resize() {
         const rect = alignmentContainer.getBoundingClientRect();
-        const viewH = Math.max(1, rect.height - inlineNoticeH);
         canvas.width = rect.width * dpr;
-        canvas.height = viewH * dpr;
+        canvas.height = rect.height * dpr;
         canvas.style.width = rect.width + 'px';
-        canvas.style.height = viewH + 'px';
+        canvas.style.height = rect.height + 'px';
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
     let drawRaf = 0;
@@ -2114,11 +2106,6 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     let dragging = false, dragStartX, dragStartY, dragOx, dragOy;
     canvas.addEventListener('mousedown', (e) => {
         if (e.button === 0) {
-            if (isCtrlModifier(e) || isAltModifier(e)) {
-                showMessage('Selection and editing need Full or Block mode — use the mode switcher above the alignment.', 4500);
-                e.preventDefault();
-                return;
-            }
             dragging = true;
             dragStartX = e.clientX;
             dragStartY = e.clientY;
@@ -2138,9 +2125,6 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         dragging = false;
         canvas.style.cursor = 'default';
     });
-
-    ensureCanvasModeNotice();
-    setCanvasNoticeVisible(true);
 
     scheduleDraw();
 }
@@ -4814,15 +4798,16 @@ async function parseAndRender(isFromDrop = false) {
 // the auto-switch-to-Canvas heuristic, snapshot/session restore, etc).
 function ensureCanvasModeNotice() {
     let notice = document.getElementById('canvasModeNotice');
-    const viewer = document.getElementById('viewer-container');
-    const align = document.getElementById('alignmentContainer');
-    if (!notice && viewer && align) {
-        notice = document.createElement('div');
-        notice.id = 'canvasModeNotice';
-        notice.className = 'canvas-mode-notice';
-        notice.innerHTML = 'Canvas mode is view-only — switch to <strong>Full</strong> or <strong>Block</strong> to edit sequences, select columns (Ctrl+Alt+click), or use other interactive tools.';
-        viewer.insertBefore(notice, align);
-    }
+    if (notice) return notice;
+    const quickSwitch = document.getElementById('quickModeSwitch');
+    const shortcuts = document.getElementById('shortcuts-section');
+    if (!quickSwitch || !shortcuts || !quickSwitch.parentNode) return null;
+    notice = document.createElement('span');
+    notice.id = 'canvasModeNotice';
+    notice.className = 'canvas-mode-chip';
+    notice.title = 'Canvas mode is view-only. Switch to Full or Block to edit sequences or select columns (Ctrl+Alt+click).';
+    notice.textContent = 'Canvas · view-only';
+    quickSwitch.parentNode.insertBefore(notice, shortcuts);
     return notice;
 }
 
@@ -5047,13 +5032,7 @@ function isAltModifier(e) {
 
 function setCanvasNoticeVisible(visible) {
     const notice = ensureCanvasModeNotice();
-    if (!notice) return;
-    notice.classList.toggle('is-visible', visible);
-    if (visible) {
-        notice.removeAttribute('hidden');
-    } else {
-        notice.setAttribute('hidden', '');
-    }
+    if (notice) notice.classList.toggle('is-visible', visible);
 }
 
 function handleColumnSelectMouseDown(e) {

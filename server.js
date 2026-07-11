@@ -21,6 +21,16 @@ app.use((req, res, next) => {
 });
 app.use(express.static('.')); // Serve static files from current directory
 
+app.get('/api/viewer-info', (req, res) => {
+    let scriptVersion = '?';
+    try {
+        const html = fs.readFileSync(path.join(__dirname, 'index.html'), 'utf8');
+        const m = html.match(/script\.js\?v=(\d+)/);
+        if (m) scriptVersion = m[1];
+    } catch (_) {}
+    res.json({ root: __dirname, scriptVersion });
+});
+
 const PORT = 3000;
 
 // ============ BLAST DATABASE REGISTRY ============

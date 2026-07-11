@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=106">
+    <link rel="stylesheet" href="styles.css?v=107">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -561,6 +561,8 @@
                 <input type="radio" name="quickMode" id="qmReads" data-target="modeReads"><label for="qmReads" id="qmReadsLabel" style="display:none;">Reads</label>
             </div>
 
+            <span id="canvasModeNotice" class="canvas-mode-chip" title="Canvas mode is view-only. Switch to Full or Block to edit sequences or select columns (Ctrl+Alt+click).">Canvas · view-only</span>
+
             <div class="menu-section" id="shortcuts-section">
                 <div class="section-header" data-section="shortcuts">
                     <span title="Keyboard shortcuts (hover to view)">⌨</span>
@@ -661,7 +663,7 @@
                 </div>
             </div>
             <div id="headerInfoPanel">
-                <div id="versionIndicator">version v106 …</div>
+                <div id="versionIndicator">version v107 …</div>
                 <div id="sourceInfo">No file loaded</div>
             </div>
         </div>
@@ -697,9 +699,6 @@
     </div>
     
     <div id="viewer-container">
-        <div id="canvasModeNotice" class="canvas-mode-notice">
-            Canvas mode is view-only — switch to <strong>Full</strong> or <strong>Block</strong> to edit sequences, select columns, or use other interactive tools.
-        </div>
         <div id="alignmentContainer">Paste MSF or FASTA into the box and click Load, or drop a file.</div>
         <div class="horizontal-scrollbar">
             <div class="horizontal-scrollbar-thumb"></div>
@@ -992,7 +991,7 @@ B: —</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=106"></script>
+    <script src="script.js?v=107"></script>
     <script src="tree-draw.js"></script>
     <script>
     // All functionality moved to script.js

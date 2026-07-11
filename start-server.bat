@@ -1,59 +1,70 @@
 @echo off
+setlocal EnableDelayedExpansion
 REM Quick start script for MSA Viewer with BLAST
 cd /d "%~dp0"
+set "SILENT=0"
+if /i "%~1"=="silent" set "SILENT=1"
 
-echo Checking Node.js installation...
+if "%SILENT%"=="0" echo Checking Node.js installation...
 node --version >nul 2>&1
 if errorlevel 1 (
-    REM Try common locations if node is not in PATH
     if exist "%USERPROFILE%\miniconda3\node.exe" (
         set "PATH=%USERPROFILE%\miniconda3;%USERPROFILE%\miniconda3\Library\bin;%PATH%"
-        echo Found Node.js in miniconda3, added to PATH
+        if "%SILENT%"=="0" echo Found Node.js in miniconda3, added to PATH
     )
 )
 node --version >nul 2>&1
 if errorlevel 1 (
     echo ERROR: Node.js is not installed or not in PATH
     echo Please install Node.js from https://nodejs.org/
-    pause
+    if "%SILENT%"=="0" pause
     exit /b 1
 )
 
-echo Node.js found: 
-node --version
-
-echo.
-echo Checking BLAST installation...
-blastn -version >nul 2>&1
-if errorlevel 1 (
-    echo WARNING: BLAST is not installed or not in PATH
-    echo The BLAST feature will not work until BLAST is installed
-    echo Download from: https://ftp.ncbi.nlm.nih.gov/blast/executables/blast+/LATEST/
+if "%SILENT%"=="0" (
+    echo Node.js found:
+    node --version
     echo.
-) else (
-    echo BLAST found:
-    blastn -version
 )
 
-REM Check if already running
-netstat -ano | findstr ":3000.*LISTENING" >nul 2>&1
-if not errorlevel 1 (
-    echo Server is already running on port 3000.
-    echo Run stop-server.bat first to restart it.
-    pause
-    exit /b 0
+REM If port 3000 is taken, restart only when it is a stale server from another folder
+set "NEED_START=1"
+for /f "tokens=5" %%a in ('netstat -ano ^| findstr ":3000.*LISTENING"') do set "OLD_PID=%%a"
+if defined OLD_PID (
+    set "MATCH=diff"
+    for /f "delims=" %%m in ('powershell -NoProfile -Command "try { $i = (Invoke-WebRequest -Uri 'http://127.0.0.1:3000/api/viewer-info' -UseBasicParsing -TimeoutSec 3).Content | ConvertFrom-Json; if ((Resolve-Path $i.root -ErrorAction Stop).Path -ieq (Resolve-Path '%CD%' -ErrorAction Stop).Path) { 'same' } else { 'diff' } } catch { 'diff' }"') do set "MATCH=%%m"
+    if "!MATCH!"=="same" (
+        if "%SILENT%"=="0" (
+            echo Server already running from this folder on port 3000.
+            echo   URL : http://localhost:3000
+            echo   Stop: run stop-server.bat
+        )
+        set "NEED_START=0"
+    ) else (
+        if "%SILENT%"=="0" echo Stale server on port 3000 - restarting from this folder...
+        call "%~dp0stop-server.bat"
+    )
 )
 
-echo.
-echo Installing Node.js dependencies...
-call npm install
+if "%NEED_START%"=="0" exit /b 0
 
-echo.
-echo Starting MSA Viewer Server in background window...
+if "%SILENT%"=="0" (
+    echo.
+    echo Installing Node.js dependencies...
+)
+call npm install --silent >nul 2>&1
+
+if "%SILENT%"=="0" (
+    echo.
+    echo Starting MSA Viewer Server in background window...
+)
 start "MSA Viewer Server" /min cmd /k "cd /d "%~dp0" && node server.js"
 
-echo.
-echo Server started. It runs in its own window independent of this terminal.
-echo   URL : http://localhost:3000
-echo   Stop: run stop-server.bat (or close the MSA Viewer Server window)
-echo.
+if "%SILENT%"=="0" (
+    echo.
+    echo Server started. It runs in its own window independent of this terminal.
+    echo   URL : http://localhost:3000
+    echo   Stop: run stop-server.bat (or close the MSA Viewer Server window)
+    echo   Auto-start at login: run install-autostart.bat
+    echo.
+)
