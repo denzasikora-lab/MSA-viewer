@@ -3836,6 +3836,30 @@ function getCachedSpan(row, pos) {
     return state.spanCache.get(row)?.get(pos) || null;
 }
 
+function getSpanElement(row, pos) {
+    const cached = getCachedSpan(row, pos);
+    if (cached) return cached;
+    if (!alignmentContainer) return null;
+    const line = alignmentContainer.querySelector(`.seq-line[data-seq-index="${row}"]`);
+    return line?.querySelector(`.seq-data > span[data-pos="${pos}"]`) || null;
+}
+
+function forEachColumnSpan(pos, callback) {
+    let found = 0;
+    if (state.spanCache) {
+        state.spanCache.forEach(rowMap => {
+            const span = rowMap.get(pos);
+            if (span) {
+                found++;
+                callback(span);
+            }
+        });
+    }
+    if (found > 0) return;
+    if (!alignmentContainer) return;
+    alignmentContainer.querySelectorAll(`.seq-data > span[data-pos="${pos}"]`).forEach(callback);
+}
+
 const RENDER_STANDARD_BASES = new Set(['A', 'C', 'G', 'T', 'U', 'N', '-', '.', 'a', 'c', 'g', 't', 'u', 'n']);
 const RENDER_AMBIGUOUS_BASES = new Set(['R','Y','M','K','S','W','H','B','V','D','r','y','m','k','s','w','h','b','v','d']);
 const ALIGNMENT_COLOR_SCHEMES = new Set([
@@ -4790,6 +4814,9 @@ function syncQuickModeSwitch() {
     // been loaded - it's not a mode you'd otherwise want to switch into blind.
     const readsLabel = document.getElementById('qmReadsLabel');
     if (readsLabel) readsLabel.style.display = (bamState?.reads?.length > 0 || isReadsMode) ? '' : 'none';
+
+    const canvasNotice = document.getElementById('canvasModeNotice');
+    if (canvasNotice) canvasNotice.hidden = !isCanvasMode;
 }
 
 function onModeChange() {
@@ -10445,12 +10472,9 @@ function updateColumnSelections() {
         spanSet.forEach(span => span.classList.remove('column-selected'));
     });
     state.domSelectedColumns = new Map();
-    if (!state.spanCache) return;
     state.selectedColumns.forEach(pos => {
         const spanSet = new Set();
-        state.spanCache.forEach(rowMap => {
-            const span = rowMap.get(pos);
-            if (!span) return;
+        forEachColumnSpan(pos, span => {
             span.classList.add('column-selected');
             spanSet.add(span);
         });
@@ -10552,7 +10576,7 @@ function refreshNucleotideSelectionsImmediate() {
     desiredSelections.forEach((posSet, row) => {
         posSet.forEach(pos => {
             if (!state.domSelectedNucs.get(row)?.has(pos)) {
-                const span = getCachedSpan(row, pos);
+                const span = getSpanElement(row, pos);
                 if (!span) return;
                 span.classList.add('nuc-selected');
                 attachNucSelectedHandlers(span);
@@ -10575,7 +10599,7 @@ function refreshNucleotideSelectionsImmediate() {
     }
     if (state.pendingNucStart) {
         const { row, pos } = state.pendingNucStart;
-        const span = getCachedSpan(row, pos);
+        const span = getSpanElement(row, pos);
         if (span && !span.classList.contains('nuc-selected')) {
             span.classList.add('nuc-pending');
             attachNucPendingHandlers(span);
@@ -11500,7 +11524,7 @@ function updateEditActiveCell() {
         state.editActiveSpan = null;
     }
     if (!state.editModeActive || state.editTool !== 'residue' || !state.editCell) return;
-    const span = getCachedSpan(state.editCell.row, state.editCell.pos);
+    const span = getSpanElement(state.editCell.row, state.editCell.pos);
     if (span) {
         span.classList.add('edit-active-cell');
         state.editActiveSpan = span;
@@ -11988,11 +12012,8 @@ function handleGeneDocResidueKey(e) {
  * using cached DOM references. No full re-render. Like GeneDoc.
  */
 function fastUpdateEditCellAt(row, pos) {
-    // Diagnostic: is cache populated?
-    const cacheSize = state.spanCache?.size || 0;
-    const span = getCachedSpan(row, pos);
+    const span = getSpanElement(row, pos);
     if (!span) {
-        console.warn('fastUpdateEditCellAt: cache miss', { cacheSize, row, pos, hasSeqs: !!state.seqs[row] });
         renderAlignment(); return;
     }
 

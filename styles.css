@@ -1579,6 +1579,15 @@ span.column-selected {
     color: #fff;
 }
 
+.canvas-mode-notice {
+    padding: 5px 10px;
+    font-size: 11px;
+    line-height: 1.35;
+    color: #5c4a00;
+    background: #fff8e1;
+    border-bottom: 1px solid #ffe082;
+}
+
 .mode-container {
     display: flex;
     align-items: flex-start;
