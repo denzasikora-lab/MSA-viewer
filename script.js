@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v126';
+const BUILD_TAG = 'v127';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 // ASCII-safe UI symbols (avoid emoji / special Unicode in source files)
@@ -4021,6 +4021,19 @@ function extractNucSubstring(seqStr, start, end, stripGaps = true) {
     return stripGaps ? sub.replace(/[-.]/g, '') : sub;
 }
 
+/** Copy selected alignment columns from one row, always omitting gap characters. */
+function copyNucPositions(seqStr, positions) {
+    const poss = Array.from(positions).sort((a, b) => a - b);
+    let out = '';
+    for (const p of poss) {
+        const ch = String(seqStr || '')[p];
+        if (ch === undefined) continue;
+        if (isAlignmentGapChar(ch)) continue;
+        out += ch;
+    }
+    return out;
+}
+
 function nucRowSpanSelector(row, pos) {
     if (row === CONSENSUS_ROW_INDEX) {
         return `.seq-line.consensus-line .seq-data > span[data-pos="${pos}"]`;
@@ -5906,23 +5919,8 @@ function copySelected() {
         if (posSet.size === 0) continue;
         const seqStr = getNucRowSequence(i);
         if (!seqStr) continue;
-        const stripGaps = true;
-        const poss = Array.from(posSet).sort((a, b) => a - b);
-        let start = poss[0], end = poss[0];
-        let ranges = [];
-        for (let j = 1; j < poss.length; j++) {
-            if (poss[j] === end + 1) {
-                end = poss[j];
-            } else {
-                ranges.push([start, end]);
-                start = end = poss[j];
-            }
-        }
-        ranges.push([start, end]);
-        for (let [st, en] of ranges) {
-            const sub = extractNucSubstring(seqStr, st, en, stripGaps);
-            if (sub) nucText += sub + '\n';
-        }
+        const frag = copyNucPositions(seqStr, posSet);
+        if (frag) nucText += frag + '\n';
     }
     const trimmedNucText = nucText.trim();
     if (trimmedNucText) {
@@ -5943,7 +5941,8 @@ function copySelected() {
     }
     const fasta = Array.from(state.selectedRows).sort((a,b) => a - b).map(i => {
         const s = state.seqs[i];
-        return `>${s.fullHeader || s.header}\n${s.seq}`;
+        const seq = s.seq.replace(/[-.]/g, '');
+        return `>${s.fullHeader || s.header}\n${seq}`;
     }).join('\n');
     navigator.clipboard.writeText(fasta).then(() => {
         showMessage("Selected sequences copied as FASTA!", 2000);
@@ -6163,12 +6162,13 @@ function copySelectedColumns() {
     const fasta = state.seqs.map(s => {
         let seq = '';
         for (const pos of cols) {
-            seq += s.seq[pos] || '-';
+            const ch = s.seq[pos];
+            if (!isAlignmentGapChar(ch)) seq += ch;
         }
         return `>${s.fullHeader || s.header}\n${seq}`;
     }).join('\n');
     navigator.clipboard.writeText(fasta).then(() => {
-        showMessage("Selected columns copied as FASTA!", 2000);
+        showMessage("Selected columns copied as FASTA (ungapped)!", 2000);
     }).catch(err => {
         console.error('Copy failed:', err);
         showMessage("Failed to copy.", 5000);
