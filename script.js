@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v120';
+const BUILD_TAG = 'v122';
 // ASCII-safe UI symbols (avoid emoji / special Unicode in source files)
 const SYM = {
     sep: '|',
@@ -1191,7 +1191,11 @@ function calculateGaplessPositions(sequence) {
 }
 function reverseComplement(seq) {
     const complement = { 'A':'T','T':'A','C':'G','G':'C','N':'N','-':'-','.':'.', 'U':'A','R':'Y','Y':'R','M':'K','K':'M','S':'S','W':'W','H':'D','B':'V','V':'B','D':'H' };
-    return seq.split('').reverse().map(b => complement[b] || 'N').join('');
+    return seq.split('').reverse().map(b => {
+        const rc = complement[b.toUpperCase()];
+        if (!rc) return /[a-z]/.test(b) ? 'n' : 'N';
+        return /[a-z]/.test(b) ? rc.toLowerCase() : rc;
+    }).join('');
 }
 
 function hexToRgb(hex) {
@@ -1561,7 +1565,7 @@ function parseGenBank(text) {
         }
         if (inOrigin) {
             // Remove line numbers and spaces
-            const seq = trimmed.replace(/^\d+\s*/, '').replace(/\s+/g, '').toUpperCase();
+            const seq = trimmed.replace(/^\d+\s*/, '').replace(/\s+/g, '');
             if (seq && !/^[\/\/]/.test(seq)) seqParts.push(seq);
         }
     }
@@ -2357,11 +2361,11 @@ function _isProteinFastaSequence(rawSeq) {
 }
 
 function _sanitizeFastaSequence(rawSeq, isProtein) {
-    const compact = String(rawSeq || '').replace(/\s+/g, '').toUpperCase().replace(/\./g, '-');
+    const compact = String(rawSeq || '').replace(/\s+/g, '').replace(/\./g, '-');
     if (isProtein) {
-        return compact.replace(/[^ACDEFGHIKLMNPQRSTVWYBXZJUO*.-]/g, 'X');
+        return compact.replace(/[^ACDEFGHIKLMNPQRSTVWYBXZJUO*.-]/gi, 'X');
     }
-    return compact.replace(/[^ACGTUNRYMKSWHBVD.-]/g, 'N');
+    return compact.replace(/[^ACGTUNRYMKSWHBVD.-]/gi, 'N');
 }
 
 function _pushParsedFastaSequence(seqs, header, seq) {
@@ -2476,9 +2480,9 @@ function parseMsf(text) {
             let seqObj = seqMap[name];
             let processedSeq;
             if (isNucleic) {
-                processedSeq = seqObj.seq.toUpperCase().replace(/[^ACGTUNRYMKSWHBVD\.\-]/g, 'N');
+                processedSeq = seqObj.seq.replace(/[^ACGTUNRYMKSWHBVD.\-]/gi, 'N');
             } else {
-                processedSeq = seqObj.seq.toUpperCase().replace(/[^A-Z\.\-]/g, 'X');
+                processedSeq = seqObj.seq.replace(/[^A-Za-z.\-]/g, 'X');
             }
             processedSeq = processedSeq.replace(/\./g, '-');
             while (processedSeq.length < maxLen) {
@@ -5182,12 +5186,22 @@ function syncCodonModePanel() {
     });
 }
 
+function domEventTarget(e) {
+    const target = e?.target;
+    if (!target) return null;
+    return target.nodeType === Node.TEXT_NODE ? target.parentElement : target;
+}
+
+function closestFromEvent(e, selector) {
+    return domEventTarget(e)?.closest(selector) || null;
+}
+
 function handleColumnSelectMouseDown(e) {
     if (e.button !== 0) return;
     if (!isCtrlModifier(e) || !isAltModifier(e)) return;
-    const row = e.target.closest('.seq-line');
+    const row = closestFromEvent(e, '.seq-line');
     if (!row || row.classList.contains('consensus-line') || row.classList.contains('scale-ruler-line')) return;
-    const span = e.target.closest('.seq-data span[data-pos]');
+    const span = closestFromEvent(e, '.seq-data span[data-pos]');
     if (!span) return;
     const pos = parseInt(span.dataset.pos, 10);
     if (!Number.isFinite(pos)) return;
@@ -5215,13 +5229,60 @@ function handleColumnSelectMouseDown(e) {
     e.stopPropagation();
 }
 
+function handleNucleotideSelectMouseDown(e) {
+    if (e.button !== 0) return;
+    if (!isCtrlModifier(e) || isAltModifier(e)) return;
+    if (document.getElementById('modeCanvas')?.checked || document.getElementById('modeReads')?.checked) return;
+
+    const span = closestFromEvent(e, '.seq-data span[data-pos]');
+    if (!span || span.classList.contains('seq-length')) return;
+    const row = span.closest('.seq-line');
+    if (!row || row.classList.contains('consensus-line') || row.classList.contains('scale-ruler-line')) return;
+    const index = parseInt(row.dataset.seqIndex, 10);
+    const pos = parseInt(span.dataset.pos, 10);
+    if (!Number.isInteger(index) || !Number.isInteger(pos)) return;
+
+    if (state.pendingNucStart === null) {
+        state.selectedNucs.clear();
+        state.pendingNucStart = { row: index, pos };
+        state.isDragging = true;
+        state.dragStartRow = index;
+        state.dragStartCol = pos;
+        state.dragMode = 'nuc';
+        const rowSet = new Set([pos]);
+        state.selectedNucs.set(index, rowSet);
+        scheduleNucSelectionRefresh();
+    } else if (state.pendingNucStart.row === index) {
+        const startPos = Math.min(state.pendingNucStart.pos, pos);
+        const endPos = Math.max(state.pendingNucStart.pos, pos);
+        const rowSet = new Set();
+        for (let p = startPos; p <= endPos; p++) rowSet.add(p);
+        state.selectedNucs.set(index, rowSet);
+        state.pendingNucStart = null;
+        scheduleNucSelectionRefresh();
+    } else {
+        state.selectedNucs.clear();
+        state.pendingNucStart = { row: index, pos };
+        state.isDragging = true;
+        state.dragStartRow = index;
+        state.dragStartCol = pos;
+        state.dragMode = 'nuc';
+        const rowSet = new Set([pos]);
+        state.selectedNucs.set(index, rowSet);
+        scheduleNucSelectionRefresh();
+    }
+
+    hideTooltip();
+    e.preventDefault();
+    e.stopImmediatePropagation();
+}
+
 function handleMouseDown(e) {
     if (e.button !== 0) return;
-    const row = e.target.closest('.seq-line');
+    const row = closestFromEvent(e, '.seq-line');
     if (!row || row.classList.contains('consensus-line')) return;
     const index = parseInt(row.dataset.seqIndex);
-    const name = e.target.closest('.seq-name');
-    const span = e.target.closest('.seq-data span');
+    const name = closestFromEvent(e, '.seq-name');
     if (name) {
         if (isCtrlModifier(e)) {
             state.isDragging = true;
@@ -5239,62 +5300,7 @@ function handleMouseDown(e) {
             e.preventDefault();
         }
     // No else clause - click without Ctrl/Shift copies name (handled in nameSpan.click)
-    } else if (span && isCtrlModifier(e) && !isAltModifier(e)) {
-        const pos = parseInt(span.dataset.pos);
-        if (isNaN(pos)) return;
-
-        // Check if this is a simple click (not a drag)
-        // We'll determine this in mouseup - for now, prepare for both possibilities
-
-        // Two-click system: Check if we have a pending start
-        if (state.pendingNucStart === null) {
-            // First click - set pending start and also prepare for potential drag
-            state.selectedNucs.clear();
-            state.pendingNucStart = {row: index, pos: pos};
-
-            // Also set up drag state in case user drags
-            state.isDragging = true;
-            state.dragStartRow = index;
-            state.dragStartCol = pos;
-            state.dragMode = 'nuc';
-
-            // Set initial selection to just this nucleotide
-            let rowSet = new Set();
-            rowSet.add(pos);
-            state.selectedNucs.set(index, rowSet);
-
-            scheduleNucSelectionRefresh();
-        } else if (state.pendingNucStart.row === index) {
-            // Second click on same row - complete the two-click selection
-            const startPos = Math.min(state.pendingNucStart.pos, pos);
-            const endPos = Math.max(state.pendingNucStart.pos, pos);
-            let rowSet = new Set();
-            for (let p = startPos; p <= endPos; p++) {
-                rowSet.add(p);
-            }
-            state.selectedNucs.set(index, rowSet);
-            state.pendingNucStart = null;
-            scheduleNucSelectionRefresh();
-        } else {
-            // Click on different row - clear pending and start fresh
-            state.selectedNucs.clear();
-            state.pendingNucStart = {row: index, pos: pos};
-
-            // Also set up drag state
-            state.isDragging = true;
-            state.dragStartRow = index;
-            state.dragStartCol = pos;
-            state.dragMode = 'nuc';
-
-            let rowSet = new Set();
-            rowSet.add(pos);
-            state.selectedNucs.set(index, rowSet);
-
-            scheduleNucSelectionRefresh();
-        }
-
-        e.preventDefault();
-    }
+    // Nucleotide Ctrl+click handled in capture phase (handleNucleotideSelectMouseDown)
     // Column selection: Ctrl+Alt+click handled in capture phase (handleColumnSelectMouseDown)
 }
 // Selection helper consolidating toggle behavior
@@ -5310,7 +5316,7 @@ function toggleRowSelection(index) {
 function handleMouseMove(e) {
     if (!state.isDragging) return;
     if (state.dragMode === 'row') {
-        const row = e.target.closest('.seq-line');
+        const row = closestFromEvent(e, '.seq-line');
         if (row) {
             const index = parseInt(row.dataset.seqIndex);
             if (index !== undefined) {
@@ -5324,7 +5330,7 @@ function handleMouseMove(e) {
         }
     } else if (state.dragMode === 'col') {
         hideTooltip();
-        const span = e.target.closest('.seq-data span');
+        const span = closestFromEvent(e, '.seq-data span[data-pos]');
         if (span) {
             const pos = parseInt(span.dataset.pos);
             if (isNaN(pos)) return;
@@ -5336,7 +5342,7 @@ function handleMouseMove(e) {
             updateColumnSelections();
         }
     } else if (state.dragMode === 'nuc') {
-        const span = e.target.closest('.seq-data span');
+        const span = closestFromEvent(e, '.seq-data span[data-pos]');
         if (span) {
             const pos = parseInt(span.dataset.pos);
             if (isNaN(pos)) return;
@@ -11665,12 +11671,17 @@ function attachUIListeners() {
         state._alignmentPointerBound = true;
         document.addEventListener('mousedown', (e) => {
             const container = document.getElementById('alignmentContainer');
-            if (!container || !container.contains(e.target)) return;
+            if (!container || !container.contains(domEventTarget(e))) return;
             handleColumnSelectMouseDown(e);
         }, true);
         document.addEventListener('mousedown', (e) => {
             const container = document.getElementById('alignmentContainer');
-            if (!container || !container.contains(e.target)) return;
+            if (!container || !container.contains(domEventTarget(e))) return;
+            handleNucleotideSelectMouseDown(e);
+        }, true);
+        document.addEventListener('mousedown', (e) => {
+            const container = document.getElementById('alignmentContainer');
+            if (!container || !container.contains(domEventTarget(e))) return;
             handleGeneDocEditMouseDown(e);
             if (!e.defaultPrevented) handleMouseDown(e);
             handleAlignmentPanStart(e);
@@ -12135,7 +12146,8 @@ function getGeneDocCharWidth(span) {
 
 function handleGeneDocEditMouseDown(e) {
     if (!state.editModeActive || e.button !== 0) return;
-    const span = e.target.closest?.('.seq-data > span[data-pos]');
+    if (isCtrlModifier(e)) return;
+    const span = closestFromEvent(e, '.seq-data > span[data-pos]');
     if (!span) return;
     const seqLine = span.closest('.seq-line');
     if (!seqLine || seqLine.classList.contains('consensus-line') || seqLine.classList.contains('scale-ruler-line')) return;
