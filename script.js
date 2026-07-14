@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v125';
+const BUILD_TAG = 'v126';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 // ASCII-safe UI symbols (avoid emoji / special Unicode in source files)
@@ -3976,11 +3976,49 @@ function resolveNucRowIndex(row) {
 }
 
 function getConsensusSequenceGapped() {
-    if (state.consensusCache?.values?.length) {
+    const len = state.seqs?.length
+        ? Math.max(...state.seqs.map(s => s.seq.length))
+        : 0;
+    if (len > 0 && state.consensusCache?.values?.length === len) {
         return state.consensusCache.values.join('');
     }
     if (!state.seqs?.length) return '';
     return computeConsensusForSequences(state.seqs.map(s => s.seq));
+}
+
+function getNucRowSequence(rowIndex) {
+    if (rowIndex === CONSENSUS_ROW_INDEX) return getConsensusSequenceGapped();
+    return state.seqs[rowIndex]?.seq || '';
+}
+
+function isAlignmentGapChar(ch) {
+    const c = String(ch ?? '-');
+    return c === '-' || c === '.';
+}
+
+function getNucCharAt(rowIndex, pos) {
+    const seq = getNucRowSequence(rowIndex);
+    return pos >= 0 && pos < seq.length ? seq[pos] : '-';
+}
+
+/** Build a nucleotide selection set; range drags skip gap columns, single clicks keep gaps. */
+function buildNucSelectionSet(rowIndex, startPos, endPos) {
+    const lo = Math.min(startPos, endPos);
+    const hi = Math.max(startPos, endPos);
+    const rowSet = new Set();
+    if (lo === hi) {
+        rowSet.add(lo);
+        return rowSet;
+    }
+    for (let p = lo; p <= hi; p++) {
+        if (!isAlignmentGapChar(getNucCharAt(rowIndex, p))) rowSet.add(p);
+    }
+    return rowSet;
+}
+
+function extractNucSubstring(seqStr, start, end, stripGaps = true) {
+    const sub = String(seqStr || '').slice(start, end + 1);
+    return stripGaps ? sub.replace(/[-.]/g, '') : sub;
 }
 
 function nucRowSpanSelector(row, pos) {
@@ -5308,10 +5346,7 @@ function handleNucleotideSelectMouseDown(e) {
         state.selectedNucs.set(index, rowSet);
         scheduleNucSelectionRefresh();
     } else if (state.pendingNucStart.row === index) {
-        const startPos = Math.min(state.pendingNucStart.pos, pos);
-        const endPos = Math.max(state.pendingNucStart.pos, pos);
-        const rowSet = new Set();
-        for (let p = startPos; p <= endPos; p++) rowSet.add(p);
+        const rowSet = buildNucSelectionSet(index, state.pendingNucStart.pos, pos);
         state.selectedNucs.set(index, rowSet);
         state.pendingNucStart = null;
         scheduleNucSelectionRefresh();
@@ -5408,15 +5443,8 @@ function handleMouseMove(e) {
             if (!Number.isInteger(currentIndex)) return;
             // Only allow drag within the same row
             if (currentIndex === state.dragStartRow) {
-                const startPos = Math.min(state.dragStartCol, pos);
-                const endPos = Math.max(state.dragStartCol, pos);
-
-                // Clear existing selection and create new range
+                const rowSet = buildNucSelectionSet(currentIndex, state.dragStartCol, pos);
                 state.selectedNucs.clear();
-                let rowSet = new Set();
-                for (let p = startPos; p <= endPos; p++) {
-                    rowSet.add(p);
-                }
                 state.selectedNucs.set(currentIndex, rowSet);
                 scheduleNucSelectionRefresh();
             }
@@ -5876,10 +5904,9 @@ function copySelected() {
     let nucText = '';
     for (let [i, posSet] of state.selectedNucs.entries()) {
         if (posSet.size === 0) continue;
-        const seqStr = i === CONSENSUS_ROW_INDEX
-            ? getConsensusSequenceGapped()
-            : state.seqs[i]?.seq;
+        const seqStr = getNucRowSequence(i);
         if (!seqStr) continue;
+        const stripGaps = true;
         const poss = Array.from(posSet).sort((a, b) => a - b);
         let start = poss[0], end = poss[0];
         let ranges = [];
@@ -5893,15 +5920,15 @@ function copySelected() {
         }
         ranges.push([start, end]);
         for (let [st, en] of ranges) {
-            const sub = seqStr.slice(st, en + 1);
-            nucText += sub + '\n';
+            const sub = extractNucSubstring(seqStr, st, en, stripGaps);
+            if (sub) nucText += sub + '\n';
         }
     }
     const trimmedNucText = nucText.trim();
     if (trimmedNucText) {
         const previewSource = trimmedNucText.replace(/\s+/g, ' ');
     const preview = previewSource.length > 50 ? previewSource.slice(0, 50) + '...' : previewSource;
-        const baseCount = trimmedNucText.replace(/\s+/g, '').length;
+        const baseCount = trimmedNucText.replace(/[-.\s]/g, '').length;
         navigator.clipboard.writeText(trimmedNucText).then(() => {
             showMessage(`Copied ${baseCount} bp: ${preview}`, 4000);
         }).catch(err => {
