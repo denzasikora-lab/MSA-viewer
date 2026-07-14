@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v122';
+const BUILD_TAG = 'v123';
 // ASCII-safe UI symbols (avoid emoji / special Unicode in source files)
 const SYM = {
     sep: '|',
@@ -5299,6 +5299,7 @@ function handleMouseDown(e) {
             updateRowSelections();
             e.preventDefault();
         }
+    }
     // No else clause - click without Ctrl/Shift copies name (handled in nameSpan.click)
     // Nucleotide Ctrl+click handled in capture phase (handleNucleotideSelectMouseDown)
     // Column selection: Ctrl+Alt+click handled in capture phase (handleColumnSelectMouseDown)
