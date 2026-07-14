@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v117';
+const BUILD_TAG = 'v120';
 // ASCII-safe UI symbols (avoid emoji / special Unicode in source files)
 const SYM = {
     sep: '|',
@@ -3398,6 +3398,7 @@ function renderAlignment(options = {}) {
     // never drifts from whichever mode is actually about to render.
     syncQuickModeSwitch();
     syncCodonModePanel();
+    syncSearchControlsAvailability();
     if (!state.seqs || state.seqs.length === 0) {
         alignmentContainer.innerHTML = '<div style="padding:20px; color:#666; font-style:italic;">No sequences loaded. Paste FASTA/MSF and click Load.</div>';
         syncCodonModePanel();
@@ -4957,6 +4958,7 @@ function syncQuickModeSwitch() {
 
     const canvasNotice = ensureCanvasModeNotice();
     setCanvasNoticeVisible(!!isCanvasMode);
+    syncSearchControlsAvailability();
 }
 
 function onModeChange() {
@@ -4975,6 +4977,7 @@ function onModeChange() {
     }
     syncQuickModeSwitch();
     syncCodonModePanel();
+    syncSearchControlsAvailability();
     // Keep block size row visible but gray it out when not in Block mode - prevents layout jump
     const container = el('blockSizeContainer');
     const isBlocks = el('modeBlocks')?.checked;
@@ -5378,12 +5381,19 @@ function handleKeyDown(e) {
     // but allow Ctrl/Meta/Alt shortcuts to pass through - EXCEPT in TEXTAREA
     // where browser-native shortcuts (Ctrl+A select-all-text, Ctrl+C copy, etc.) should work.
     const activeEl = document.activeElement;
-    if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable)) {
+    const isFormField = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
+    if (isFormField) {
         if (activeEl.tagName === 'TEXTAREA') {
             return; // let browser handle all keys in textarea (Input window etc.)
         }
+        if ((e.ctrlKey || e.metaKey) && !e.altKey) {
+            const key = e.key.toLowerCase();
+            if ((key === 'v' || key === 'c' || key === 'x' || key === 'a') && !e.shiftKey) {
+                return; // native copy/paste/cut/select-all in single-line inputs
+            }
+        }
         if (e.ctrlKey || e.metaKey || e.altKey) {
-            // modifier key held - treat as shortcut, let it fall through
+            // other modifier shortcuts may still apply
         } else if (state.editModeActive && state.editTool === 'residue' && state.editCell) {
             // GeneDoc residue editing mode - allow unmodified keys
         } else {
@@ -5399,7 +5409,7 @@ function handleKeyDown(e) {
     if (e.altKey) {
         state.altPressed = true;
     }
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c') {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && !isFormField) {
         copySelected();
         e.preventDefault();
     }
@@ -5484,8 +5494,8 @@ function handleKeyDown(e) {
             case 'v':
                 if (e.shiftKey) {
                     copySelectedColumns();
+                    e.preventDefault();
                 }
-                e.preventDefault();
                 break;
             case 'd':
                 if (e.shiftKey) {
@@ -5572,19 +5582,7 @@ function reverseComplementSelected() {
         showMessage("Select sequences (Ctrl+click) to RevComp.", 3000);
         return;
     }
-    pushUndo('revcomp');
-    for (const i of state.selectedRows) {
-        if (i < state.seqs.length) {
-            state.seqs[i] = {
-                ...state.seqs[i],
-                seq: reverseComplement(state.seqs[i].seq)
-            };
-            state.seqs[i].gaplessPositions = calculateGaplessPositions(state.seqs[i].seq);
-        }
-    }
-    state.lastAction = 'revcomp';
-    renderAlignment();
-    showMessage("Reverse complement applied!", 2000);
+    reverseComplementSequences(Array.from(state.selectedRows));
 }
 
 // -- Sort functions --
@@ -7190,24 +7188,73 @@ function expandMenu() {
     });
 }
 function findFuzzyPositions(degapped, motif, maxMismatches) {
-    const positions = [];
-    for (let i = 0; i <= degapped.length - motif.length; i++) {
+    return findFuzzyMatches(degapped, motif, maxMismatches).map(m => m.idx);
+}
+
+function findFuzzyMatches(degapped, motif, maxMismatches) {
+    const matches = [];
+    const motifLen = motif.length;
+    if (!motifLen || degapped.length < motifLen) return matches;
+    for (let i = 0; i <= degapped.length - motifLen; i++) {
         let mismatches = 0;
-        for (let j = 0; j < motif.length; j++) {
-            if (degapped[i + j] !== motif[j]) {
+        const matchingPositions = [];
+        for (let j = 0; j < motifLen; j++) {
+            if (degapped[i + j] === motif[j]) {
+                matchingPositions.push(i + j);
+            } else {
                 mismatches++;
                 if (mismatches > maxMismatches) break;
             }
         }
         if (mismatches <= maxMismatches) {
-            positions.push(i);
+            matches.push({ idx: i, len: motifLen, matchingPositions });
         }
     }
-    return positions;
+    return matches;
 }
 
 function findMatchesWithMismatches(degapped, motif, maxMismatches) {
     return findFuzzyPositions(degapped, motif, maxMismatches);
+}
+
+function withRcPrefix(name) {
+    const text = String(name || '');
+    if (!text) return 'rc_';
+    return /^rc_/i.test(text) ? text : `rc_${text}`;
+}
+
+function reverseComplementSequences(indices) {
+    const targets = Array.from(indices || []).filter(i => Number.isInteger(i) && i >= 0 && i < state.seqs.length);
+    if (!targets.length) {
+        showMessage('Select sequences to RevComp.', 3000);
+        return;
+    }
+    pushUndo('revcomp');
+    for (const i of targets) {
+        const seqObj = state.seqs[i];
+        const newHeader = withRcPrefix(seqObj.header);
+        const newFullHeader = seqObj.fullHeader && seqObj.fullHeader !== seqObj.header
+            ? withRcPrefix(seqObj.fullHeader)
+            : newHeader;
+        if (colourState?.mappings?.has(seqObj.header)) {
+            const colour = colourState.mappings.get(seqObj.header);
+            colourState.mappings.delete(seqObj.header);
+            colourState.mappings.set(newHeader, colour);
+        }
+        state.seqs[i] = {
+            ...seqObj,
+            header: newHeader,
+            fullHeader: newFullHeader,
+            seq: reverseComplement(seqObj.seq)
+        };
+        state.seqs[i].gaplessPositions = calculateGaplessPositions(state.seqs[i].seq);
+    }
+    state.lastAction = 'revcomp';
+    if (colourState?.mappings?.size && typeof applyColourToSeqNames === 'function') {
+        applyColourToSeqNames(colourState.mappings);
+    }
+    renderAlignment();
+    showMessage(`Reverse complement applied to ${targets.length} sequence${targets.length !== 1 ? 's' : ''}!`, 2000);
 }
 
 const RESTRICTION_ENZYMES = [
@@ -7405,7 +7452,33 @@ function initResEnzymeSearch() {
     });
 }
 
+function isMotifSearchSupported() {
+    return !document.getElementById('modeCanvas')?.checked
+        && !document.getElementById('modeReads')?.checked;
+}
+
+function syncSearchControlsAvailability() {
+    const supported = isMotifSearchSupported();
+    const searchControls = el('search-controls');
+    if (searchControls) {
+        searchControls.style.opacity = supported ? '1' : '0.45';
+        searchControls.style.pointerEvents = supported ? 'auto' : 'none';
+    }
+    const findBtn = el('searchButton');
+    if (findBtn) {
+        findBtn.title = supported
+            ? 'Find motif in sequences (shortcut: Ctrl+F)'
+            : 'Motif search requires Full or Block mode (not Canvas/Reads)';
+    }
+}
+
 function searchMotif(options = {}) {
+    if (!isMotifSearchSupported()) {
+        if (!options.suppressMessage) {
+            showMessage('Motif search requires Full or Block mode. Switch out of Canvas/Reads.', 3500);
+        }
+        return null;
+    }
     const raw = options.motif ?? (el('searchInput').value || '');
     const motif = raw.trim().replace(/\s+/g, '').toUpperCase();
     if (!motif) return;
@@ -7526,8 +7599,8 @@ function searchMotif(options = {}) {
                     return;
                 }
             } else {
-                const rawMatches = findMatchesWithMismatches(normalizedDisplay, normalizedMotif, maxMismatches);
-                matches = rawMatches.map(idx => ({ idx, len: normalizedMotif.length }));
+                const fuzzyMatches = findFuzzyMatches(normalizedDisplay, normalizedMotif, maxMismatches);
+                matches = fuzzyMatches.map(m => ({ idx: m.idx, len: m.len, matchingPositions: m.matchingPositions }));
             }
             debugLog(`  Seq ${index}: "${displayString}" vs "${normalizedMotif}" -> ${matches.length} matches`);
             if (matches.length > 0) {
@@ -7547,15 +7620,25 @@ function searchMotif(options = {}) {
                 fwdMatches += matches.length;
             }
 
-            // Highlight matching spans
+            // Highlight matching spans (only exact positions when mismatches allowed)
+            const paintPartialMatches = !useRegex && maxMismatches > 0;
             matches.forEach(m => {
                 const startSpanIndex = nonGapSpanIndices[m.idx];
                 const startPos = startSpanIndex !== undefined ? spans[startSpanIndex]?.dataset?.pos : undefined;
                 if (startPos !== undefined) motifAlignmentSites.add(`${startPos}:${m.len}`);
-                for (let i = 0; i < m.len; i++) {
-                    const spanIndex = nonGapSpanIndices[m.idx + i];
-                    if (spanIndex !== undefined && spans[spanIndex]) {
-                        spans[spanIndex].classList.add(className);
+                if (paintPartialMatches && m.matchingPositions?.length) {
+                    m.matchingPositions.forEach(degappedPos => {
+                        const spanIndex = nonGapSpanIndices[degappedPos];
+                        if (spanIndex !== undefined && spans[spanIndex]) {
+                            spans[spanIndex].classList.add(className);
+                        }
+                    });
+                } else {
+                    for (let i = 0; i < m.len; i++) {
+                        const spanIndex = nonGapSpanIndices[m.idx + i];
+                        if (spanIndex !== undefined && spans[spanIndex]) {
+                            spans[spanIndex].classList.add(className);
+                        }
                     }
                 }
             });
@@ -10466,6 +10549,17 @@ function showContextMenu(e, index) {
     });
     contextMenu.appendChild(seqEditItem);
 
+    const revCompItem = document.createElement('div');
+    revCompItem.textContent = 'Reverse complement';
+    revCompItem.addEventListener('click', () => {
+        const targets = (state.selectedRows.size > 0 && state.selectedRows.has(index))
+            ? Array.from(state.selectedRows)
+            : [index];
+        reverseComplementSequences(targets);
+        closeContextMenu();
+    });
+    contextMenu.appendChild(revCompItem);
+
     if (state.selectedRows.size <= 1) {
         const renameItem = document.createElement('div');
         renameItem.textContent = 'Rename sequence';
@@ -11505,6 +11599,7 @@ function attachUIListeners() {
     });
     syncQuickModeSwitch();
     syncCodonModePanel();
+    syncSearchControlsAvailability();
 
     // Set up checkbox listeners
     const checkboxes = ['enableBlack', 'enableDark', 'enableLight', 'showConsensus',
@@ -15244,8 +15339,76 @@ function _tsdMismatchCount(firstSeq, secondSeq) {
     return mismatches;
 }
 
-function _columnConservationScores(seqs, aliLen) {
+function _tsdGapFraction(seq) {
+    if (!seq || !seq.length) return 1;
+    let gaps = 0;
+    for (let i = 0; i < seq.length; i++) {
+        const ch = seq[i];
+        if (ch === '-' || ch === '.' || ch === ' ') gaps++;
+    }
+    return gaps / seq.length;
+}
+
+function _isTsdReferenceRow(seqObj, index = 0) {
+    if (!seqObj) return false;
+    const header = String(seqObj.header || seqObj.fullHeader || '').toLowerCase();
+    if (/consensus|reference|\bref\b|master|t1_\d|_cons\b/.test(header)) return true;
+    return index === 0 && _tsdGapFraction(seqObj.seq) >= 0.08;
+}
+
+function _largestNonGapBlockBounds(seq) {
+    let best = { start: -1, end: -1, len: 0 };
+    let curStart = -1;
+    for (let column = 0; column < seq.length; column++) {
+        if (_tsdBase(seq[column])) {
+            if (curStart < 0) curStart = column;
+        } else if (curStart >= 0) {
+            const blockLen = column - curStart;
+            if (blockLen > best.len) best = { start: curStart, end: column - 1, len: blockLen };
+            curStart = -1;
+        }
+    }
+    if (curStart >= 0) {
+        const blockLen = seq.length - curStart;
+        if (blockLen > best.len) best = { start: curStart, end: seq.length - 1, len: blockLen };
+    }
+    if (best.start < 0) return { first: -1, last: -1 };
+    return { first: best.start, last: best.end };
+}
+
+function _pickTsdReferenceSeq(seqs) {
+    if (!seqs?.length) return null;
+    for (let i = 0; i < seqs.length; i++) {
+        if (_isTsdReferenceRow(seqs[i], i)) {
+            const name = seqs[i].header || `row ${i + 1}`;
+            return { seq: seqs[i].seq, label: name, index: i };
+        }
+    }
+    const row0 = seqs[0];
+    return { seq: row0.seq, label: row0.header || 'row 1', index: 0 };
+}
+
+function _seqsForTsdBoundaryScoring(seqs) {
+    return seqs.filter((seqObj, index) => !_isTsdReferenceRow(seqObj, index));
+}
+
+function _boundaryFromReferenceSeq(refSeq, aliLen, flankSize, label) {
+    const bounds = _largestNonGapBlockBounds(refSeq);
+    if (bounds.first < 0) return null;
+    return {
+        leftBoundary: bounds.first,
+        rightBoundary: bounds.last,
+        upStart: Math.max(0, bounds.first - flankSize),
+        upEnd: Math.max(0, bounds.first - 1),
+        downStart: Math.min(aliLen - 1, bounds.last + 1),
+        downEnd: Math.min(aliLen - 1, bounds.last + flankSize),
+        label
+    };
+}
+
+function _columnConservationScores(seqs, aliLen, minCoverageFrac = 0.35) {
     const scores = new Array(aliLen).fill(0);
+    const minCount = Math.max(3, Math.ceil(seqs.length * minCoverageFrac));
     for (let column = 0; column < aliLen; column++) {
         const counts = {};
         let validCount = 0;
@@ -15255,7 +15418,7 @@ function _columnConservationScores(seqs, aliLen) {
             counts[base] = (counts[base] || 0) + 1;
             validCount++;
         }
-        if (validCount === 0) continue;
+        if (validCount < minCount) continue;
         const topCount = Math.max(...Object.values(counts));
         const identity = topCount / validCount;
         const coverage = validCount / Math.max(1, seqs.length);
@@ -15287,32 +15450,22 @@ function _findSineBoundaryColumns(seqs, mode, params, aliLen) {
         };
     }
 
-    if (mode === 'topseq') {
-        const topSeq = seqs[0]?.seq || '';
-        let firstNonGap = -1;
-        let lastNonGap = -1;
-        for (let column = 0; column < topSeq.length; column++) {
-            if (_tsdBase(topSeq[column])) {
-                if (firstNonGap < 0) firstNonGap = column;
-                lastNonGap = column;
-            }
-        }
-        if (firstNonGap < 0) firstNonGap = flankSize;
-        if (lastNonGap < 0) lastNonGap = Math.max(firstNonGap, aliLen - flankSize - 1);
-        return {
-            leftBoundary: firstNonGap,
-            rightBoundary: lastNonGap,
-            upStart: Math.max(0, firstNonGap - flankSize),
-            upEnd: Math.max(0, firstNonGap - 1),
-            downStart: Math.min(aliLen - 1, lastNonGap + 1),
-            downEnd: Math.min(aliLen - 1, lastNonGap + flankSize),
-            label: 'top sequence'
-        };
+    const ref = _pickTsdReferenceSeq(seqs);
+    if (mode === 'topseq' || mode === 'auto') {
+        const refBoundary = _boundaryFromReferenceSeq(
+            ref.seq,
+            aliLen,
+            flankSize,
+            mode === 'topseq' ? `reference: ${ref.label}` : `reference: ${ref.label}`
+        );
+        if (refBoundary) return refBoundary;
     }
 
-    const scores = _columnConservationScores(seqs, aliLen);
-    const windowWidth = Math.max(6, Math.min(14, Math.floor(aliLen / 20) || 6));
-    const threshold = seqs.length < 8 ? 0.62 : 0.54;
+    const scoringSeqs = _seqsForTsdBoundaryScoring(seqs);
+    const scoreSeqs = scoringSeqs.length ? scoringSeqs : seqs;
+    const scores = _columnConservationScores(scoreSeqs, aliLen);
+    const windowWidth = Math.max(8, Math.min(16, Math.floor(aliLen / 24) || 8));
+    const threshold = scoreSeqs.length < 8 ? 0.68 : 0.58;
     let leftBoundary = 0;
     let rightBoundary = aliLen - 1;
 
@@ -15336,13 +15489,13 @@ function _findSineBoundaryColumns(seqs, mode, params, aliLen) {
         upEnd: Math.max(0, leftBoundary - 1),
         downStart: Math.min(aliLen - 1, rightBoundary + 1),
         downEnd: Math.min(aliLen - 1, rightBoundary + flankSize),
-        label: `auto ${leftBoundary + 1}/${rightBoundary + 1}`
+        label: `auto conservation ${leftBoundary + 1}/${rightBoundary + 1}`
     };
 }
 
 function _findBestTsdInFlanks(upstreamWindow, downstreamWindow, rightBoundary, minTsdLen, maxTsdLen, maxDiv) {
     let bestTsd = null;
-    const maxUpstreamOffset = 6;
+    const maxUpstreamOffset = 4;
     for (let tsdLen = minTsdLen; tsdLen <= maxTsdLen; tsdLen++) {
         if (upstreamWindow.bases.length < tsdLen || downstreamWindow.bases.length < tsdLen) continue;
         const closestUpstreamStart = upstreamWindow.bases.length - tsdLen;
@@ -15350,7 +15503,8 @@ function _findBestTsdInFlanks(upstreamWindow, downstreamWindow, rightBoundary, m
             const upstreamStart = closestUpstreamStart - upstreamOffset;
             const upstreamCandidate = _sliceCollectedWindow(upstreamWindow, upstreamStart, tsdLen);
             const upstreamSeq = upstreamCandidate.bases.join('');
-            for (let downstreamStart = 0; downstreamStart <= downstreamWindow.bases.length - tsdLen; downstreamStart++) {
+            const maxDownstreamStart = Math.min(3, Math.max(0, downstreamWindow.bases.length - tsdLen));
+            for (let downstreamStart = 0; downstreamStart <= maxDownstreamStart; downstreamStart++) {
                 const downstreamCandidate = _sliceCollectedWindow(downstreamWindow, downstreamStart, tsdLen);
                 const downstreamSeq = downstreamCandidate.bases.join('');
                 const mismatches = _tsdMismatchCount(upstreamSeq, downstreamSeq);
@@ -15358,7 +15512,10 @@ function _findBestTsdInFlanks(upstreamWindow, downstreamWindow, rightBoundary, m
                 if (divergence > maxDiv) continue;
                 const downstreamColumn = downstreamCandidate.columns[0] ?? rightBoundary + 1;
                 const boundaryDistance = Math.abs(downstreamColumn - (rightBoundary + 1));
-                const score = (1 - divergence) * Math.sqrt(tsdLen) - upstreamOffset * 0.025 - boundaryDistance * 0.002;
+                const score = (1 - divergence) * Math.sqrt(tsdLen)
+                    - upstreamOffset * 0.04
+                    - boundaryDistance * 0.08
+                    - downstreamStart * 0.05;
                 if (!bestTsd || score > bestTsd.score || (score === bestTsd.score && tsdLen > bestTsd.length)) {
                     bestTsd = {
                         score,
@@ -15392,9 +15549,11 @@ function _findTSD(seqs, mode, params) {
     const maxDiv = (params.maxDiv || 20) / 100;
     const flankSize = params.flankSize || 30;
     const boundaries = _findSineBoundaryColumns(seqs, mode, params, aliLen);
-    const searchSlack = Math.max(flankSize, maxTsdLen + 12);
 
     for (let seqIndex = 0; seqIndex < seqs.length; seqIndex++) {
+        if (_isTsdReferenceRow(seqs[seqIndex], seqIndex) && _tsdGapFraction(seqs[seqIndex].seq) >= 0.2) {
+            continue;
+        }
         const seq = seqs[seqIndex].seq;
         let upstreamWindow;
         let downstreamWindow;
@@ -15403,12 +15562,11 @@ function _findTSD(seqs, mode, params) {
             upstreamWindow = _collectUngappedBasesWithColumns(seq, boundaries.upStart, boundaries.upEnd);
             downstreamWindow = _collectUngappedBasesWithColumns(seq, boundaries.downStart, boundaries.downEnd);
         } else {
-            const upstreamCollected = _collectUngappedBasesWithColumns(seq, Math.max(0, boundaries.leftBoundary - flankSize - maxTsdLen - 10), boundaries.leftBoundary - 1);
+            const upstreamCollected = _collectUngappedBasesWithColumns(seq, Math.max(0, boundaries.leftBoundary - flankSize - maxTsdLen - 6), boundaries.leftBoundary - 1);
             const upstreamStart = Math.max(0, upstreamCollected.bases.length - flankSize);
             upstreamWindow = _sliceCollectedWindow(upstreamCollected, upstreamStart, upstreamCollected.bases.length - upstreamStart);
-            const downstreamStartCol = Math.max(0, boundaries.rightBoundary - searchSlack);
-            const downstreamEndCol = Math.min(aliLen - 1, boundaries.rightBoundary + flankSize + maxTsdLen + 12);
-            downstreamWindow = _collectUngappedBasesWithColumns(seq, downstreamStartCol, downstreamEndCol);
+            const downstreamEndCol = Math.min(aliLen - 1, boundaries.rightBoundary + flankSize + maxTsdLen + 6);
+            downstreamWindow = _collectUngappedBasesWithColumns(seq, boundaries.rightBoundary + 1, downstreamEndCol);
         }
 
         if (upstreamWindow.bases.length < minTsdLen || downstreamWindow.bases.length < minTsdLen) continue;

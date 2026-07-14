@@ -953,8 +953,8 @@ B: -</pre>
                 <div id="repeatParamsTsd" style="display:none;font-size:11px;margin-bottom:6px;border:1px solid #c8e6c9;background:#f1f8e9;border-radius:4px;padding:6px;">
                     <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
                         <strong title="How to locate the conserved SINE body between host flanks">SINE boundary:</strong>
-                        <label title="Detect conserved SINE block from column conservation across alignment"><input type="radio" name="tsdMode" value="auto" checked> Auto</label>
-                        <label title="Use first sequence non-gap span as SINE body"><input type="radio" name="tsdMode" value="topseq"> Top seq</label>
+                        <label title="Detect conserved SINE block from reference row (row 1 / consensus) or column conservation"><input type="radio" name="tsdMode" value="auto" checked> Auto</label>
+                        <label title="Use row 1 / consensus (gap-padded reference) to locate SINE borders"><input type="radio" name="tsdMode" value="topseq"> Reference</label>
                         <label title="Specify pre-SINE and post-SINE column ranges manually"><input type="radio" name="tsdMode" value="manual"> Manual</label>
                     </div>
                     <div id="tsdManualRegions" style="display:none;margin-bottom:4px;">
@@ -1048,7 +1048,7 @@ B: -</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=117"></script>
+    <script src="script.js?v=120"></script>
     <script src="tree-draw.js"></script>
     <script>
     // All functionality moved to script.js
