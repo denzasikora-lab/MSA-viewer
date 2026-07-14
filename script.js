@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v127';
+const BUILD_TAG = 'v128';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 // ASCII-safe UI symbols (avoid emoji / special Unicode in source files)
@@ -3992,8 +3992,12 @@ function getNucRowSequence(rowIndex) {
 }
 
 function isAlignmentGapChar(ch) {
-    const c = String(ch ?? '-');
-    return c === '-' || c === '.';
+    const c = String(ch ?? '');
+    return c === '' || c === '*' || /[-.~\s]/.test(c);
+}
+
+function degapResidues(seq) {
+    return Array.from(String(seq || '')).filter(ch => !isAlignmentGapChar(ch)).join('');
 }
 
 function getNucCharAt(rowIndex, pos) {
@@ -4001,37 +4005,40 @@ function getNucCharAt(rowIndex, pos) {
     return pos >= 0 && pos < seq.length ? seq[pos] : '-';
 }
 
-/** Build a nucleotide selection set; range drags skip gap columns, single clicks keep gaps. */
+/** All alignment columns in the clicked/dragged range (gaps included for highlight). */
 function buildNucSelectionSet(rowIndex, startPos, endPos) {
     const lo = Math.min(startPos, endPos);
     const hi = Math.max(startPos, endPos);
     const rowSet = new Set();
-    if (lo === hi) {
-        rowSet.add(lo);
-        return rowSet;
-    }
-    for (let p = lo; p <= hi; p++) {
-        if (!isAlignmentGapChar(getNucCharAt(rowIndex, p))) rowSet.add(p);
-    }
+    for (let p = lo; p <= hi; p++) rowSet.add(p);
     return rowSet;
 }
 
 function extractNucSubstring(seqStr, start, end, stripGaps = true) {
     const sub = String(seqStr || '').slice(start, end + 1);
-    return stripGaps ? sub.replace(/[-.]/g, '') : sub;
+    return stripGaps ? degapResidues(sub) : sub;
 }
 
-/** Copy selected alignment columns from one row, always omitting gap characters. */
+/** Plain degapped sequence for the selected alignment column span(s). */
 function copyNucPositions(seqStr, positions) {
+    if (!positions || positions.size === 0) return '';
     const poss = Array.from(positions).sort((a, b) => a - b);
-    let out = '';
-    for (const p of poss) {
-        const ch = String(seqStr || '')[p];
-        if (ch === undefined) continue;
-        if (isAlignmentGapChar(ch)) continue;
-        out += ch;
+    const lo = poss[0];
+    const hi = poss[poss.length - 1];
+    return degapResidues(String(seqStr || '').slice(lo, hi + 1));
+}
+
+function buildNucCopyText() {
+    if (!state.selectedNucs.size) return '';
+    const parts = [];
+    for (const [i, posSet] of state.selectedNucs.entries()) {
+        if (!posSet || posSet.size === 0) continue;
+        const seqStr = getNucRowSequence(i);
+        if (!seqStr) continue;
+        const frag = copyNucPositions(seqStr, posSet);
+        if (frag) parts.push(frag);
     }
-    return out;
+    return parts.join('\n');
 }
 
 function nucRowSpanSelector(row, pos) {
@@ -5914,25 +5921,17 @@ function redoAction() {
     showMessage("Redo completed!", 2000);
 }
 function copySelected() {
-    let nucText = '';
-    for (let [i, posSet] of state.selectedNucs.entries()) {
-        if (posSet.size === 0) continue;
-        const seqStr = getNucRowSequence(i);
-        if (!seqStr) continue;
-        const frag = copyNucPositions(seqStr, posSet);
-        if (frag) nucText += frag + '\n';
-    }
-    const trimmedNucText = nucText.trim();
-    if (trimmedNucText) {
-        const previewSource = trimmedNucText.replace(/\s+/g, ' ');
-    const preview = previewSource.length > 50 ? previewSource.slice(0, 50) + '...' : previewSource;
-        const baseCount = trimmedNucText.replace(/[-.\s]/g, '').length;
-        navigator.clipboard.writeText(trimmedNucText).then(() => {
-            showMessage(`Copied ${baseCount} bp: ${preview}`, 4000);
-        }).catch(err => {
-            console.error('Copy failed:', err);
-            showMessage("Failed to copy. Check console.", 5000);
-        });
+    if (state.selectedNucs.size > 0) {
+        const text = buildNucCopyText();
+        if (text) {
+            const preview = text.length > 50 ? text.slice(0, 50) + '...' : text;
+            navigator.clipboard.writeText(text).then(() => {
+                showMessage(`Copied ${text.length} bp: ${preview}`, 4000);
+            }).catch(err => {
+                console.error('Copy failed:', err);
+                showMessage("Failed to copy. Check console.", 5000);
+            });
+        }
         return;
     }
     // Removed "No sequence selected" message - silent if nothing to copy
@@ -5941,7 +5940,7 @@ function copySelected() {
     }
     const fasta = Array.from(state.selectedRows).sort((a,b) => a - b).map(i => {
         const s = state.seqs[i];
-        const seq = s.seq.replace(/[-.]/g, '');
+        const seq = degapResidues(s.seq);
         return `>${s.fullHeader || s.header}\n${seq}`;
     }).join('\n');
     navigator.clipboard.writeText(fasta).then(() => {
@@ -6160,11 +6159,7 @@ function copySelectedColumns() {
     }
     const cols = Array.from(state.selectedColumns).sort((a,b) => a - b);
     const fasta = state.seqs.map(s => {
-        let seq = '';
-        for (const pos of cols) {
-            const ch = s.seq[pos];
-            if (!isAlignmentGapChar(ch)) seq += ch;
-        }
+        const seq = degapResidues(cols.map(pos => s.seq[pos] || '').join(''));
         return `>${s.fullHeader || s.header}\n${seq}`;
     }).join('\n');
     navigator.clipboard.writeText(fasta).then(() => {
@@ -11821,6 +11816,12 @@ function attachUIListeners() {
     // Use capture phase so shortcuts like Ctrl+H override browser built-ins
     document.addEventListener('keydown', handleKeyDown, true);
     document.addEventListener('keyup', handleKeyUp, true);
+    document.addEventListener('copy', (e) => {
+        if (!state.selectedNucs.size) return;
+        const text = buildNucCopyText();
+        e.preventDefault();
+        e.clipboardData.setData('text/plain', text);
+    }, true);
 
     // Use existing global infoModal reference
     document.addEventListener('click', (event) => {
