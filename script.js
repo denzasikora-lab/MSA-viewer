@@ -1,6 +1,8 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v124';
+const BUILD_TAG = 'v125';
+// Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
+const CONSENSUS_ROW_INDEX = -1;
 // ASCII-safe UI symbols (avoid emoji / special Unicode in source files)
 const SYM = {
     sep: '|',
@@ -3963,14 +3965,36 @@ function getCachedSpan(row, pos) {
     return state.spanCache.get(row)?.get(pos) || null;
 }
 
+function isConsensusSeqLine(row) {
+    return !!row?.classList?.contains('consensus-line');
+}
+
+function resolveNucRowIndex(row) {
+    if (!row) return NaN;
+    if (isConsensusSeqLine(row)) return CONSENSUS_ROW_INDEX;
+    return parseInt(row.dataset.seqIndex, 10);
+}
+
+function getConsensusSequenceGapped() {
+    if (state.consensusCache?.values?.length) {
+        return state.consensusCache.values.join('');
+    }
+    if (!state.seqs?.length) return '';
+    return computeConsensusForSequences(state.seqs.map(s => s.seq));
+}
+
+function nucRowSpanSelector(row, pos) {
+    if (row === CONSENSUS_ROW_INDEX) {
+        return `.seq-line.consensus-line .seq-data > span[data-pos="${pos}"]`;
+    }
+    return `.seq-line[data-seq-index="${row}"] .seq-data > span[data-pos="${pos}"]`;
+}
+
 function getSpanElement(row, pos) {
     const cached = getCachedSpan(row, pos);
     if (cached) return cached;
     if (!alignmentContainer) return null;
-    // Block mode renders multiple .seq-line rows per index; search the whole container.
-    return alignmentContainer.querySelector(
-        `.seq-line[data-seq-index="${row}"] .seq-data > span[data-pos="${pos}"]`
-    );
+    return alignmentContainer.querySelector(nucRowSpanSelector(row, pos));
 }
 
 function forEachRowSpanAtPosition(row, pos, callback) {
@@ -3980,9 +4004,7 @@ function forEachRowSpanAtPosition(row, pos, callback) {
         return;
     }
     if (!alignmentContainer) return;
-    alignmentContainer.querySelectorAll(
-        `.seq-line[data-seq-index="${row}"] .seq-data > span[data-pos="${pos}"]`
-    ).forEach(callback);
+    alignmentContainer.querySelectorAll(nucRowSpanSelector(row, pos)).forEach(callback);
 }
 
 function forEachColumnSpan(pos, callback) {
@@ -4434,6 +4456,7 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
 function addConsensusLine(parent, consensus, start, end, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, showLength = false, position = 'bottom', options = {}) {
     const consLine = document.createElement('div');
     consLine.className = `seq-line consensus-line consensus-${position}`;
+    consLine.dataset.seqIndex = String(CONSENSUS_ROW_INDEX);
     const consName = document.createElement('div');
     consName.className = `seq-name ${stickyNames ? '' : 'static'}`;
     consName.textContent = 'Consensus';
@@ -4468,6 +4491,7 @@ function addConsensusLine(parent, consensus, start, end, nameLen, stickyNames, b
 
         const span = document.createElement('span');
         span.className = baseClass;
+        span.dataset.pos = String(pos);
         span.textContent = displayBase;
 
         // Apply trim region coloring
@@ -4524,6 +4548,9 @@ function addConsensusLine(parent, consensus, start, end, nameLen, stickyNames, b
         });
         span.addEventListener('mouseout', () => hideTooltip());
         dataSpan.appendChild(span);
+        if (state._enableSpanCache !== false) {
+            registerSpanInCache(CONSENSUS_ROW_INDEX, pos, span);
+        }
     }
     // Apply repeat highlights to consensus line too
     if (state.repeatHighlights && state.repeatHighlights.size > 0) {
@@ -5265,8 +5292,8 @@ function handleNucleotideSelectMouseDown(e) {
     }
 
     const row = span.closest('.seq-line');
-    if (!row || row.classList.contains('consensus-line') || row.classList.contains('scale-ruler-line')) return false;
-    const index = parseInt(row.dataset.seqIndex, 10);
+    if (!row || row.classList.contains('scale-ruler-line')) return false;
+    const index = resolveNucRowIndex(row);
     const pos = parseInt(span.dataset.pos, 10);
     if (!Number.isInteger(index) || !Number.isInteger(pos)) return false;
 
@@ -5376,7 +5403,9 @@ function handleMouseMove(e) {
         if (span) {
             const pos = parseInt(span.dataset.pos);
             if (isNaN(pos)) return;
-            const currentIndex = parseInt(span.closest('.seq-line').dataset.seqIndex);
+            const rowEl = span.closest('.seq-line');
+            const currentIndex = resolveNucRowIndex(rowEl);
+            if (!Number.isInteger(currentIndex)) return;
             // Only allow drag within the same row
             if (currentIndex === state.dragStartRow) {
                 const startPos = Math.min(state.dragStartCol, pos);
@@ -5847,7 +5876,10 @@ function copySelected() {
     let nucText = '';
     for (let [i, posSet] of state.selectedNucs.entries()) {
         if (posSet.size === 0) continue;
-        const s = state.seqs[i];
+        const seqStr = i === CONSENSUS_ROW_INDEX
+            ? getConsensusSequenceGapped()
+            : state.seqs[i]?.seq;
+        if (!seqStr) continue;
         const poss = Array.from(posSet).sort((a, b) => a - b);
         let start = poss[0], end = poss[0];
         let ranges = [];
@@ -5861,7 +5893,7 @@ function copySelected() {
         }
         ranges.push([start, end]);
         for (let [st, en] of ranges) {
-            const sub = s.seq.slice(st, en + 1);
+            const sub = seqStr.slice(st, en + 1);
             nucText += sub + '\n';
         }
     }
