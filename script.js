@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v123';
+const BUILD_TAG = 'v124';
 // ASCII-safe UI symbols (avoid emoji / special Unicode in source files)
 const SYM = {
     sep: '|',
@@ -3967,8 +3967,22 @@ function getSpanElement(row, pos) {
     const cached = getCachedSpan(row, pos);
     if (cached) return cached;
     if (!alignmentContainer) return null;
-    const line = alignmentContainer.querySelector(`.seq-line[data-seq-index="${row}"]`);
-    return line?.querySelector(`.seq-data > span[data-pos="${pos}"]`) || null;
+    // Block mode renders multiple .seq-line rows per index; search the whole container.
+    return alignmentContainer.querySelector(
+        `.seq-line[data-seq-index="${row}"] .seq-data > span[data-pos="${pos}"]`
+    );
+}
+
+function forEachRowSpanAtPosition(row, pos, callback) {
+    const cached = getCachedSpan(row, pos);
+    if (cached) {
+        callback(cached);
+        return;
+    }
+    if (!alignmentContainer) return;
+    alignmentContainer.querySelectorAll(
+        `.seq-line[data-seq-index="${row}"] .seq-data > span[data-pos="${pos}"]`
+    ).forEach(callback);
 }
 
 function forEachColumnSpan(pos, callback) {
@@ -4845,6 +4859,10 @@ async function parseAndRender(isFromDrop = false) {
                 state.currentFilename = state.currentFilename || 'phylip_import';
                 showMessage('Detected PHYLIP format', 1500);
             }
+        } else if (/^\s*>/m.test(inputText)) {
+            parsed = parseFasta(inputText);
+            if (!parsed) throw new Error('FASTA parsing failed');
+            if (!isFromDrop) state.currentFilename = state.currentFilename || 'fasta_import';
         } else if (isFromDrop || isMsfContent) {
             // If it's a file drop OR the content looks like MSF, try MSF first.
             parsed = parseMsf(inputText);
@@ -5149,17 +5167,19 @@ function onShadeModeChange() {
 
 // EVENT HANDLERS
 function isCtrlModifier(e) {
+    if (e.ctrlKey || e.metaKey) return true;
     if (typeof e.getModifierState === 'function') {
         return e.getModifierState('Control') || e.getModifierState('Meta');
     }
-    return !!(e.ctrlKey || e.metaKey);
+    return false;
 }
 
 function isAltModifier(e) {
+    if (e.altKey) return true;
     if (typeof e.getModifierState === 'function') {
         return e.getModifierState('Alt');
     }
-    return !!e.altKey;
+    return false;
 }
 
 function setCanvasNoticeVisible(visible) {
@@ -5197,14 +5217,14 @@ function closestFromEvent(e, selector) {
 }
 
 function handleColumnSelectMouseDown(e) {
-    if (e.button !== 0) return;
-    if (!isCtrlModifier(e) || !isAltModifier(e)) return;
+    if (e.button !== 0) return false;
+    if (!isCtrlModifier(e) || !isAltModifier(e)) return false;
     const row = closestFromEvent(e, '.seq-line');
-    if (!row || row.classList.contains('consensus-line') || row.classList.contains('scale-ruler-line')) return;
+    if (!row || row.classList.contains('consensus-line') || row.classList.contains('scale-ruler-line')) return false;
     const span = closestFromEvent(e, '.seq-data span[data-pos]');
-    if (!span) return;
+    if (!span) return false;
     const pos = parseInt(span.dataset.pos, 10);
-    if (!Number.isFinite(pos)) return;
+    if (!Number.isFinite(pos)) return false;
 
     state.isDragging = true;
     state.dragStartCol = pos;
@@ -5227,20 +5247,28 @@ function handleColumnSelectMouseDown(e) {
     hideTooltip();
     e.preventDefault();
     e.stopPropagation();
+    return true;
 }
 
 function handleNucleotideSelectMouseDown(e) {
-    if (e.button !== 0) return;
-    if (!isCtrlModifier(e) || isAltModifier(e)) return;
-    if (document.getElementById('modeCanvas')?.checked || document.getElementById('modeReads')?.checked) return;
+    if (e.button !== 0) return false;
+    if (!isCtrlModifier(e) || isAltModifier(e)) return false;
 
     const span = closestFromEvent(e, '.seq-data span[data-pos]');
-    if (!span || span.classList.contains('seq-length')) return;
+    if (!span || span.classList.contains('seq-length')) return false;
+
+    if (document.getElementById('modeCanvas')?.checked || document.getElementById('modeReads')?.checked) {
+        showMessage('Nucleotide selection requires Full or Block mode (not Canvas/Reads).', 3500);
+        e.preventDefault();
+        e.stopPropagation();
+        return true;
+    }
+
     const row = span.closest('.seq-line');
-    if (!row || row.classList.contains('consensus-line') || row.classList.contains('scale-ruler-line')) return;
+    if (!row || row.classList.contains('consensus-line') || row.classList.contains('scale-ruler-line')) return false;
     const index = parseInt(row.dataset.seqIndex, 10);
     const pos = parseInt(span.dataset.pos, 10);
-    if (!Number.isInteger(index) || !Number.isInteger(pos)) return;
+    if (!Number.isInteger(index) || !Number.isInteger(pos)) return false;
 
     if (state.pendingNucStart === null) {
         state.selectedNucs.clear();
@@ -5274,7 +5302,8 @@ function handleNucleotideSelectMouseDown(e) {
 
     hideTooltip();
     e.preventDefault();
-    e.stopImmediatePropagation();
+    e.stopPropagation();
+    return true;
 }
 
 function handleMouseDown(e) {
@@ -10949,16 +10978,16 @@ function refreshNucleotideSelectionsImmediate() {
     desiredSelections.forEach((posSet, row) => {
         posSet.forEach(pos => {
             if (!state.domSelectedNucs.get(row)?.has(pos)) {
-                const span = getSpanElement(row, pos);
-                if (!span) return;
-                span.classList.add('nuc-selected');
-                attachNucSelectedHandlers(span);
-                let rowMap = state.domSelectedNucs.get(row);
-                if (!rowMap) {
-                    rowMap = new Map();
-                    state.domSelectedNucs.set(row, rowMap);
-                }
-                rowMap.set(pos, span);
+                forEachRowSpanAtPosition(row, pos, (span) => {
+                    span.classList.add('nuc-selected');
+                    attachNucSelectedHandlers(span);
+                    let rowMap = state.domSelectedNucs.get(row);
+                    if (!rowMap) {
+                        rowMap = new Map();
+                        state.domSelectedNucs.set(row, rowMap);
+                    }
+                    rowMap.set(pos, span);
+                });
             }
         });
     });
@@ -10972,12 +11001,13 @@ function refreshNucleotideSelectionsImmediate() {
     }
     if (state.pendingNucStart) {
         const { row, pos } = state.pendingNucStart;
-        const span = getSpanElement(row, pos);
-        if (span && !span.classList.contains('nuc-selected')) {
-            span.classList.add('nuc-pending');
-            attachNucPendingHandlers(span);
-            state.domPendingNuc = { row, pos, span };
-        }
+        forEachRowSpanAtPosition(row, pos, (span) => {
+            if (!span.classList.contains('nuc-selected')) {
+                span.classList.add('nuc-pending');
+                attachNucPendingHandlers(span);
+                state.domPendingNuc = { row, pos, span };
+            }
+        });
     }
 }
 
@@ -11359,9 +11389,10 @@ function initializeAppUI() {
     const caseSel = el('residueCase');
     if (caseSel) {
         const applyCase = () => {
-            const v = caseSel.value;
-            alignmentContainer.classList.toggle('residue-case-upper', v === 'upper');
-            alignmentContainer.classList.toggle('residue-case-lower', v === 'lower');
+            const v = caseSel.value || 'asis';
+            alignmentContainer.classList.remove('residue-case-upper', 'residue-case-lower');
+            if (v === 'upper') alignmentContainer.classList.add('residue-case-upper');
+            else if (v === 'lower') alignmentContainer.classList.add('residue-case-lower');
         };
         caseSel.addEventListener('change', applyCase);
         applyCase();
@@ -11673,20 +11704,12 @@ function attachUIListeners() {
         document.addEventListener('mousedown', (e) => {
             const container = document.getElementById('alignmentContainer');
             if (!container || !container.contains(domEventTarget(e))) return;
-            handleColumnSelectMouseDown(e);
-        }, true);
-        document.addEventListener('mousedown', (e) => {
-            const container = document.getElementById('alignmentContainer');
-            if (!container || !container.contains(domEventTarget(e))) return;
-            handleNucleotideSelectMouseDown(e);
-        }, true);
-        document.addEventListener('mousedown', (e) => {
-            const container = document.getElementById('alignmentContainer');
-            if (!container || !container.contains(domEventTarget(e))) return;
+            if (handleColumnSelectMouseDown(e)) return;
+            if (handleNucleotideSelectMouseDown(e)) return;
             handleGeneDocEditMouseDown(e);
             if (!e.defaultPrevented) handleMouseDown(e);
             handleAlignmentPanStart(e);
-        });
+        }, true);
         document.addEventListener('mousemove', handleMouseMove);
     }
     if (alignmentContainer) {
