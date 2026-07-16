@@ -1,8 +1,28 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v129';
+const BUILD_TAG = 'v130';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
+
+function _escapeHtml(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+function safeLocalGet(key, fallback = {}) {
+    try {
+        const raw = localStorage.getItem(key);
+        return raw ? JSON.parse(raw) : fallback;
+    } catch (e) {
+        console.warn(`localStorage key "${key}" corrupted, resetting.`, e);
+        localStorage.removeItem(key);
+        return fallback;
+    }
+}
+
+function _checkedRadioValue(name, fallback) {
+    return document.querySelector(`input[name="${name}"]:checked`)?.value ?? fallback;
+}
 // ASCII-safe UI symbols (avoid emoji / special Unicode in source files)
 const SYM = {
     sep: '|',
@@ -480,9 +500,17 @@ async function fetchFileFromServer(filePath, serverKey) {
     try {
         const url = `/api/ssh-cat?file=${encodeURIComponent(filePath)}&server=${encodeURIComponent(serverKey)}`;
         const resp = await fetch(url);
-        const data = await resp.json();
         if (!resp.ok) {
-            throw new Error(data.error || 'SSH fetch failed');
+            let msg = `HTTP ${resp.status}: SSH fetch failed`;
+            try {
+                const err = await resp.json();
+                if (err?.error) msg = err.error;
+            } catch { /* body not JSON */ }
+            throw new Error(msg);
+        }
+        const data = await resp.json();
+        if (!data.content) {
+            throw new Error(data.error || 'SSH fetch returned no content');
         }
         const fastaInputEl = document.getElementById('fastaInput');
         fastaInputEl.value = data.content;
@@ -1325,7 +1353,7 @@ function _getConsensusOptions() {
     return {
         threshold: clampConsensusPercent(el('consensusThreshold').value) / 100,
         coverageMin: clampMinCoverage(el('consensusMinCoverage')?.value) / 100,
-        consType: document.querySelector('input[name="consensusType"]:checked').value,
+        consType: _checkedRadioValue('consensusType', 'normal'),
         fallbackMode: (document.getElementById('consensusFallback')?.value) || 'gap',
     };
 }
@@ -3504,13 +3532,13 @@ function renderAlignment(options = {}) {
         'A,C,G': 'V', 'A,G,C': 'V', 'C,A,G': 'V', 'C,G,A': 'V', 'G,A,C': 'V', 'G,C,A': 'V'
     };
     const showConsensus = el('showConsensus').checked;
-    const consType = document.querySelector('input[name="consensusType"]:checked').value;
+    const consType = _checkedRadioValue('consensusType', 'normal');
     const threshold = clampConsensusPercent(el('consensusThreshold').value) / 100;
     const fallbackMode = (document.getElementById('consensusFallback')?.value) || 'gap';
 
     // (len is declared above, before TOTAL_RESIDUES calculation)
 
-    const shadeMode = document.querySelector('input[name="shadeMode"]:checked').value;
+    const shadeMode = _checkedRadioValue('shadeMode', 'nongap');
     const useCompact = document.getElementById('modeCompact')?.checked;
     const useCanvas = document.getElementById('modeCanvas')?.checked;
 
@@ -6085,7 +6113,7 @@ function copySelectedConsensus() {
     const selectedSeqs = Array.from(state.selectedRows).map(i => state.seqs[i].seq);
     const len = Math.max(...selectedSeqs.map(s => s.length));
     const threshold = clampConsensusPercent(el('consensusThreshold').value) / 100;
-    const consType = document.querySelector('input[name="consensusType"]:checked').value;
+    const consType = _checkedRadioValue('consensusType', 'normal');
     const fallbackMode = (document.getElementById('consensusFallback')?.value) || 'gap';
     const coverageMin = clampMinCoverage(el('consensusMinCoverage')?.value) / 100;
     let consArr = [];
@@ -6379,12 +6407,12 @@ function savePreset() {
         nameLen: el('nameLengthSlider').value,
         consensusThreshold: el('consensusThreshold').value,
         groupConsensusThreshold: el('groupConsensusThreshold')?.value ?? DEFAULTS.groupConsensusThreshold,
-        consensusType: document.querySelector('input[name="consensusType"]:checked').value,
+        consensusType: _checkedRadioValue('consensusType', 'normal'),
         showConsensus: el('showConsensus').checked,
         // Persist new consensus options
         consensusMinCoverage: el('consensusMinCoverage')?.value,
         consensusFallback: el('consensusFallback')?.value,
-        shadeMode: document.querySelector('input[name="shadeMode"]:checked').value,
+        shadeMode: _checkedRadioValue('shadeMode', 'nongap'),
         colorScheme: getAlignmentColorScheme(),
         enableBlack: el('enableBlack').checked,
         enableDark: el('enableDark').checked,
@@ -6400,7 +6428,15 @@ function loadPreset() {
         showMessage("No saved preset found.", 3000);
         return;
     }
-    const p = JSON.parse(saved);
+    let p;
+    try {
+        p = JSON.parse(saved);
+    } catch (e) {
+        console.error('Preset JSON corrupted:', e);
+        showMessage('Saved preset is corrupted and was reset.', 4000);
+        localStorage.removeItem('qwen_msa_viewer_preset_v44');
+        return;
+    }
     ['black','dark','light','zoom','blockSize','nameLen','consensusThreshold', 'groupConsensusThreshold', 'consensusMinCoverage'].forEach(k => {
         let value = p[k];
         if (k === 'consensusThreshold') {
@@ -6442,7 +6478,8 @@ function loadPreset() {
     el('stickyNames').checked = p.stickyNames !== undefined ? p.stickyNames : true;
     onModeChange();
     toggleStickyNames();
-    document.querySelector(`input[name="consensusType"][value="${p.consensusType}"]`).checked = true;
+    const consTypeEl = document.querySelector(`input[name="consensusType"][value="${p.consensusType}"]`);
+    if (consTypeEl) consTypeEl.checked = true;
     el('showConsensus').checked = p.showConsensus;
     // Restore consensus position if present
     if (p.consensusPosition) {
@@ -6456,7 +6493,8 @@ function loadPreset() {
     if (p.colorScheme && el('colorSchemeSelect')) {
         el('colorSchemeSelect').value = ALIGNMENT_COLOR_SCHEMES.has(p.colorScheme) ? p.colorScheme : DEFAULTS.colorScheme;
     }
-    document.querySelector(`input[name="shadeMode"][value="${p.shadeMode}"]`).checked = true;
+    const shadeModeEl = document.querySelector(`input[name="shadeMode"][value="${p.shadeMode}"]`);
+    if (shadeModeEl) shadeModeEl.checked = true;
     el('enableBlack').checked = p.enableBlack;
     el('enableDark').checked = p.enableDark;
     el('enableLight').checked = p.enableLight;
@@ -8358,7 +8396,7 @@ function saveClusteringPreset() {
     };
 
     // Store in localStorage
-    let presets = JSON.parse(localStorage.getItem('clusteringPresets') || '{}');
+    let presets = safeLocalGet('clusteringPresets');
     presets[presetName] = preset;
     localStorage.setItem('clusteringPresets', JSON.stringify(presets));
 
@@ -8401,7 +8439,7 @@ function createOptimalPreset(silent = false) {
     };
 
     // Store in localStorage
-    let presets = JSON.parse(localStorage.getItem('clusteringPresets') || '{}');
+    let presets = safeLocalGet('clusteringPresets');
     presets['optimal'] = optimalPreset;
     localStorage.setItem('clusteringPresets', JSON.stringify(presets));
 
@@ -8429,7 +8467,7 @@ function loadClusteringPreset(silent = false) {
         return;
     }
 
-    let presets = JSON.parse(localStorage.getItem('clusteringPresets') || '{}');
+    let presets = safeLocalGet('clusteringPresets');
     const preset = presets[presetName];
 
     if (!preset) {
@@ -8470,7 +8508,7 @@ function updateClusteringPresetList() {
     const presetSelect = el('clusteringPresetList');
     if (!presetSelect) return;
 
-    let presets = JSON.parse(localStorage.getItem('clusteringPresets') || '{}');
+    let presets = safeLocalGet('clusteringPresets');
     const presetNames = Object.keys(presets).sort();
 
     // Clear and rebuild options
@@ -8499,7 +8537,7 @@ function deleteClusteringPreset() {
         return;
     }
 
-    let presets = JSON.parse(localStorage.getItem('clusteringPresets') || '{}');
+    let presets = safeLocalGet('clusteringPresets');
     delete presets[presetName];
     localStorage.setItem('clusteringPresets', JSON.stringify(presets));
 
@@ -11385,7 +11423,7 @@ function initializeAppUI() {
 
     // Auto-create and load "optimal" preset as default if not already present
     setTimeout(() => {
-        const presets = JSON.parse(localStorage.getItem('clusteringPresets') || '{}');
+        const presets = safeLocalGet('clusteringPresets');
         if (!presets['optimal']) {
             // Create optimal preset silently
             createOptimalPreset(true);
@@ -11560,7 +11598,7 @@ function initializeAppUI() {
             });
     } else if (autoData) {
         try {
-            const text = atob(autoData);
+            const text = _fromBase64Utf8(autoData);
             const fastaInputEl = el('fastaInput');
             if (fastaInputEl) fastaInputEl.value = text;
             state.currentFilename = autoTitle || 'Inline data';
@@ -12870,7 +12908,8 @@ const colourPalette = [
 let colourState = {
     mappings: new Map(), // seqName -> color (current)
     history: new Map(), // seqName -> [{color, method, timestamp}, ...]
-    presets: JSON.parse(localStorage.getItem('seqColourPresets') || '{}')
+    presets: safeLocalGet('seqColourPresets'),
+    selectedPresetName: null,
 };
 
 // Normalize name for grouping: lowercase, normalize separators, strip trailing numbers
@@ -13051,7 +13090,7 @@ function applyPatternColour() {
 function autoColourBySimilarity() {
     const maxChars = parseInt(el('colourSimilarityChars').value) || 10;
     const threshold = parseInt(el('colourSimilarityThreshold').value) || 3;
-    const mode = document.querySelector('input[name="colourMode"]:checked').value;
+    const mode = _checkedRadioValue('colourMode', 'discrete');
 
     // Use actual sequence headers from state, not truncated display text
     if (!state.seqs || state.seqs.length === 0) {
@@ -13161,6 +13200,7 @@ function saveColourPreset() {
     }
 
     colourState.presets[presetName] = Array.from(colourState.mappings.entries());
+    colourState.selectedPresetName = presetName;
     localStorage.setItem('seqColourPresets', JSON.stringify(colourState.presets));
 
     el('colourPresetName').value = '';
@@ -13175,8 +13215,13 @@ function loadColourPreset() {
         return;
     }
 
-    const presetNames = Object.keys(colourState.presets);
-    const presetName = presetNames[0]; // TODO: could add dialog to select
+    const presetName = (colourState.selectedPresetName && colourState.presets[colourState.selectedPresetName])
+        ? colourState.selectedPresetName
+        : Object.keys(colourState.presets)[0];
+    if (!presetName || !colourState.presets[presetName]) {
+        showMessage('No preset selected', 2000);
+        return;
+    }
 
     colourState.mappings = new Map(colourState.presets[presetName]);
     applyColourToSeqNames(colourState.mappings);
@@ -13203,26 +13248,54 @@ function updateColourPresetList() {
 
     if (Object.keys(presets).length === 0) {
         presetList.style.display = 'none';
+        colourState.selectedPresetName = null;
         return;
     }
 
     presetList.style.display = 'block';
-    presetItems.innerHTML = Object.keys(presets).map(name =>
-        `<div style="cursor: pointer; padding: 2px; border-radius: 2px; margin: 2px 0; background: #f0f0f0;"
-              onclick="(function() {
-                colourState.mappings = new Map(colourState.presets['${name}']);
-                applyColourToSeqNames(colourState.mappings);
-                showMessage('Loaded ${name}', 2000);
-              })()">
-            ${name} <span style="float: right; cursor: pointer; color: #888;" onclick="(function(e) { e.stopPropagation(); delete colourState.presets['${name}']; localStorage.setItem('seqColourPresets', JSON.stringify(colourState.presets)); updateColourPresetList(); })(event)">x</span>
-        </div>`
-    ).join('');
+    presetItems.innerHTML = '';
+
+    Object.keys(presets).forEach(name => {
+        const div = document.createElement('div');
+        div.style.cssText = 'cursor:pointer;padding:2px;border-radius:2px;margin:2px 0;background:#f0f0f0;';
+        div.dataset.name = name;
+        if (name === colourState.selectedPresetName) {
+            div.style.background = '#d6ebff';
+        }
+
+        const nameSpan = document.createElement('span');
+        nameSpan.textContent = name;
+
+        const delSpan = document.createElement('span');
+        delSpan.textContent = 'x';
+        delSpan.style.cssText = 'float:right;cursor:pointer;color:#888;';
+        delSpan.addEventListener('click', (e) => {
+            e.stopPropagation();
+            delete colourState.presets[name];
+            if (colourState.selectedPresetName === name) {
+                colourState.selectedPresetName = null;
+            }
+            localStorage.setItem('seqColourPresets', JSON.stringify(colourState.presets));
+            updateColourPresetList();
+        });
+
+        div.addEventListener('click', () => {
+            colourState.selectedPresetName = name;
+            colourState.mappings = new Map(colourState.presets[name]);
+            applyColourToSeqNames(colourState.mappings);
+            updateColourPresetList();
+            showMessage(`Loaded '${name}'`, 2000);
+        });
+
+        div.appendChild(nameSpan);
+        div.appendChild(delSpan);
+        presetItems.appendChild(div);
+    });
 }
 
 // Initialize colour seqs feature
 // Show color history inspector
 function showColorHistory() {
-    const modal = el('colourInspectorModal');
     const content = el('colourHistoryContent');
 
     if (colourState.history.size === 0) {
@@ -13237,21 +13310,21 @@ function showColorHistory() {
 
     sortedNames.forEach(seqName => {
         const history = colourState.history.get(seqName);
-        const currentColor = colourState.mappings.get(seqName);
+        const currentColor = colourState.mappings.get(seqName) || '#ccc';
 
-        html += `<div style="margin-bottom: 12px; padding: 8px; background: #f9f9f9; border-radius: 3px; border-left: 3px solid ${currentColor};">`;
-        html += `<div style="font-weight: bold; margin-bottom: 4px; word-break: break-all;">${seqName}</div>`;
-        html += `<div style="font-size: 10px; color: #666; margin-bottom: 6px;">Current: <span style="display: inline-block; width: 12px; height: 12px; background: ${currentColor}; border: 1px solid #ccc; vertical-align: middle;"></span> ${currentColor}</div>`;
+        html += `<div style="margin-bottom: 12px; padding: 8px; background: #f9f9f9; border-radius: 3px; border-left: 3px solid ${_escapeHtml(currentColor)};">`;
+        html += `<div style="font-weight: bold; margin-bottom: 4px; word-break: break-all;">${_escapeHtml(seqName)}</div>`;
+        html += `<div style="font-size: 10px; color: #666; margin-bottom: 6px;">Current: <span style="display: inline-block; width: 12px; height: 12px; background: ${_escapeHtml(currentColor)}; border: 1px solid #ccc; vertical-align: middle;"></span> ${_escapeHtml(currentColor)}</div>`;
         html += `<div style="font-size: 10px;">History:</div>`;
         html += `<div style="margin-left: 8px;">`;
 
         history.forEach((entry, idx) => {
             html += `<div style="margin: 2px 0; display: flex; align-items: center; gap: 6px;">`;
             html += `<span style="color: #999; min-width: 20px;">${idx + 1}.</span>`;
-            html += `<span style="display: inline-block; width: 14px; height: 14px; background: ${entry.color}; border: 1px solid #ccc; border-radius: 2px;"></span>`;
-            html += `<span>${entry.color}</span>`;
-            html += `<span style="color: #0066cc; margin: 0 4px;"><- ${entry.method}</span>`;
-            html += `<span style="color: #999; font-size: 9px;">${entry.timestamp}</span>`;
+            html += `<span style="display: inline-block; width: 14px; height: 14px; background: ${_escapeHtml(entry.color)}; border: 1px solid #ccc; border-radius: 2px;"></span>`;
+            html += `<span>${_escapeHtml(entry.color)}</span>`;
+            html += `<span style="color: #0066cc; margin: 0 4px;"><- ${_escapeHtml(entry.method)}</span>`;
+            html += `<span style="color: #999; font-size: 9px;">${_escapeHtml(entry.timestamp)}</span>`;
             html += `</div>`;
         });
 

@@ -1,5 +1,5 @@
 const express = require('express');
-const { execSync, spawn } = require('child_process');
+const { execSync, spawn, spawnSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
@@ -75,6 +75,27 @@ function reloadDbRegistry() {
     DATABASES = loadDbRegistry();
 }
 
+function runMakeBlastDb(args) {
+    const result = spawnSync('makeblastdb', args, { stdio: 'ignore', timeout: 120000 });
+    if (result.error) throw result.error;
+    if (result.status !== 0) {
+        throw new Error(`makeblastdb exited with code ${result.status}`);
+    }
+}
+
+function runBlastn(args, options = {}) {
+    const result = spawnSync('blastn', args, {
+        encoding: 'utf8',
+        timeout: options.timeout ?? 60000,
+        stdio: options.stdio ?? 'pipe',
+    });
+    if (result.error) throw result.error;
+    if (result.status !== 0) {
+        throw new Error(result.stderr || `blastn exited with code ${result.status}`);
+    }
+    return result;
+}
+
 // Format a FASTA database for BLAST
 function formatDatabase(dbPath, dbName) {
     if (!fs.existsSync(dbPath)) {
@@ -92,9 +113,7 @@ function formatDatabase(dbPath, dbName) {
 
         // Try makeblastdb
         console.log(`Formatting database: ${dbName}`);
-        execSync(`makeblastdb -in "${dbPath}" -dbtype nucl -title "${dbName}" -out "${outBase}"`, {
-            stdio: 'ignore'
-        });
+        runMakeBlastDb(['-in', dbPath, '-dbtype', 'nucl', '-title', dbName, '-out', outBase]);
         return true;
     } catch (err) {
         console.error(`Failed to format database ${dbName}:`, err.message);
@@ -137,17 +156,17 @@ function parseFasta(content) {
 }
 
 function loadDbCache() {
-    for (const [name, dbPath] of Object.entries(DATABASES)) {
-        if (fs.existsSync(dbPath)) {
+    for (const [name, dbInfo] of Object.entries(DATABASES)) {
+        if (fs.existsSync(dbInfo.path)) {
             console.log(`Loading ${name} into memory...`);
             const t0 = Date.now();
-            DB_CACHE[name] = parseFasta(fs.readFileSync(dbPath, 'utf8'));
+            DB_CACHE[name] = parseFasta(fs.readFileSync(dbInfo.path, 'utf8'));
             // Pre-encode and build inverted kmer index
             for (const e of DB_CACHE[name]) e._enc = encodeSeq(e.seq, 600);
             DB_INDEX[name] = buildInvertedIndex(DB_CACHE[name]);
             console.log(`  ${DB_CACHE[name].length} sequences loaded + indexed in ${Date.now() - t0} ms`);
         } else {
-            console.warn(`  Not found: ${dbPath}`);
+            console.warn(`  Not found: ${dbInfo.path}`);
             DB_CACHE[name] = [];
         }
     }
@@ -430,10 +449,14 @@ app.post('/api/blast', (req, res) => {
         }
 
         // Run BLAST with XML output (for x64 systems)
-        const blastCmd = `blastn -query "${queryFile}" -db "${dbBaseName}" -evalue ${evalue} -outfmt 5 -max_target_seqs ${maxHits} -out "${outputFile}"`;
-        
-        console.log(`Running BLAST: ${blastCmd}`);
-        execSync(blastCmd, { encoding: 'utf8', timeout: 60000 });
+        runBlastn([
+            '-query', queryFile,
+            '-db', dbBaseName,
+            '-evalue', String(evalue),
+            '-outfmt', '5',
+            '-max_target_seqs', String(maxHits),
+            '-out', outputFile,
+        ]);
 
         // Read and parse results
         const xmlOutput = fs.readFileSync(outputFile, 'utf8');
@@ -487,9 +510,14 @@ app.post('/api/blast-all', (req, res) => {
                 fs.writeFileSync(queryFile, query);
 
                 const dbBaseName = path.join(path.dirname(dbPath), path.basename(dbPath, path.extname(dbPath)));
-                const blastCmd = `blastn -query "${queryFile}" -db "${dbBaseName}" -evalue ${evalue} -outfmt 5 -max_target_seqs 5 -out "${outputFile}"`;
-                
-                execSync(blastCmd, { encoding: 'utf8', timeout: 60000, stdio: 'ignore' });
+                runBlastn([
+                    '-query', queryFile,
+                    '-db', dbBaseName,
+                    '-evalue', String(evalue),
+                    '-outfmt', '5',
+                    '-max_target_seqs', '5',
+                    '-out', outputFile,
+                ], { stdio: 'ignore' });
 
                 const xmlOutput = fs.readFileSync(outputFile, 'utf8');
                 const results = parseBlastResults(xmlOutput);
@@ -709,11 +737,11 @@ app.post('/api/mafft', async (req, res) => {
 // Check database status
 app.get('/api/databases', (req, res) => {
     const status = {};
-    for (const [name, dbPath] of Object.entries(DATABASES)) {
+    for (const [name, info] of Object.entries(DATABASES)) {
         status[name] = {
-            path: dbPath,
-            exists: fs.existsSync(dbPath),
-            formatted: fs.existsSync(path.join(path.dirname(dbPath), `${path.basename(dbPath, path.extname(dbPath))}.nhr`))
+            path: info.path,
+            exists: fs.existsSync(info.path),
+            formatted: fs.existsSync(path.join(path.dirname(info.path), `${path.basename(info.path, path.extname(info.path))}.nhr`))
         };
     }
     res.json(status);
@@ -987,6 +1015,8 @@ app.post('/api/bam2sam', (req, res) => {
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`ViewAlign server running on http://localhost:${PORT}  (also on Tailscale 100.78.77.10:${PORT})`);
+    const tailscaleIp = process.env.TAILSCALE_IP || '';
+    const tailscaleMsg = tailscaleIp ? `  (also on Tailscale ${tailscaleIp}:${PORT})` : '';
+    console.log(`ViewAlign server running on http://localhost:${PORT}${tailscaleMsg}`);
     loadDbCache();
 });
