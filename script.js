@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v130';
+const BUILD_TAG = 'v132';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -22,6 +22,154 @@ function safeLocalGet(key, fallback = {}) {
 
 function _checkedRadioValue(name, fallback) {
     return document.querySelector(`input[name="${name}"]:checked`)?.value ?? fallback;
+}
+
+function _clusterAlignmentColumnOffset() {
+    const stb = state.softTrimBoundaries;
+    if (!stb) return 0;
+    return (stb.leftTrimEnd >= 0) ? stb.leftTrimEnd + 1 : 0;
+}
+
+function _clearClusterTrimState() {
+    state.clusterResults = null;
+    state.clusterMap = null;
+    state.softTrimBoundaries = null;
+    state.trimBoundaries = null;
+    state.trimBackup = null;
+}
+
+function _migrateColourMapping(oldName, newName) {
+    if (!oldName || !newName || oldName === newName) return;
+    if (!colourState?.mappings?.has(oldName)) return;
+    const colour = colourState.mappings.get(oldName);
+    colourState.mappings.delete(oldName);
+    colourState.mappings.set(newName, colour);
+    if (colourState.history?.has(oldName)) {
+        colourState.history.set(newName, colourState.history.get(oldName));
+        colourState.history.delete(oldName);
+    }
+}
+
+function _queryAllByClass(className) {
+    if (!className) return [];
+    if (typeof CSS !== 'undefined' && typeof CSS.escape === 'function') {
+        return Array.from(document.querySelectorAll('.' + CSS.escape(className)));
+    }
+    return Array.from(document.querySelectorAll('[data-search-hit="' + className + '"]'));
+}
+
+function _paintSearchEntryOnAlignment(entry) {
+    if (!entry?.className) return;
+    let searchMotifValue = entry.searchValue || entry.label || '';
+    searchMotifValue = String(searchMotifValue).replace(/\s*\(rev comp\)\s*$/i, '').trim();
+    if (!searchMotifValue && entry.motif) {
+        searchMotifValue = String(entry.motif).replace(/:(fwd|rev comp|rev)$/i, '').trim();
+    }
+    if (!searchMotifValue) return;
+
+    const normalizedMotif = searchMotifValue.replace(/U/g, 'T');
+    const maxMismatches = Number.isInteger(entry.maxMismatches) ? entry.maxMismatches : (parseInt(el('maxMismatches')?.value, 10) || 0);
+    const useRegex = !!entry.useRegex;
+    const className = entry.className;
+
+    document.querySelectorAll('.seq-line:not(.consensus-line)').forEach(row => {
+        const index = parseInt(row.dataset.seqIndex, 10);
+        if (!Number.isInteger(index) || index < 0 || index >= state.seqs.length) return;
+        const dataSpan = row.querySelector('.seq-data');
+        if (!dataSpan) return;
+        const spans = Array.from(dataSpan.children);
+        const nonGapSpanIndices = [];
+        const displayedChars = [];
+        for (let si = 0; si < spans.length; si++) {
+            const ch = (spans[si].textContent || '').toUpperCase();
+            if (ch !== '-' && ch !== '.') {
+                nonGapSpanIndices.push(si);
+                displayedChars.push(ch);
+            }
+        }
+        const displayString = displayedChars.join('').replace(/U/g, 'T');
+        if (!displayString) return;
+
+        let matches;
+        if (useRegex) {
+            matches = [];
+            try {
+                const re = new RegExp(normalizedMotif, 'gi');
+                let m;
+                while ((m = re.exec(displayString)) !== null) {
+                    matches.push({ idx: m.index, len: m[0].length || 1, matchingPositions: null });
+                    if (m[0].length === 0) re.lastIndex++;
+                }
+            } catch (_) {
+                return;
+            }
+        } else {
+            matches = findFuzzyMatches(displayString, normalizedMotif, maxMismatches)
+                .map(m => ({ idx: m.idx, len: m.len, matchingPositions: m.matchingPositions }));
+        }
+
+        const paintPartialMatches = !useRegex && maxMismatches > 0;
+        matches.forEach(m => {
+            if (paintPartialMatches && m.matchingPositions?.length) {
+                m.matchingPositions.forEach(offset => {
+                    const si = nonGapSpanIndices[m.idx + offset];
+                    const span = si !== undefined ? spans[si] : null;
+                    if (span) {
+                        span.classList.add(className);
+                        span.dataset.searchHit = className;
+                    }
+                });
+            } else {
+                for (let j = 0; j < m.len; j++) {
+                    const si = nonGapSpanIndices[m.idx + j];
+                    const span = si !== undefined ? spans[si] : null;
+                    if (span) {
+                        span.classList.add(className);
+                        span.dataset.searchHit = className;
+                    }
+                }
+            }
+        });
+    });
+}
+
+function reapplySearchHighlights() {
+    if (!state.searchHistory?.length) return;
+    if (document.getElementById('modeCanvas')?.checked || document.getElementById('modeReads')?.checked) return;
+    state.searchHistory.forEach(entry => {
+        if (!entry.className) return;
+        if (!document.querySelector(`style[data-motif="${entry.motif}"]`)) {
+            const style = document.createElement('style');
+            style.textContent = `.${entry.className} { background-color: ${entry.color || '#ffcc00'} !important; color: black !important; font-weight: bold; }`;
+            style.setAttribute('data-motif', entry.motif);
+            document.head.appendChild(style);
+        }
+        _paintSearchEntryOnAlignment(entry);
+    });
+}
+
+function applyClusterVisualsFromState() {
+    if (!state.clusterMap) return;
+    if (document.getElementById('modeCanvas')?.checked || document.getElementById('modeReads')?.checked) return;
+
+    document.querySelectorAll('.seq-name[data-seq-index]').forEach((nameEl) => {
+        const seqIdx = parseInt(nameEl.dataset.seqIndex, 10);
+        if (!Number.isInteger(seqIdx) || state.clusterMap[seqIdx] === undefined) return;
+        const { color, name } = state.clusterMap[seqIdx];
+        nameEl.style.setProperty('background-color', color, 'important');
+        nameEl.style.setProperty('color', '#000000', 'important');
+        nameEl.style.setProperty('font-weight', 'bold', 'important');
+        nameEl.title = name;
+        nameEl.classList.add('cluster-colored');
+    });
+    highlightDiagnosticMutations();
+}
+
+function _syncSelectionDomFromState() {
+    updateRowSelections();
+    updateColumnSelections();
+    scheduleNucSelectionRefresh();
+    updateEditActiveCell();
 }
 // ASCII-safe UI symbols (avoid emoji / special Unicode in source files)
 const SYM = {
@@ -1985,7 +2133,7 @@ function _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd) {
 // totalContentW: current alignment's full pixel width (for the persistent scrollbar's thumb sizing).
 // onOffsetChange: optional callback (registered by setupPersistentScrollbar) invoked after each
 // draw() so the scrollbar can mirror wheel-scroll/drag-pan that didn't originate from the bar itself.
-const _canvasState = { offsetX: 0, offsetY: 0, ctx: null, metrics: null, seqsLen: 0, scheduleDraw: null, totalContentW: 0, onOffsetChange: null };
+const _canvasState = { offsetX: 0, offsetY: 0, ctx: null, metrics: null, seqsLen: 0, scheduleDraw: null, totalContentW: 0, onOffsetChange: null, resizeHandler: null, mousemoveHandler: null, mouseupHandler: null };
 // Cancellation token for the Canvas mode's deferred (chunked) conservation/
 // consensus jobs; reassigned + old one cancelled on every render so a
 // superseded background job can't clobber a newer one's results.
@@ -2099,7 +2247,21 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     _canvasState.scheduleDraw = scheduleDraw;
 
     resize();
-    window.addEventListener('resize', () => { resize(); _markDirty(); scheduleDraw(); });
+    if (_canvasState.resizeHandler) window.removeEventListener('resize', _canvasState.resizeHandler);
+    if (_canvasState.mousemoveHandler) window.removeEventListener('mousemove', _canvasState.mousemoveHandler);
+    if (_canvasState.mouseupHandler) window.removeEventListener('mouseup', _canvasState.mouseupHandler);
+    _canvasState.resizeHandler = () => { resize(); _markDirty(); scheduleDraw(); };
+    _canvasState.mousemoveHandler = (e) => {
+        if (!dragging) return;
+        _canvasState.offsetX = dragOx - (e.clientX - dragStartX);
+        _canvasState.offsetY = dragOy - (e.clientY - dragStartY);
+        scheduleDraw();
+    };
+    _canvasState.mouseupHandler = () => {
+        dragging = false;
+        canvas.style.cursor = 'default';
+    };
+    window.addEventListener('resize', _canvasState.resizeHandler);
     setAlignmentColorSchemeClass();
 
     // Clamp offsets
@@ -2253,16 +2415,8 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                    _markDirty();
         }
     });
-    window.addEventListener('mousemove', (e) => {
-        if (!dragging) return;
-        _canvasState.offsetX = dragOx - (e.clientX - dragStartX);
-        _canvasState.offsetY = dragOy - (e.clientY - dragStartY);
-        scheduleDraw();
-    });
-    window.addEventListener('mouseup', () => {
-        dragging = false;
-        canvas.style.cursor = 'default';
-    });
+    window.addEventListener('mousemove', _canvasState.mousemoveHandler);
+    window.addEventListener('mouseup', _canvasState.mouseupHandler);
 
     scheduleDraw();
 }
@@ -3446,6 +3600,7 @@ function renderAlignment(options = {}) {
             return;
         }
         renderReadsAlignment();
+        _syncSelectionDomFromState();
         syncCodonModePanel();
         return;
     }
@@ -3547,6 +3702,10 @@ function renderAlignment(options = {}) {
     // Conservation shading is deferred: draw an unshaded frame immediately, then
     // compute conservation off the critical path (idle, time-sliced) and repaint shaded.
     if (useCanvas) {
+        state._codonData = null;
+        state._codonFrames = null;
+        state._codonActiveFrame = 0;
+        document.body.classList.remove('codon-mode');
         const cachedConservation = (state.conservationDataCache?.len === len
             && state.conservationDataCache?.shadeMode === shadeMode)
             ? state.conservationDataCache.data : null;
@@ -3599,10 +3758,16 @@ function renderAlignment(options = {}) {
                 setTimeout(computeConsensusIdle, 60);
             }
         }
+        _syncSelectionDomFromState();
+        syncCodonModePanel();
         return;
     }
 
     let consensus = [];
+    state._codonData = null;
+    state._codonFrames = null;
+    state._codonActiveFrame = 0;
+    document.body.classList.remove('codon-mode');
     if (showConsensus) {
         const deferredConsensus = options.deferConservation ? getDeferredConsensus(len) : null;
         if (deferredConsensus) {
@@ -3629,9 +3794,15 @@ function renderAlignment(options = {}) {
     }
 
     if (useCompact) {
+        state._codonData = null;
+        state._codonFrames = null;
+        state._codonActiveFrame = 0;
+        document.body.classList.remove('codon-mode');
         renderCompactAlignment(len, conservationData, shadeMode, blackThresh, darkThresh, lightThresh,
             enableBlack, enableDark, enableLight, nameLen, stickyNames, standard, ambiguous, ambiguousMap,
             showConsensus, consType, threshold, fallbackMode, coverageMin);
+        _syncSelectionDomFromState();
+        syncCodonModePanel();
         return;
     }
 
@@ -3690,7 +3861,10 @@ function renderAlignment(options = {}) {
                 document.body.classList.add('codon-mode');
                 if (frameSel === 'auto') {
                     const bf = state._codonFrames.bestFrame;
-                    showMessage(`Codon analysis: auto-selected frame ${bf} (ATG start)`, 2500);
+                    if (state._lastAnnouncedCodonFrame !== bf) {
+                        state._lastAnnouncedCodonFrame = bf;
+                        showMessage(`Codon analysis: auto-selected frame ${bf} (ATG start)`, 2500);
+                    }
                 }
             } else {
                 state._codonFrames = null;
@@ -3794,9 +3968,11 @@ function renderAlignment(options = {}) {
     const _renderMs = performance.now() - _renderStartTime;
     if (_renderMs > 50 && TOTAL_RESIDUES > 10000) console.warn('[PERF] render: '+_renderMs.toFixed(0)+'ms | '+TOTAL_RESIDUES.toLocaleString()+' residues');
 
-        if (typeof applyColourToSeqNames === 'function' && colourState && colourState.mappings.size > 0) {
+    if (typeof applyColourToSeqNames === 'function' && colourState && colourState.mappings.size > 0) {
         applyColourToSeqNames(colourState.mappings);
     }
+    reapplySearchHighlights();
+    applyClusterVisualsFromState();
 
     // Post-process: AA translation rows (phase/stops now built inline)
     if (state._codonData) {
@@ -3804,8 +3980,8 @@ function renderAlignment(options = {}) {
         // Add AA translation rows below each sequence
         const seqRows = alignmentContainer.querySelectorAll('.seq-line');
         seqRows.forEach(rowEl => {
-            const seqIdx = parseInt(rowEl.dataset.seqIndex);
-            if (isNaN(seqIdx)) return;
+            const seqIdx = parseInt(rowEl.dataset.seqIndex, 10);
+            if (!Number.isInteger(seqIdx) || seqIdx < 0) return;
             // Check if already has AA rows
             if (rowEl.nextElementSibling?.classList.contains('aa-row')) return;
 
@@ -4417,9 +4593,11 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
         const save = () => {
             const newName = input.value.trim();
             if (newName && newName !== state.seqs[index].header) {
+                const oldName = state.seqs[index].header;
                 pushUndo('rename');
                 state.seqs[index].header = newName;
                 state.seqs[index].fullHeader = newName;
+                _migrateColourMapping(oldName, newName);
                 renderAlignment();
                 showMessage("Sequence renamed!", 2000);
             } else {
@@ -4652,6 +4830,8 @@ function addConsensusLine(parent, consensus, start, end, nameLen, stickyNames, b
 function setupHoverMenuReveal() {
     const controls = el('controls');
     if (!controls || !alignmentContainer) return;
+    if (controls.dataset.hoverMenuBound === '1') return;
+    controls.dataset.hoverMenuBound = '1';
 
     // Menu stays visible via CSS sticky positioning
     // This JavaScript just handles closing overlapping menu sections
@@ -4981,11 +5161,11 @@ async function parseAndRender(isFromDrop = false) {
             parsed = parseFasta(inputText);
         }
         if (!parsed) throw new Error("No valid sequences found");
-    // MOVE THIS LINE UP: Set filename BEFORE any parsing that might fail.
-        if (!isFromDrop) {
+        if (!isFromDrop && !state.currentFilename) {
             state.currentFilename = 'Clipboard';
             state.currentFilePath = '';
         }
+        _clearClusterTrimState();
         state.seqs = parsed;
         _userDismissedAutoCanvas = false; // fresh file: allow the Canvas suggestion again if it's large
         state.selectedRows.clear();
@@ -5560,11 +5740,15 @@ function handleKeyDown(e) {
         switch (e.key.toLowerCase()) {
             case 'r':
                 if (e.shiftKey) {
-                    realignSelectedBlock();
+                    // Ctrl+Shift+R is browser hard refresh — only hijack when columns are selected
+                    if (state.selectedColumns.size >= 2) {
+                        realignSelectedBlock();
+                        e.preventDefault();
+                    }
                 } else {
                     reverseComplementSelected();
+                    e.preventDefault();
                 }
-                e.preventDefault();
                 break;
             case 'del':
                 deleteSelected();
@@ -6529,7 +6713,7 @@ function _buildSnapshotPayload() {
     const consensusPosEl = document.querySelector('input[name="consensusPosition"]:checked');
     // Serialize colour state (Map -> array of pairs)
     const colourMappings = [];
-    state.colourState?.mappings?.forEach((color, name) => colourMappings.push([name, color]));
+    colourState?.mappings?.forEach((color, name) => colourMappings.push([name, color]));
     return {
         schema: SNAPSHOT_SCHEMA_VERSION,
         appVersion: APP_VERSION,
@@ -6724,59 +6908,35 @@ function _loadSnapshotPayload(payload) {
 
 function _applySnapshotColourState(cs) {
     if (!cs || !Array.isArray(cs.mappings)) return;
-    if (!state.colourState) {
-        state.colourState = { mappings: new Map(), history: new Map(), presets: {} };
-    }
     cs.mappings.forEach(([name, color]) => {
-        state.colourState.mappings.set(name, color);
+        colourState.mappings.set(name, color);
     });
     if (typeof applyColourToSeqNames === 'function') {
-        applyColourToSeqNames(state.colourState.mappings);
+        applyColourToSeqNames(colourState.mappings);
     }
 }
 
 function _applySnapshotSearchHistory(sh) {
     if (!Array.isArray(sh)) return;
+    state.searchHistory = [];
     sh.forEach(entry => {
-        const motifKey = (entry.motif || '') + ':' + (entry.strand || 'fwd');
-        // Re-run a lightweight highlight for saved searches
-        const color = entry.color || '#ffcc00';
-        const className = 'search-hit-snapshot-' + Math.random().toString(36).substring(2, 10);
-        const style = document.createElement('style');
-        style.textContent = '.' + className + ' { background-color: ' + color + ' !important; color: black !important; font-weight: bold; }';
-        style.setAttribute('data-motif', motifKey);
-        document.head.appendChild(style);
-
-        const motif = (entry.motif || '').replace(/:.+$/, ''); // strip strand suffix
-        document.querySelectorAll('.seq-line:not(.consensus-line)').forEach(row => {
-            const index = parseInt(row.dataset.seqIndex);
-            if (isNaN(index) || index < 0 || index >= state.seqs.length) return;
-            const dataSpan = row.querySelector('.seq-data');
-            if (!dataSpan) return;
-            const spans = Array.from(dataSpan.children);
-            const nonGapSpanIndices = [];
-            const displayedChars = [];
-            for (let si = 0; si < spans.length; si++) {
-                const ch = (spans[si].textContent || '').toUpperCase();
-                if (ch !== '-' && ch !== '.') {
-                    nonGapSpanIndices.push(si);
-                    displayedChars.push(ch);
-                }
-            }
-            const displayString = displayedChars.join('').replace(/U/g, 'T');
-            if (!displayString) return;
-            const searchMotif = motif.replace(/U/g, 'T');
-            for (let i = 0; i <= displayString.length - searchMotif.length; i++) {
-                if (displayString.substring(i, i + searchMotif.length) === searchMotif) {
-                    for (let j = 0; j < searchMotif.length; j++) {
-                        const si = nonGapSpanIndices[i + j];
-                        if (si !== undefined && spans[si]) spans[si].classList.add(className);
-                    }
-                }
-            }
+        const strand = entry.strand || 'fwd';
+        const rawMotif = (entry.motif || '').replace(/:(fwd|rev comp|rev)$/i, '');
+        const motifKey = entry.motif && entry.motif.includes(':') ? entry.motif : `${rawMotif}:${strand}`;
+        const className = 'search-hit-' + Math.random().toString(36).substring(2, 12);
+        state.searchHistory.push({
+            motif: motifKey,
+            color: entry.color || '#ffcc00',
+            className,
+            label: entry.label || rawMotif,
+            strand,
+            searchValue: entry.label || rawMotif,
+            matchCount: 0,
+            sequencesWithMatches: 0
         });
-        state.searchHistory.push({ motif: motifKey, color, className, label: entry.label || motif, strand: entry.strand || 'fwd', matchCount: 0, sequencesWithMatches: 0 });
     });
+    reapplySearchHighlights();
+    updateActiveSearchesPanel();
 }
 
 function _sanitizeSnapshotFileBaseName(sourceTitle) {
@@ -7669,12 +7829,15 @@ function searchMotif(options = {}) {
         const motifAlignmentSites = new Set();
         let motifSeqsWithMatches = new Set();
         const motifKey = `${key || searchMotifValue}:${strand}`;
-        const className = 'search-hit-' + Math.random().toString(36).substring(2, 12) + btoa(motifKey).replace(/=/g, '').substring(0, 5);
+        const className = 'search-hit-' + Math.random().toString(36).substring(2, 12);
 
         // Remove any existing identical motif highlights first
         state.searchHistory = state.searchHistory.filter(item => {
             if (item.motif === motifKey) {
-                document.querySelectorAll(`.${item.className}`).forEach(span => span.classList.remove(item.className));
+                _queryAllByClass(item.className).forEach(span => {
+                    span.classList.remove(item.className);
+                    delete span.dataset.searchHit;
+                });
                 document.querySelector(`style[data-motif="${item.motif}"]`)?.remove();
                 return false;
             }
@@ -7761,6 +7924,7 @@ function searchMotif(options = {}) {
                         const spanIndex = nonGapSpanIndices[degappedPos];
                         if (spanIndex !== undefined && spans[spanIndex]) {
                             spans[spanIndex].classList.add(className);
+                            spans[spanIndex].dataset.searchHit = className;
                         }
                     });
                 } else {
@@ -7768,6 +7932,7 @@ function searchMotif(options = {}) {
                         const spanIndex = nonGapSpanIndices[m.idx + i];
                         if (spanIndex !== undefined && spans[spanIndex]) {
                             spans[spanIndex].classList.add(className);
+                            spans[spanIndex].dataset.searchHit = className;
                         }
                     }
                 }
@@ -7824,7 +7989,10 @@ function updateActiveSearchesPanel() {
         remove.title = 'Remove this search';
         remove.addEventListener('click', () => {
             // Remove this specific search
-            document.querySelectorAll(`.${search.className}`).forEach(span => span.classList.remove(search.className));
+            _queryAllByClass(search.className).forEach(span => {
+                span.classList.remove(search.className);
+                delete span.dataset.searchHit;
+            });
             document.querySelector(`style[data-motif="${search.motif}"]`)?.remove();
             state.searchHistory.splice(index, 1);
             updateActiveSearchesPanel();
@@ -8104,45 +8272,20 @@ function clusterSequences() {
 
     // Color the sequence names in UI
     colorSequencesByCluster();
+    displayClusteringResults(clusterResults);
 
     updateClusteringStatus(`Clustering complete: ${clusterResults.summary.nClusters} clusters found`);
 }
 
 function colorSequencesByCluster() {
-    if (!state.clusterMap) {
-        return;
-    }
-
-    // First, re-render to make sure we have fresh DOM elements
-    renderAlignment();
-
-    // Then find all sequence name elements and color them
-    setTimeout(() => {
-        const seqNameElements = document.querySelectorAll('.seq-name');
-
-        seqNameElements.forEach((el) => {
-            // Get the sequence index from data-seq-index attribute
-            const seqIdx = parseInt(el.dataset.seqIndex);
-
-            if (state.clusterMap[seqIdx] !== undefined) {
-                const {color, name} = state.clusterMap[seqIdx];
-                // Remove the default white background by using setProperty with important
-                el.style.setProperty('background-color', color, 'important');
-                el.style.setProperty('color', '#000000', 'important');
-                el.style.setProperty('font-weight', 'bold', 'important');
-                el.style.setProperty('background', color, 'important'); // Also set background shorthand
-                el.title = name;
-                el.classList.add('cluster-colored');
-            }
-        });
-
-        // Now highlight diagnostic mutations
-        highlightDiagnosticMutations();
-    }, 50);
+    if (!state.clusterMap) return;
+    applyClusterVisualsFromState();
 }
 
 function highlightDiagnosticMutations() {
     if (!state.clusterResults) return;
+
+    const colOffset = _clusterAlignmentColumnOffset();
 
     // Create a map: position -> [{clusterIdx, color, char, seqIndices, isPerfect}, ...]
     // seqIndices are the sequences that have this diagnostic feature
@@ -8156,7 +8299,7 @@ function highlightDiagnosticMutations() {
         // This helps diagnose if the algorithm is missing features
         if (cluster.allFoundFeatures && cluster.allFoundFeatures.length > 0) {
             cluster.allFoundFeatures.forEach(feature => {
-                const pos = feature.pos; // Already 0-based from cluster.js
+                const pos = feature.pos + colOffset;
                 const char = feature.char;
 
                 if (!diagnosticMap[pos]) {
@@ -8200,7 +8343,7 @@ function highlightDiagnosticMutations() {
             // Fallback: use validated features if allFoundFeatures not available
             // Perfect features (full saturation)
             cluster.perfectFeatures.forEach(feature => {
-                const pos = feature.pos - 1; // Convert to 0-based index
+                const pos = feature.pos - 1 + colOffset;
 
                 if (!diagnosticMap[pos]) {
                     diagnosticMap[pos] = [];
@@ -8241,7 +8384,7 @@ function highlightDiagnosticMutations() {
             // Imperfect features (faint/reduced opacity)
             if (cluster.imperfectFeatures) {
                 cluster.imperfectFeatures.forEach(feature => {
-                    const pos = feature.pos - 1; // Convert to 0-based index
+                    const pos = feature.pos - 1 + colOffset; // Convert to 0-based index
 
                     if (!diagnosticMap[pos]) {
                         diagnosticMap[pos] = [];
@@ -8475,27 +8618,32 @@ function loadClusteringPreset(silent = false) {
         return;
     }
 
+    if (!preset?.trimming || !preset?.clustering) {
+        showMessage("Preset is invalid or incomplete", 2000);
+        return;
+    }
+
     // Apply trimming parameters
     el('leftGapInput').value = preset.trimming.leftGapThresh * 100;
     el('rightGapInput').value = preset.trimming.rightGapThresh * 100;
-    el('edgeWindowInput').value = preset.trimming.edgeWindow;
+    el('edgeWindowInput').value = preset.trimming.edgeWindow ?? 15;
 
     // Apply clustering parameters
-    el('clusterMinSizeInput').value = preset.clustering.minSize;
-    el('clusterMinPerfectInput').value = preset.clustering.minPerfect;
-    el('clusterMaxIterationsInput').value = preset.clustering.maxIterations;
+    el('clusterMinSizeInput').value = preset.clustering.minSize ?? 3;
+    el('clusterMinPerfectInput').value = preset.clustering.minPerfect ?? 4;
+    el('clusterMaxIterationsInput').value = preset.clustering.maxIterations ?? 20;
 
     // Apply quality thresholds (with fallback to defaults for older presets)
-    el('qualitySmallInput').value = preset.clustering.qualitySmall || 90;
-    el('qualityMediumInput').value = preset.clustering.qualityMedium || 80;
-    el('qualityLargeInput').value = preset.clustering.qualityLarge || 70;
+    el('qualitySmallInput').value = preset.clustering.qualitySmall ?? 90;
+    el('qualityMediumInput').value = preset.clustering.qualityMedium ?? 80;
+    el('qualityLargeInput').value = preset.clustering.qualityLarge ?? 70;
 
     // Apply size breakpoints (with fallback to defaults for older presets)
-    el('sizeSmallMediumInput').value = preset.clustering.sizeSmallMedium || 11;
-    el('sizeMediumLargeInput').value = preset.clustering.sizeMediumLarge || 20;
+    el('sizeSmallMediumInput').value = preset.clustering.sizeSmallMedium ?? 11;
+    el('sizeMediumLargeInput').value = preset.clustering.sizeMediumLarge ?? 20;
 
     // Apply min occurrences (with fallback to default for older presets)
-    el('minOccurrencesInput').value = preset.clustering.minOccurrences || 5;
+    el('minOccurrencesInput').value = preset.clustering.minOccurrences ?? 5;
 
     const shouldSilent = silent || presetName === 'optimal';
     if (!shouldSilent) {
@@ -8609,9 +8757,9 @@ function displayClusteringResults(results) {
 }
 
 function highlightCluster(clusterIdx) {
-    if (!state.clusteringResults) return;
+    if (!state.clusterResults) return;
 
-    const results = state.clusteringResults;
+    const results = state.clusterResults;
     const colors = SINEClusterer.getClusterColors();
 
     // Clear previous cluster highlighting
@@ -10709,9 +10857,11 @@ function showContextMenu(e, index) {
             const save = () => {
                 const newName = input.value.trim();
                 if (newName && newName !== state.seqs[index].header) {
+                    const oldName = state.seqs[index].header;
                     pushUndo('rename');
                     state.seqs[index].header = newName;
                     state.seqs[index].fullHeader = newName;
+                    _migrateColourMapping(oldName, newName);
                     renderAlignment();
                     showMessage("Sequence renamed!", 2000);
                 } else {
@@ -13589,7 +13739,8 @@ function showBlastDialog(sequenceHeader, sequenceSeq) {
             if (!db.available) {
                 span.style.color = '#999';
                 checkbox.disabled = true;
-                span.textContent += ' (unavailable)';
+                checkbox.checked = false;
+                span.textContent += ' (file not found)';
             }
             label.appendChild(checkbox);
             label.appendChild(span);
@@ -13659,7 +13810,7 @@ function showBlastDialog(sequenceHeader, sequenceSeq) {
     searchBtn.addEventListener('click', async () => {
         const selectedDbs = [];
         for (const db of databases) {
-            if (dbCheckboxes[db.name].checked) selectedDbs.push({ name: db.name, url: db.url });
+            if (dbCheckboxes[db.name]?.checked && db.url) selectedDbs.push({ name: db.name, url: db.url });
         }
 
         if (selectedDbs.length === 0) {
@@ -13700,8 +13851,9 @@ async function fetchDatabases() {
                 name,
                 label: info.description || name,
                 description: info.description || '',
+                url: info.url || null,
                 checked: true,
-                available: info.exists && info.formatted
+                available: info.available !== false && !!info.exists && !!info.url
             });
         }
         dbs.sort((a, b) => a.label.localeCompare(b.label));

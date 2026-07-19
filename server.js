@@ -68,6 +68,30 @@ function saveDbRegistry(registry) {
     }
 }
 
+function dbPublicUrl(dbPath) {
+    const rel = path.relative(__dirname, dbPath).split(path.sep).join('/');
+    return '/' + rel.replace(/^\.?\//, '');
+}
+
+function blastDbStatus(name, info) {
+    const exists = !!(info?.path && fs.existsSync(info.path));
+    const dbDir = exists ? path.dirname(info.path) : '';
+    const indexByName = exists && fs.existsSync(path.join(dbDir, name + '.nhr'));
+    const stem = exists ? path.basename(info.path, path.extname(info.path)) : '';
+    const indexByStem = exists && fs.existsSync(path.join(dbDir, stem + '.nhr'));
+    const formatted = indexByName || indexByStem;
+    const loaded = !!(DB_CACHE[name]?.length);
+    return {
+        description: info.desc || name,
+        url: exists ? dbPublicUrl(info.path) : null,
+        exists,
+        formatted,
+        loaded,
+        // Browser worker only needs the FASTA file; blastn indices are optional
+        available: exists,
+    };
+}
+
 let DATABASES = loadDbRegistry();
 
 // Reload registry (hot-reload)
@@ -559,11 +583,7 @@ app.get('/api/blast-db', (req, res) => {
     reloadDbRegistry();
     const dbs = {};
     for (const [name, info] of Object.entries(DATABASES)) {
-        dbs[name] = {
-            description: info.desc || name,
-            exists: fs.existsSync(info.path),
-            formatted: info.path && fs.existsSync(path.join(path.dirname(info.path), name + '.nhr'))
-        };
+        dbs[name] = blastDbStatus(name, info);
     }
     res.json({ databases: dbs });
 });
@@ -597,6 +617,7 @@ app.post('/api/blast-db', (req, res) => {
             desc: (description || '').substring(0, 200)
         };
         saveDbRegistry(DATABASES);
+        loadDbCache();
         console.log('Database "' + safeName + '" registered and formatted');
         res.json({ success: true, name: safeName, description: DATABASES[safeName].desc });
     } catch (err) {
@@ -623,6 +644,8 @@ app.delete('/api/blast-db/:name', async (req, res) => {
         }
         if (fs.existsSync(dbInfo.path)) { try { fs.unlinkSync(dbInfo.path); } catch (_) {} }
         delete DATABASES[dbName];
+        delete DB_CACHE[dbName];
+        delete DB_INDEX[dbName];
         saveDbRegistry(DATABASES);
         console.log('Database "' + dbName + '" deleted');
         res.json({ success: true, name: dbName });
@@ -738,11 +761,7 @@ app.post('/api/mafft', async (req, res) => {
 app.get('/api/databases', (req, res) => {
     const status = {};
     for (const [name, info] of Object.entries(DATABASES)) {
-        status[name] = {
-            path: info.path,
-            exists: fs.existsSync(info.path),
-            formatted: fs.existsSync(path.join(path.dirname(info.path), `${path.basename(info.path, path.extname(info.path))}.nhr`))
-        };
+        status[name] = blastDbStatus(name, info);
     }
     res.json(status);
 });
@@ -1018,5 +1037,6 @@ app.listen(PORT, '0.0.0.0', () => {
     const tailscaleIp = process.env.TAILSCALE_IP || '';
     const tailscaleMsg = tailscaleIp ? `  (also on Tailscale ${tailscaleIp}:${PORT})` : '';
     console.log(`ViewAlign server running on http://localhost:${PORT}${tailscaleMsg}`);
+    initializeDatabases();
     loadDbCache();
 });
