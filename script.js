@@ -2763,6 +2763,23 @@ function generateScale(maxLength, interval = 10, startPos = 0) {
     return scaleArray.join('');
 }
 
+// Generate scale ruler as HTML spans with data-pos for var-sites compatibility
+function generateScaleHTML(maxLength, interval, startPos, showBrk, brkBeforePos, brkInfo) {
+    const scaleText = generateScale(maxLength, interval, startPos);
+    const parts = [];
+    for (let i = 0; i < maxLength; i++) {
+        const absPos = startPos + i;
+        if (showBrk && brkBeforePos.has(absPos)) {
+            const r = brkInfo[absPos];
+            const title = `${r.count} column${r.count > 1 ? 's' : ''} hidden (positions ${r.start + 1}\u2013${r.end + 1})`;
+            parts.push(`<span class="col-breakpoint" data-break="${r.start}-${r.end}" title="${title}" style="pointer-events:none;">\u22EE</span>`);
+        }
+        const ch = scaleText[i] || ' ';
+        parts.push(`<span data-pos="${absPos}">${ch}</span>`);
+    }
+    return parts.join('');
+}
+
 /** Scale tick spacing for Canvas mode: wider intervals when zoomed out so labels stay readable. */
 function _canvasScaleInterval(charW) {
     if (charW >= 8) return 10;
@@ -3877,22 +3894,46 @@ function renderAlignment(options = {}) {
     // Highlight-diffs + Var-sites: mark columns that differ from consensus
     const highlightDiffs = document.getElementById('highlightDiffs')?.checked;
     const varSites = document.getElementById('varSitesOnly')?.checked;
+    const varThresholdPct = parseInt(document.getElementById('varSitesThreshold')?.value) || 0;
+    const nSeq = state.seqs.length;
+    const varThreshold = varThresholdPct === 0 ? 0 : Math.ceil((varThresholdPct / 100) * nSeq);
+    const showBreakpoints = document.getElementById('varSitesBreakpoints')?.checked !== false;
     if ((highlightDiffs || varSites) && state.seqs.length > 1) {
         const diffCols = new Set();
         // Pre-compute consensus for diff detection
         const consSeq = consensus.length > 0 ? consensus : computeConsensusForSequences(state.seqs.map(s => s.seq)).split('');
         for (let pos = 0; pos < len; pos++) {
             const consBase = (consSeq[pos] || '-').toUpperCase();
-            let isDiff = false;
-            for (let i = 0; i < state.seqs.length && !isDiff; i++) {
+            let diffCount = 0;
+            for (let i = 0; i < state.seqs.length; i++) {
                 const base = (state.seqs[i].seq[pos] || '-').toUpperCase();
                 if (base !== '-' && base !== '.' && consBase !== '-' && consBase !== '.' && base !== consBase) {
-                    isDiff = true;
+                    diffCount++;
                 }
             }
-            if (isDiff) diffCols.add(pos);
+            if (varThreshold === 0 || diffCount >= varThreshold) diffCols.add(pos);
         }
         state._diffColumns = diffCols;
+        // Build hidden ranges for breakpoint markers (only in var-sites mode)
+        if (varSites) {
+            const hiddenRanges = [];
+            let hiddenStart = -1;
+            for (let pos = 0; pos < len; pos++) {
+                if (!diffCols.has(pos)) {
+                    if (hiddenStart === -1) hiddenStart = pos;
+                } else {
+                    if (hiddenStart !== -1) {
+                        hiddenRanges.push({ start: hiddenStart, end: pos - 1, count: pos - hiddenStart });
+                        hiddenStart = -1;
+                    }
+                }
+            }
+            if (hiddenStart !== -1) hiddenRanges.push({ start: hiddenStart, end: len - 1, count: len - hiddenStart });
+            state._varSiteHiddenRanges = hiddenRanges;
+            document.body.classList.toggle('hide-breakpoints', !showBreakpoints);
+        } else {
+            state._varSiteHiddenRanges = null;
+        }
         if (highlightDiffs) {
             document.body.classList.add('highlight-diffs');
             document.body.classList.remove('var-sites-only');
@@ -3903,8 +3944,25 @@ function renderAlignment(options = {}) {
         }
     } else {
         state._diffColumns = null;
+        state._varSiteHiddenRanges = null;
         document.body.classList.remove('highlight-diffs');
         document.body.classList.remove('var-sites-only');
+        document.body.classList.remove('hide-breakpoints');
+    }
+
+    // Build breakpoint lookup for rendering (used by createSequenceLine and addConsensusLine)
+    const _varSitesActive = document.body.classList.contains('var-sites-only');
+    const _showBrk = _varSitesActive && !document.body.classList.contains('hide-breakpoints');
+    state._brkBeforePos = new Set();
+    state._brkInfo = {};
+    if (_showBrk && state._varSiteHiddenRanges && state._diffColumns) {
+        for (const r of state._varSiteHiddenRanges) {
+            const afterPos = r.end + 1;
+            if (state._diffColumns.has(afterPos)) {
+                state._brkBeforePos.add(afterPos);
+                state._brkInfo[afterPos] = r;
+            }
+        }
     }
 
 // Codon analysis
@@ -3971,8 +4029,12 @@ function renderAlignment(options = {}) {
             scaleNameDiv.textContent = '';
             const scaleDataDiv = document.createElement('div');
             scaleDataDiv.className = 'seq-data';
-            const scaleText = generateScale(blockLen, 10, start);
-            scaleDataDiv.textContent = scaleText;
+            const _showBrkRuler = state._brkBeforePos && state._brkBeforePos.size > 0;
+            if (_showBrkRuler) {
+                scaleDataDiv.innerHTML = generateScaleHTML(blockLen, 10, start, true, state._brkBeforePos, state._brkInfo);
+            } else {
+                scaleDataDiv.textContent = generateScale(blockLen, 10, start);
+            }
             scaleDiv.appendChild(scaleNameDiv);
             scaleDiv.appendChild(scaleDataDiv);
             blockDiv.appendChild(scaleDiv);
@@ -4000,8 +4062,12 @@ function renderAlignment(options = {}) {
         scaleNameDiv.textContent = '';
         const scaleDataDiv = document.createElement('div');
         scaleDataDiv.className = 'seq-data';
-        const scaleText = generateScale(len);
-        scaleDataDiv.textContent = scaleText;
+        const _showBrkRulerFull = state._brkBeforePos && state._brkBeforePos.size > 0;
+        if (_showBrkRulerFull) {
+            scaleDataDiv.innerHTML = generateScaleHTML(len, 10, 0, true, state._brkBeforePos, state._brkInfo);
+        } else {
+            scaleDataDiv.textContent = generateScale(len);
+        }
         scaleDiv.appendChild(scaleNameDiv);
         scaleDiv.appendChild(scaleDataDiv);
         alignmentContainer.appendChild(scaleDiv);
@@ -4711,7 +4777,18 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
         colorScheme, effectiveColorScheme
     };
 
+    // Var-sites: check if breakpoints are active for this render
+    const showBrk = state._brkBeforePos && state._brkBeforePos.size > 0;
+    const brkBeforePos = state._brkBeforePos || new Set();
+    const brkInfo = state._brkInfo || {};
+
     for (let pos = start; pos < end; pos++) {
+            // Insert breakpoint marker before this position if needed
+            if (showBrk && brkBeforePos.has(pos)) {
+                const r = brkInfo[pos];
+                const title = `${r.count} column${r.count > 1 ? 's' : ''} hidden (positions ${r.start + 1}\u2013${r.end + 1})`;
+                htmlParts.push(`<span class="col-breakpoint" data-break="${r.start}-${r.end}" title="${title}" style="pointer-events:none;">\u22EE</span>`);
+            }
             const base = seq[pos] || '-';
             const baseUp = base.toUpperCase();
             const baseClass = getResidueAnnotationClasses(base, standard, ambiguous, effectiveColorScheme);
@@ -4798,7 +4875,22 @@ function addConsensusLine(parent, consensus, start, end, nameLen, stickyNames, b
     const leftTrimEnd = trimBounds.leftTrimEnd !== undefined ? trimBounds.leftTrimEnd : -1;
     const rightTrimStart = trimBounds.rightTrimStart !== undefined ? trimBounds.rightTrimStart : Infinity;
 
+    const showBrk = state._brkBeforePos && state._brkBeforePos.size > 0;
+    const brkBeforePos = state._brkBeforePos || new Set();
+    const brkInfo = state._brkInfo || {};
+
     for (let pos = start; pos < end; pos++) {
+        // Insert breakpoint marker before this position if var-sites active
+        if (showBrk && brkBeforePos.has(pos)) {
+            const r = brkInfo[pos];
+            const brkSpan = document.createElement('span');
+            brkSpan.className = 'col-breakpoint';
+            brkSpan.dataset.break = `${r.start}-${r.end}`;
+            brkSpan.title = `${r.count} column${r.count > 1 ? 's' : ''} hidden (positions ${r.start + 1}\u2013${r.end + 1})`;
+            brkSpan.style.pointerEvents = 'none';
+            brkSpan.textContent = '\u22EE';
+            dataSpan.appendChild(brkSpan);
+        }
         const base = pos < consensus.length ? consensus[pos] : '-';
         const baseUp = base.toUpperCase();
         const baseClass = getResidueAnnotationClasses(base);
@@ -11981,9 +12073,26 @@ function attachUIListeners() {
             if (id === 'highlightDiffs') {
                 document.body.classList.toggle('highlight-diffs', elRef.checked);
             }
+            if (id === 'varSitesOnly') {
+                const ctrls = document.getElementById('varSitesControls');
+                if (ctrls) ctrls.style.display = elRef.checked ? 'inline-flex' : 'none';
+            }
             debounceRender();
         });
     });
+
+    // Var-sites threshold slider
+    const varThreshold = el('varSitesThreshold');
+    if (varThreshold) {
+        varThreshold.addEventListener('input', () => {
+            const label = document.getElementById('varSitesThresholdLabel');
+            if (label) label.textContent = `\u2265${varThreshold.value}% diff`;
+        });
+        varThreshold.addEventListener('change', debounceRender);
+    }
+    // Var-sites breakpoints toggle
+    const varBrk = el('varSitesBreakpoints');
+    if (varBrk) varBrk.addEventListener('change', debounceRender);
 
     const codonCode = el('codonCode');
     if (codonCode) codonCode.addEventListener('change', debounceRender);
