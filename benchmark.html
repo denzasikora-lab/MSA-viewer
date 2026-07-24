@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>ViewAlign Browser Benchmark</title>
+<style>
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 900px; margin: 20px auto; padding: 0 20px; }
+h1 { font-size: 1.4em; }
+h2 { font-size: 1.1em; margin-top: 24px; }
+button { padding: 8px 20px; font-size: 14px; cursor: pointer; margin: 4px 0; }
+pre { background: #f5f5f5; padding: 12px; border-radius: 4px; font-size: 12px; overflow-x: auto; }
+table { border-collapse: collapse; margin: 8px 0; }
+th, td { border: 1px solid #ddd; padding: 4px 10px; font-size: 12px; text-align: right; }
+th { background: #f0f0f0; }
+.note { color: #666; font-size: 12px; margin: 4px 0; }
+</style>
+</head>
+<body>
+<h1>ViewAlign Browser Benchmark</h1>
+<p class="note">Open this file in Chrome/Edge. Click each button to run the corresponding benchmark. Results appear in the table below.</p>
+
+<h2>1. Canvas vs DOM Render FPS</h2>
+<p class="note">Loads a synthetic 500-seq × 2,000-col alignment, renders in both DOM and Canvas modes, and measures scroll FPS via requestAnimationFrame.</p>
+<button onclick="runRenderBenchmark()">Run Render Benchmark</button>
+<pre id="renderOutput">Click button to run...</pre>
+
+<h2>2. MAFFT WASM Alignment Time</h2>
+<p class="note">Loads 50 sequences × 500 bp, runs in-browser MAFFT WASM alignment, and measures wall-clock time.</p>
+<button onclick="runMafftBenchmark()">Run MAFFT WASM Benchmark</button>
+<pre id="mafftOutput">Click button to run...</pre>
+
+<h2>3. Memory Footprint (Chrome only)</h2>
+<p class="note">Loads 500 seqs × 5,000 bp alignment in memory and reports heap usage via performance.memory.</p>
+<button onclick="runMemoryBenchmark()">Run Memory Benchmark</button>
+<pre id="memOutput">Click button to run...</pre>
+
+<hr>
+<h2>Results Table</h2>
+<table id="resultsTable">
+<thead><tr><th>Benchmark</th><th>Result</th></tr></thead>
+<tbody></tbody>
+</table>
+
+<script>
+// ---- Synthetic data generator ----
+function generateSeqs(n, len, gapRate = 0.1) {
+    const bases = 'ACGT', seqs = [];
+    for (let i = 0; i < n; i++) {
+        let seq = '';
+        for (let j = 0; j < len; j++) {
+            if (Math.random() < gapRate) seq += '-';
+            else seq += bases[Math.floor(Math.random() * 4)];
+        }
+        seqs.push({ header: `seq${i+1}`, seq });
+    }
+    return seqs;
+}
+
+function addResult(name, value) {
+    const tbody = document.querySelector('#resultsTable tbody');
+    tbody.insertRow().innerHTML = `<td>${name}</td><td>${value}</td>`;
+}
+
+// ---- 1. Render FPS benchmark ----
+async function runRenderBenchmark() {
+    const out = document.getElementById('renderOutput');
+    out.textContent = 'Generating synthetic data (500 seqs × 2,000 cols)...';
+    await new Promise(r => setTimeout(r, 50));
+
+    const seqs = generateSeqs(500, 2000, 0.1);
+    const n = seqs.length, len = seqs[0].seq.length;
+
+    // Create a test container
+    const container = document.createElement('div');
+    container.style.cssText = 'position:fixed;top:-9999px;left:0;width:800px;height:400px;overflow:auto;font-family:monospace;font-size:12px;';
+    document.body.appendChild(container);
+
+    // --- DOM mode: create spans for all residues ---
+    out.textContent = 'Building DOM mode (500 × 2,000 = 1M spans)...';
+    await new Promise(r => setTimeout(r, 50));
+
+    const domStart = performance.now();
+    const contentDiv = document.createElement('div');
+    contentDiv.style.width = (len * 8) + 'px';
+    for (let i = 0; i < n; i++) {
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;height:16px;white-space:nowrap;';
+        for (let j = 0; j < len; j++) {
+            const span = document.createElement('span');
+            span.style.cssText = 'display:inline-block;width:8px;text-align:center;';
+            span.textContent = seqs[i].seq[j];
+            row.appendChild(span);
+        }
+        contentDiv.appendChild(row);
+    }
+    container.appendChild(contentDiv);
+    const domBuildTime = performance.now() - domStart;
+
+    // Simulate scroll by changing scrollLeft in a RAF loop
+    let frameCount = 0;
+    const scrollStart = performance.now();
+    const scrollDuration = 2000; // 2 seconds of scrolling
+
+    return new Promise(resolve => {
+        function scrollLoop() {
+            const elapsed = performance.now() - scrollStart;
+            if (elapsed >= scrollDuration) {
+                const fps = (frameCount / (elapsed / 1000)).toFixed(1);
+                const domResult = `DOM: built ${n * len} spans in ${domBuildTime.toFixed(0)} ms, scroll FPS = ${fps}`;
+                out.textContent = domResult;
+
+                // Clean up DOM
+                container.remove();
+
+                // --- Canvas mode ---
+                runCanvasBenchmark(seqs).then(canvasResult => {
+                    out.textContent = domResult + '\n' + canvasResult;
+                    addResult('DOM render (500×2000)', `${domBuildTime.toFixed(0)} ms build, ${fps} FPS`);
+                    addResult('Canvas render (500×2000)', canvasResult);
+                });
+                resolve();
+                return;
+            }
+            container.scrollLeft = (elapsed / scrollDuration) * (len * 8 - 800);
+            frameCount++;
+            requestAnimationFrame(scrollLoop);
+        }
+        requestAnimationFrame(scrollLoop);
+    });
+}
+
+async function runCanvasBenchmark(seqs) {
+    const n = seqs.length, len = seqs[0].seq.length;
+    const canvas = document.createElement('canvas');
+    canvas.width = 800;
+    canvas.height = 400;
+    const ctx = canvas.getContext('2d');
+    ctx.font = '12px "Courier New", monospace';
+    const charW = ctx.measureText('X').width;
+    const charH = 14;
+
+    const container = document.createElement('div');
+    container.style.cssText = 'position:fixed;top:-9999px;left:0;width:800px;height:400px;overflow:hidden;';
+    container.appendChild(canvas);
+    document.body.appendChild(container);
+
+    // Simulate viewport-culled canvas rendering
+    let frameCount = 0;
+    const renderStart = performance.now();
+    const renderDuration = 2000;
+
+    return new Promise(resolve => {
+        function renderLoop() {
+            const elapsed = performance.now() - renderStart;
+            if (elapsed >= renderDuration) {
+                const fps = (frameCount / (elapsed / 1000)).toFixed(1);
+                container.remove();
+                resolve(`Canvas: viewport-culled draw, scroll FPS = ${fps}`);
+                return;
+            }
+
+            // Simulate scrolling: only draw visible residues
+            const scrollX = (elapsed / renderDuration) * (len * charW - 800);
+            const startCol = Math.floor(scrollX / charW);
+            const visibleCols = Math.ceil(800 / charW);
+            const visibleRows = Math.min(n, Math.ceil(400 / charH));
+
+            ctx.clearRect(0, 0, 800, 400);
+            for (let i = 0; i < visibleRows; i++) {
+                for (let j = 0; j < visibleCols; j++) {
+                    const col = startCol + j;
+                    if (col >= len) break;
+                    const base = seqs[i].seq[col];
+                    ctx.fillStyle = base === '-' ? '#ccc' : '#333';
+                    ctx.fillText(base, j * charW, (i + 1) * charH);
+                }
+            }
+            frameCount++;
+            requestAnimationFrame(renderLoop);
+        }
+        requestAnimationFrame(renderLoop);
+    });
+}
+
+// ---- 2. MAFFT WASM benchmark ----
+async function runMafftBenchmark() {
+    const out = document.getElementById('mafftOutput');
+    out.textContent = 'Generating 50 seqs × 500 bp...';
+    await new Promise(r => setTimeout(r, 50));
+
+    const seqs = generateSeqs(50, 500, 0);
+    const fasta = seqs.map(s => `>${s.header}\n${s.seq}`).join('\n');
+
+    out.textContent = 'Loading MAFFT WASM module...';
+    try {
+        // Try to load the MAFFT WASM module
+        const start = performance.now();
+        const mafft = await import('./mafft-wasm.js');
+        const alignFn = mafft.mafftWasmAlign || mafft.default;
+        if (!alignFn) throw new Error('mafftWasmAlign not found in module');
+
+        out.textContent = 'Running MAFFT WASM alignment (50 seqs × 500 bp)...';
+        const result = await alignFn(fasta);
+        const elapsed = performance.now() - start;
+
+        const alignedLen = result.split('\n').find(l => !l.startsWith('>'))?.length || 0;
+        const resultText = `MAFFT WASM: aligned 50 seqs × 500 bp in ${elapsed.toFixed(0)} ms\nAligned length: ${alignedLen} bp`;
+        out.textContent = resultText;
+        addResult('MAFFT WASM (50×500)', `${elapsed.toFixed(0)} ms`);
+    } catch (e) {
+        out.textContent = `MAFFT WASM not available or failed: ${e.message}\n\nTo run this benchmark, ensure mafft-wasm.js and disttbfast.wasm are in the same directory.`;
+        addResult('MAFFT WASM (50×500)', 'N/A (module not loaded)');
+    }
+}
+
+// ---- 3. Memory benchmark ----
+function runMemoryBenchmark() {
+    const out = document.getElementById('memOutput');
+    if (!performance.memory) {
+        out.textContent = 'performance.memory not available (Chrome/Edge only)';
+        addResult('Memory (500×5000)', 'N/A (not Chrome)');
+        return;
+    }
+
+    const before = performance.memory.usedJSHeapSize;
+    const seqs = generateSeqs(500, 5000, 0.1);
+    const fasta = seqs.map(s => `>${s.header}\n${s.seq}`).join('\n');
+
+    // Simulate parse
+    const parsed = [];
+    let header = '', seq = '';
+    for (const line of fasta.split('\n')) {
+        if (line.startsWith('>')) {
+            if (header) parsed.push({ header, seq });
+            header = line.substring(1); seq = '';
+        } else { seq += line; }
+    }
+    if (header) parsed.push({ header, seq });
+
+    // Simulate conservation
+    const cons = [];
+    for (let pos = 0; pos < 5000; pos++) {
+        const counts = {};
+        for (const s of parsed) {
+            const b = s.seq[pos];
+            if (b && b !== '-') counts[b] = (counts[b] || 0) + 1;
+        }
+        const max = Math.max(0, ...Object.values(counts));
+        const total = Object.values(counts).reduce((a, b) => a + b, 0);
+        cons.push(total ? max / total : 0);
+    }
+
+    const after = performance.memory.usedJSHeapSize;
+    const usedMB = ((after - before) / 1024 / 1024).toFixed(1);
+    const result = `Heap used: ${usedMB} MB\nSequences: ${parsed.length} × ${parsed[0].seq.length} bp\nConservation array: ${cons.length} columns`;
+    out.textContent = result;
+    addResult('Memory (500×5000)', `${usedMB} MB heap`);
+}
+</script>
+</body>
+</html>
