@@ -192,6 +192,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       <a href="#al-blast">3.4 BLAST Search</a>
       <a href="#al-blast-db">3.5 BLAST DB Management</a>
       <a href="#al-degap">3.6 Degap Alignment</a>
+      <a href="#al-realign-consensus">3.7 Re-align Against Consensus</a>
     </div>
   </div>
 
@@ -250,6 +251,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       <a href="#ed-seqedit">8.5 Sequence Text Editor</a>
       <a href="#ed-undo">8.6 Undo / Redo</a>
       <a href="#ed-degap">8.7 Degap Tool</a>
+      <a href="#ed-context">8.8 Right-Click Editing</a>
     </div>
   </div>
 
@@ -263,7 +265,10 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       <a href="#ac-colour">9.5 Colour &amp; Shading</a>
       <a href="#ac-cluster">9.6 Cluster Operations</a>
       <a href="#ac-plot">9.7 Plotting</a>
-      <a href="#ac-export">9.8 Export &amp; Share</a>
+      <a href="#ac-repeat-finder">9.8 Repeat Finder</a>
+      <a href="#ac-tsd-finder">9.9 TSD Finder</a>
+      <a href="#ac-export">9.10 Export &amp; Share</a>
+      <a href="#ac-colour-names">9.11 Colour Names</a>
     </div>
   </div>
 
@@ -320,7 +325,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </p>
   <p>Key capabilities:</p>
   <ul>
-    <li><strong>View</strong> - Three visualisation modes: Full, Block, Canvas (for massive alignments). <em>Planned future modes: Compact (IGV-style read packing), Circular (mtDNA wrap-around display), Tandem (stacked in-phase repeat units).</em></li>
+    <li><strong>View</strong> - Four visualisation modes: Full (single-pane), Block (fixed-width), Canvas (high-performance for massive alignments), and Reads (IGV-style read packing for SAM/BAM data).</li>
     <li><strong>Edit</strong> - GeneDoc-style residue editing, Move/Slide tools, undo/redo</li>
     <li><strong>Analyse</strong> - Statistics, copyable distance matrices, codon analysis, dot plots, repeat/TSD finder, tree builder, restriction site search, subfamily clustering</li>
     <li><strong>Colour</strong> - Monochrome conservation shading plus nucleotide, purine/pyrimidine, ambiguity, and amino-acid colour schemes</li>
@@ -385,15 +390,19 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </p>
 
   <h3 id="gs-updates">1.6 Recent Updates</h3>
-  <p>Recent GitHub Pages updates added or improved the following user-facing features:</p>
+  <p>Recent updates added or improved the following features:</p>
   <ul>
+    <li><strong>BLAST search with database management</strong> - right-click BLAST search with dynamic local database creation (makeblastdb), add/remove databases from the viewer, batch BLAST against all databases.</li>
     <li><strong>Restriction Sites</strong> search in the Search menu, with 50 common enzymes, manual site input, IUPAC ambiguity support, and optional reverse-complement search.</li>
+    <li><strong>Reads view mode</strong> for SAM/BAM data with IGV-style read packing and CIGAR-expanded match/mismatch colouring.</li>
+    <li><strong>Tree Builder</strong> supports both UPGMA and Neighbor-Joining with three distance correction models (p-distance, Jukes-Cantor, Kimura 2-parameter).</li>
     <li><strong>Statistics</strong> now includes copy-to-clipboard buttons for p-distance and identity matrices.</li>
-    <li><strong>Tree Builder</strong> supports both UPGMA and Neighbor-Joining; switching method in the modal rebuilds the tree.</li>
     <li><strong>Display colour schemes</strong> now include Monochrome, Nucleotide, Purine/Pyrimidine, Nucleotide Ambiguity, Clustal-like amino acid, and Jalview-like amino acid modes.</li>
+    <li><strong>Colour Names panel</strong> with pattern matching, auto-similarity grouping, colour presets, sort-by-colour, group-at-top, and colour history inspector.</li>
+    <li><strong>Repeat Finder</strong> for tandem, direct, and inverted repeats with configurable parameters.</li>
     <li><strong>GenBank import</strong> now parses sequence metadata and common FEATURES more reliably, including multi-line qualifiers.</li>
     <li><strong>Protein FASTA handling</strong> preserves amino-acid residues instead of treating them as nucleotides.</li>
-    <li><strong>Reliability fixes</strong> improved Statistics, Save Preset, modal handling, snapshot loading on GitHub Pages, and version display.</li>
+    <li><strong>Reliability fixes</strong> improved parser robustness (FASTA BOM/CR handling, PHYLIP interleaved continuation lines, Clustal/MUSCLE header detection), state reset on new file load, conservation cache invalidation, undo tracking, and version display.</li>
   </ul>
 </section>
 
@@ -565,6 +574,14 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     This is useful for extracting ungapped sequence blocks for downstream analysis.
     The operation is undoable (<kbd>Ctrl+Z</kbd>).
   </p>
+
+  <h3 id="al-realign-consensus">3.7 Re-align Against Consensus</h3>
+  <p>
+    Right-click a sequence and select <strong>Re-align against consensus</strong> to
+    realign that single sequence against the alignment's consensus profile using MAFFT.
+    This is useful for re-positioning a sequence that may have drifted or been misplaced
+    without re-aligning the entire dataset. Requires the server or WASM MAFFT.
+  </p>
 </section>
 
 <!-- ════════════════════════════════════════ -->
@@ -680,6 +697,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td><strong>Full</strong></td><td>General browsing, small alignments</td><td>Continuous single-pane view. All sequences in one scrolling block.</td></tr>
     <tr><td><strong>Block</strong></td><td>Publication viewing, wide alignments</td><td>Fixed-width blocks (adjustable via Block Size slider, 40–300 chars). Sequence names repeat per block.</td></tr>
     <tr><td><strong>Canvas</strong></td><td>Massive alignments (>= 150,000 residues)</td><td>Auto-activates for very large datasets. Canvas-based rendering for performance.</td></tr>
+    <tr><td><strong>Reads</strong></td><td>SAM/BAM read data</td><td>IGV-style read packing view. Displays reads as horizontal bars with CIGAR-expanded match/mismatch/indel colouring. Activated automatically when SAM/BAM data is loaded.</td></tr>
   </table>
   <p>
     Mode switching is instant - no re-render delay. The Block Size slider adjusts
@@ -719,13 +737,19 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     The selected colour scheme is saved in presets and snapshots. Compact and Canvas modes
     keep their own existing high-performance colouring behaviour.
   </p>
+  <p><strong>Conservation calculation mode:</strong></p>
+  <table>
+    <tr><th>Mode</th><th>Behaviour</th></tr>
+    <tr><td>Non-Gap (default)</td><td>Conservation percentages exclude gap characters. Only real residues (A, C, G, T, etc.) are counted. Use this for standard alignments where gaps represent missing data.</td></tr>
+    <tr><td>All</td><td>Conservation percentages include gaps as a character. A column that is 100% gaps would score as fully conserved. Use this when gap patterns themselves carry information (e.g., SINE insertion presence/absence).</td></tr>
+  </table>
 
   <h3 id="di-codons">5.4 Codon Analysis</h3>
   <p>
     Activates codon-aware viewing for coding sequences (CDS). Your alignment must be
     nucleotide and its length must be divisible by 3.
   </p>
-  <p>Select the appropriate genetic code from the dropdown (17 variants):</p>
+  <p>Select the appropriate genetic code from the dropdown (15 variants):</p>
   <table>
     <tr><th>Code</th><th>NCBI Table</th><th>Key Differences from Standard</th></tr>
     <tr><td>Standard</td><td>1</td><td>-</td></tr>
@@ -968,6 +992,19 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     from the entire alignment. This is distinct from the SeqEdit degap (which operates
     on individual sequences). Alignment-wide degap is undoable.
   </p>
+
+  <h3 id="ed-context">8.8 Right-Click Editing</h3>
+  <p>
+    Right-clicking a sequence name or residue opens a context menu with editing options
+    not available elsewhere:
+  </p>
+  <ul>
+    <li><strong>Rename sequence</strong> - inline edit of the sequence name. Colour mappings are automatically migrated to the new name.</li>
+    <li><strong>Replace N selected with consensus</strong> - replaces all selected sequences with a single consensus row (available when ≥2 sequences are selected)</li>
+    <li><strong>Add consensus below</strong> - inserts a consensus row after the selected group</li>
+    <li><strong>Re-align against consensus</strong> - realigns a single sequence against the alignment consensus profile using MAFFT (available in the right-click menu under analysis tools)</li>
+    <li><strong>Insert/Remove Single Gap</strong> - right-click a residue to insert or remove a single gap at that position in that row</li>
+  </ul>
 </section>
 
 <!-- ════════════════════════════════════════ -->
@@ -1008,25 +1045,22 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><th>Tool</th><th>Description</th></tr>
     <tr><td><strong>New Tab</strong></td><td>Open selected sequences in a new browser tab (<kbd>Ctrl+T</kbd>)</td></tr>
     <tr><td><strong>TSD Finder</strong></td><td>Find target site duplications around SINE insertion boundaries</td></tr>
-    <tr><td><strong>Tree</strong></td><td>Build UPGMA or Neighbor-Joining trees from selected sequences using pairwise p-distance. Switching UPGMA/NJ in the modal rebuilds the tree. Outputs text view and Newick with Copy Newick and Download .nwk options</td></tr>
-    <tr><td><strong>Statistics</strong></td><td>Compute alignment statistics, pairwise identity, and p-distance matrices. Distance and identity matrices include copy-to-clipboard buttons</td></tr>
+    <tr><td><strong>Tree</strong></td><td>Build UPGMA or Neighbor-Joining trees from selected sequences. Three distance correction models are available: p-distance (raw), Jukes-Cantor (JC69), and Kimura 2-parameter (K80). Switching UPGMA/NJ or model in the modal rebuilds the tree. Outputs text view and Newick with Copy Newick and Download .nwk options</td></tr>
+    <tr><td><strong>Statistics</strong></td><td>Compute alignment statistics: sequence count, alignment length (with/without gaps), number of variable sites, parsimony-informative sites, average pairwise identity, GC content. Pairwise p-distance and identity matrices include copy-to-clipboard buttons</td></tr>
   </table>
 
   <h3 id="ac-colour">9.5 Colour &amp; Shading</h3>
-  <p><strong>Shading and colour schemes:</strong></p>
-  <table>
-    <tr><th>Scheme</th><th>Behaviour</th></tr>
-    <tr><td>Identity</td><td>Colours only columns where all residues match exactly</td></tr>
-    <tr><td>Similarity</td><td>Groups amino acids by physico-chemical properties (BLOSUM62)</td></tr>
-    <tr><td>Clustal</td><td>ClustalW-style colour palette</td></tr>
-    <tr><td>Zappo</td><td>Colours by amino acid property class (hydrophobic, positive, negative, etc.)</td></tr>
-  </table>
-  <p><strong>Threshold sliders</strong> in the Display menu control darkness:
-  Black (highly conserved), Dark (moderately conserved), Light (weakly conserved).</p>
+  <p><strong>Conservation shading thresholds</strong> (Display menu):</p>
   <p>
-    Residue colour schemes are selected in the Display menu. Sequence-name colouring
-    remains available in the Colour Names menu for manually colouring individual sequences,
-    groups, or clades.
+    Threshold sliders in the Display menu control darkness for the Monochrome colour scheme:
+    Black (highly conserved), Dark (moderately conserved), Light (weakly conserved).
+    These thresholds apply only to the Monochrome scheme. Other colour schemes
+    (Nucleotide, Purine/Pyrimidine, etc.) use their own fixed colour mappings — see §5.3.
+  </p>
+  <p>
+    For colouring <em>sequence name labels</em> individually or in groups, use the
+    <strong>Colour Names</strong> panel (§9.11) which provides pattern matching,
+    auto-similarity grouping, presets, sort/group actions, and a colour history inspector.
   </p>
 
   <h3 id="ac-cluster">9.6 Cluster Operations</h3>
@@ -1046,9 +1080,47 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </table>
   <p>Additional features: automatic region detection (top 30 diagonal runs),
   click-to-navigate to alignment position, copy region as FASTA,
-  export as PNG or SVG.</p>
+  export as PNG or SVG. Right-click a sequence and select <strong>Dot-plot (self)</strong>
+  for self-comparison (useful for finding internal repeats).</p>
 
-  <h3 id="ac-export">9.8 Export &amp; Share</h3>
+  <h3 id="ac-repeat-finder">9.8 Repeat Finder</h3>
+  <p>
+    The Repeat Finder searches for tandem, direct, and inverted repeats within loaded sequences.
+    Access it from the Actions menu or right-click a sequence and select <strong>Find repeats</strong>.
+  </p>
+  <table>
+    <tr><th>Repeat Type</th><th>Description</th></tr>
+    <tr><td><strong>Tandem</strong></td><td>Adjacent repeated units (e.g., ATGATGATG). Searches for consecutive copies of a motif.</td></tr>
+    <tr><td><strong>Direct</strong></td><td>Two copies of the same sequence in the same orientation, anywhere in the sequence.</td></tr>
+    <tr><td><strong>Inverted</strong></td><td>Two copies in opposite orientation (reverse-complement). Finds palindromic/inverted repeat structures.</td></tr>
+  </table>
+  <p><strong>Parameters:</strong></p>
+  <ul>
+    <li><strong>Scope</strong> - search a single sequence, all sequences, or only selected sequences</li>
+    <li><strong>Min length</strong> - minimum repeat unit length in bp (default: 10, range: 3–50)</li>
+    <li><strong>Max divergence</strong> - maximum allowed mismatch rate between repeat copies (default: 15%, range: 0–50%)</li>
+  </ul>
+  <p>Results are displayed with repeat unit sequence, positions, length, and mismatch count. Matches can be copied as FASTA.</p>
+
+  <h3 id="ac-tsd-finder">9.9 TSD Finder</h3>
+  <p>
+    The TSD (Target Site Duplication) Finder locates short duplications flanking SINE/TE
+    insertion boundaries in aligned sequences. It uses Smith-Waterman local alignment
+    to match flanking sequences against each other.
+  </p>
+  <p><strong>SINE boundary detection modes:</strong></p>
+  <table>
+    <tr><th>Mode</th><th>How it works</th></tr>
+    <tr><td><strong>Auto</strong> (default)</td><td>Uses column-level conservation across all sequences to detect the SINE body automatically. Columns with high conservation are identified as SINE; flanking regions are searched for TSDs.</td></tr>
+    <tr><td><strong>Reference</strong></td><td>Uses row 1 (or consensus) gap pattern to locate SINE borders. Gap-free regions in the reference define the SINE body; flanking gaps define the host sequence.</td></tr>
+    <tr><td><strong>Manual</strong></td><td>User specifies pre-SINE and post-SINE column ranges explicitly. A <strong>Use selected cols as SINE</strong> button auto-fills flanking ranges from Ctrl+Alt-selected columns.</td></tr>
+  </table>
+  <p>
+    Results show TSD sequence, position in 5' and 3' flanks, length, and mismatch count.
+    TSDs are visually marked on the alignment and can be undone.
+  </p>
+
+  <h3 id="ac-export">9.10 Export &amp; Share</h3>
   <table>
     <tr><th>Format</th><th>Use</th><th>Notes</th></tr>
     <tr><td>FASTA</td><td>Downstream tools</td><td>Full alignment or selected sequences only</td></tr>
@@ -1063,6 +1135,35 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     RTF export uses Courier New 9pt with per-residue background colours matching
     the current shading scheme, a scale ruler every 10 columns, and the consensus line.
   </p>
+
+  <h3 id="ac-colour-names">9.11 Colour Names</h3>
+  <p>
+    The Colour Names panel (in the Actions menu sidebar) provides tools for
+    colouring sequence name labels individually or in groups.
+  </p>
+  <p><strong>Pattern Match</strong></p>
+  <ul>
+    <li>Enter a regex or text pattern to match sequence names</li>
+    <li>Pick a colour and click <strong>Apply</strong> to colour all matching sequence names</li>
+  </ul>
+  <p><strong>Auto by Similarity</strong></p>
+  <ul>
+    <li>Groups sequences by name prefix similarity using N-gram Jaccard distance</li>
+    <li><strong>First N chars</strong> - number of leading characters to compare (default: 10)</li>
+    <li><strong>Sensitivity</strong> - Jaccard similarity threshold (0 = strict 90%, 10 = loose 40%)</li>
+    <li><strong>Mode</strong> - Discrete (distinct colours per group) or Gradient (colour gradient by similarity)</li>
+  </ul>
+  <p><strong>Presets</strong></p>
+  <ul>
+    <li>Save, load, and reset colour assignments as named presets</li>
+    <li>Presets persist in <code>localStorage</code> across sessions</li>
+  </ul>
+  <p><strong>Actions</strong></p>
+  <ul>
+    <li><strong>Sort by Color</strong> - reorder sequences so same-coloured sequences are adjacent</li>
+    <li><strong>Group at Top</strong> - move all coloured sequences to the top of the alignment</li>
+    <li><strong>Inspect Colors</strong> - open a colour history inspector showing every colour assignment with timestamps and methods (pattern, auto-similarity, manual)</li>
+  </ul>
 </section>
 
 <!-- ════════════════════════════════════════ -->
@@ -1113,7 +1214,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>Ctrl+Click residue</td><td>Select column / search for that base</td></tr>
     <tr><td>Drag residue</td><td>Select column range</td></tr>
     <tr><td>Drag sequence name</td><td>Reorder rows</td></tr>
-    <tr><td>Right-click alignment</td><td>Context menu (copy, BLAST, export)</td></tr>
+    <tr><td>Right-click alignment</td><td>Context menu with 15+ options: Copy as FASTA (gapped/ungapped), Copy as plain text (gapped/ungapped), Copy by colour (gapped/ungapped), Edit Sequence, Reverse complement, Rename, Replace with consensus, Add consensus below, Delete, Clear selection, Move to Top/Bottom, Insert/Remove gap, BLAST, Re-align against consensus, Dot-plot (self), Find repeats</td></tr>
     <tr><td>Middle-click + drag</td><td>Pan viewport</td></tr>
     <tr><td>Scroll wheel</td><td>Vertical scroll</td></tr>
     <tr><td>Shift + scroll wheel</td><td>Horizontal scroll</td></tr>
