@@ -30,7 +30,7 @@ class SINEClusterer {
         const breakSM = options.sizeSmallMedium || 11;
         const breakML = options.sizeMediumLarge || 20;
 
-        // FIX: Respect trimming boundaries to avoid "ragged end" features
+        // Respect trimming boundaries to avoid ragged-end features
         const startPos = options.trimStart || 0;
         const endPos = options.trimEnd !== undefined ? options.trimEnd : this.alnLen;
 
@@ -45,7 +45,7 @@ class SINEClusterer {
 
         const candidates = new Map();
 
-        // FIX: Loop only within valid trimmed region
+        // Loop only within valid trimmed region
         for (let pos = startPos; pos < endPos; pos++) {
             const patterns = this.getPositionPatterns(pos, availableSeqs);
 
@@ -149,7 +149,7 @@ class SINEClusterer {
             }
         }
 
-        // FIX: Prune outliers (The "Seq 270" Fix)
+        // Prune outliers (Seq 270 edge case)
         // Size-aware threshold: small groups (< 6 features) need >= 2 matches;
         // larger groups need >= ceil(30% of features).
         if (best && best.occurrences.length > 2) {
@@ -212,7 +212,7 @@ class SINEClusterer {
         }
 
         if (!best && merged.size > 0) {
-            console.log(`[DEBUG] No cluster | avail=${availableSeqs.length} minPerfect=${options.minPerfect} upper=${upperBound}`);
+            // No cluster formed from available sequences
         }
         return best;
     }
@@ -285,7 +285,7 @@ class SINEClusterer {
 
             let group = this.findBestGroup(avail, go);
 
-            // FIX: Retry with relaxed upper bound if strict search fails
+            // Retry with relaxed upper bound if strict search fails
             if (!group && avail.length >= o.minSize) {
                 console.log(`[RETRY] No group found. Retrying with relaxed upper bound...`);
                 go.relaxUpperBound = true;
@@ -293,7 +293,7 @@ class SINEClusterer {
             }
 
             if (group) {
-                // FIX: Attach features to the group object so script.js can access them
+                // Attach features to the group object for script.js access
                 const f = this.getFeaturesByQuality(group);
                 group.perfectFeatures = f.perfectFeatures;
                 group.imperfectFeatures = f.imperfectFeatures;
@@ -308,7 +308,7 @@ class SINEClusterer {
             }
         }
 
-        // FIX: Return object structure expected by script.js
+        // Return object structure expected by script.js
         // Map sequence indices to full sequence objects for the clusters
         const validClusters = clusters.map(c => ({
             ...c,

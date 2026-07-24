@@ -2165,6 +2165,13 @@ body.codon-mode span.codon-fs {
     border-bottom: 3px wavy #e74c3c;
 }
 
+/* Internal frameshift (gap indel not multiple of 3) */
+body.codon-mode span.codon-fs-internal {
+    border-left: 2px solid #e74c3c;
+    border-right: 2px solid #e74c3c;
+    background-color: rgba(231, 76, 60, 0.15) !important;
+}
+
 /* Synonymous mutations */
 body.codon-mode span.codon-syn {
     text-decoration: underline;

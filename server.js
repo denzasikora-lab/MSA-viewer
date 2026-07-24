@@ -879,7 +879,7 @@ app.get('/api/poll-file', (req, res) => {
 
 // Poll queue file from remote server (MC writes to ~/.msa_viewer_queue)
 app.get('/api/ssh-poll-file', (req, res) => {
-    const serverKey = req.query.server || 'copilot';
+    const serverKey = req.query.server || 'default';
     console.log(`[POLL] Checking queue for server: ${serverKey}`);
     if (!SSH_SERVERS[serverKey]) return res.status(400).json({ error: `Unknown server: ${serverKey}` });
 
@@ -888,7 +888,7 @@ app.get('/api/ssh-poll-file', (req, res) => {
     let sshArgs;
 
     if (!srv.via) {
-        // Direct: read queue and clear it. Use /tmp so any user (root/copilot) can write.
+        // Direct: read queue and clear it. Use /tmp so any user can write.
         // Queue file has 2 lines: line 1 = directory, line 2 = filename (from MC %d and %f)
         // Or 1 line with full path (from MC %p)
         const cmd = 'Q=/tmp/.msa_viewer_queue; if [ -s "$Q" ]; then echo "=START_QUEUE="; cat "$Q"; echo "=END_QUEUE="; cp /dev/null "$Q" 2>/dev/null || true; fi';
@@ -947,7 +947,7 @@ app.get('/api/ssh-poll-file', (req, res) => {
 
 app.get('/api/ssh-cat', (req, res) => {
     const filePath  = req.query.file;
-    const serverKey = req.query.server || 'copilot';
+    const serverKey = req.query.server || 'default';
     console.log(`[SSH-CAT] Fetching file: ${filePath} from ${serverKey}`);
     if (!filePath)  return res.status(400).json({ error: 'Missing "file" query parameter' });
     if (!SSH_SERVERS[serverKey]) return res.status(400).json({ error: `Unknown server: ${serverKey}` });
@@ -972,7 +972,7 @@ app.get('/api/ssh-cat', (req, res) => {
 // List remote directory
 app.get('/api/ssh-ls', (req, res) => {
     const dirPath   = req.query.dir || '~';
-    const serverKey = req.query.server || 'copilot';
+    const serverKey = req.query.server || 'default';
     if (/[;|&`$(){}\\]/.test(dirPath)) return res.status(400).json({ error: 'Invalid characters in path' });
     if (dirPath.includes('..')) return res.status(400).json({ error: 'Path traversal not allowed' });
     if (!SSH_SERVERS[serverKey]) return res.status(400).json({ error: `Unknown server: ${serverKey}` });

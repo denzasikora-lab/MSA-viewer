@@ -1943,15 +1943,6 @@ function _getSynCodons(code) {
     return syn;
 }
 
-// Synonymous mutation check for each codon position
-const _SYN_CODONS = {}; // codon -> Set of synonymous codons
-for (const [codon, aa] of Object.entries(_GENETIC_CODE)) {
-    if (!_SYN_CODONS[codon]) _SYN_CODONS[codon] = new Set();
-    for (const [c2, a2] of Object.entries(_GENETIC_CODE)) {
-        if (a2 === aa && c2 !== codon) _SYN_CODONS[codon].add(c2);
-    }
-}
-
 // Compute per-position codon analysis for a single frame (frameOffset = 0,1,2 alignment columns)
 // Gaps are skipped during codon assembly (no frameshift on gaps); incomplete terminal codons flagged.
 // When frameOffset is omitted, defaults to 0 (backward-compatible single-frame mode).
@@ -2517,7 +2508,7 @@ function parseStockholm(text) {
     for (const line of lines) {
         const t = line.trim();
         if (t === '//') break;
-        if (t === '# STOCKHOLM 1.0' || t.startsWith('#=GF')) { inAlign = true; continue; }
+        if (/^# STOCKHOLM\b/.test(t) || t.startsWith('#=GF')) { inAlign = true; continue; }
         if (t.startsWith('#=GR') || t.startsWith('#=GC') || t.startsWith('#')) continue;
         if (!inAlign || !t) continue;
         const m = t.match(/^(\S+)\s+(.+)$/);
@@ -2561,7 +2552,8 @@ function _pushParsedFastaSequence(seqs, header, seq) {
 }
 
 function parseFasta(text) {
-    const lines = text.trim().split(/\r?\n/);
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
+    const lines = text.split(/\r\n|\r|\n/);
     const seqs = [];
     let seq = '', header = '';
     try {
@@ -2569,16 +2561,16 @@ function parseFasta(text) {
             line = line.trim();
             if (!line) continue;
             if (line.startsWith('>')) {
-                if (seq) {
+                if (header) {
                     _pushParsedFastaSequence(seqs, header, seq);
                     seq = '';
                 }
                 header = line;
             } else {
-                seq += line.replace(/[^A-Za-z*.\-]/g, '');
+                seq += line.replace(/[^A-Za-z*.\-]/g, '').replace(/_/g, '-');
             }
         }
-        if (header && seq) {
+        if (header) {
             _pushParsedFastaSequence(seqs, header, seq);
         }
     } catch (err) {
@@ -4661,8 +4653,12 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
             }
             if (state._codonData && state._codonData.frameShifts && state._codonData.frameShifts[index]) {
                 for (const fs of state._codonData.frameShifts[index]) {
-                    if (fs.pos === pos && (fs.type === 'incomplete' || fs.type === 'indel')) {
+                    if (fs.pos === pos && fs.type === 'incomplete') {
                         cls += ' codon-fs';
+                        break;
+                    }
+                    if (fs.pos === pos && fs.type === 'indel') {
+                        cls += ' codon-fs-internal';
                         break;
                     }
                 }
@@ -5174,6 +5170,23 @@ async function parseAndRender(isFromDrop = false) {
         state.pendingNucStart = null;
         state.lastSelectedIndex = null;
         state.groupConsensusCount = 0;
+        // --- Audit C3: comprehensive state reset on new file load ---
+        state.diffColumns = null;
+        state.searchResults = null;
+        state.searchHistory = [];
+        state.colourState = { mappings: new Map(), history: new Map() };
+        state.manuallyColoured = new Set();
+        state.dragStartCol = null;
+        state.dragStartRow = null;
+        state.isDragging = false;
+        state.dragMode = null;
+        state.selRect = null;
+        state.ctrlPressed = false;
+        state.altPressed = false;
+        state.shiftPressed = false;
+        state._codonData = null;
+        state._columnConservationScores = null;
+        state._columnConservationCache = null;
 
         // Update name length slider range based on loaded sequences
         // This will set the slider to maximum actual name length
@@ -6603,11 +6616,11 @@ function savePreset() {
         enableLight: el('enableLight').checked,
         stickyNames: el('stickyNames').checked
     };
-    localStorage.setItem('qwen_msa_viewer_preset_v44', JSON.stringify(preset));
+    localStorage.setItem('msaviewer_preset_v44', JSON.stringify(preset));
     showMessage("Preset saved!", 2000);
 }
 function loadPreset() {
-    const saved = localStorage.getItem('qwen_msa_viewer_preset_v44');
+    const saved = localStorage.getItem('msaviewer_preset_v44');
     if (!saved) {
         showMessage("No saved preset found.", 3000);
         return;
@@ -6618,7 +6631,7 @@ function loadPreset() {
     } catch (e) {
         console.error('Preset JSON corrupted:', e);
         showMessage('Saved preset is corrupted and was reset.', 4000);
-        localStorage.removeItem('qwen_msa_viewer_preset_v44');
+        localStorage.removeItem('msaviewer_preset_v44');
         return;
     }
     ['black','dark','light','zoom','blockSize','nameLen','consensusThreshold', 'groupConsensusThreshold', 'consensusMinCoverage'].forEach(k => {
@@ -12007,6 +12020,16 @@ function attachUIListeners() {
     // Use capture phase so shortcuts like Ctrl+H override browser built-ins
     document.addEventListener('keydown', handleKeyDown, true);
     document.addEventListener('keyup', handleKeyUp, true);
+    // Reset stuck modifier keys and drag state when window loses focus
+    window.addEventListener('blur', () => {
+        state.ctrlPressed = false;
+        state.altPressed = false;
+        state.shiftPressed = false;
+        state.isDragging = false;
+        state.dragMode = null;
+        state.dragStartCol = null;
+        state.dragStartRow = null;
+    });
     document.addEventListener('copy', (e) => {
         if (!state.selectedNucs.size) return;
         const text = buildNucCopyText();
@@ -13022,6 +13045,7 @@ function sortSequencesByColor() {
     });
 
     // Update state and re-render
+    pushUndo('sort-by-color');
     state.seqs = sortedSeqs;
     state.selectedRows.clear();
     renderAlignment();
@@ -13042,6 +13066,7 @@ function groupColoredSequencesAtTop() {
     });
 
     // Combine: colored at top, then ungrouped
+    pushUndo('group-colored');
     state.seqs = [...coloredSeqs, ...ungroupedSeqs];
     state.selectedRows.clear();
     renderAlignment();
