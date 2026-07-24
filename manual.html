@@ -213,6 +213,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <div class="side-sub">
       <a href="#di-modes">5.1 View Modes</a>
       <a href="#di-checks">5.2 Highlight Diffs &amp; Variable Sites</a>
+      <a href="#di-var-threshold">5.2.1 Variable-Sites Threshold</a>
+      <a href="#di-var-breakpoints">5.2.2 Breakpoint Markers</a>
       <a href="#di-colors">5.3 Alignment Colour Schemes</a>
       <a href="#di-codons">5.4 Codon Analysis</a>
       <a href="#di-sticky">5.5 Sticky Names</a>
@@ -371,7 +373,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td><strong>Input</strong></td><td>Load, save, import, export - file handling and snapshots</td></tr>
     <tr><td><strong>Alignment</strong></td><td>MAFFT realignment, BLAST, add sequences, degap</td></tr>
     <tr><td><strong>Clustering</strong></td><td>Trim alignment ends, subfamily clustering, parameter presets</td></tr>
-    <tr><td><strong>Display</strong></td><td>View mode, shading, zoom, name length, Sticky Names, codon toggle, variable sites filter</td></tr>
+    <tr><td><strong>Display</strong></td><td>View mode, shading, zoom, name length, Sticky Names, codon toggle, variable sites filter with percentage threshold and breakpoint markers</td></tr>
     <tr><td><strong>Consensus</strong></td><td>Consensus line settings, group consensus computation</td></tr>
     <tr><td><strong>Search</strong></td><td>Motif search with regex and mismatch support</td></tr>
     <tr><td><strong>Edit...</strong></td><td>Edit mode toggle, degap button, GeneDoc-style editing tools</td></tr>
@@ -392,6 +394,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="gs-updates">1.6 Recent Updates</h3>
   <p>Recent updates added or improved the following features:</p>
   <ul>
+    <li><strong>Variable-sites threshold &amp; breakpoint markers</strong> - percentage-based slider (0–100%) controls minimum variation for a column to be shown; breakpoint separators (⋮) indicate where conserved columns were hidden.</li>
     <li><strong>BLAST search with database management</strong> - right-click BLAST search with dynamic local database creation (makeblastdb), add/remove databases from the viewer, batch BLAST against all databases.</li>
     <li><strong>Restriction Sites</strong> search in the Search menu, with 50 common enzymes, manual site input, IUPAC ambiguity support, and optional reverse-complement search.</li>
     <li><strong>Reads view mode</strong> for SAM/BAM data with IGV-style read packing and CIGAR-expanded match/mismatch colouring.</li>
@@ -712,11 +715,42 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       Works in all four view modes. Rapidly reveals where variation occurs.
     </li>
     <li>
-      <strong>Variable sites only</strong> - hides completely conserved columns entirely,
+      <strong>Variable sites only</strong> - hides conserved columns entirely,
       showing only positions with variation. Useful for scanning SNP-dense regions.
     </li>
   </ul>
-  <p>Both can be combined with any view mode and with Codon analysis.</p>
+
+  <h4 id="di-var-threshold">5.2.1 Variable-Sites Threshold</h4>
+  <p>
+    Next to the <strong>Variable sites only</strong> checkbox, a <strong>threshold slider</strong>
+    controls the minimum percentage of sequences that must differ from the consensus
+    for a column to be considered "variable". The slider ranges from 0% to 100% in 5% steps.
+  </p>
+  <ul>
+    <li><strong>0%</strong> (default) — show all columns with any non-gap residue (no filtering).</li>
+    <li><strong>≥20%</strong> — only columns where at least 20% of sequences differ from consensus.</li>
+    <li><strong>≥50%</strong> — only columns where at least half the sequences differ.</li>
+    <li><strong>≥100%</strong> — only columns where every sequence differs from consensus.</li>
+  </ul>
+  <p>
+    The threshold is percentage-based so it works consistently across alignments of any size.
+    For a 5-sequence alignment, ≥20% means at least 1 sequence must differ; for a 200-sequence
+    alignment, ≥20% means at least 40 sequences must differ.
+  </p>
+
+  <h4 id="di-var-breakpoints">5.2.2 Breakpoint Markers</h4>
+  <p>
+    When <strong>Variable sites only</strong> is active, a <strong>Breakpoints</strong> checkbox
+    (enabled by default) inserts thin <code>⋮</code> separator columns between visible
+    variable columns where conserved columns were hidden. Each breakpoint shows a tooltip
+    with the count and position range of hidden columns (e.g. <em>"12 columns hidden (positions 45–56)"</em>).
+  </p>
+  <ul>
+    <li>Breakpoints preserve visual context — you can see <em>where</em> conserved regions were removed, not just that they are gone.</li>
+    <li>Breakpoint columns are non-interactive: they cannot be selected, edited, or included in exports.</li>
+    <li>Uncheck <strong>Breakpoints</strong> to glue visible columns together without separators (original behaviour).</li>
+  </ul>
+  <p>Both features can be combined with any view mode and with Codon analysis.</p>
 
   <h3 id="di-colors">5.3 Alignment Colour Schemes</h3>
   <p>
@@ -1300,7 +1334,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li>Use <strong>Block mode</strong> with smaller block sizes (20-30 columns) for very wide alignments</li>
     <li>The <strong>Canvas</strong> mode auto-activates at >= 150,000 total residues for maximum performance</li>
     <li>For extremely large files (&gt; 500 sequences x 5,000 columns), consider splitting the input</li>
-    <li>Use <strong>Variable sites only</strong> to strip conserved columns and reduce visual noise</li>
+    <li>Use <strong>Variable sites only</strong> with the <strong>threshold slider</strong> to strip conserved columns and focus on variation. Set the threshold to ≥20% or higher to highlight only the most polymorphic sites.</li>
   </ul>
 
   <h3 id="tp-figures">12.2 Publication Figures</h3>
