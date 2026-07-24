@@ -1583,7 +1583,10 @@ function _isSamInput(text) {
     if (lines.length < 2) return false;
     const headerLines = lines.filter(l => l.startsWith('@'));
     if (headerLines.length > 0) {
-        return headerLines.some(l => l.startsWith('@HD') || l.startsWith('@SQ') || l.startsWith('@PG'));
+        if (headerLines.some(l => l.startsWith('@HD') || l.startsWith('@SQ') || l.startsWith('@PG') || l.startsWith('@RG') || l.startsWith('@CO') || l.startsWith('@PG'))) {
+            return true;
+        }
+        // Fall through to CIGAR check for unrecognised headers
     }
     const nonHeader = lines.filter(l => !l.startsWith('@'));
     if (nonHeader.length === 0) return false;
@@ -2889,7 +2892,7 @@ async function handleBamFile(event) {
         let buf;
 
         if (ext === 'sam') {
-            // SAM is plain text - parse directly
+            // SAM is plain text - parse into pseudo-buffer
             const text = await file.text();
             buf = parseSAMToBuffer(text);
         } else {
@@ -2897,8 +2900,21 @@ async function handleBamFile(event) {
             buf = await BamParser.decompressBAM(file);
         }
 
-        // Parse header
-        const header = BamParser.parseBAMHeader(buf);
+        // Parse header (SAM pseudo-buffer or real BAM)
+        let header, records, exceededLimit, totalReads;
+        if (buf._isSAM) {
+            header = { refNames: buf._refNames, refLengths: buf._refLengths, headerEndOffset: 0 };
+            const MAX = BamParser.MAX_READS;
+            totalReads = buf._records.length;
+            exceededLimit = totalReads > MAX;
+            records = exceededLimit ? buf._records.slice(0, MAX) : buf._records;
+        } else {
+            header = BamParser.parseBAMHeader(buf);
+            const parsed = BamParser.parseBAMRecords(buf, header.headerEndOffset);
+            records = parsed.records;
+            exceededLimit = parsed.exceededLimit;
+            totalReads = parsed.totalReads;
+        }
 
         // Check reference match
         const loadedSeqs = state.seqs.map(s => ({ name: s.name, seq: s.seq }));
@@ -2916,9 +2932,6 @@ async function handleBamFile(event) {
                 'Load a reference FASTA first.', 5000);
             return;
         }
-
-        // Parse records (stops at MAX_READS + 1)
-        const { records, exceededLimit, totalReads } = BamParser.parseBAMRecords(buf, header.headerEndOffset);
 
         if (exceededLimit) {
             statusMessage.style.display = 'none';
@@ -3023,26 +3036,84 @@ function computeReadSpan(cigar) {
  * In practice, we parse SAM as text and build record objects directly.
  */
 function parseSAMToBuffer(text) {
-    // Parse SAM as plain text - we'll build a pseudo-BAM buffer
-    // This is simpler than trying to create binary BAM from SAM
+    // Parse SAM text into BAM-like records for the reads view pipeline.
+    // Returns a pseudo-buffer object with header and records compatible with
+    // BamParser.parseBAMHeader and BamParser.parseBAMRecords.
     const lines = text.split('\n').filter(l => l.trim());
-    const headerLines = [];
-    const readLines = [];
+    const headerLines = lines.filter(l => l.startsWith('@'));
+    const readLines = lines.filter(l => !l.startsWith('@'));
 
-    for (const line of lines) {
-        if (line.startsWith('@')) {
-            headerLines.push(line);
-        } else {
-            readLines.push(line);
+    // Parse @SQ headers to get reference names and lengths
+    const refNames = [];
+    const refLengths = [];
+    for (const line of headerLines) {
+        if (line.startsWith('@SQ')) {
+            const fields = line.split('\t');
+            let name = '', len = 0;
+            for (const f of fields) {
+                if (f.startsWith('SN:')) name = f.substring(3);
+                else if (f.startsWith('LN:')) len = parseInt(f.substring(3)) || 0;
+            }
+            if (name) { refNames.push(name); refLengths.push(len); }
         }
     }
 
-    // Build a synthetic BAM-like header buffer
-    // We'll create a minimal BAM header + encode records manually
-    throw new Error(
-        'SAM text input is not yet supported. ' +
-        'Please convert to BAM first: samtools view -bS file.sam > file.bam'
-    );
+    // Parse alignment records
+    const records = [];
+    for (const line of readLines) {
+        const f = line.split('\t');
+        if (f.length < 11) continue;
+        const flag = parseInt(f[1]) || 0;
+        if (flag & 0x904) continue; // unmapped or secondary/supplementary
+        if (!f[5] || f[5] === '*' || !f[9] || f[9] === '*') continue;
+
+        const rname = f[2];
+        const refID = refNames.indexOf(rname);
+        const pos = parseInt(f[3]) - 1; // 0-based
+        const mapq = parseInt(f[4]) || 0;
+        const cigarStr = f[5];
+        const seq = f[9];
+        const tlen = parseInt(f[8]) || 0;
+        const nextRef = f[6] === '=' ? refID : (f[6] !== '*' ? refNames.indexOf(f[6]) : -1);
+        const nextPos = f[7] !== '*' && f[7] !== '=' ? parseInt(f[7]) - 1 : (f[7] === '=' ? pos : -1);
+
+        // Parse CIGAR string into ops array
+        const cigarOps = [];
+        const cigarMatches = cigarStr.match(/\d+[MIDNSHP=X]/g) || [];
+        for (const cm of cigarMatches) {
+            cigarOps.push({ len: parseInt(cm), op: cm[cm.length - 1] });
+        }
+
+        // Parse optional tags
+        const tags = {};
+        for (let i = 11; i < f.length; i++) {
+            const tagMatch = f[i].match(/^([A-Z][A-Z]):([AifZHB]):(.*)$/);
+            if (tagMatch) {
+                const [, tag, type, value] = tagMatch;
+                if (type === 'i' || type === 'I') tags[tag] = parseInt(value);
+                else if (type === 'f') tags[tag] = parseFloat(value);
+                else tags[tag] = value;
+            }
+        }
+
+        records.push({
+            name: f[0],
+            refID,
+            pos,
+            mapq,
+            flag,
+            seq,
+            qual: f[10] || '',
+            cigar: cigarOps,
+            tlen,
+            next_refID: nextRef,
+            next_pos: nextPos,
+            tags,
+        });
+    }
+
+    // Return a pseudo-buffer object compatible with the BAM pipeline
+    return { _isSAM: true, _refNames: refNames, _refLengths: refLengths, _records: records };
 }
 
 /**
