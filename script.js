@@ -2453,13 +2453,18 @@ function parsePhylip(text) {
             if (name && seq) entries.push({ name, seq });
         }
     }
-    // Handle interleaved blocks
+    // Handle interleaved blocks (strict PHYLIP: no names in continuation lines)
     if (entries.length === nSeqs) {
         let blockStart = 1 + nSeqs;
         while (blockStart < lines.length) {
             for (let k = 0; k < nSeqs && blockStart + k < lines.length; k++) {
                 const l = lines[blockStart + k];
-                const seq = l.replace(/^\s*\S+\s*/, '').replace(/\s/g, '');
+                // Some non-standard PHYLIP variants repeat names in continuation lines;
+                // detect this: if the first 10 chars match a known name, strip it
+                const nameCandidate = l.substring(0, 10).trim();
+                const hasName = entries.some(e => e.name === nameCandidate);
+                const seqPart = hasName ? l.substring(10) : l;
+                const seq = seqPart.replace(/\s/g, '');
                 if (seq) entries[k].seq += seq;
             }
             blockStart += nSeqs;
