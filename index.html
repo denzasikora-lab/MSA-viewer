@@ -166,14 +166,14 @@
                         <div class="slider-container mode-container" style="flex-direction:column;align-items:flex-start;gap:1px;height:auto;">
                             <div style="display:flex;align-items:center;gap:4px;">
                                 <span style="font-size:10px;font-weight:bold;width:70px;text-align:right;">Mode</span>
-                                <input type="radio" id="modeSingle" name="mode" value="single"><label for="modeSingle" style="font-size:10px;margin-right:5px;">Full</label>
-                                <input type="radio" id="modeBlocks" name="mode" value="blocks" checked><label for="modeBlocks" style="font-size:10px;margin-right:5px;">Block</label>
-                                <input type="radio" id="modeCanvas" name="mode" value="canvas"><label for="modeCanvas" style="font-size:10px;margin-right:5px;">Canvas</label>
-                                <input type="radio" id="modeReads" name="mode" value="reads"><label for="modeReads" style="font-size:10px;">Reads</label>
+                                <input type="radio" id="modeSingle" name="mode" value="single" title="Full: continuous scrolling alignment for browsing and editing"><label for="modeSingle" style="font-size:10px;margin-right:5px;">Full</label>
+                                <input type="radio" id="modeBlocks" name="mode" value="blocks" checked title="Block: fixed-width wrapped blocks with repeating labels, for publication-style layout"><label for="modeBlocks" style="font-size:10px;margin-right:5px;">Block</label>
+                                <input type="radio" id="modeCanvas" name="mode" value="canvas" title="Canvas: viewport-culled renderer for very large alignments (view-only)"><label for="modeCanvas" style="font-size:10px;margin-right:5px;">Canvas</label>
+                                <input type="radio" id="modeReads" name="mode" value="reads" title="Reads: IGV-style read tracks for mapped SAM/BAM data against a reference"><label for="modeReads" style="font-size:10px;">Reads</label>
                             </div>
                             <div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-left:74px;">
-                                <label style="font-size:10px;white-space:nowrap;flex:0 0 auto;"><input type="checkbox" id="highlightDiffs"> Highlight diffs</label>
-                                <label style="font-size:10px;white-space:nowrap;flex:0 0 auto;"><input type="checkbox" id="varSitesOnly"> Variable sites only</label>
+                                <label style="font-size:10px;white-space:nowrap;flex:0 0 auto;" title="Dim fully-conserved columns so columns that differ from the consensus stand out"><input type="checkbox" id="highlightDiffs" title="Dim fully-conserved columns so columns that differ from the consensus stand out"> Highlight diffs</label>
+                                <label style="font-size:10px;white-space:nowrap;flex:0 0 auto;" title="Hide fully-conserved columns entirely, showing only columns that differ"><input type="checkbox" id="varSitesOnly" title="Hide fully-conserved columns entirely, showing only columns that differ"> Variable sites only</label>
                                 <span id="varSitesControls" style="display:none;align-items:center;gap:4px;flex:0 0 auto;">
                                     <input type="range" id="varSitesThreshold" min="0" max="100" value="0" step="5" style="width:90px;height:14px;flex:0 0 auto;" title="Minimum percentage of sequences that must differ for a column to be shown">
                                     <input type="number" id="varSitesThresholdInput" min="0" max="100" step="5" value="0" style="width:42px;height:16px;font-size:9px;flex:0 0 auto;" title="Type an exact difference threshold (0-100%)">
@@ -182,7 +182,7 @@
                                 </span>
                             </div>
                             <div style="display:flex;align-items:center;gap:6px;margin-left:74px;">
-                                <label style="font-size:10px;"><input type="checkbox" id="codonAnalysis"> Codon analysis</label>
+                                <label style="font-size:10px;" title="Colour-code codon positions, flag stop codons and frameshifts, classify substitutions (Full/Block only)"><input type="checkbox" id="codonAnalysis" title="Colour-code codon positions, flag stop codons and frameshifts, classify substitutions (Full/Block only)"> Codon analysis</label>
                                 <select id="codonFrame" style="font-size:10px;padding:0 2px;height:18px;" title="Reading frame (also in top bar when codon analysis is on)">
                                     <option value="auto" selected>Auto</option>
                                     <option value="0">Pos 1</option>
@@ -190,7 +190,7 @@
                                     <option value="2">Pos 3</option>
                                     <option value="all">All 3</option>
                                 </select>
-                                <select id="codonCode" style="font-size:10px;padding:0 2px;height:18px;">
+                                <select id="codonCode" style="font-size:10px;padding:0 2px;height:18px;" title="Genetic code table used for translation and stop-codon detection">
                                     <option value="1">Standard</option>
                                     <option value="2">Vert Mito</option>
                                     <option value="3">Yeast Mito</option>
@@ -209,7 +209,7 @@
                                 </select>
                             </div>
                             <div style="display:flex;align-items:center;gap:6px;margin-left:74px;">
-                                <label style="font-size:10px;"><input type="checkbox" id="stickyNames" checked> Sticky Names</label>
+                                <label style="font-size:10px;" title="Keep sequence names visible while scrolling the alignment horizontally"><input type="checkbox" id="stickyNames" checked title="Keep sequence names visible while scrolling the alignment horizontally"> Sticky Names</label>
                                 <select id="residueCase" style="font-size:10px;padding:0 2px;height:18px;" title="Residue display case (GeneDoc-style)">
                                     <option value="asis" selected>As-is</option>
                                     <option value="upper">UPPER</option>
@@ -311,8 +311,8 @@
                                 </div>
                                 <div style="margin-bottom: 6px; display: flex; gap: 8px; align-items: center;">
                                     <span style="font-size: 11px; font-weight: bold;">Trim mode:</span>
-                                    <label style="font-size: 11px;"><input type="radio" name="trimMode" value="hard" checked> Hard</label>
-                                    <label style="font-size: 11px;"><input type="radio" name="trimMode" value="soft"> Soft</label>
+                                    <label style="font-size: 11px;" title="Permanently delete the trimmed columns from the alignment"><input type="radio" name="trimMode" value="hard" checked title="Permanently delete the trimmed columns from the alignment"> Hard</label>
+                                    <label style="font-size: 11px;" title="Exclude the trimmed columns from clustering only, without deleting them"><input type="radio" name="trimMode" value="soft" title="Exclude the trimmed columns from clustering only, without deleting them"> Soft</label>
                                 </div>
                                 <div style="display: flex; gap: 4px; flex-wrap: wrap;">
                                     <button id="previewTrimButton" style="flex: 1; min-width: 60px; height: 22px; font-size: 10px;" title="Show which columns would be trimmed without applying changes">Preview</button>
@@ -414,24 +414,24 @@
                             </div>
                         </div>
                         <div style="display: flex; gap: 6px; align-items: center; margin-top: 4px; flex-wrap: wrap;">
-                            <button id="reverseComplementQueryButton" style="height: 22px; font-size: 11px; padding: 0 6px;">Reverse complement query</button>
+                            <button id="reverseComplementQueryButton" style="height: 22px; font-size: 11px; padding: 0 6px;" title="Replace the search box text with its reverse complement">Reverse complement query</button>
                             <label style="font-size: 11px; display: flex; align-items: center; gap: 4px;">
-                                <input type="checkbox" id="searchBothStrands" style="margin: 0;"> Search both strands
+                                <input type="checkbox" id="searchBothStrands" style="margin: 0;" title="Also search for the reverse complement of the query"> Search both strands
                             </label>
                             <button id="reSitePopupBtn" style="height: 22px; font-size: 11px; padding: 0 6px;" title="Search common restriction enzyme recognition sites">Restriction Sites</button>
                             <span id="reSiteLabel" style="font-size: 10px; color: #666;"></span>
                         </div>
                         <div id="reSitePopup" style="display:none; position:fixed; z-index:10050; top:72px; left:50%; transform:translateX(-50%); padding:12px; background:#fff; border:1px solid #888; border-radius:6px; box-shadow:0 4px 18px rgba(0,0,0,0.35); width:900px; max-width:94vw; max-height:82vh; overflow:hidden; font-size:11px;">
                             <div style="font-weight:bold; margin-bottom:5px;">Restriction enzyme sites</div>
-                            <div style="display:flex; gap:6px; margin-bottom:4px;"><button id="reSiteSelectAllBtn" style="height:20px; font-size:10px; padding:0 8px;">Select All</button><button id="reSiteUnselectAllBtn" style="height:20px; font-size:10px; padding:0 8px;">Unselect All</button></div>
+                            <div style="display:flex; gap:6px; margin-bottom:4px;"><button id="reSiteSelectAllBtn" style="height:20px; font-size:10px; padding:0 8px;" title="Select every enzyme in the list below">Select All</button><button id="reSiteUnselectAllBtn" style="height:20px; font-size:10px; padding:0 8px;" title="Deselect every enzyme in the list below">Unselect All</button></div>
                             <div id="reSiteList" style="display:grid; grid-template-columns:repeat(5, minmax(0, 1fr)); gap:4px 10px; padding:6px; border:1px solid #eee; background:#fafafa;"></div>
                             <div style="margin-top:6px;">
                                 <label style="display:block; font-size:10px; color:#555; margin-bottom:2px;">Manual enzymes/sites (comma separated; use Name:Site or just Site)</label>
-                                <input type="text" id="reSiteManualInput" placeholder="BspQI:GCTCTTC, GAATTC" style="width:100%; height:22px; font-size:11px; padding:2px 4px; box-sizing:border-box;">
+                                <input type="text" id="reSiteManualInput" placeholder="BspQI:GCTCTTC, GAATTC" style="width:100%; height:22px; font-size:11px; padding:2px 4px; box-sizing:border-box;" title="Add custom enzymes/sites not in the preset list, as Name:Site or just Site">
                             </div>
                             <div style="display:flex; gap:6px; align-items:center; margin-top:6px; flex-wrap:wrap;">
-                                <button id="reSiteRunBtn" style="height:22px; font-size:11px;">Find Sites</button>
-                                <button id="reSiteClearBtn" style="height:22px; font-size:11px;">Clear Selection</button>
+                                <button id="reSiteRunBtn" style="height:22px; font-size:11px;" title="Search the alignment for the selected/entered restriction sites">Find Sites</button>
+                                <button id="reSiteClearBtn" style="height:22px; font-size:11px;" title="Deselect all enzymes and clear manual entries">Clear Selection</button>
                                 <span style="font-size:10px; color:#666;">Uses IUPAC codes; enable "Search both strands" above for reverse-complement sites.</span>
                             </div>
                         </div>
@@ -453,7 +453,7 @@
                             <div style="display: flex; gap: 4px; margin-bottom: 4px; flex-wrap: wrap;">
                                 <input type="text" id="colourPatternInput" placeholder="regex/text..." style="flex: 1; min-width: 100px; height: 22px; padding: 2px; font-size: 11px;" title="Enter regex or text to match sequence names">
                                 <input type="color" id="colourPatternColor" value="#FF6B6B" style="width: 32px; height: 26px; padding: 0;" title="Color for matched names">
-                                <button id="colourPatternButton" style="height: 26px; padding: 0 8px; font-size: 11px;">Apply</button>
+                                <button id="colourPatternButton" style="height: 26px; padding: 0 8px; font-size: 11px;" title="Colour every sequence name matching the pattern above">Apply</button>
                             </div>
                         </div>
                         <!-- Auto Similarity Section -->
@@ -477,16 +477,16 @@
                                     <input type="radio" name="colourMode" value="gradient" title="Use gradient colors"> Gradient
                                 </label>
                             </div>
-                            <button id="colourAutoButton" style="width: 100%; height: 24px; font-size: 11px;">Auto-Color by Similarity</button>
+                            <button id="colourAutoButton" style="width: 100%; height: 24px; font-size: 11px;" title="Group and colour sequences by name similarity using the settings above">Auto-Color by Similarity</button>
                         </div>
                         <!-- Presets Section -->
                         <div style="border-bottom: 1px solid #ddd; padding-bottom: 8px; margin-bottom: 8px;">
                             <div style="font-weight: bold; font-size: 11px; margin-bottom: 4px;">Presets</div>
                             <div style="display: flex; gap: 4px; flex-wrap: wrap;">
                                 <input type="text" id="colourPresetName" placeholder="preset name" style="flex: 1; min-width: 80px; height: 22px; padding: 2px; font-size: 11px;" title="Name for this color preset">
-                                <button id="colourSavePresetButton" style="height: 24px; padding: 0 8px; font-size: 11px;">Save</button>
-                                <button id="colourLoadPresetButton" style="height: 24px; padding: 0 8px; font-size: 11px;">Load</button>
-                                <button id="colourResetButton" style="height: 24px; padding: 0 8px; font-size: 11px;">Reset</button>
+                                <button id="colourSavePresetButton" style="height: 24px; padding: 0 8px; font-size: 11px;" title="Save the current colour assignments under the preset name above">Save</button>
+                                <button id="colourLoadPresetButton" style="height: 24px; padding: 0 8px; font-size: 11px;" title="Load a previously saved colour preset">Load</button>
+                                <button id="colourResetButton" style="height: 24px; padding: 0 8px; font-size: 11px;" title="Clear all colour assignments on sequence names">Reset</button>
                             </div>
                             <div id="colourPresetList" style="margin-top: 4px; font-size: 10px; display: none;">
                                 <strong>Saved presets:</strong>
@@ -497,8 +497,8 @@
                         <div style="border-bottom: 1px solid #ddd; padding-bottom: 8px; margin-bottom: 8px;">
                             <div style="font-weight: bold; font-size: 11px; margin-bottom: 4px;">Actions</div>
                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 4px; margin-bottom: 4px;">
-                                <button id="colourSortButton" style="height: 24px; font-size: 11px;">Sort by Color</button>
-                                <button id="colourGroupButton" style="height: 24px; font-size: 11px;">Group at Top</button>
+                                <button id="colourSortButton" style="height: 24px; font-size: 11px;" title="Reorder rows so sequences with the same colour sit together">Sort by Color</button>
+                                <button id="colourGroupButton" style="height: 24px; font-size: 11px;" title="Move all coloured sequences to the top of the alignment">Group at Top</button>
                             </div>
                             <div style="display: flex;">
                                 <button id="colourInspectButton" style="flex: 1; height: 24px; font-size: 11px;" title="View color assignment history">Inspect Colors</button>
@@ -562,10 +562,10 @@
             </div>
 
             <div class="quick-mode-switch" id="quickModeSwitch" title="Display mode: Full / Block / Canvas / Reads">
-                <input type="radio" name="quickMode" id="qmSingle" data-target="modeSingle"><label for="qmSingle">Full</label>
-                <input type="radio" name="quickMode" id="qmBlocks" data-target="modeBlocks"><label for="qmBlocks">Block</label>
-                <input type="radio" name="quickMode" id="qmCanvas" data-target="modeCanvas"><label for="qmCanvas">Canvas</label>
-                <input type="radio" name="quickMode" id="qmReads" data-target="modeReads"><label for="qmReads" id="qmReadsLabel" style="display:none;">Reads</label>
+                <input type="radio" name="quickMode" id="qmSingle" data-target="modeSingle" title="Full mode"><label for="qmSingle">Full</label>
+                <input type="radio" name="quickMode" id="qmBlocks" data-target="modeBlocks" title="Block mode"><label for="qmBlocks">Block</label>
+                <input type="radio" name="quickMode" id="qmCanvas" data-target="modeCanvas" title="Canvas mode (large alignments, view-only)"><label for="qmCanvas">Canvas</label>
+                <input type="radio" name="quickMode" id="qmReads" data-target="modeReads" title="Reads mode (mapped SAM/BAM data)"><label for="qmReads" id="qmReadsLabel" style="display:none;">Reads</label>
             </div>
 
             <span id="canvasModeNotice" class="canvas-mode-chip" title="Canvas mode is view-only. Switch to Full or Block to edit sequences or select columns (Ctrl+Alt+click).">Canvas | view-only</span>
@@ -573,10 +573,10 @@
             <div class="codon-mode-panel" id="codonModePanel" hidden title="Reading frame: which alignment column starts the first codon (Pos 1 = column 1)">
                 <span class="codon-panel-label">Codon</span>
                 <div class="codon-frame-switch" id="codonFrameSwitch">
-                    <input type="radio" name="codonFrameQuick" id="cfPos1" value="0"><label for="cfPos1" title="Read codons starting at alignment column 1">Pos 1</label>
-                    <input type="radio" name="codonFrameQuick" id="cfPos2" value="1"><label for="cfPos2" title="Read codons starting at alignment column 2">Pos 2</label>
-                    <input type="radio" name="codonFrameQuick" id="cfPos3" value="2"><label for="cfPos3" title="Read codons starting at alignment column 3">Pos 3</label>
-                    <input type="radio" name="codonFrameQuick" id="cfAuto" value="auto" checked><label for="cfAuto" title="Auto-detect frame from ATG/M start codon">Auto</label>
+                    <input type="radio" name="codonFrameQuick" id="cfPos1" value="0" title="Read codons starting at alignment column 1"><label for="cfPos1" title="Read codons starting at alignment column 1">Pos 1</label>
+                    <input type="radio" name="codonFrameQuick" id="cfPos2" value="1" title="Read codons starting at alignment column 2"><label for="cfPos2" title="Read codons starting at alignment column 2">Pos 2</label>
+                    <input type="radio" name="codonFrameQuick" id="cfPos3" value="2" title="Read codons starting at alignment column 3"><label for="cfPos3" title="Read codons starting at alignment column 3">Pos 3</label>
+                    <input type="radio" name="codonFrameQuick" id="cfAuto" value="auto" checked title="Auto-detect frame from ATG/M start codon"><label for="cfAuto" title="Auto-detect frame from ATG/M start codon">Auto</label>
                 </div>
                 <button type="button" class="codon-panel-btn" onclick="copyAATranslation()" title="Copy amino acid translation(s) as FASTA">Copy AA</button>
                 <button type="button" class="codon-panel-btn" onclick="downloadAATranslation()" title="Download amino acid translation(s) as FASTA">Save AA</button>
@@ -684,7 +684,7 @@
             <div id="headerInfoPanel">
                 <!-- Static fallback shown before script.js runs; script.js overwrites it
                      from BUILD_TAG. Keep in sync with BUILD_TAG or it silently rots. -->
-                <div id="versionIndicator">version v135</div>
+                <div id="versionIndicator">version v136</div>
                 <div id="sourceInfo">No file loaded</div>
             </div>
         </div>
@@ -769,8 +769,8 @@
                 <strong>PgUp / PgDn</strong><span>Scroll alignment page</span>
             </div>
             <div style="margin-top: 20px; text-align: right;">
-                <button onclick="window.open('manual.html','_blank')" style="padding: 8px 16px; cursor: pointer; margin-right: 8px;">Full Manual</button>
-                <button onclick="document.getElementById('infoModal').style.display='none'" style="padding: 8px 16px; cursor: pointer;">Close</button>
+                <button onclick="window.open('manual.html','_blank')" style="padding: 8px 16px; cursor: pointer; margin-right: 8px;" title="Open the full user manual in a new tab">Full Manual</button>
+                <button onclick="document.getElementById('infoModal').style.display='none'" style="padding: 8px 16px; cursor: pointer;" title="Close this dialog">Close</button>
             </div>
         </div>
     </div>
@@ -779,7 +779,7 @@
     <div id="colourInspectorModal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 2px solid #333; border-radius: 4px; max-width: 500px; width: 90%; max-height: 60vh; overflow: auto; z-index: 10000; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
         <div style="background: #f5f5f5; padding: 12px; border-bottom: 1px solid #ccc; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0;">
             <h3 style="margin: 0; font-size: 14px;">Color Assignment History</h3>
-            <button onclick="document.getElementById('colourInspectorModal').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px;">x</button>
+            <button title="Close this dialog" onclick="document.getElementById('colourInspectorModal').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px;">x</button>
         </div>
         <div id="colourHistoryContent" style="padding: 12px; font-size: 11px;">
             <!-- Populated by JavaScript -->
@@ -790,7 +790,7 @@
     <div id="clusteringModal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 2px solid #333; border-radius: 4px; max-width: 700px; width: 95%; max-height: 80vh; overflow: auto; z-index: 10000; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
         <div style="background: #f5f5f5; padding: 12px; border-bottom: 1px solid #ccc; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0;">
             <h3 style="margin: 0; font-size: 14px;">Sequence Clustering Results</h3>
-            <button onclick="document.getElementById('clusteringModal').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px;">x</button>
+            <button title="Close this dialog" onclick="document.getElementById('clusteringModal').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px;">x</button>
         </div>
         <div id="clusteringContent" style="padding: 12px; font-size: 11px;">
             <!-- Populated by JavaScript -->
@@ -822,16 +822,16 @@
                 Edit the sequence text below (standard text editing: select, delete, type, Ctrl+C/V/X).
                 Length: <span id="seqEditLength">0</span>
             </div>
-            <textarea id="seqEditTextarea" style="width: 100%; height: 250px; font-family: 'Courier New', monospace; font-size: 12px; resize: vertical; box-sizing: border-box; white-space: pre-wrap; word-break: break-all;"></textarea>
+            <textarea id="seqEditTextarea" style="width: 100%; height: 250px; font-family: 'Courier New', monospace; font-size: 12px; resize: vertical; box-sizing: border-box; white-space: pre-wrap; word-break: break-all;" title="Plain-text sequence editor: type, select, delete like normal text"></textarea>
             <div style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
                 <label style="font-size: 11px; color: #555;">
-                    <input type="checkbox" id="seqEditPadGaps" checked> Pad/trim to alignment length
+                    <input type="checkbox" id="seqEditPadGaps" checked title="Add or remove trailing gaps so the edited sequence keeps the alignment's column width"> Pad/trim to alignment length
                 </label>
                 <div>
                     <button id="seqEditUndoBtn" onclick="_seqEditUndo()" disabled style="padding: 4px 8px; font-size: 12px; cursor: pointer;" title="Undo last edit in textarea (Ctrl+Z)"><- Undo</button>
                     <button id="seqEditRedoBtn" onclick="_seqEditRedo()" disabled style="padding: 4px 8px; font-size: 12px; margin-left: 2px; cursor: pointer;" title="Redo undone edit (Ctrl+Y)">-> Redo</button>
-                    <button id="seqEditApplyBtn" style="padding: 4px 16px; font-size: 13px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 12px;">Apply to Alignment</button>
-                    <button id="seqEditCancelBtn" style="padding: 4px 16px; font-size: 13px; margin-left: 8px;">Cancel</button>
+                    <button id="seqEditApplyBtn" style="padding: 4px 16px; font-size: 13px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 12px;" title="Write the edited text back into the alignment">Apply to Alignment</button>
+                    <button id="seqEditCancelBtn" style="padding: 4px 16px; font-size: 13px; margin-left: 8px;" title="Close without applying changes">Cancel</button>
                 </div>
             </div>
         </div>
@@ -846,16 +846,16 @@
                 <label title="Where to insert new sequences"><input type="checkbox" id="addSeqAtTop" checked> Place at top</label>
                 <label title="Align new sequences against the consensus before adding"><input type="checkbox" id="addSeqAlignCons" checked> Align to consensus</label>
             </div>
-            <textarea id="addSeqInput" placeholder=">new_sequence_1&#10;ACGTACGTACGT...&#10;>new_sequence_2&#10;TGCATGCATGCA..." style="width: 100%; height: 200px; font-family: 'Courier New', monospace; font-size: 12px; resize: vertical; box-sizing: border-box;"></textarea>
+            <textarea id="addSeqInput" placeholder=">new_sequence_1&#10;ACGTACGTACGT...&#10;>new_sequence_2&#10;TGCATGCATGCA..." style="width: 100%; height: 200px; font-family: 'Courier New', monospace; font-size: 12px; resize: vertical; box-sizing: border-box;" title="Paste new sequences in FASTA format, or use Browse Files below"></textarea>
             <div style="margin-top: 4px; font-size: 11px;">
-                <button id="addSeqBrowseButton" style="padding: 2px 8px; font-size: 11px; background: #f5f5f5; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; margin-right: 6px;">Browse Files</button>
+                <button id="addSeqBrowseButton" style="padding: 2px 8px; font-size: 11px; background: #f5f5f5; border: 1px solid #ccc; border-radius: 3px; cursor: pointer; margin-right: 6px;" title="Pick one or more sequence files from disk">Browse Files</button>
                 <input type="file" id="addSeqFileInput" multiple accept=".fasta,.fa,.fas,.fna,.ffn,.faa,.frn,.aln,.msf,.nex,.nexus,.sto,.stockholm,.txt,.gb,.gbk" style="display:none;">
                 <span id="addSeqFileLabel" style="color: #888;"></span>
             </div>
             <div style="margin-top: 8px; text-align: right;">
-                <button id="addSeqJustAddButton" style="padding: 4px 16px; font-size: 13px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer;">Just Add</button>
-                <button id="addSeqSubmitButton" style="padding: 4px 16px; font-size: 13px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 4px;">Add & Align</button>
-                <button id="addSeqCancelButton" style="padding: 4px 16px; font-size: 13px; margin-left: 8px;">Cancel</button>
+                <button id="addSeqJustAddButton" style="padding: 4px 16px; font-size: 13px; background: #2196F3; color: white; border: none; border-radius: 4px; cursor: pointer;" title="Append the new sequences padded with gaps, without realigning">Just Add</button>
+                <button id="addSeqSubmitButton" style="padding: 4px 16px; font-size: 13px; background: #4CAF50; color: white; border: none; border-radius: 4px; cursor: pointer; margin-left: 4px;" title="Add the new sequences and realign the whole alignment with MAFFT">Add & Align</button>
+                <button id="addSeqCancelButton" style="padding: 4px 16px; font-size: 13px; margin-left: 8px;" title="Close without adding sequences">Cancel</button>
             </div>
         </div>
     </div>
@@ -865,22 +865,22 @@
         <div id="dotPlotDialog" style="background:white;margin:30px auto;padding:16px;max-width:95vw;max-height:92vh;width:900px;min-width:560px;min-height:420px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);position:relative;display:flex;flex-direction:column;overflow:hidden;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <h3 style="margin:0;" id="dotPlotTitle">Dot Plot</h3>
-                <button id="dotPlotCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;padding:0 4px;">x</button>
+                <button id="dotPlotCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;padding:0 4px;" title="Close this dialog">x</button>
             </div>
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px;flex-wrap:wrap;">
                 <span style="font-weight:bold;">Mode:</span>
-                <label><input type="radio" name="dotPlotMode" value="spin" checked onchange="_dotOnModeChange()"> SPIN (word)</label>
-                <label><input type="radio" name="dotPlotMode" value="doter" onchange="_dotOnModeChange()"> Doter (window)</label>
+                <label title="Exact word match - faster, sharper diagonals"><input type="radio" name="dotPlotMode" value="spin" checked onchange="_dotOnModeChange()" title="Exact word match - faster, sharper diagonals"> SPIN (word)</label>
+                <label title="Sliding-window identity - tolerant of mismatches, better for diverged copies"><input type="radio" name="dotPlotMode" value="doter" onchange="_dotOnModeChange()" title="Sliding-window identity - tolerant of mismatches, better for diverged copies"> Doter (window)</label>
                 <span style="border-left:1px solid #ccc;height:16px;display:inline-block;margin:0 4px;"></span>
-                <label>Word/Window: <input type="number" id="dotPlotWindow" value="6" min="1" max="61" step="2" style="width:45px;"></label>
-                <label>Threshold: <input type="range" id="dotPlotThreshold" min="0" max="100" value="55" style="width:100px;vertical-align:middle;"><span id="dotPlotThreshVal">55%</span></label>
+                <label>Word/Window: <input type="number" id="dotPlotWindow" value="6" min="1" max="61" step="2" style="width:45px;" title="Word length (SPIN) or sliding window length (Doter), odd, 1-61"></label>
+                <label>Threshold: <input type="range" id="dotPlotThreshold" min="0" max="100" value="55" style="width:100px;vertical-align:middle;" title="Minimum identity for a dot to be plotted (0-100%)"><span id="dotPlotThreshVal">55%</span></label>
                 <label>Context: <input type="number" id="dotPlotContextRadius" value="30" min="0" max="100" step="5" style="width:45px;" title="Extra bases to show around the hover position"> bp</label>
-                <label><input type="checkbox" id="dotPlotRevComp"> RevComp B</label>
-                <button id="dotPlotRecalc" style="font-size:11px;padding:2px 8px;">Recalculate</button>
+                <label><input type="checkbox" id="dotPlotRevComp" title="Reverse-complement the second sequence/axis, to find inverted repeats"> RevComp B</label>
+                <button id="dotPlotRecalc" style="font-size:11px;padding:2px 8px;" title="Rerun the dot plot with the current settings">Recalculate</button>
                 <button id="dotPlotZoomOut" style="font-size:11px;padding:2px 8px;" title="Zoom out (Ctrl+wheel)">-</button>
                 <button id="dotPlotZoomIn" style="font-size:11px;padding:2px 8px;" title="Zoom in (Ctrl+wheel)">+</button>
-                <button id="dotPlotExport" style="font-size:11px;padding:2px 8px;">Export PNG</button>
-                <button id="dotPlotExportSvg" style="font-size:11px;padding:2px 8px;">Export SVG</button>
+                <button id="dotPlotExport" style="font-size:11px;padding:2px 8px;" title="Save the plot as a PNG image">Export PNG</button>
+                <button id="dotPlotExportSvg" style="font-size:11px;padding:2px 8px;" title="Save the plot as a vector SVG image">Export SVG</button>
             </div>
             <div style="display:flex;gap:8px;flex:1;min-height:260px;">
                 <div id="dotPlotViewport" style="overflow:auto;flex:1;min-width:300px;border:1px solid #ccc;position:relative;cursor:crosshair;">
@@ -936,7 +936,7 @@ B: -</pre>
         <div id="repeatFinderModalInner" style="background:white;position:absolute;top:40px;right:20px;padding:16px;max-width:520px;width:480px;max-height:90vh;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);overflow:auto;">
             <div id="repeatFinderDragHandle" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;cursor:move;user-select:none;padding:2px 0;" title="Drag to reposition">
                 <h3 style="margin:0;pointer-events:none;">Repeat Finder</h3>
-                <button id="repeatFinderCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;">x</button>
+                <button id="repeatFinderCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;" title="Close this dialog">x</button>
             </div>
             <div style="font-size:12px;margin-bottom:8px;">
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
@@ -1017,7 +1017,7 @@ B: -</pre>
         <div style="background:white;margin:30px auto;padding:16px;max-width:760px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <h3 style="margin:0;">Alignment Tree</h3>
-                <button id="treeBuilderCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;">x</button>
+                <button id="treeBuilderCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;" title="Close this dialog">x</button>
             </div>
             <div id="treeBuilderSummary" style="font-size:12px;color:#555;margin-bottom:8px;"></div>
             <div style="margin-bottom:6px;font-size:11px;display:flex;gap:12px;align-items:center;">
@@ -1031,10 +1031,10 @@ B: -</pre>
                 <option value="k80">Kimura 2-param (K80)</option>
             </select>
             </div>
-            <textarea id="treeNewickOutput" readonly style="width:100%;height:130px;box-sizing:border-box;font-family:'Courier New',monospace;font-size:11px;white-space:pre;resize:vertical;"></textarea>
+            <textarea id="treeNewickOutput" readonly style="width:100%;height:130px;box-sizing:border-box;font-family:'Courier New',monospace;font-size:11px;white-space:pre;resize:vertical;" title="Newick-format tree output; select and copy, or use the buttons below"></textarea>
             <div style="display:flex;gap:6px;align-items:center;justify-content:flex-end;margin:8px 0;">
-                <button id="treeCopyNewickBtn" style="padding:4px 12px;font-size:12px;">Copy Newick</button>
-                <button id="treeDownloadNewickBtn" style="padding:4px 12px;font-size:12px;">Download .nwk</button>
+                <button id="treeCopyNewickBtn" style="padding:4px 12px;font-size:12px;" title="Copy the Newick tree text to the clipboard">Copy Newick</button>
+                <button id="treeDownloadNewickBtn" style="padding:4px 12px;font-size:12px;" title="Save the tree as a .nwk file">Download .nwk</button>
             </div>
             <pre id="treeTextOutput" style="max-height:42vh;overflow:auto;font-family:'Courier New',monospace;font-size:11px;white-space:pre;border:1px solid #ddd;padding:8px;background:#fafafa;min-height:70px;margin:0;"></pre>
         </div>
@@ -1045,7 +1045,7 @@ B: -</pre>
         <div style="background:white;margin:30px auto;padding:16px;max-width:960px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <h3 style="margin:0;">Alignment Statistics</h3>
-                <button id="statsCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;">x</button>
+                <button id="statsCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;" title="Close this dialog">x</button>
             </div>
             <div id="statsSummaryTab" style="max-height:60vh;overflow:auto;font-size:12px;"></div>
             <div style="margin-top:8px;font-size:10px;color:#999;">Statistics computed using methods from Easel library (Eddy lab, HHMI Janelia) - esl-alistat / esl-alipid.</div>
@@ -1057,7 +1057,7 @@ B: -</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=135"></script>
+    <script src="script.js?v=136"></script>
     <script src="tree-draw.js"></script>
     <script>
     // All functionality moved to script.js
