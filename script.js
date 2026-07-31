@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v134';
+const BUILD_TAG = 'v135';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -2766,6 +2766,34 @@ function generateScale(maxLength, interval = 10, startPos = 0) {
 // Generate scale ruler as HTML spans with data-pos for var-sites compatibility
 function generateScaleHTML(maxLength, interval, startPos, showBrk, brkBeforePos, brkInfo) {
     const scaleText = generateScale(maxLength, interval, startPos);
+
+    // A multi-digit label (e.g. "10", "230") occupies several adjacent
+    // characters at fixed positions, unaware that Variable-sites-only will
+    // later hide some of those positions independently. Left alone, a label
+    // is torn apart whenever only some of its digits sit on a variable
+    // column - e.g. "10" loses its '1' and renders as a lone "0". Labels are
+    // shown or hidden as one unit instead: if any position in a contiguous
+    // non-space run is variable, every position in that run is treated as
+    // variable, so the whole label survives together.
+    const diffColumns = state._diffColumns;
+    const showLabelAt = new Array(maxLength).fill(false);
+    if (diffColumns) {
+        let runStart = -1;
+        for (let i = 0; i <= maxLength; i++) {
+            const isLabelChar = i < maxLength && scaleText[i] !== ' ';
+            if (isLabelChar && runStart === -1) {
+                runStart = i;
+            } else if (!isLabelChar && runStart !== -1) {
+                let runHasVar = false;
+                for (let j = runStart; j < i; j++) {
+                    if (diffColumns.has(startPos + j)) { runHasVar = true; break; }
+                }
+                if (runHasVar) for (let j = runStart; j < i; j++) showLabelAt[j] = true;
+                runStart = -1;
+            }
+        }
+    }
+
     const parts = [];
     for (let i = 0; i < maxLength; i++) {
         const absPos = startPos + i;
@@ -2778,7 +2806,7 @@ function generateScaleHTML(maxLength, interval, startPos, showBrk, brkBeforePos,
         // Variable columns must carry .diff-highlight here too. The var-sites CSS
         // hides span[data-pos]:not(.diff-highlight), so without this the ruler is
         // stripped to its breakpoint markers and reads as a stray row of glyphs.
-        const isVar = state._diffColumns && state._diffColumns.has(absPos);
+        const isVar = showLabelAt[i];
         parts.push(`<span class="${isVar ? 'diff-highlight' : ''}" data-pos="${absPos}">${ch}</span>`);
     }
     return parts.join('');
@@ -11995,7 +12023,8 @@ function attachUIListeners() {
         ['blockSizeSlider', 'blockSizeInput'],
         ['consensusThreshold', 'consensusThresholdInput'],
         ['groupConsensusThreshold', 'groupConsensusThresholdInput'],
-        ['consensusMinCoverage', 'consensusMinCoverageInput']
+        ['consensusMinCoverage', 'consensusMinCoverageInput'],
+        ['varSitesThreshold', 'varSitesThresholdInput']
     ];
 
     sliderPairs.forEach(([sliderId, inputId]) => {
@@ -12125,14 +12154,22 @@ function attachUIListeners() {
         });
     });
 
-    // Var-sites threshold slider
+    // Var-sites threshold: slider and typed-number box both drive the same label.
+    // The generic sliderPairs loop above keeps the two controls' values in sync;
+    // this just keeps the "\u2265N% diff" label current for either input method.
     const varThreshold = el('varSitesThreshold');
+    const varThresholdInput = el('varSitesThresholdInput');
+    const updateVarThresholdLabel = () => {
+        const label = document.getElementById('varSitesThresholdLabel');
+        if (label) label.textContent = `\u2265${varThreshold.value}% diff`;
+    };
     if (varThreshold) {
-        varThreshold.addEventListener('input', () => {
-            const label = document.getElementById('varSitesThresholdLabel');
-            if (label) label.textContent = `\u2265${varThreshold.value}% diff`;
-        });
+        varThreshold.addEventListener('input', updateVarThresholdLabel);
         varThreshold.addEventListener('change', debounceRender);
+    }
+    if (varThresholdInput) {
+        varThresholdInput.addEventListener('input', updateVarThresholdLabel);
+        varThresholdInput.addEventListener('change', debounceRender);
     }
     // Var-sites breakpoints toggle
     const varBrk = el('varSitesBreakpoints');
