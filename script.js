@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v132';
+const BUILD_TAG = 'v133';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -4915,6 +4915,14 @@ function addConsensusLine(parent, consensus, start, end, nameLen, stickyNames, b
         span.dataset.pos = String(pos);
         span.textContent = displayBase;
 
+        // Match the per-sequence rows: variable columns carry .diff-highlight so that
+        // Highlight-diffs / Variable-sites-only CSS treats the consensus row identically.
+        // Without this the var-sites rule hides every consensus residue, leaving only
+        // the breakpoint markers visible.
+        if (state._diffColumns && state._diffColumns.has(pos)) {
+            span.classList.add('diff-highlight');
+        }
+
         // Apply trim region coloring
         if (pos <= leftTrimEnd) {
             span.classList.add('trim-left');
@@ -5024,7 +5032,11 @@ function _zoomToSlider(zoomPct) {
 }
 
 function setZoom(percent) {
-    const size = (percent / 100) * 13;
+    // Round to a whole pixel. With .seq-line { line-height: 1.0 } a fractional
+    // font-size produces fractional row heights, and the browser rounds each row's
+    // painted background independently - leaving 1px unpainted seams between rows
+    // at some zoom levels, at different rows as the fractional part changes.
+    const size = Math.max(1, Math.round((percent / 100) * 13));
     alignmentContainer.style.fontSize = size + 'px';
     el('zoomVal').textContent = percent + '%';
     el('zoomVal').classList.toggle('not-default', percent !== 100);
@@ -12070,6 +12082,21 @@ function attachUIListeners() {
     checkboxes.forEach(id => {
         const elRef = el(id);
         if (elRef) elRef.addEventListener('change', () => {
+            // Highlight-diffs and Variable-sites-only are two presentations of the same
+            // conserved-column computation and cannot both apply; keep the checkboxes in
+            // step with that so the panel never shows two mutually exclusive states ticked.
+            if (id === 'highlightDiffs' && elRef.checked) {
+                const other = el('varSitesOnly');
+                if (other?.checked) {
+                    other.checked = false;
+                    const ctrls = document.getElementById('varSitesControls');
+                    if (ctrls) ctrls.style.display = 'none';
+                }
+            }
+            if (id === 'varSitesOnly' && elRef.checked) {
+                const other = el('highlightDiffs');
+                if (other?.checked) other.checked = false;
+            }
             if (id === 'highlightDiffs') {
                 document.body.classList.toggle('highlight-diffs', elRef.checked);
             }
