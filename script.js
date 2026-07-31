@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v137';
+const BUILD_TAG = 'v138';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -3936,10 +3936,26 @@ function renderAlignment(options = {}) {
         const consSeq = consensus.length > 0 ? consensus : computeConsensusForSequences(state.seqs.map(s => s.seq)).split('');
         for (let pos = 0; pos < len; pos++) {
             const consBase = (consSeq[pos] || '-').toUpperCase();
+            const consIsGap = consBase === '-' || consBase === '.';
             let diffCount = 0;
             for (let i = 0; i < state.seqs.length; i++) {
                 const base = (state.seqs[i].seq[pos] || '-').toUpperCase();
-                if (base !== '-' && base !== '.' && consBase !== '-' && consBase !== '.' && base !== consBase) {
+                const baseIsGap = base === '-' || base === '.';
+                // A sequence "differs" here if it disagrees with the column's
+                // dominant pattern in EITHER direction: a substituted base
+                // against a base-majority column, OR a presence/absence
+                // mismatch against a gap-majority column. The latter half
+                // matters a lot on real alignments: columns where most rows
+                // are gapped and a subset carry a genuine insertion are
+                // common and often the most biologically variable positions
+                // (indel polymorphism), but a definition that only compares
+                // non-gap bases against a non-gap consensus scores every such
+                // column as zero variation - on one repeat-family test
+                // alignment, 68% of columns had a gap-majority consensus, so
+                // that blind spot silently hid most of the true variation.
+                if (consIsGap) {
+                    if (!baseIsGap) diffCount++;
+                } else if (baseIsGap || base !== consBase) {
                     diffCount++;
                 }
             }
