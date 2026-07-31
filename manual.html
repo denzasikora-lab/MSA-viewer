@@ -331,7 +331,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li><strong>Edit</strong> - GeneDoc-style residue editing, Move/Slide tools, undo/redo</li>
     <li><strong>Analyse</strong> - Statistics, copyable distance matrices, codon analysis, dot plots, repeat/TSD finder, tree builder, restriction site search, subfamily clustering</li>
     <li><strong>Colour</strong> - Monochrome conservation shading plus nucleotide, purine/pyrimidine, ambiguity, and amino-acid colour schemes</li>
-    <li><strong>Export</strong> - FASTA, MSF, RTF (Word-compatible), SVG (vector), standalone HTML</li>
+    <li><strong>Export</strong> - FASTA, RTF (Word-compatible), SVG (vector), Newick trees, standalone HTML snapshots</li>
   </ul>
 
   <h3 id="gs-loading">1.2 Loading an Alignment</h3>
@@ -474,9 +474,10 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
 
   <h3 id="in-snapshot">2.6 Snapshots (Save &amp; Load)</h3>
   <p>
-    Snapshots capture the complete viewer state - alignment data, view mode, zoom,
-    colour scheme, selected rows/columns, search highlights, and custom colour assignments.
-    They are stored as JSON files.
+    Snapshots capture alignment data, zoom, conservation settings, colour scheme, selected
+    rows/columns, search highlights, and custom colour assignments. They are stored as JSON
+    files. Only the Full and Block view modes are restored - a snapshot taken in Canvas or
+    Reads mode reopens in Full/Block.
   </p>
   <ul>
     <li><strong>Save Preset</strong> (<kbd>Ctrl+S</kbd>) - save current state as a named snapshot</li>
@@ -492,7 +493,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="in-saveload">2.7 Save / Export Alignment</h3>
   <p>
     Save the current alignment to a file from the Actions menu (see §9.8).
-    Supported output formats: FASTA, MSF, RTF, SVG, standalone HTML.
+    Supported output formats: FASTA, RTF, SVG, Newick (<code>.nwk</code>), and standalone HTML snapshots.
+    MSF is supported for input only; save as FASTA and convert if you need MSF output.
   </p>
 </section>
 
@@ -550,9 +552,20 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     Run BLAST directly from the viewer. Right-click a sequence name and select
     <strong>BLAST</strong>, or use the Alignment dropdown.
   </p>
+  <p>
+    Search runs in the browser. The dialog lists the databases registered on the optional
+    local server (<code>GET /api/blast-db</code>); each database is served as a plain FASTA
+    URL, which a Web Worker downloads and caches in IndexedDB, so the first query against a
+    database is slower than subsequent ones. Scoring uses Smith-Waterman local alignment.
+    Batch search against every registered database at once is also supported.
+  </p>
   <ul>
-    <li><strong>NCBI BLAST</strong> - queries NCBI's BLAST API. Requires a <code>BLAST_API_KEY</code> environment variable on the server</li>
-    <li><strong>Local BLAST</strong> - runs <code>blastn</code> / <code>blastp</code> against locally indexed databases. Requires the NCBI BLAST+ suite installed on the server</li>
+    <li><strong>Optional acceleration</strong> - if the NCBI BLAST+ suite is installed on the
+        server, databases can be indexed with <code>makeblastdb</code> and queried with
+        <code>blastn</code> instead of the in-browser worker</li>
+    <li><strong>Server required</strong> - BLAST needs the Node.js server running. On the
+        static GitHub Pages deployment the dialog reports
+        &quot;Server not available - no BLAST databases&quot;</li>
   </ul>
   <p>Results are shown inline with alignment previews and one-click retrieval of matching sequences.</p>
 
@@ -711,7 +724,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <p>Two checkboxes control visual filtering of conserved positions:</p>
   <ul>
     <li>
-      <strong>Highlight diffs</strong> - dims fully-conserved columns to 25% opacity.
+      <strong>Highlight diffs</strong> - dims fully-conserved columns to 40% opacity.
       Works in all four view modes. Rapidly reveals where variation occurs.
     </li>
     <li>
@@ -949,7 +962,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><th>Action</th><th>Shortcut</th><th>Description</th></tr>
     <tr><td>Copy columns</td><td><kbd>Ctrl+Shift+V</kbd></td><td>Copy selected columns as FASTA block</td></tr>
     <tr><td>Delete columns</td><td><kbd>Ctrl+Shift+D</kbd></td><td>Remove selected columns from all sequences (undoable)</td></tr>
-    <tr><td>Realign block</td><td><kbd>Ctrl+Shift+R</kbd></td><td>Realign selected columns with MAFFT (requires server)</td></tr>
+    <tr><td>Realign block</td><td><kbd>Ctrl+Shift+R</kbd></td><td>Realign selected columns with MAFFT (in-browser WASM; needs at least 2 columns selected, otherwise the browser's hard-refresh applies)</td></tr>
   </table>
   <p>
     <strong>Select columns</strong> by <kbd>Ctrl+Click</kbd> on any residue.
@@ -1104,10 +1117,13 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </ul>
 
   <h3 id="ac-plot">9.7 Plotting</h3>
-  <p><strong>Dot Plot:</strong> Self-comparison or pairwise comparison of the alignment.</p>
+  <p><strong>Dot Plot:</strong> Self-comparison or pairwise comparison of the alignment,
+  in either of two modes: <strong>SPIN</strong> (exact word match - faster, sharper diagonals)
+  or <strong>Dotter</strong> (sliding-window identity - tolerant of mismatches, better for
+  diverged copies).</p>
   <table>
     <tr><th>Parameter</th><th>Description</th></tr>
-    <tr><td>Window size</td><td>Sliding window length (odd, 1-61)</td></tr>
+    <tr><td>Word / window size</td><td>Word length in SPIN mode, sliding window length in Dotter mode (odd, 1-61)</td></tr>
     <tr><td>Threshold</td><td>Minimum identity for a dot (0-100%)</td></tr>
     <tr><td>Context radius</td><td>Nucleotide context shown on hover (5-100 bp)</td></tr>
     <tr><td>RevComp B</td><td>Reverse-complement axis B to find inverted repeats</td></tr>
@@ -1158,10 +1174,11 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <table>
     <tr><th>Format</th><th>Use</th><th>Notes</th></tr>
     <tr><td>FASTA</td><td>Downstream tools</td><td>Full alignment or selected sequences only</td></tr>
-    <tr><td>MSF</td><td>GCG-compatible tools</td><td>MSF format with header block</td></tr>
     <tr><td>RTF</td><td>Microsoft Word</td><td>Monospace, per-residue shading, scale ruler, consensus line</td></tr>
     <tr><td>SVG</td><td>Publication figures</td><td>Vector graphics - viewport or full alignment</td></tr>
-    <tr><td>Standalone HTML</td><td>Sharing</td><td>Self-contained HTML page with embedded alignment (<kbd>Ctrl+T</kbd>)</td></tr>
+    <tr><td>Newick (<code>.nwk</code>)</td><td>Phylogenetics tools</td><td>UPGMA tree with branch lengths</td></tr>
+    <tr><td>Standalone HTML</td><td>Sharing</td><td>Self-contained HTML snapshot page with embedded alignment</td></tr>
+    <tr><td>New tab</td><td>Quick copy</td><td>Selected sequences as plain FASTA text in a new browser tab (<kbd>Ctrl+T</kbd>)</td></tr>
     <tr><td>Copy Selected</td><td>Clipboard</td><td>FASTA of selected sequences (<kbd>Ctrl+Shift+C</kbd>)</td></tr>
     <tr><td>Copy Columns</td><td>Clipboard</td><td>FASTA of selected columns (<kbd>Ctrl+Shift+V</kbd>)</td></tr>
   </table>

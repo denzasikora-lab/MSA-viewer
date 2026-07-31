@@ -1,18 +1,31 @@
-# MSA Viewer
+# ViewAlign
 
-A fast, interactive HTML-based MSA viewer for FASTA/MSF/NEXUS alignments, with local BLAST search and remote file loading via SSH.
+A browser-based platform for multiple sequence alignment visualization, editing, and analysis.
+No installation, no build step, no framework dependencies.
+
+**Live app:** https://toki-bio.github.io/MSA-viewer/ · **Manual:** https://toki-bio.github.io/MSA-viewer/manual.html
 
 ## Features
 
-- **Interactive Alignment Viewer**: Scroll, zoom, highlight, color schemes
-- **Sequence Search**: Local BLAST search against loaded databases (RepBase, custom collections)
-- **Remote File Loading**: SSH to multiple servers (direct or via jump hosts)
-  - Manual: Paste file path and click "Fetch"
-  - Via Midnight Commander: Press `F2 → v` in MC, then click "Check Queue" to load
-- **Drag-and-Drop Reordering**: Rearrange sequences in alignment
-- **MSA Tools**: Multiple alignment, consensus extraction (with threshold control)
-- **SINE Detection**: Identify and extract SINE-family sequences
-- **Shareable Snapshots**: Export full-view state and reopen exact alignment view via URL
+- **Nine input formats with auto-detection**: FASTA, MSF, Clustal, PHYLIP, NEXUS, Stockholm,
+  GenBank flatfile, SAM, and BAM/CRAM (BAM/CRAM via the optional server)
+- **Four view modes**: Full, Block, Canvas (viewport-culled, auto-activates above 150,000
+  residues), and Reads (IGV-style tracks for mapped SAM/BAM data)
+- **GeneDoc-style editing**: residue-level edits, Move NoGaps / Slide KeepGaps, gap column
+  insert/delete, random-access undo/redo history
+- **In-browser MAFFT**: WebAssembly build of MAFFT v7.525 — realign blocks or append and
+  align new sequences with no server
+- **Codon-aware analysis**: 15 NCBI genetic codes, synonymous/non-synonymous classification,
+  frameshift detection, translation track
+- **Subfamily clustering**: position-pattern clustering with fuzzy merging and configurable
+  quality thresholds, plus diagnostic-feature tables and cluster colouring
+- **More analysis**: dot plots with region detection, repeat/TSD finder, UPGMA trees,
+  regex motif search, 50 restriction enzyme sites
+- **Publication export**: SVG (viewport or full), Word-compatible RTF with per-residue
+  conservation shading, FASTA, Newick
+- **Shareable snapshots**: save and reopen a viewer state as JSON, standalone HTML, or URL
+- **Optional server**: local BLAST database hosting, SSH remote file loading, samtools
+  BAM/CRAM conversion
 
 ## Quick Start
 
