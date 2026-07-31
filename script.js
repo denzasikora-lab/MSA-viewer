@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v140';
+const BUILD_TAG = 'v141';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -5418,7 +5418,7 @@ async function parseAndRender(isFromDrop = false) {
         state.lastSelectedIndex = null;
         state.groupConsensusCount = 0;
         // --- Audit C3: comprehensive state reset on new file load ---
-        state.diffColumns = null;
+        state._diffColumns = null;
         state.searchResults = null;
         state.searchHistory = [];
         state.colourState = { mappings: new Map(), history: new Map() };
