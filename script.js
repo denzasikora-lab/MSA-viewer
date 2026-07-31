@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v139';
+const BUILD_TAG = 'v140';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -4082,9 +4082,21 @@ function renderAlignment(options = {}) {
             scaleNameDiv.textContent = '';
             const scaleDataDiv = document.createElement('div');
             scaleDataDiv.className = 'seq-data';
-            const _showBrkRuler = state._brkBeforePos && state._brkBeforePos.size > 0;
-            if (_showBrkRuler) {
-                scaleDataDiv.innerHTML = generateScaleHTML(blockLen, 10, start, true, state._brkBeforePos, state._brkInfo);
+            // Use the span-wrapped renderer whenever EITHER overlay mode is
+            // active (state._diffColumns is non-null), not only when there
+            // are breakpoints to draw. Those are independent questions: one
+            // is "does per-column hiding/dimming apply to the ruler at all"
+            // (needed for both Highlight-diffs and Variable-sites-only), the
+            // other is "should breakpoint marker glyphs be drawn" (only
+            // meaningful for Variable-sites-only with Breakpoints on).
+            // Conflating them via _brkBeforePos.size (itself only ever
+            // populated for that one sub-case) meant the ruler silently fell
+            // back to unwrapped, unfiltered plain text - full of every
+            // position number - in Highlight-diffs mode always, and in
+            // Variable-sites-only mode whenever Breakpoints was unchecked,
+            // while the rows beneath it kept hiding/dimming correctly.
+            if (state._diffColumns) {
+                scaleDataDiv.innerHTML = generateScaleHTML(blockLen, 10, start, _showBrk, state._brkBeforePos, state._brkInfo);
             } else {
                 scaleDataDiv.textContent = generateScale(blockLen, 10, start);
             }
@@ -4115,9 +4127,11 @@ function renderAlignment(options = {}) {
         scaleNameDiv.textContent = '';
         const scaleDataDiv = document.createElement('div');
         scaleDataDiv.className = 'seq-data';
-        const _showBrkRulerFull = state._brkBeforePos && state._brkBeforePos.size > 0;
-        if (_showBrkRulerFull) {
-            scaleDataDiv.innerHTML = generateScaleHTML(len, 10, 0, true, state._brkBeforePos, state._brkInfo);
+        // See the matching comment in the Block-mode branch above: gate on
+        // whether an overlay is active at all (state._diffColumns), not on
+        // whether there happen to be breakpoints to draw.
+        if (state._diffColumns) {
+            scaleDataDiv.innerHTML = generateScaleHTML(len, 10, 0, _showBrk, state._brkBeforePos, state._brkInfo);
         } else {
             scaleDataDiv.textContent = generateScale(len);
         }
@@ -6842,7 +6856,7 @@ function savePreset() {
         // Persist new consensus options
         consensusMinCoverage: el('consensusMinCoverage')?.value,
         consensusFallback: el('consensusFallback')?.value,
-        shadeMode: _checkedRadioValue('shadeMode', 'nongap'),
+        shadeMode: _checkedRadioValue('shadeMode', 'all'),
         colorScheme: getAlignmentColorScheme(),
         enableBlack: el('enableBlack').checked,
         enableDark: el('enableDark').checked,
@@ -6984,7 +6998,7 @@ function _buildSnapshotPayload() {
             showConsensus: !!el('showConsensus')?.checked,
             consensusFallback: el('consensusFallback')?.value,
             consensusPosition: consensusPosEl ? consensusPosEl.value : 'top',
-            shadeMode: shadeModeEl ? shadeModeEl.value : 'nongap',
+            shadeMode: shadeModeEl ? shadeModeEl.value : 'all',
             colorScheme: getAlignmentColorScheme(),
             enableBlack: !!el('enableBlack')?.checked,
             enableDark: !!el('enableDark')?.checked,
@@ -7557,7 +7571,7 @@ function exportAlignmentAsRtf() {
     }
 
     const len = Math.max(...state.seqs.map(s => s.seq.length));
-    const shadeMode = document.querySelector('input[name="shadeMode"]:checked')?.value || 'nongap';
+    const shadeMode = document.querySelector('input[name="shadeMode"]:checked')?.value || 'all';
     const conservation = preCalculateConservation(state.seqs, len, shadeMode);
     const blackThresh = parseInt(el('blackSlider')?.value || 90) / 100;
     const darkThresh = parseInt(el('darkSlider')?.value || 70) / 100;
