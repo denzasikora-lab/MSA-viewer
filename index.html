@@ -177,7 +177,7 @@
                                 <span id="varSitesControls" style="display:none;align-items:center;gap:4px;flex:0 0 auto;">
                                     <input type="range" id="varSitesThreshold" min="0" max="100" value="0" step="5" style="width:90px;height:14px;flex:0 0 auto;" title="Minimum percentage of sequences that must differ for a column to be shown">
                                     <span style="font-size:9px;white-space:nowrap;display:inline-block;min-width:56px;text-align:left;flex:0 0 auto;" id="varSitesThresholdLabel">≥0% diff</span>
-                                    <label style="font-size:10px;margin-left:4px;white-space:nowrap;"><input type="checkbox" id="varSitesBreakpoints" checked> Breakpoints</label>
+                                    <label id="varSitesBreakpointsLabel" style="font-size:10px;margin-left:4px;white-space:nowrap;"><input type="checkbox" id="varSitesBreakpoints" checked> Breakpoints</label>
                                 </span>
                             </div>
                             <div style="display:flex;align-items:center;gap:6px;margin-left:74px;">
@@ -683,7 +683,7 @@
             <div id="headerInfoPanel">
                 <!-- Static fallback shown before script.js runs; script.js overwrites it
                      from BUILD_TAG. Keep in sync with BUILD_TAG or it silently rots. -->
-                <div id="versionIndicator">version v133</div>
+                <div id="versionIndicator">version v134</div>
                 <div id="sourceInfo">No file loaded</div>
             </div>
         </div>
@@ -1056,7 +1056,7 @@ B: -</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=133"></script>
+    <script src="script.js?v=134"></script>
     <script src="tree-draw.js"></script>
     <script>
     // All functionality moved to script.js

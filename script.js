@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v133';
+const BUILD_TAG = 'v134';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -2775,7 +2775,11 @@ function generateScaleHTML(maxLength, interval, startPos, showBrk, brkBeforePos,
             parts.push(`<span class="col-breakpoint" data-break="${r.start}-${r.end}" title="${title}" style="pointer-events:none;">\u22EE</span>`);
         }
         const ch = scaleText[i] || ' ';
-        parts.push(`<span data-pos="${absPos}">${ch}</span>`);
+        // Variable columns must carry .diff-highlight here too. The var-sites CSS
+        // hides span[data-pos]:not(.diff-highlight), so without this the ruler is
+        // stripped to its breakpoint markers and reads as a stray row of glyphs.
+        const isVar = state._diffColumns && state._diffColumns.has(absPos);
+        parts.push(`<span class="${isVar ? 'diff-highlight' : ''}" data-pos="${absPos}">${ch}</span>`);
     }
     return parts.join('');
 }
@@ -7940,6 +7944,23 @@ function isMotifSearchSupported() {
         && !document.getElementById('modeReads')?.checked;
 }
 
+/**
+ * Show the difference-threshold slider whenever either variation overlay is on.
+ * The threshold gates the shared conserved-column computation used by BOTH
+ * Highlight-diffs and Variable-sites-only, so hiding the control in diffs mode
+ * left that mode silently threshold-dependent with no way to see or set it.
+ * Breakpoint markers are only drawn where columns are actually hidden, so that
+ * sub-control stays specific to Variable-sites-only.
+ */
+function syncVariationControls() {
+    const diffs = document.getElementById('highlightDiffs')?.checked;
+    const varSites = document.getElementById('varSitesOnly')?.checked;
+    const ctrls = document.getElementById('varSitesControls');
+    if (ctrls) ctrls.style.display = (diffs || varSites) ? 'inline-flex' : 'none';
+    const brkLabel = document.getElementById('varSitesBreakpointsLabel');
+    if (brkLabel) brkLabel.style.display = varSites ? '' : 'none';
+}
+
 function syncSearchControlsAvailability() {
     const supported = isMotifSearchSupported();
     const searchControls = el('search-controls');
@@ -12075,6 +12096,7 @@ function attachUIListeners() {
     syncQuickModeSwitch();
     syncCodonModePanel();
     syncSearchControlsAvailability();
+    syncVariationControls();
 
     // Set up checkbox listeners
     const checkboxes = ['enableBlack', 'enableDark', 'enableLight', 'showConsensus',
@@ -12087,11 +12109,7 @@ function attachUIListeners() {
             // step with that so the panel never shows two mutually exclusive states ticked.
             if (id === 'highlightDiffs' && elRef.checked) {
                 const other = el('varSitesOnly');
-                if (other?.checked) {
-                    other.checked = false;
-                    const ctrls = document.getElementById('varSitesControls');
-                    if (ctrls) ctrls.style.display = 'none';
-                }
+                if (other?.checked) other.checked = false;
             }
             if (id === 'varSitesOnly' && elRef.checked) {
                 const other = el('highlightDiffs');
@@ -12100,9 +12118,8 @@ function attachUIListeners() {
             if (id === 'highlightDiffs') {
                 document.body.classList.toggle('highlight-diffs', elRef.checked);
             }
-            if (id === 'varSitesOnly') {
-                const ctrls = document.getElementById('varSitesControls');
-                if (ctrls) ctrls.style.display = elRef.checked ? 'inline-flex' : 'none';
+            if (id === 'highlightDiffs' || id === 'varSitesOnly') {
+                syncVariationControls();
             }
             debounceRender();
         });
