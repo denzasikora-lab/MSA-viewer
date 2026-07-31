@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v138';
+const BUILD_TAG = 'v139';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -2768,31 +2768,34 @@ function generateScaleHTML(maxLength, interval, startPos, showBrk, brkBeforePos,
     const scaleText = generateScale(maxLength, interval, startPos);
 
     // A multi-digit label (e.g. "10", "230") occupies several adjacent
-    // characters at fixed positions, unaware that Variable-sites-only will
-    // later hide some of those positions independently. Left alone, a label
-    // is torn apart whenever only some of its digits sit on a variable
-    // column - e.g. "10" loses its '1' and renders as a lone "0". Labels are
-    // shown or hidden as one unit instead: if any position in a contiguous
-    // non-space run is variable, every position in that run is treated as
-    // variable, so the whole label survives together.
+    // characters at fixed positions, and in Variable-sites-only mode those
+    // positions can be hidden independently of each other - hiding is a
+    // per-column decision from state._diffColumns, the same set the
+    // sequence rows and consensus row use.
+    //
+    // Two grouping schemes were tried here and both were wrong. v135 forced
+    // every character in a label to show whenever ANY of its columns was
+    // variable, to stop labels tearing - but that only patched the ruler's
+    // own rendering while the rows below still hid the untouched column, so
+    // the ruler ended up wider than the data at that point and drifted out
+    // of column alignment for the rest of the block; a breakpoint marker
+    // (computed from the real, unpatched set) could then land visually
+    // inside the "restored" label, tearing it apart differently ("5⋮0"). The
+    // opposite scheme - only show a label when EVERY column in it is
+    // variable - fixes that desync but creates a new one in the other
+    // direction: it can SUPPRESS a ruler cell for a column that genuinely is
+    // variable and IS shown in the data, just because it shares a label's
+    // character span with a conserved neighbour.
+    // There is no grouping rule that both preserves whole labels and keeps
+    // the ruler and data rows in lockstep, because the rows don't know or
+    // care about label boundaries - they hide and show one column at a time.
+    // So the ruler does the same: each character's visibility is decided
+    // independently, identically to how a sequence row decides it. A label
+    // can end up showing only one of its digits; that is a minor cosmetic
+    // artifact, not a correctness problem, and it is far preferable to a
+    // ruler whose visible column count disagrees with the alignment beneath
+    // it.
     const diffColumns = state._diffColumns;
-    const showLabelAt = new Array(maxLength).fill(false);
-    if (diffColumns) {
-        let runStart = -1;
-        for (let i = 0; i <= maxLength; i++) {
-            const isLabelChar = i < maxLength && scaleText[i] !== ' ';
-            if (isLabelChar && runStart === -1) {
-                runStart = i;
-            } else if (!isLabelChar && runStart !== -1) {
-                let runHasVar = false;
-                for (let j = runStart; j < i; j++) {
-                    if (diffColumns.has(startPos + j)) { runHasVar = true; break; }
-                }
-                if (runHasVar) for (let j = runStart; j < i; j++) showLabelAt[j] = true;
-                runStart = -1;
-            }
-        }
-    }
 
     const parts = [];
     for (let i = 0; i < maxLength; i++) {
@@ -2803,10 +2806,12 @@ function generateScaleHTML(maxLength, interval, startPos, showBrk, brkBeforePos,
             parts.push(`<span class="col-breakpoint" data-break="${r.start}-${r.end}" title="${title}" style="pointer-events:none;">\u22EE</span>`);
         }
         const ch = scaleText[i] || ' ';
-        // Variable columns must carry .diff-highlight here too. The var-sites CSS
-        // hides span[data-pos]:not(.diff-highlight), so without this the ruler is
-        // stripped to its breakpoint markers and reads as a stray row of glyphs.
-        const isVar = showLabelAt[i];
+        // Variable columns must carry .diff-highlight here too, decided one
+        // column at a time so the ruler can never disagree with the rows
+        // beneath it. The var-sites CSS hides span[data-pos]:not(.diff-highlight),
+        // so without this the ruler is stripped to its breakpoint markers and
+        // reads as a stray row of glyphs.
+        const isVar = !!(diffColumns && diffColumns.has(absPos));
         parts.push(`<span class="${isVar ? 'diff-highlight' : ''}" data-pos="${absPos}">${ch}</span>`);
     }
     return parts.join('');
@@ -3810,7 +3815,7 @@ function renderAlignment(options = {}) {
 
     // (len is declared above, before TOTAL_RESIDUES calculation)
 
-    const shadeMode = _checkedRadioValue('shadeMode', 'nongap');
+    const shadeMode = _checkedRadioValue('shadeMode', 'all');
     const useCompact = document.getElementById('modeCompact')?.checked;
     const useCanvas = document.getElementById('modeCanvas')?.checked;
 
@@ -4631,7 +4636,7 @@ function getSequenceRenderConfig() {
         enableBlack: !!el('enableBlack')?.checked,
         enableDark: !!el('enableDark')?.checked,
         enableLight: !!el('enableLight')?.checked,
-        shadeMode: document.querySelector('input[name="shadeMode"]:checked')?.value || 'nongap',
+        shadeMode: document.querySelector('input[name="shadeMode"]:checked')?.value || 'all',
         colorScheme: getAlignmentColorScheme(),
         effectiveColorScheme: getEffectiveColorScheme()
     };

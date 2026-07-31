@@ -130,10 +130,10 @@
                                 <span class="slider-label">Shade By</span>
                             </div>
                             <label class="shade-mode-label">
-                                <input type="radio" name="shadeMode" value="nongap" checked title="Shade based on non-gap positions only"> Non-Gap
+                                <input type="radio" name="shadeMode" value="nongap" title="Conservation = agreement among sequences that have a base at this column, ignoring how many are gapped. Can call a column highly conserved even when most sequences are gapped there - use with caution on alignments with a lot of missing data or indels."> Non-Gap
                             </label>
                             <label class="shade-mode-label">
-                                <input type="radio" name="shadeMode" value="all" title="Shade based on all positions including gaps"> All
+                                <input type="radio" name="shadeMode" value="all" checked title="Conservation = agreement across every sequence in the alignment; a gap counts against conservation, matching standard MSA-viewer behaviour. Recommended default."> All
                             </label>
                         </div>
                     </div>
@@ -684,7 +684,7 @@
             <div id="headerInfoPanel">
                 <!-- Static fallback shown before script.js runs; script.js overwrites it
                      from BUILD_TAG. Keep in sync with BUILD_TAG or it silently rots. -->
-                <div id="versionIndicator">version v138</div>
+                <div id="versionIndicator">version v139</div>
                 <div id="sourceInfo">No file loaded</div>
             </div>
         </div>
@@ -1057,7 +1057,7 @@ B: -</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=138"></script>
+    <script src="script.js?v=139"></script>
     <script src="tree-draw.js"></script>
     <script>
     // All functionality moved to script.js

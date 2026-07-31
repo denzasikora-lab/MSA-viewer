@@ -732,18 +732,30 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       showing only positions with variation. Useful for scanning SNP-dense regions.
     </li>
   </ul>
+  <p>
+    A column's "dominant pattern" is whichever state most sequences share at that
+    position - a specific base, or a gap if most sequences are gapped there. A
+    sequence counts as differing from a column if it disagrees with that pattern
+    in <em>either</em> direction: a substituted base against a base-majority column,
+    or a presence/absence mismatch against either kind of column (a real base where
+    most sequences are gapped, or a gap where most carry a base). This matters most
+    on alignments with substantial insertion/deletion variation - repeat or
+    transposable-element families in particular - where indel polymorphism is often
+    the majority of the real variation, not base substitution.
+  </p>
 
   <h4 id="di-var-threshold">5.2.1 Variable-Sites Threshold</h4>
   <p>
-    Next to the <strong>Variable sites only</strong> checkbox, a <strong>threshold slider</strong>
-    controls the minimum percentage of sequences that must differ from the consensus
-    for a column to be considered "variable". The slider ranges from 0% to 100% in 5% steps.
+    Next to the <strong>Variable sites only</strong> checkbox, a <strong>threshold
+    slider</strong> (with a paired number box for typing an exact value) controls the
+    minimum percentage of sequences that must differ from the column's dominant
+    pattern for it to be considered "variable". Both range from 0% to 100% in 1% steps.
   </p>
   <ul>
-    <li><strong>0%</strong> (default) — show all columns with any non-gap residue (no filtering).</li>
-    <li><strong>≥20%</strong> — only columns where at least 20% of sequences differ from consensus.</li>
+    <li><strong>0%</strong> (default) — show every column, unfiltered.</li>
+    <li><strong>≥20%</strong> — only columns where at least 20% of sequences differ from the dominant pattern.</li>
     <li><strong>≥50%</strong> — only columns where at least half the sequences differ.</li>
-    <li><strong>≥100%</strong> — only columns where every sequence differs from consensus.</li>
+    <li><strong>≥100%</strong> — only columns where every sequence differs.</li>
   </ul>
   <p>
     The threshold is percentage-based so it works consistently across alignments of any size.
@@ -787,8 +799,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <p><strong>Conservation calculation mode:</strong></p>
   <table>
     <tr><th>Mode</th><th>Behaviour</th></tr>
-    <tr><td>Non-Gap (default)</td><td>Conservation percentages exclude gap characters. Only real residues (A, C, G, T, etc.) are counted. Use this for standard alignments where gaps represent missing data.</td></tr>
-    <tr><td>All</td><td>Conservation percentages include gaps as a character. A column that is 100% gaps would score as fully conserved. Use this when gap patterns themselves carry information (e.g., SINE insertion presence/absence).</td></tr>
+    <tr><td>All (default)</td><td>Conservation is measured against every sequence in the alignment; a gap counts against conservation, the same way most MSA viewers compute percent identity. A column where most sequences are gapped cannot score highly conserved just because the few sequences that do have a base happen to agree.</td></tr>
+    <tr><td>Non-Gap</td><td>Conservation is measured only among sequences that have a base at the column, ignoring how many are gapped. A column where just 30% of sequences carry a base, all in agreement, scores 100% conserved under this mode even though 70% of the alignment has no data there - use with caution on alignments with a lot of missing data or indel variation (transposable-element/repeat families in particular).</td></tr>
   </table>
 
   <h3 id="di-codons">5.4 Codon Analysis</h3>
