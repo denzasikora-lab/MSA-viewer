@@ -753,31 +753,39 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <p>
     Next to the <strong>Variable sites only</strong> checkbox, a <strong>threshold
     slider</strong> (with a paired number box for typing an exact value) controls the
-    minimum percentage of sequences that must differ from the column's dominant
-    pattern for it to be considered "variable". Both range from 0% to 100% in 1% steps.
+    minimum amount of sequences that must differ from the column's dominant pattern for
+    it to be considered "variable". A small dropdown to its left switches what that
+    number means:
   </p>
   <ul>
-    <li><strong>0%</strong> (default) — show every column, unfiltered.</li>
-    <li><strong>≥20%</strong> — only columns where at least 20% of sequences differ from the dominant pattern.</li>
-    <li><strong>≥50%</strong> — only columns where at least half the sequences differ.</li>
-    <li><strong>≥100%</strong> — only columns where every sequence differs.</li>
+    <li>
+      <strong>%</strong> (default) — a percentage of all sequences, 0-100 in 1% steps.
+      <strong>0%</strong> shows every column unfiltered; <strong>≥20%</strong> requires
+      at least a fifth of sequences to differ; <strong>≥100%</strong> requires every
+      sequence to differ. Percentages work consistently across alignments of any size:
+      for a 5-sequence alignment ≥20% means at least 1 sequence, for a 200-sequence
+      alignment it means at least 40.
+    </li>
+    <li>
+      <strong>count</strong> — an exact absolute number of sequences, 0 up to the total
+      loaded (the slider's range updates automatically). <strong>≥1</strong> shows a
+      column the instant even a single sequence differs, with no rounding at all.
+    </li>
   </ul>
   <p>
-    The threshold is percentage-based so it works consistently across alignments of any size.
-    For a 5-sequence alignment, ≥20% means at least 1 sequence must differ; for a 200-sequence
-    alignment, ≥20% means at least 40 sequences must differ.
-  </p>
-  <p>
-    A percentage threshold has a blind spot: a region can be biologically highly variable
-    while spreading that variation across many neighbouring columns, each affecting only a
-    handful of sequences - staggered, independent insertions in a repeat family are a common
-    example. No single column in such a region may ever reach even a modest percentage
-    threshold, so the whole region gets hidden as if it were conserved. An <strong>Any
-    minority</strong> checkbox next to Breakpoints addresses this directly: when checked, it
-    replaces the percentage threshold outright (the slider and number box grey out) and shows
-    a column the instant more than one state is present at all, even a single differing
-    sequence out of thousands. Check it when a flagged "conserved" region looks suspicious on
-    inspection - it surfaces the individually-rare variants a percentage cutoff was built to filter out.
+    Percentage mode rounds up to a whole sequence count (<code>Math.ceil</code>), which
+    on small alignments can jump by more than one sequence between adjacent percentages
+    - e.g. at 10 sequences, both 10% and 11% look like reasonable neighbouring settings,
+    but they require 1 and 2 sequences respectively, so a column with exactly one
+    differing sequence can flip from shown to hidden across that single percentage
+    point. Percentage mode also has a related blind spot on real alignments: a region
+    can be biologically highly variable while spreading that variation across many
+    neighbouring columns, each affecting only a handful of sequences - staggered,
+    independent insertions in a repeat family are a common example - so no single
+    column ever reaches even a modest percentage threshold, and the whole region gets
+    hidden as if it were conserved. Switch to <strong>count</strong> mode and set it to
+    <strong>1</strong> when a flagged "conserved" region looks suspicious on inspection -
+    it surfaces the individually-rare variants a percentage cutoff was built to filter out.
   </p>
 
   <h4 id="di-var-breakpoints">5.2.2 Breakpoint Markers</h4>

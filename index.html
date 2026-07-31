@@ -175,11 +175,14 @@
                                 <label style="font-size:10px;white-space:nowrap;flex:0 0 auto;" title="Dim fully-conserved columns so columns that differ from the consensus stand out"><input type="checkbox" id="highlightDiffs" title="Dim fully-conserved columns so columns that differ from the consensus stand out"> Highlight diffs</label>
                                 <label style="font-size:10px;white-space:nowrap;flex:0 0 auto;" title="Hide fully-conserved columns entirely, showing only columns that differ"><input type="checkbox" id="varSitesOnly" title="Hide fully-conserved columns entirely, showing only columns that differ"> Variable sites only</label>
                                 <span id="varSitesControls" style="display:none;align-items:center;gap:4px;flex:0 0 auto;">
-                                    <input type="range" id="varSitesThreshold" min="0" max="100" value="0" step="1" style="width:90px;height:14px;flex:0 0 auto;" title="Minimum percentage of sequences that must differ for a column to be shown">
-                                    <input type="number" id="varSitesThresholdInput" min="0" max="100" step="1" value="0" style="width:46px;height:20px;font-size:11px;flex:0 0 auto;" title="Type an exact difference threshold (0-100%)">
+                                    <select id="varThresholdMode" style="font-size:10px;height:20px;flex:0 0 auto;" title="Whether the number below is a percentage of all sequences, or an absolute sequence count. Percentage rounds up to a whole sequence count (Math.ceil), which on small alignments can jump by more than 1 sequence between adjacent percentages; absolute count has no rounding, so any value from 1 to the full sequence count is reachable exactly - including 1, which shows a column the instant even a single sequence differs.">
+                                        <option value="pct" selected>%</option>
+                                        <option value="count">count</option>
+                                    </select>
+                                    <input type="range" id="varSitesThreshold" min="0" max="100" value="0" step="1" style="width:90px;height:14px;flex:0 0 auto;" title="Minimum amount of sequences that must differ for a column to be shown">
+                                    <input type="number" id="varSitesThresholdInput" min="0" max="100" step="1" value="0" style="width:46px;height:20px;font-size:11px;flex:0 0 auto;" title="Type an exact difference threshold">
                                     <span style="font-size:9px;white-space:nowrap;display:inline-block;min-width:56px;text-align:left;flex:0 0 auto;" id="varSitesThresholdLabel">≥0% diff</span>
                                     <label id="varSitesBreakpointsLabel" style="font-size:10px;margin-left:4px;white-space:nowrap;" title="Mark hidden-column boundaries with a vertical ⋮ so collapsed regions stay visible"><input type="checkbox" id="varSitesBreakpoints" checked> Breakpoints</label>
-                                    <label id="varSitesAnyMinorityLabel" style="font-size:10px;margin-left:4px;white-space:nowrap;" title="Show a column if even a single sequence differs from the rest, ignoring the % threshold above. Catches diffuse regions where many real variants are scattered across different columns, each affecting only 1-2 sequences, so no single column ever reaches a percentage-based threshold on its own."><input type="checkbox" id="varSitesAnyMinority"> Any minority</label>
                                 </span>
                             </div>
                             <div style="display:flex;align-items:center;gap:6px;margin-left:74px;">
@@ -685,7 +688,7 @@
             <div id="headerInfoPanel">
                 <!-- Static fallback shown before script.js runs; script.js overwrites it
                      from BUILD_TAG. Keep in sync with BUILD_TAG or it silently rots. -->
-                <div id="versionIndicator">version v143</div>
+                <div id="versionIndicator">version v144</div>
                 <div id="sourceInfo">No file loaded</div>
             </div>
         </div>
@@ -1058,7 +1061,7 @@ B: -</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=143"></script>
+    <script src="script.js?v=144"></script>
     <script src="tree-draw.js"></script>
     <script>
     // All functionality moved to script.js

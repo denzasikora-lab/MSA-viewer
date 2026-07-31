@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v143';
+const BUILD_TAG = 'v144';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -3936,13 +3936,26 @@ function renderAlignment(options = {}) {
     // Highlight-diffs + Var-sites: mark columns that differ from consensus
     const highlightDiffs = document.getElementById('highlightDiffs')?.checked;
     const varSites = document.getElementById('varSitesOnly')?.checked;
-    const varThresholdPct = parseInt(document.getElementById('varSitesThreshold')?.value) || 0;
+    // Keeps count-mode's upper bound in step with the current alignment's
+    // sequence count even when the mode/checkboxes weren't touched (e.g. a
+    // new file was just loaded).
+    updateVarThresholdBounds();
+    const varThresholdMode = document.getElementById('varThresholdMode')?.value || 'pct';
+    const varThresholdRaw = parseInt(document.getElementById('varSitesThreshold')?.value) || 0;
     const nSeq = state.seqs.length;
-    const varThreshold = varThresholdPct === 0 ? 0 : Math.ceil((varThresholdPct / 100) * nSeq);
+    // Percentage mode rounds up to a whole sequence count (Math.ceil), which
+    // on small alignments can jump by more than 1 sequence between adjacent
+    // percentages - e.g. at nSeq=10, 10% and 11% both round to requiring a
+    // different count, so a column with exactly 1 differing sequence can
+    // flip from shown to hidden across a single percentage point. Count mode
+    // takes the same number as an exact sequence count with no rounding, so
+    // every value from 1 up to nSeq is individually reachable.
+    const varThreshold = varThresholdMode === 'count'
+        ? varThresholdRaw
+        : (varThresholdRaw === 0 ? 0 : Math.ceil((varThresholdRaw / 100) * nSeq));
     const showBreakpoints = document.getElementById('varSitesBreakpoints')?.checked !== false;
     if ((highlightDiffs || varSites) && state.seqs.length > 1) {
         const diffCols = new Set();
-        const anyMinority = document.getElementById('varSitesAnyMinority')?.checked;
         // A gap outside a sequence's own first/last real-base span is missing
         // data (the sequence just doesn't reach here) and carries no
         // evidence either way, so it's excluded from both the majority count
@@ -3976,8 +3989,7 @@ function renderAlignment(options = {}) {
             // covered sequence "differs" from it. Ties don't matter here -
             // only the size of the largest group affects the count.
             const diffCount = covered > 0 ? covered - Math.max(...Object.values(counts)) : 0;
-            const requiredDiff = anyMinority ? 1 : varThreshold;
-            if (requiredDiff === 0 || diffCount >= requiredDiff) diffCols.add(pos);
+            if (varThreshold === 0 || diffCount >= varThreshold) diffCols.add(pos);
         }
         state._diffColumns = diffCols;
         // Build hidden ranges for breakpoint markers (only in var-sites mode)
@@ -8035,16 +8047,39 @@ function syncVariationControls() {
     if (ctrls) ctrls.style.display = (diffs || varSites) ? 'inline-flex' : 'none';
     const brkLabel = document.getElementById('varSitesBreakpointsLabel');
     if (brkLabel) brkLabel.style.display = varSites ? '' : 'none';
-    // "Any minority" replaces the percentage threshold outright rather than
-    // combining with it, so grey the slider/number box out while it's on -
-    // otherwise their displayed value would silently have no effect.
-    const anyMinority = document.getElementById('varSitesAnyMinority')?.checked;
-    const thresholdCtrls = [document.getElementById('varSitesThreshold'), document.getElementById('varSitesThresholdInput')];
-    thresholdCtrls.forEach(elRef => {
+    updateVarThresholdBounds();
+}
+
+/**
+ * Percentage mode rounds up to a whole sequence count (Math.ceil), which on
+ * small alignments can jump by more than 1 sequence between adjacent
+ * percentages. Count mode reinterprets the same slider/number box as an
+ * exact sequence count instead, so every value from 1 to nSeq is reachable
+ * without rounding - including 1, which shows a column the instant even a
+ * single sequence differs. Switching modes changes what the control's upper
+ * bound (100 vs nSeq) and label mean, so both need refreshing whenever the
+ * mode changes or the loaded alignment's sequence count changes.
+ */
+function updateVarThresholdBounds() {
+    const mode = document.getElementById('varThresholdMode')?.value || 'pct';
+    const slider = document.getElementById('varSitesThreshold');
+    const input = document.getElementById('varSitesThresholdInput');
+    const nSeq = state.seqs ? state.seqs.length : 0;
+    const max = mode === 'count' ? Math.max(nSeq, 1) : 100;
+    [slider, input].forEach(elRef => {
         if (!elRef) return;
-        elRef.disabled = !!anyMinority;
-        elRef.style.opacity = anyMinority ? '0.4' : '1';
+        elRef.max = String(max);
+        if (parseInt(elRef.value) > max) elRef.value = String(max);
     });
+    updateVarThresholdLabel();
+}
+
+function updateVarThresholdLabel() {
+    const mode = document.getElementById('varThresholdMode')?.value || 'pct';
+    const slider = document.getElementById('varSitesThreshold');
+    const label = document.getElementById('varSitesThresholdLabel');
+    if (!slider || !label) return;
+    label.textContent = mode === 'count' ? `≥${slider.value} seqs` : `≥${slider.value}% diff`;
 }
 
 function syncSearchControlsAvailability() {
@@ -12205,7 +12240,7 @@ function attachUIListeners() {
     // Set up checkbox listeners
     const checkboxes = ['enableBlack', 'enableDark', 'enableLight', 'showConsensus',
                         'compactDiffOnly', 'compactPairs', 'highlightDiffs', 'varSitesOnly',
-                        'varSitesAnyMinority', 'codonAnalysis'];
+                        'codonAnalysis'];
     checkboxes.forEach(id => {
         const elRef = el(id);
         if (elRef) elRef.addEventListener('change', () => {
@@ -12223,7 +12258,7 @@ function attachUIListeners() {
             if (id === 'highlightDiffs') {
                 document.body.classList.toggle('highlight-diffs', elRef.checked);
             }
-            if (id === 'highlightDiffs' || id === 'varSitesOnly' || id === 'varSitesAnyMinority') {
+            if (id === 'highlightDiffs' || id === 'varSitesOnly') {
                 syncVariationControls();
             }
             debounceRender();
@@ -12232,13 +12267,9 @@ function attachUIListeners() {
 
     // Var-sites threshold: slider and typed-number box both drive the same label.
     // The generic sliderPairs loop above keeps the two controls' values in sync;
-    // this just keeps the "\u2265N% diff" label current for either input method.
+    // this just keeps the "\u2265N% diff" / "\u2265N seqs" label current for either input method.
     const varThreshold = el('varSitesThreshold');
     const varThresholdInput = el('varSitesThresholdInput');
-    const updateVarThresholdLabel = () => {
-        const label = document.getElementById('varSitesThresholdLabel');
-        if (label) label.textContent = `\u2265${varThreshold.value}% diff`;
-    };
     if (varThreshold) {
         varThreshold.addEventListener('input', updateVarThresholdLabel);
         varThreshold.addEventListener('change', debounceRender);
@@ -12246,6 +12277,15 @@ function attachUIListeners() {
     if (varThresholdInput) {
         varThresholdInput.addEventListener('input', updateVarThresholdLabel);
         varThresholdInput.addEventListener('change', debounceRender);
+    }
+    // Switching % <-> count changes what the same number means and its valid
+    // range (100 vs nSeq), so bounds/label must refresh before the next render.
+    const varThresholdMode = el('varThresholdMode');
+    if (varThresholdMode) {
+        varThresholdMode.addEventListener('change', () => {
+            updateVarThresholdBounds();
+            debounceRender();
+        });
     }
     // Var-sites breakpoints toggle
     const varBrk = el('varSitesBreakpoints');
