@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v136';
+const BUILD_TAG = 'v137';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -12074,7 +12074,14 @@ function attachUIListeners() {
                     const clamped = clampMinCoverage(input.value);
                     slider.value = clamped;
                     input.value = clamped;
-                } else {
+                } else if (input.value !== '' && !Number.isNaN(Number(input.value))) {
+                    // Guard against transient empty/invalid states while typing (e.g.
+                    // select-all before entering a new value). A <input type=range>
+                    // coerces value='' to the SPEC DEFAULT - the midpoint of min/max -
+                    // rather than leaving its position alone, which is what produced
+                    // the slider visibly "jumping to the middle" while editing the
+                    // paired number box. Only push a value across once it's a real
+                    // number; an empty/partial box just leaves the slider where it was.
                     slider.value = input.value;
                 }
                 updateSliderBackground(slider);
@@ -12082,6 +12089,16 @@ function attachUIListeners() {
                     validateThresholds();
                 }
                 renderCb();
+            });
+
+            // On blur/Enter, an empty or out-of-range box snaps back to the
+            // slider's current (last valid) value instead of staying blank or
+            // silently keeping an invalid number.
+            input.addEventListener('change', () => {
+                const n = Number(input.value);
+                if (input.value === '' || Number.isNaN(n) || n < Number(slider.min) || n > Number(slider.max)) {
+                    input.value = slider.value;
+                }
             });
         }
     });
