@@ -735,12 +735,15 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     </li>
   </ul>
   <p>
-    A column's "dominant pattern" is whichever state most sequences share at that
-    position - a specific base, or a gap if most sequences are gapped there. A
-    sequence counts as differing from a column if it disagrees with that pattern
-    in <em>either</em> direction: a substituted base against a base-majority column,
-    or a presence/absence mismatch against either kind of column (a real base where
-    most sequences are gapped, or a gap where most carry a base). This matters most
+    A column's "dominant pattern" is whichever state the largest group of sequences
+    shares at that position - a specific base, or a gap. Gaps are not all treated
+    alike: a gap that falls outside a sequence's own first-to-last real-base span
+    (a leading or trailing gap, because that sequence simply doesn't reach this
+    column) is missing data and is excluded entirely from the count. A gap that
+    falls inside that span is a real deletion and is counted on equal footing with
+    A/C/G/T, as a legitimate state in its own right - not specially exempted the
+    way a substitution would be. A sequence counts as "differing" from a column if
+    its own state (base or internal gap) isn't the dominant one. This matters most
     on alignments with substantial insertion/deletion variation - repeat or
     transposable-element families in particular - where indel polymorphism is often
     the majority of the real variation, not base substitution.
@@ -764,6 +767,18 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     For a 5-sequence alignment, ≥20% means at least 1 sequence must differ; for a 200-sequence
     alignment, ≥20% means at least 40 sequences must differ.
   </p>
+  <p>
+    A percentage threshold has a blind spot: a region can be biologically highly variable
+    while spreading that variation across many neighbouring columns, each affecting only a
+    handful of sequences - staggered, independent insertions in a repeat family are a common
+    example. No single column in such a region may ever reach even a modest percentage
+    threshold, so the whole region gets hidden as if it were conserved. An <strong>Any
+    minority</strong> checkbox next to Breakpoints addresses this directly: when checked, it
+    replaces the percentage threshold outright (the slider and number box grey out) and shows
+    a column the instant more than one state is present at all, even a single differing
+    sequence out of thousands. Check it when a flagged "conserved" region looks suspicious on
+    inspection - it surfaces the individually-rare variants a percentage cutoff was built to filter out.
+  </p>
 
   <h4 id="di-var-breakpoints">5.2.2 Breakpoint Markers</h4>
   <p>
@@ -777,7 +792,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li>Breakpoint columns are non-interactive: they cannot be selected, edited, or included in exports.</li>
     <li>Uncheck <strong>Breakpoints</strong> to glue visible columns together without separators (original behaviour).</li>
   </ul>
-  <p>Both features can be combined with any view mode and with Codon analysis.</p>
+  <p>Both features can be combined with Codon analysis (Full and Block modes only - see above).</p>
 
   <h3 id="di-colors">5.3 Alignment Colour Schemes</h3>
   <p>

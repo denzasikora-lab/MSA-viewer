@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v141';
+const BUILD_TAG = 'v143';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -2764,7 +2764,7 @@ function generateScale(maxLength, interval = 10, startPos = 0) {
 }
 
 // Generate scale ruler as HTML spans with data-pos for var-sites compatibility
-function generateScaleHTML(maxLength, interval, startPos, showBrk, brkBeforePos, brkInfo) {
+function generateScaleHTML(maxLength, interval, startPos) {
     const scaleText = generateScale(maxLength, interval, startPos);
 
     // A multi-digit label (e.g. "10", "230") occupies several adjacent
@@ -2800,11 +2800,16 @@ function generateScaleHTML(maxLength, interval, startPos, showBrk, brkBeforePos,
     const parts = [];
     for (let i = 0; i < maxLength; i++) {
         const absPos = startPos + i;
-        if (showBrk && brkBeforePos.has(absPos)) {
-            const r = brkInfo[absPos];
-            const title = `${r.count} column${r.count > 1 ? 's' : ''} hidden (positions ${r.start + 1}\u2013${r.end + 1})`;
-            parts.push(`<span class="col-breakpoint" data-break="${r.start}-${r.end}" title="${title}" style="pointer-events:none;">\u22EE</span>`);
-        }
+        // Unlike the consensus and sequence rows, the ruler does not draw its
+        // own copy of the breakpoint marker. Every row independently needing
+        // the marker makes sense for data rows - each is its own strip that
+        // needs its own "gap here" cue - but the ruler's only content is
+        // position numbers, and the identical fact (same count, same
+        // position range, read from the same state._brkInfo) is already
+        // shown one row down in Consensus. Drawing it here too gained
+        // nothing and cost a character slot in the one row whose entire
+        // purpose is spacing out those numbers - the same slot a torn label
+        // needed.
         const ch = scaleText[i] || ' ';
         // Variable columns must carry .diff-highlight here too, decided one
         // column at a time so the ruler can never disagree with the rows
@@ -3937,34 +3942,42 @@ function renderAlignment(options = {}) {
     const showBreakpoints = document.getElementById('varSitesBreakpoints')?.checked !== false;
     if ((highlightDiffs || varSites) && state.seqs.length > 1) {
         const diffCols = new Set();
-        // Pre-compute consensus for diff detection
-        const consSeq = consensus.length > 0 ? consensus : computeConsensusForSequences(state.seqs.map(s => s.seq)).split('');
-        for (let pos = 0; pos < len; pos++) {
-            const consBase = (consSeq[pos] || '-').toUpperCase();
-            const consIsGap = consBase === '-' || consBase === '.';
-            let diffCount = 0;
-            for (let i = 0; i < state.seqs.length; i++) {
-                const base = (state.seqs[i].seq[pos] || '-').toUpperCase();
-                const baseIsGap = base === '-' || base === '.';
-                // A sequence "differs" here if it disagrees with the column's
-                // dominant pattern in EITHER direction: a substituted base
-                // against a base-majority column, OR a presence/absence
-                // mismatch against a gap-majority column. The latter half
-                // matters a lot on real alignments: columns where most rows
-                // are gapped and a subset carry a genuine insertion are
-                // common and often the most biologically variable positions
-                // (indel polymorphism), but a definition that only compares
-                // non-gap bases against a non-gap consensus scores every such
-                // column as zero variation - on one repeat-family test
-                // alignment, 68% of columns had a gap-majority consensus, so
-                // that blind spot silently hid most of the true variation.
-                if (consIsGap) {
-                    if (!baseIsGap) diffCount++;
-                } else if (baseIsGap || base !== consBase) {
-                    diffCount++;
-                }
+        const anyMinority = document.getElementById('varSitesAnyMinority')?.checked;
+        // A gap outside a sequence's own first/last real-base span is missing
+        // data (the sequence just doesn't reach here) and carries no
+        // evidence either way, so it's excluded from both the majority count
+        // and the diff count below. A gap inside that span is a real
+        // deletion and is counted like any other character - on equal
+        // footing with A/C/G/T, not special-cased - so indel polymorphism
+        // (a gap-majority column with a minority of real insertions, or vice
+        // versa) is detected the same way a substitution would be.
+        const spans = state.seqs.map(s => {
+            const seq = s.seq;
+            let first = -1, last = -1;
+            for (let i = 0; i < seq.length; i++) {
+                const c = seq[i];
+                if (c !== '-' && c !== '.') { if (first === -1) first = i; last = i; }
             }
-            if (varThreshold === 0 || diffCount >= varThreshold) diffCols.add(pos);
+            return { first, last };
+        });
+        for (let pos = 0; pos < len; pos++) {
+            const counts = {};
+            let covered = 0;
+            for (let i = 0; i < state.seqs.length; i++) {
+                const { first, last } = spans[i];
+                if (first === -1 || pos < first || pos > last) continue; // flanking gap: no data
+                const base = (state.seqs[i].seq[pos] || '-').toUpperCase();
+                const ch = (base === '-' || base === '.') ? '-' : base;
+                counts[ch] = (counts[ch] || 0) + 1;
+                covered++;
+            }
+            // The column's dominant state is simply whichever character (base
+            // or internal-gap) the most covered sequences share; every other
+            // covered sequence "differs" from it. Ties don't matter here -
+            // only the size of the largest group affects the count.
+            const diffCount = covered > 0 ? covered - Math.max(...Object.values(counts)) : 0;
+            const requiredDiff = anyMinority ? 1 : varThreshold;
+            if (requiredDiff === 0 || diffCount >= requiredDiff) diffCols.add(pos);
         }
         state._diffColumns = diffCols;
         // Build hidden ranges for breakpoint markers (only in var-sites mode)
@@ -4096,7 +4109,7 @@ function renderAlignment(options = {}) {
             // Variable-sites-only mode whenever Breakpoints was unchecked,
             // while the rows beneath it kept hiding/dimming correctly.
             if (state._diffColumns) {
-                scaleDataDiv.innerHTML = generateScaleHTML(blockLen, 10, start, _showBrk, state._brkBeforePos, state._brkInfo);
+                scaleDataDiv.innerHTML = generateScaleHTML(blockLen, 10, start);
             } else {
                 scaleDataDiv.textContent = generateScale(blockLen, 10, start);
             }
@@ -4131,7 +4144,7 @@ function renderAlignment(options = {}) {
         // whether an overlay is active at all (state._diffColumns), not on
         // whether there happen to be breakpoints to draw.
         if (state._diffColumns) {
-            scaleDataDiv.innerHTML = generateScaleHTML(len, 10, 0, _showBrk, state._brkBeforePos, state._brkInfo);
+            scaleDataDiv.innerHTML = generateScaleHTML(len, 10, 0);
         } else {
             scaleDataDiv.textContent = generateScale(len);
         }
@@ -8022,6 +8035,16 @@ function syncVariationControls() {
     if (ctrls) ctrls.style.display = (diffs || varSites) ? 'inline-flex' : 'none';
     const brkLabel = document.getElementById('varSitesBreakpointsLabel');
     if (brkLabel) brkLabel.style.display = varSites ? '' : 'none';
+    // "Any minority" replaces the percentage threshold outright rather than
+    // combining with it, so grey the slider/number box out while it's on -
+    // otherwise their displayed value would silently have no effect.
+    const anyMinority = document.getElementById('varSitesAnyMinority')?.checked;
+    const thresholdCtrls = [document.getElementById('varSitesThreshold'), document.getElementById('varSitesThresholdInput')];
+    thresholdCtrls.forEach(elRef => {
+        if (!elRef) return;
+        elRef.disabled = !!anyMinority;
+        elRef.style.opacity = anyMinority ? '0.4' : '1';
+    });
 }
 
 function syncSearchControlsAvailability() {
@@ -12181,7 +12204,8 @@ function attachUIListeners() {
 
     // Set up checkbox listeners
     const checkboxes = ['enableBlack', 'enableDark', 'enableLight', 'showConsensus',
-                        'compactDiffOnly', 'compactPairs', 'highlightDiffs', 'varSitesOnly', 'codonAnalysis'];
+                        'compactDiffOnly', 'compactPairs', 'highlightDiffs', 'varSitesOnly',
+                        'varSitesAnyMinority', 'codonAnalysis'];
     checkboxes.forEach(id => {
         const elRef = el(id);
         if (elRef) elRef.addEventListener('change', () => {
@@ -12199,7 +12223,7 @@ function attachUIListeners() {
             if (id === 'highlightDiffs') {
                 document.body.classList.toggle('highlight-diffs', elRef.checked);
             }
-            if (id === 'highlightDiffs' || id === 'varSitesOnly') {
+            if (id === 'highlightDiffs' || id === 'varSitesOnly' || id === 'varSitesAnyMinority') {
                 syncVariationControls();
             }
             debounceRender();

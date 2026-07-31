@@ -179,6 +179,7 @@
                                     <input type="number" id="varSitesThresholdInput" min="0" max="100" step="1" value="0" style="width:46px;height:20px;font-size:11px;flex:0 0 auto;" title="Type an exact difference threshold (0-100%)">
                                     <span style="font-size:9px;white-space:nowrap;display:inline-block;min-width:56px;text-align:left;flex:0 0 auto;" id="varSitesThresholdLabel">≥0% diff</span>
                                     <label id="varSitesBreakpointsLabel" style="font-size:10px;margin-left:4px;white-space:nowrap;" title="Mark hidden-column boundaries with a vertical ⋮ so collapsed regions stay visible"><input type="checkbox" id="varSitesBreakpoints" checked> Breakpoints</label>
+                                    <label id="varSitesAnyMinorityLabel" style="font-size:10px;margin-left:4px;white-space:nowrap;" title="Show a column if even a single sequence differs from the rest, ignoring the % threshold above. Catches diffuse regions where many real variants are scattered across different columns, each affecting only 1-2 sequences, so no single column ever reaches a percentage-based threshold on its own."><input type="checkbox" id="varSitesAnyMinority"> Any minority</label>
                                 </span>
                             </div>
                             <div style="display:flex;align-items:center;gap:6px;margin-left:74px;">
@@ -684,7 +685,7 @@
             <div id="headerInfoPanel">
                 <!-- Static fallback shown before script.js runs; script.js overwrites it
                      from BUILD_TAG. Keep in sync with BUILD_TAG or it silently rots. -->
-                <div id="versionIndicator">version v141</div>
+                <div id="versionIndicator">version v143</div>
                 <div id="sourceInfo">No file loaded</div>
             </div>
         </div>
@@ -1057,7 +1058,7 @@ B: -</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=141"></script>
+    <script src="script.js?v=143"></script>
     <script src="tree-draw.js"></script>
     <script>
     // All functionality moved to script.js
