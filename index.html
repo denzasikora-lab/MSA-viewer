@@ -681,7 +681,9 @@
                 </div>
             </div>
             <div id="headerInfoPanel">
-                <div id="versionIndicator">version v132</div>
+                <!-- Static fallback shown before script.js runs; script.js overwrites it
+                     from BUILD_TAG. Keep in sync with BUILD_TAG or it silently rots. -->
+                <div id="versionIndicator">version v133</div>
                 <div id="sourceInfo">No file loaded</div>
             </div>
         </div>
