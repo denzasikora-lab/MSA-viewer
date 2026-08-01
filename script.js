@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v145';
+const BUILD_TAG = 'v146';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -27,6 +27,103 @@ function loadBrkStyle() {
 function saveBrkStyle(style) {
     applyBrkStyle(style);
     try { localStorage.setItem('msaviewer_brk_style', JSON.stringify(style)); } catch (e) {}
+}
+
+const BRK_SYMBOL_CHOICES = [
+    { value: '⋮', label: '⋮' },
+    { value: '¦', label: '¦' },
+    { value: ':', label: ':' },
+    { value: '•', label: '•' },
+    { value: '❘', label: '❘' },
+    { value: '', label: '(empty)' },
+];
+
+function setupBrkStylePopover() {
+    const btn = document.getElementById('brkStyleBtn');
+    if (!btn) return;
+
+    const pop = document.createElement('div');
+    pop.id = 'brkStylePopover';
+    pop.style.cssText = 'display:none;position:fixed;z-index:9999;background:#fff;border:1px solid #999;'
+        + 'border-radius:3px;box-shadow:0 2px 8px rgba(0,0,0,0.3);padding:8px;font-size:10px;white-space:nowrap;';
+    pop.innerHTML = `
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:6px;">
+            <strong style="font-size:10px;">Breakpoint marker</strong>
+            <button type="button" id="brkStyleClose" title="Close" style="font-size:11px;line-height:1;padding:0 3px;border:1px solid #ccc;border-radius:2px;background:#f5f5f5;cursor:pointer;">×</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;">
+            <label for="brkColorInput" style="flex:0 0 auto;">Colour</label>
+            <input type="color" id="brkColorInput" style="width:28px;height:18px;padding:0;border:1px solid #ccc;cursor:pointer;">
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;">
+            <span style="flex:0 0 auto;">Symbol</span>
+            <div id="brkSymbolChoices" style="display:flex;gap:2px;"></div>
+        </div>
+    `;
+    document.body.appendChild(pop);
+
+    const choicesEl = pop.querySelector('#brkSymbolChoices');
+    BRK_SYMBOL_CHOICES.forEach(choice => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.dataset.symbol = choice.value;
+        b.textContent = choice.label;
+        b.title = choice.value === '' ? 'No glyph - shading colour only' : `Use "${choice.label}"`;
+        b.style.cssText = 'min-width:20px;height:20px;padding:0 3px;font-size:11px;border:1px solid #ccc;'
+            + 'border-radius:2px;background:#f7f7f7;cursor:pointer;';
+        b.addEventListener('click', () => {
+            saveBrkStyle({ ...brkStyle, symbol: choice.value });
+            syncBrkSymbolButtons();
+            debounceRender();
+        });
+        choicesEl.appendChild(b);
+    });
+
+    function syncBrkSymbolButtons() {
+        [...choicesEl.children].forEach(b => {
+            const active = b.dataset.symbol === brkStyle.symbol;
+            b.style.background = active ? '#cfe3ff' : '#f7f7f7';
+            b.style.borderColor = active ? '#6699cc' : '#ccc';
+        });
+    }
+
+    const colorInput = pop.querySelector('#brkColorInput');
+    colorInput.addEventListener('input', () => {
+        saveBrkStyle({ ...brkStyle, color: colorInput.value });
+    });
+
+    function closePopover() { pop.style.display = 'none'; }
+
+    function openPopover() {
+        colorInput.value = brkStyle.color;
+        syncBrkSymbolButtons();
+        pop.style.display = 'block';
+        // Position from the button's own screen rect (not any ancestor's
+        // coordinate space), then clamp so it can never render off-screen
+        // regardless of where the button sits in a scrollable panel.
+        const r = btn.getBoundingClientRect();
+        const popRect = pop.getBoundingClientRect();
+        let left = r.left;
+        let top = r.bottom + 4;
+        left = Math.max(4, Math.min(left, window.innerWidth - popRect.width - 4));
+        if (top + popRect.height > window.innerHeight - 4) top = r.top - popRect.height - 4;
+        top = Math.max(4, top);
+        pop.style.left = `${left}px`;
+        pop.style.top = `${top}px`;
+    }
+
+    btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (pop.style.display === 'none') openPopover(); else closePopover();
+    });
+    pop.querySelector('#brkStyleClose').addEventListener('click', closePopover);
+    document.addEventListener('click', (e) => {
+        if (pop.style.display !== 'none' && !pop.contains(e.target) && e.target !== btn) closePopover();
+    });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && pop.style.display !== 'none') closePopover();
+    });
+    window.addEventListener('resize', closePopover);
 }
 
 function safeLocalGet(key, fallback = {}) {
@@ -12258,35 +12355,15 @@ function attachUIListeners() {
     syncVariationControls();
 
     // Breakpoint marker style popover: colour + symbol (including empty).
+    // Built directly under <body> with fixed positioning (computed from the
+    // trigger button's own screen rect, not any ancestor) so it can never be
+    // clipped or misplaced by the settings panel's own scrolling/overflow -
+    // and uses plain buttons instead of a native <select>, since a native
+    // dropdown's OS-rendered popup can dispatch its closing click in a way
+    // that doesn't bubble through the select element, tripping outside-click
+    // detection and closing the whole popover mid-selection.
     loadBrkStyle();
-    const brkColorInput = el('brkColorInput');
-    const brkSymbolSelect = el('brkSymbolSelect');
-    const brkPopover = el('brkStylePopover');
-    const brkStyleBtn = el('brkStyleBtn');
-    if (brkColorInput) brkColorInput.value = brkStyle.color;
-    if (brkSymbolSelect) brkSymbolSelect.value = brkStyle.symbol;
-    if (brkStyleBtn && brkPopover) {
-        brkStyleBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            brkPopover.style.display = brkPopover.style.display === 'none' ? 'block' : 'none';
-        });
-        document.addEventListener('click', (e) => {
-            if (brkPopover.style.display !== 'none' && !brkPopover.contains(e.target) && e.target !== brkStyleBtn) {
-                brkPopover.style.display = 'none';
-            }
-        });
-    }
-    if (brkColorInput) {
-        brkColorInput.addEventListener('input', () => {
-            saveBrkStyle({ ...brkStyle, color: brkColorInput.value });
-        });
-    }
-    if (brkSymbolSelect) {
-        brkSymbolSelect.addEventListener('change', () => {
-            saveBrkStyle({ ...brkStyle, symbol: brkSymbolSelect.value });
-            debounceRender();
-        });
-    }
+    setupBrkStylePopover();
 
     // Set up checkbox listeners
     const checkboxes = ['enableBlack', 'enableDark', 'enableLight', 'showConsensus',
