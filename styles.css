@@ -2262,7 +2262,7 @@ body.var-sites-only .seq-data > span[data-pos]:not(.diff-highlight).var-site-hid
     width: 0.6em;
     min-width: 8px;
     text-align: center;
-    background: #d0d0d0;
+    background-color: var(--brk-bg, #d0d0d0);
     color: #666;
     font-size: 0.85em;
     cursor: default;
@@ -2271,12 +2271,17 @@ body.var-sites-only .seq-data > span[data-pos]:not(.diff-highlight).var-site-hid
     border-left: 1px solid #b0b0b0;
     border-right: 1px solid #b0b0b0;
     line-height: 1.2;
+    filter: brightness(1);
 }
 .col-breakpoint:hover {
-    background: #c0c0c0;
+    filter: brightness(0.9);
     color: #333;
 }
 body.var-sites-only.hide-breakpoints .col-breakpoint { display: none !important; }
+/* .consensus-line .seq-data span forces background-color:transparent !important
+   (avoids double-shading conflicts with base-colour classes on that row) -
+   this more specific selector is needed to let the marker's own colour win there too. */
+.consensus-line .seq-data span.col-breakpoint { background-color: var(--brk-bg, #d0d0d0) !important; }
 
 /* Keyboard shortcut displays — key column must not wrap */
 #infoModal > div strong,

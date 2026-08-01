@@ -182,7 +182,27 @@
                                     <input type="range" id="varSitesThreshold" min="0" max="100" value="0" step="1" style="width:90px;height:14px;flex:0 0 auto;" title="Minimum amount of sequences that must differ for a column to be shown">
                                     <input type="number" id="varSitesThresholdInput" min="0" max="100" step="1" value="0" style="width:46px;height:20px;font-size:11px;flex:0 0 auto;" title="Type an exact difference threshold">
                                     <span style="font-size:9px;white-space:nowrap;display:inline-block;min-width:56px;text-align:left;flex:0 0 auto;" id="varSitesThresholdLabel">≥0% diff</span>
-                                    <label id="varSitesBreakpointsLabel" style="font-size:10px;margin-left:4px;white-space:nowrap;" title="Mark hidden-column boundaries with a vertical ⋮ so collapsed regions stay visible"><input type="checkbox" id="varSitesBreakpoints" checked> Breakpoints</label>
+                                    <span style="position:relative;display:inline-flex;align-items:center;margin-left:4px;flex:0 0 auto;">
+                                        <label id="varSitesBreakpointsLabel" style="font-size:10px;white-space:nowrap;" title="Mark hidden-column boundaries with a vertical ⋮ so collapsed regions stay visible"><input type="checkbox" id="varSitesBreakpoints" checked> Breakpoints</label>
+                                        <button type="button" id="brkStyleBtn" title="Customize breakpoint marker appearance (colour, symbol)" style="font-size:9px;line-height:1;padding:1px 3px;margin-left:2px;border:1px solid #bbb;border-radius:2px;background:#f0f0f0;cursor:pointer;">▾</button>
+                                        <div id="brkStylePopover" style="display:none;position:absolute;top:100%;left:0;z-index:20;background:#fff;border:1px solid #999;border-radius:3px;box-shadow:0 2px 6px rgba(0,0,0,0.25);padding:6px 8px;font-size:10px;white-space:nowrap;">
+                                            <div style="display:flex;align-items:center;gap:4px;margin-bottom:4px;">
+                                                <label for="brkColorInput" style="flex:0 0 auto;">Colour</label>
+                                                <input type="color" id="brkColorInput" value="#d0d0d0" style="width:28px;height:18px;padding:0;border:1px solid #ccc;cursor:pointer;">
+                                            </div>
+                                            <div style="display:flex;align-items:center;gap:4px;">
+                                                <label for="brkSymbolSelect" style="flex:0 0 auto;">Symbol</label>
+                                                <select id="brkSymbolSelect" style="font-size:10px;">
+                                                    <option value="&#x22EE;" selected>⋮</option>
+                                                    <option value="&#x00A6;">¦</option>
+                                                    <option value=":">:</option>
+                                                    <option value="&#x2022;">•</option>
+                                                    <option value="&#x2758;">❘</option>
+                                                    <option value="">(empty)</option>
+                                                </select>
+                                            </div>
+                                        </div>
+                                    </span>
                                 </span>
                             </div>
                             <div style="display:flex;align-items:center;gap:6px;margin-left:74px;">
@@ -688,7 +708,7 @@
             <div id="headerInfoPanel">
                 <!-- Static fallback shown before script.js runs; script.js overwrites it
                      from BUILD_TAG. Keep in sync with BUILD_TAG or it silently rots. -->
-                <div id="versionIndicator">version v144</div>
+                <div id="versionIndicator">version v145</div>
                 <div id="sourceInfo">No file loaded</div>
             </div>
         </div>
@@ -1061,7 +1081,7 @@ B: -</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=144"></script>
+    <script src="script.js?v=145"></script>
     <script src="tree-draw.js"></script>
     <script>
     // All functionality moved to script.js

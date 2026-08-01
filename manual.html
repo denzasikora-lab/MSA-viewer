@@ -810,6 +810,18 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li>Breakpoint columns are non-interactive: they cannot be selected, edited, or included in exports.</li>
     <li>Uncheck <strong>Breakpoints</strong> to glue visible columns together without separators (original behaviour).</li>
   </ul>
+  <p>
+    <strong>Use case:</strong> the marker's default grey shading and <code>⋮</code> glyph are
+    a sensible default, but not always right for every screen or every printed figure - a
+    grey mark can be hard to spot against a busy background, easy to confuse with actual
+    sequence data at a glance, or simply not the house style for a publication figure. A
+    small <strong>▾</strong> button next to the Breakpoints checkbox opens a tiny popover
+    with two independent controls: a colour swatch for the marker's shading, and a symbol
+    dropdown (<code>⋮</code>, <code>¦</code>, <code>:</code>, <code>•</code>, <code>❘</code>,
+    or <strong>(empty)</strong> for no glyph at all — just a coloured strip marking where
+    columns were hidden). Both choices are saved and restored automatically the next time
+    you open the viewer.
+  </p>
   <p>Both features can be combined with Codon analysis (Full and Block modes only - see above).</p>
 
   <h3 id="di-colors">5.3 Alignment Colour Schemes</h3>

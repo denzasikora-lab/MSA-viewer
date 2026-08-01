@@ -1,12 +1,32 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v144';
+const BUILD_TAG = 'v145';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
 function _escapeHtml(s) {
     if (!s) return '';
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// Breakpoint marker appearance (colour + glyph) is a display preference, not
+// alignment data, so it lives outside `state` (which gets reset on every
+// file load) and persists across sessions via localStorage.
+const BRK_STYLE_DEFAULT = { color: '#d0d0d0', symbol: '⋮' };
+let brkStyle = BRK_STYLE_DEFAULT;
+
+function applyBrkStyle(style) {
+    brkStyle = style;
+    document.documentElement.style.setProperty('--brk-bg', style.color);
+}
+
+function loadBrkStyle() {
+    applyBrkStyle(safeLocalGet('msaviewer_brk_style', BRK_STYLE_DEFAULT));
+}
+
+function saveBrkStyle(style) {
+    applyBrkStyle(style);
+    try { localStorage.setItem('msaviewer_brk_style', JSON.stringify(style)); } catch (e) {}
 }
 
 function safeLocalGet(key, fallback = {}) {
@@ -4879,7 +4899,7 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
             if (showBrk && brkBeforePos.has(pos)) {
                 const r = brkInfo[pos];
                 const title = `${r.count} column${r.count > 1 ? 's' : ''} hidden (positions ${r.start + 1}\u2013${r.end + 1})`;
-                htmlParts.push(`<span class="col-breakpoint" data-break="${r.start}-${r.end}" title="${title}" style="pointer-events:none;">\u22EE</span>`);
+                htmlParts.push(`<span class="col-breakpoint" data-break="${r.start}-${r.end}" title="${title}" style="pointer-events:none;">${_escapeHtml(brkStyle.symbol)}</span>`);
             }
             const base = seq[pos] || '-';
             const baseUp = base.toUpperCase();
@@ -4980,7 +5000,7 @@ function addConsensusLine(parent, consensus, start, end, nameLen, stickyNames, b
             brkSpan.dataset.break = `${r.start}-${r.end}`;
             brkSpan.title = `${r.count} column${r.count > 1 ? 's' : ''} hidden (positions ${r.start + 1}\u2013${r.end + 1})`;
             brkSpan.style.pointerEvents = 'none';
-            brkSpan.textContent = '\u22EE';
+            brkSpan.textContent = brkStyle.symbol;
             dataSpan.appendChild(brkSpan);
         }
         const base = pos < consensus.length ? consensus[pos] : '-';
@@ -12236,6 +12256,37 @@ function attachUIListeners() {
     syncCodonModePanel();
     syncSearchControlsAvailability();
     syncVariationControls();
+
+    // Breakpoint marker style popover: colour + symbol (including empty).
+    loadBrkStyle();
+    const brkColorInput = el('brkColorInput');
+    const brkSymbolSelect = el('brkSymbolSelect');
+    const brkPopover = el('brkStylePopover');
+    const brkStyleBtn = el('brkStyleBtn');
+    if (brkColorInput) brkColorInput.value = brkStyle.color;
+    if (brkSymbolSelect) brkSymbolSelect.value = brkStyle.symbol;
+    if (brkStyleBtn && brkPopover) {
+        brkStyleBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            brkPopover.style.display = brkPopover.style.display === 'none' ? 'block' : 'none';
+        });
+        document.addEventListener('click', (e) => {
+            if (brkPopover.style.display !== 'none' && !brkPopover.contains(e.target) && e.target !== brkStyleBtn) {
+                brkPopover.style.display = 'none';
+            }
+        });
+    }
+    if (brkColorInput) {
+        brkColorInput.addEventListener('input', () => {
+            saveBrkStyle({ ...brkStyle, color: brkColorInput.value });
+        });
+    }
+    if (brkSymbolSelect) {
+        brkSymbolSelect.addEventListener('change', () => {
+            saveBrkStyle({ ...brkStyle, symbol: brkSymbolSelect.value });
+            debounceRender();
+        });
+    }
 
     // Set up checkbox listeners
     const checkboxes = ['enableBlack', 'enableDark', 'enableLight', 'showConsensus',
