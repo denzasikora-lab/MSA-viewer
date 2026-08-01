@@ -721,6 +721,16 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </p>
 
   <h3 id="di-checks">5.2 Highlight Diffs &amp; Variable Sites</h3>
+  <p>
+    <strong>Use case:</strong> exploring a long alignment that has several diagnostic
+    polymorphic columns scattered far apart, pigeonholed among long runs of similarity.
+    The goal is to see all the significant columns together, in close visual proximity,
+    in a single view - for this kind of inspection, highly-similar columns carry no
+    diagnostic information and actively get in the way of comparing the columns that
+    matter. <strong>Variable sites only</strong> removes every similarity column from
+    view entirely, so the differences that were previously separated by long distances
+    become directly observable next to each other.
+  </p>
   <p>Two checkboxes control visual filtering of conserved positions:</p>
   <ul>
     <li>
