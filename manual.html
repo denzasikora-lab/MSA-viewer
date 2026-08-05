@@ -669,18 +669,51 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <ul>
     <li><strong>Save</strong> - store current parameters under a name</li>
     <li><strong>Load</strong> - restore parameters from a saved preset</li>
-    <li><strong>Optimal</strong> - auto-fill balanced parameters for general subfamily detection</li>
+    <li><strong>Defaults</strong> - restore the standard starting parameters (Min Size 3, Min Features 5, quality 80/70/60, Min Occurrences 3). These are the values already loaded when the panel opens; nothing here is tuned to your alignment</li>
     <li>Presets are stored in <code>localStorage</code> and persist across sessions</li>
   </ul>
+
+  <h4 style="margin: 14px 0 4px;">Clusterability</h4>
+  <p>
+    A single clustering run cannot tell you whether the thresholds were too strict or whether
+    the data simply has no structure this method can find - both come back as zero clusters.
+    <strong>Clusterability</strong> answers that by running the clusterer across a spread of
+    settings: each parameter varied on its own from your current values, plus the loosest
+    combination the panel allows. It reports, for every run, how many clusters formed, how many
+    sequences were assigned, and the largest cluster.
+  </p>
+  <p>The summary above the table names three things:</p>
+  <ul>
+    <li>whether the alignment clusters <em>at all</em>, and under which settings it did best</li>
+    <li>which parameters <strong>changed</strong> the outcome</li>
+    <li>which parameters had <strong>no effect anywhere in their range</strong> - the useful half of
+      the answer, since it tells you where further tuning is wasted effort</li>
+  </ul>
+  <div class="note">
+    <strong>Note:</strong> Clusterability only surveys - it reads your parameters and leaves them
+    exactly as they were. Nothing is applied. Choose the settings you want and press
+    <strong>Cluster Now</strong>. A full survey takes tens of seconds on a large alignment, and the
+    table fills in row by row as each run finishes.
+  </div>
+
   <p>Typical workflow:</p>
   <ol>
     <li>Trim alignment ends with Preview -> Trim</li>
     <li>Adjust clustering parameters or load a preset</li>
+    <li>If unsure whether the alignment can cluster, or if a run returns nothing, press
+      <strong>Clusterability</strong> to see which settings are worth trying</li>
     <li>Click <strong>Cluster Now</strong></li>
     <li>Review results (cluster sizes, diagnostic features, feature tables)</li>
     <li>Use Actions -> <em>Colour by Cluster</em> to visualise groups</li>
     <li>Compute Group Consensus for selected clusters</li>
   </ol>
+  <div class="note">
+    <strong>A zero result is a threshold result.</strong> When no cluster forms, the results panel
+    now names the settings that discarded everything and quotes their current values. Lowering
+    <strong>Min Size</strong> is usually what admits small groups: at Min Size 3, sequences that
+    pair up two at a time are all rejected, so an alignment whose structure is pairwise reports
+    zero clusters until Min Size is 2.
+  </div>
 
   <h3 id="cl-understanding">4.6 Understanding Results</h3>
   <p>The clustering algorithm works as follows:</p>
@@ -1486,7 +1519,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="tp-clustering">12.4 Clustering Best Practices</h3>
   <ul>
     <li><strong>Always trim</strong> alignment ends before clustering - ragged edges inflate gap-based cluster scores</li>
-    <li>Start with the <strong>Optimal</strong> preset, then tighten thresholds if clusters look noisy</li>
+    <li>Start from <strong>Defaults</strong>, then tighten thresholds if clusters look noisy</li>
+    <li>If a run returns nothing, press <strong>Clusterability</strong> before changing settings by hand - it shows which parameters move the result on your data and which are inert</li>
     <li>Use <strong>Preview</strong> (trim) and review the cluster table before committing to colours</li>
     <li>For small families, lower <em>Min Size</em> to 2 and reduce quality thresholds</li>
     <li>For highly conserved families, increase quality thresholds (90%+ for small clusters)</li>
