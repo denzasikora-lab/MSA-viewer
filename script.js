@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v147';
+const BUILD_TAG = 'v148';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -3092,8 +3092,14 @@ async function handleBamFile(event) {
             totalReads = parsed.totalReads;
         }
 
-        // Check reference match
-        const loadedSeqs = state.seqs.map(s => ({ name: s.name, seq: s.seq }));
+        // Check reference match. Sequence records carry header/fullHeader, never `name`,
+        // so reading s.name matched undefined against every BAM reference and no BAM or SAM
+        // could ever load. Compare on the first whitespace-delimited token, which is what
+        // a SAM/BAM @SQ SN: field holds for a FASTA header like ">chr1 description".
+        const loadedSeqs = state.seqs.map(s => ({
+            name: String(s.fullHeader || s.header || '').trim().split(/\s+/)[0],
+            seq: s.seq
+        }));
         const { matchedRef, warnings } = BamParser.checkRefMatch(
             header.refNames, header.refLengths, loadedSeqs
         );
@@ -6475,18 +6481,40 @@ function pushUndo(type) {
     state.redoHistory = [];
 }
 
-function pushUndoRowPatch(type, rowIndex, beforeSeq, afterSeq) {
+// beforeWidth/afterWidth: an edit that runs past the end of the alignment widens every
+// row via normalizeAlignmentLengths(), so a patch that records only the edited row cannot
+// undo it — the other rows keep their padding and the alignment never shrinks back.
+function pushUndoRowPatch(type, rowIndex, beforeSeq, afterSeq, beforeWidth, afterWidth, label) {
     if (!state.seqs[rowIndex] || beforeSeq === afterSeq) return;
     state.deletedHistory.push({
         type,
+        label,
         patchType: 'row-seq',
         rowIndex,
         beforeSeq,
         afterSeq,
+        beforeWidth,
+        afterWidth,
         selectedRows: new Set(state.selectedRows),
         selectedColumns: new Set(state.selectedColumns)
     });
     state.redoHistory = [];
+}
+
+// Restore the alignment to a known column count. Only all-gap trailing columns are
+// removed, so this can never destroy a residue; if anything real sits past the target,
+// it declines and leaves the width alone.
+function trimAlignmentWidthTo(target) {
+    if (!Number.isInteger(target) || target <= 0) return false;
+    const current = state.seqs.reduce((m, s) => Math.max(m, s.seq.length), 0);
+    if (current === target) return true;
+    if (current < target) {
+        state.seqs.forEach(s => { if (s.seq.length < target) s.seq = s.seq.padEnd(target, GENEDOC_FILLER); });
+        return true;
+    }
+    if (state.seqs.some(s => /[A-Za-z]/.test(s.seq.slice(target)))) return false;
+    state.seqs.forEach(s => { if (s.seq.length > target) s.seq = s.seq.slice(0, target); });
+    return true;
 }
 
 function applyRowSeqPatch(entry, useAfter) {
@@ -6494,6 +6522,10 @@ function applyRowSeqPatch(entry, useAfter) {
     if (!Number.isInteger(rowIndex) || !state.seqs[rowIndex]) return false;
     const nextSeq = useAfter ? entry.afterSeq : entry.beforeSeq;
     if (typeof nextSeq !== 'string') return false;
+
+    const previousSeq = state.seqs[rowIndex].seq;
+    const widthBefore = state.seqs.reduce((m, s) => Math.max(m, s.seq.length), 0);
+
     state.seqs[rowIndex] = {
         ...state.seqs[rowIndex],
         seq: nextSeq,
@@ -6502,7 +6534,30 @@ function applyRowSeqPatch(entry, useAfter) {
     state.selectedRows = entry.selectedRows || new Set();
     state.selectedColumns = entry.selectedColumns || new Set();
     state.selectedNucs.clear();
-    normalizeAlignmentLengths();
+    // Put the alignment back to the width it had on this side of the edit, otherwise
+    // padding added to every other row survives the undo.
+    if (!trimAlignmentWidthTo(useAfter ? entry.afterWidth : entry.beforeWidth)) {
+        normalizeAlignmentLengths();
+    }
+    refreshAllGaplessPositions();
+
+    // One row changed, so only its columns need repainting (shading in them depends on the
+    // column composition, hence across all rows). Rebuilding every span costs ~1.4 s at 97k
+    // residues. Requires unchanged column geometry, so the existing spans still line up.
+    const widthAfter = state.seqs.reduce((m, s) => Math.max(m, s.seq.length), 0);
+    if (widthAfter === widthBefore && canReshadeInPlace()) {
+        const cols = new Set();
+        for (let p = 0; p < widthAfter; p++) {
+            if (previousSeq[p] !== nextSeq[p]) cols.add(p);
+        }
+        if (cols.size) {
+            reshadeChangedColumnsInPlace(cols);
+            if (typeof updateRowSelections === 'function') updateRowSelections();
+            if (typeof updateColumnSelections === 'function') updateColumnSelections();
+            if (typeof updateSourceInfo === 'function') updateSourceInfo();
+            return true;
+        }
+    }
     renderAlignment();
     return true;
 }
@@ -11146,7 +11201,8 @@ function showUndoRedoDropdown(buttonEl, stack, actionFn, labelPrefix) {
         const item = document.createElement('div');
         item.style.cssText = 'padding:4px 8px; cursor:pointer; border-bottom:1px solid #eee;';
         const num = stack.length - i;
-        item.textContent = `${num}. ${entry.type}`;
+        // Drag entries carry a label saying how far the move went; others just name the action.
+        item.textContent = `${num}. ${entry.label || entry.type}`;
         item.title = `${labelPrefix} to this point (${num} step${num > 1 ? 's' : ''})`;
         item.addEventListener('mouseenter', () => item.style.background = '#e8f0fe');
         item.addEventListener('mouseleave', () => item.style.background = 'white');
@@ -13506,16 +13562,24 @@ function handleGeneDocEditDragEnd() {
         refreshSequenceRowDom(drag.rowIndex, null, drag.originalSeq);
     }
     if (drag?.type === 'move' && drag.moved !== 0) {
-        pushUndoRowPatch(
-            drag.tool === 'slideKeepGaps' ? 'geneDocSlideText' : 'geneDocMoveText',
-            drag.rowIndex,
-            drag.originalSeq,
-            state.seqs[drag.rowIndex].seq
-        );
         normalizeAlignmentLengths();
         refreshAllGaplessPositions();
         state.editCell = { row: drag.rowIndex, pos: drag.anchorPos };
         const nextAlignmentLength = Math.max(...state.seqs.map(seqObj => seqObj.seq.length));
+        const toolLabel = drag.tool === 'slideKeepGaps' ? 'SlideText' : 'MoveText';
+        const columns = Math.abs(drag.moved);
+        const fullName = state.seqs[drag.rowIndex]?.header || `row ${drag.rowIndex + 1}`;
+        const rowName = fullName.length > 22 ? fullName.slice(0, 21) + '…' : fullName;
+        // Recorded after normalising, so both widths describe a settled alignment.
+        pushUndoRowPatch(
+            drag.tool === 'slideKeepGaps' ? 'geneDocSlideText' : 'geneDocMoveText',
+            drag.rowIndex,
+            drag.originalSeq,
+            state.seqs[drag.rowIndex].seq,
+            drag.originalAlignmentLength,
+            nextAlignmentLength,
+            `${toolLabel} ${columns} col ${drag.moved > 0 ? 'right' : 'left'} - ${rowName}`
+        );
         if (state.editLiveConservation || nextAlignmentLength !== drag.originalAlignmentLength) {
             renderAlignment({ deferConservation: !state.editLiveConservation });
         } else {
@@ -13523,8 +13587,7 @@ function handleGeneDocEditDragEnd() {
             refreshSequenceRowDom(drag.rowIndex, null, drag.originalSeq);
             if (typeof updateSourceInfo === 'function') updateSourceInfo();
         }
-        const label = drag.tool === 'slideKeepGaps' ? 'SlideText' : 'MoveText';
-        showMessage(`${label} moved ${Math.abs(drag.moved)} column(s).`, 1400);
+        showMessage(`${toolLabel} moved ${columns} column(s).`, 1400);
     }
 }
 
