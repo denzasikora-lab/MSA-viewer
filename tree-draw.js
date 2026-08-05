@@ -145,6 +145,101 @@
     return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
+  // Equal-angle unrooted layout (Felsenstein, Inferring Phylogenies, ch. 34 — the same
+  // scheme FigTree, Dendroscope and iTOL use). Each node receives an angular sector in
+  // proportion to the leaves below it, centred on the direction of its incoming edge, and
+  // sits at its parent's position advanced along that direction by the branch length.
+  function buildUnrootedSVGString(root, opts) {
+    opts = opts || {};
+    var measure = opts.measure || function (t) { return String(t).length * 6.8; };
+    var boxW = (opts.width || 700), boxH = (opts.height || 520);
+    var zoom = opts.zoom || 1;
+
+    var anyLen = false;
+    (function chk(n) { if (n.len > 0) anyLen = true; n.children.forEach(chk); })(root);
+
+    var uid = 0, leaves = [];
+    (function count(n) {
+      n._id = uid++;
+      n._leaves = n.children.length ? n.children.reduce(function (s, c) { return s + count(c); }, 0) : 1;
+      if (!n.children.length) leaves.push(n);
+      return n._leaves;
+    })(root);
+    if (!leaves.length) return '<div style="padding:8px;color:#777;">Empty tree.</div>';
+
+    var edgeLen = function (n) { return anyLen ? (n.len || 0) : 1; };
+    root.ux = 0; root.uy = 0; root.udir = 0;
+    (function place(n, start, sector) {
+      var a = start;
+      n.children.forEach(function (c) {
+        var sub = sector * (c._leaves / n._leaves);
+        var dir = a + sub / 2;
+        c.udir = dir;
+        c.ux = n.ux + edgeLen(c) * Math.cos(dir);
+        c.uy = n.uy + edgeLen(c) * Math.sin(dir);
+        place(c, a, sub);
+        a += sub;
+      });
+    })(root, 0, Math.PI * 2);
+
+    var minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    (function bounds(n) {
+      if (n.ux < minX) minX = n.ux; if (n.ux > maxX) maxX = n.ux;
+      if (n.uy < minY) minY = n.uy; if (n.uy > maxY) maxY = n.uy;
+      n.children.forEach(bounds);
+    })(root);
+
+    var fontSize = Math.max(8, 12 * zoom);
+    var maxLabel = 0;
+    leaves.forEach(function (l) { maxLabel = Math.max(maxLabel, measure(l.name || '?')); });
+    var margin = Math.min(maxLabel * zoom + 14, 240);
+
+    var spanX = Math.max(maxX - minX, 1e-9), spanY = Math.max(maxY - minY, 1e-9);
+    var innerW = Math.max(120, boxW - 2 * margin), innerH = Math.max(120, boxH - 2 * margin);
+    var scale = Math.min(innerW / spanX, innerH / spanY) * zoom;
+    var totalW = spanX * scale + 2 * margin, totalH = spanY * scale + 2 * margin;
+    function PX(n) { return margin + (n.ux - minX) * scale; }
+    function PY(n) { return margin + (n.uy - minY) * scale; }
+
+    var out = [];
+    out.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW.toFixed(0) + '" height="' + totalH.toFixed(0) +
+      '" viewBox="0 0 ' + totalW.toFixed(0) + ' ' + totalH.toFixed(0) + '" font-family="system-ui,-apple-system,Segoe UI,sans-serif">');
+
+    (function draw(n) {
+      n.children.forEach(function (c) {
+        var x1 = PX(n).toFixed(1), y1 = PY(n).toFixed(1), x2 = PX(c).toFixed(1), y2 = PY(c).toFixed(1);
+        out.push('<line class="tree-hit tree-branch-hit" data-node="' + c._id + '" x1="' + x1 + '" y1="' + y1 +
+          '" x2="' + x2 + '" y2="' + y2 + '" stroke="transparent" stroke-width="10"/>');
+        out.push('<line x1="' + x1 + '" y1="' + y1 + '" x2="' + x2 + '" y2="' + y2 +
+          '" stroke="#3a3a3a" stroke-width="1.5" stroke-linecap="round" pointer-events="none"/>');
+        draw(c);
+      });
+      if (n.children.length) {
+        out.push('<circle class="tree-hit tree-node-hit" data-node="' + n._id + '" cx="' + PX(n).toFixed(1) +
+          '" cy="' + PY(n).toFixed(1) + '" r="5" fill="transparent"/>');
+        out.push('<circle cx="' + PX(n).toFixed(1) + '" cy="' + PY(n).toFixed(1) +
+          '" r="2.2" fill="#7d97ad" pointer-events="none"/>');
+      }
+    })(root);
+
+    leaves.forEach(function (l) {
+      var toLeft = Math.cos(l.udir) < 0;
+      out.push('<text x="' + (PX(l) + (toLeft ? -5 : 5)).toFixed(1) + '" y="' + (PY(l) + fontSize / 3).toFixed(1) +
+        '" font-size="' + fontSize.toFixed(1) + '" fill="#1f1f1f" pointer-events="none"' +
+        (toLeft ? ' text-anchor="end"' : '') + '>' + esc(l.name || '?') + '</text>');
+    });
+
+    if (anyLen) {
+      var sbv = niceNum(spanX / 4), sbpx = sbv * scale, sy = totalH - 12;
+      out.push('<line x1="12" y1="' + sy.toFixed(1) + '" x2="' + (12 + sbpx).toFixed(1) + '" y2="' + sy.toFixed(1) +
+        '" stroke="#999" stroke-width="1.5"/>');
+      out.push('<text x="' + (12 + sbpx / 2).toFixed(1) + '" y="' + (sy - 4).toFixed(1) +
+        '" font-size="10" fill="#777" text-anchor="middle">' + sbv + '</text>');
+    }
+    out.push('</svg>');
+    return out.join('');
+  }
+
   function buildTreeSVGString(root, opts) {
     opts = opts || {};
     var measure = opts.measure || function (t) { return String(t).length * 6.8; };
@@ -152,6 +247,7 @@
     var zoom = opts.zoom || 1;
 
     if (!root) return '<div style="padding:8px;color:#a00;">Cannot draw tree.</div>';
+    if (opts.layout === 'unrooted') return buildUnrootedSVGString(root, opts);
 
     var anyLen = false;
     (function chk(n) { if (n.len > 0) anyLen = true; n.children.forEach(chk); })(root);
@@ -225,7 +321,7 @@
   }
 
   // ---------- module state ----------
-  var st = { root: null, original: null, sourceNewick: '', zoom: 1, mode: 'swap' };
+  var st = { root: null, original: null, sourceNewick: '', zoom: 1, mode: 'swap', layout: 'rect', full: false };
 
   function measurer() {
     var ctx = null;
@@ -244,10 +340,81 @@
     var box = document.getElementById('treeSvgCanvas');
     if (!box || !st.root) return;
     box.innerHTML = buildTreeSVGString(st.root, {
-      measure: measurer(), width: box.clientWidth || 700, zoom: st.zoom
+      measure: measurer(),
+      width: box.clientWidth || 700,
+      height: box.clientHeight || 520,
+      zoom: st.zoom,
+      layout: st.layout
     });
     var zl = document.getElementById('treeZoomLabel');
     if (zl) zl.textContent = Math.round(st.zoom * 100) + '%';
+  }
+
+  // ---------- export ----------
+  function currentSvgEl() {
+    var box = document.getElementById('treeSvgCanvas');
+    return box ? box.querySelector('svg') : null;
+  }
+
+  function svgMarkup() {
+    var svg = currentSvgEl();
+    if (!svg) return null;
+    // A white backing rect so the exported image is not transparent where viewers
+    // (and Word) would otherwise show black.
+    var clone = svg.cloneNode(true);
+    clone.querySelectorAll('.tree-hit').forEach(function (n) { n.remove(); });
+    var bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+    bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
+    bg.setAttribute('width', clone.getAttribute('width'));
+    bg.setAttribute('height', clone.getAttribute('height'));
+    bg.setAttribute('fill', '#ffffff');
+    clone.insertBefore(bg, clone.firstChild);
+    return new XMLSerializer().serializeToString(clone);
+  }
+
+  function saveBlob(blob, filename) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1000);
+  }
+
+  function exportSVG() {
+    var markup = svgMarkup();
+    if (!markup) return;
+    saveBlob(new Blob(['<?xml version="1.0" encoding="UTF-8"?>\n' + markup], { type: 'image/svg+xml;charset=utf-8' }), 'tree.svg');
+  }
+
+  function exportPNG() {
+    var markup = svgMarkup(), svg = currentSvgEl();
+    if (!markup || !svg) return;
+    var w = parseFloat(svg.getAttribute('width')) || 800;
+    var h = parseFloat(svg.getAttribute('height')) || 600;
+    var scale = 2;                                   // 2x so the raster stands up to print
+    var img = new Image();
+    img.onload = function () {
+      var cv = document.createElement('canvas');
+      cv.width = Math.ceil(w * scale); cv.height = Math.ceil(h * scale);
+      var ctx = cv.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, cv.width, cv.height);
+      ctx.drawImage(img, 0, 0, cv.width, cv.height);
+      cv.toBlob(function (blob) { if (blob) saveBlob(blob, 'tree.png'); }, 'image/png');
+    };
+    img.onerror = function () { alert('Could not rasterise the tree image.'); };
+    // The SVG is self-contained (no external refs), so a data URL keeps the canvas clean.
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(markup);
+  }
+
+  function setFullscreen(on) {
+    var panel = document.getElementById('treeSvgOutput');
+    if (!panel) return;
+    st.full = !!on;
+    panel.classList.toggle('tree-fullscreen', st.full);
+    var btn = panel.querySelector('button[data-act="fullscreen"]');
+    if (btn) btn.textContent = st.full ? 'Exit full screen' : 'Full screen';
+    setTimeout(draw, 30);
   }
 
   function setTree(root, pushNewick) {
@@ -291,8 +458,7 @@
     if (panel) return panel;
 
     panel = document.createElement('div');
-    panel.id = 'treeSvgOutput';
-    panel.style.cssText = 'margin:0 0 8px;';
+    panel.id = 'treeSvgOutput';   // spacing lives in styles.css so full screen can override it
     panel.innerHTML =
       '<div id="treeSvgToolbar" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;' +
       'font-size:11px;color:#31485c;padding:0 0 5px;">' +
@@ -302,15 +468,21 @@
         '<button type="button" class="tree-tool" data-act="zoom-in" title="Zoom in">+</button>' +
         '<button type="button" class="tree-tool" data-act="zoom-fit" title="Fit to width">Fit</button>' +
         '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
+        '<span style="color:#6b8299;">Layout</span>' +
+        '<label class="tree-mode"><input type="radio" name="treeLayout" value="rect" checked> rooted</label>' +
+        '<label class="tree-mode"><input type="radio" name="treeLayout" value="unrooted"> unrooted</label>' +
+        '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
         '<span style="color:#6b8299;">Click</span>' +
         '<label class="tree-mode"><input type="radio" name="treeClickMode" value="swap" checked> swap branches</label>' +
         '<label class="tree-mode"><input type="radio" name="treeClickMode" value="reroot"> re-root</label>' +
         '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
+        '<button type="button" class="tree-tool" data-act="export-svg" title="Download the drawing as SVG">SVG</button>' +
+        '<button type="button" class="tree-tool" data-act="export-png" title="Download the drawing as PNG (2x)">PNG</button>' +
+        '<button type="button" class="tree-tool" data-act="fullscreen" title="Expand the tree to the whole window (Esc to leave)">Full screen</button>' +
         '<button type="button" class="tree-tool" data-act="reset" title="Back to the computed tree">Reset</button>' +
         '<span id="treeHint" style="color:#8a9bab;"></span>' +
       '</div>' +
-      '<div id="treeSvgCanvas" style="border:1px solid #ddd;border-radius:6px;background:#fff;padding:6px;' +
-      'max-height:52vh;overflow:auto;"></div>';
+      '<div id="treeSvgCanvas"></div>';
     nwOut.parentNode.insertBefore(panel, nwOut);
 
     panel.querySelector('#treeSvgToolbar').addEventListener('click', function (ev) {
@@ -320,6 +492,9 @@
       if (act === 'zoom-in') st.zoom = Math.min(4, st.zoom * 1.25);
       else if (act === 'zoom-out') st.zoom = Math.max(0.25, st.zoom / 1.25);
       else if (act === 'zoom-fit') st.zoom = 1;
+      else if (act === 'export-svg') { exportSVG(); return; }
+      else if (act === 'export-png') { exportPNG(); return; }
+      else if (act === 'fullscreen') { setFullscreen(!st.full); return; }
       else if (act === 'reset') {
         if (st.original) {
           st.root = cloneTree(st.original);
@@ -336,6 +511,20 @@
         if (hint) hint.textContent = st.mode === 'reroot' ? 'click a branch' : 'click a node';
       });
     });
+    panel.querySelectorAll('input[name="treeLayout"]').forEach(function (r) {
+      r.addEventListener('change', function () { st.layout = r.value; draw(); });
+    });
+    document.addEventListener('keydown', function (ev) {
+      if (ev.key === 'Escape' && st.full) { ev.stopPropagation(); setFullscreen(false); }
+    }, true);
+    // The panel is resizable, so redraw to the new box when the user lets go.
+    if (typeof ResizeObserver === 'function') {
+      var pending = null;
+      new ResizeObserver(function () {
+        clearTimeout(pending);
+        pending = setTimeout(draw, 120);
+      }).observe(panel.querySelector('#treeSvgCanvas'));
+    }
     var canvas = panel.querySelector('#treeSvgCanvas');
     canvas.addEventListener('click', onCanvasClick);
     // Ctrl/Cmd + wheel zooms, matching the rest of the viewer.

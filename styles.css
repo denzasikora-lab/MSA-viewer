@@ -573,12 +573,44 @@ button:hover {
     margin: 0;
 }
 
-#treeSvgCanvas .tree-branch-hit {
+#treeSvgOutput {
+    margin: 0 0 8px;
+}
+
+/* Drag the bottom edge to make the tree box taller; it redraws to fit. */
+#treeSvgCanvas {
+    border: 1px solid #ddd;
+    border-radius: 6px;
+    background: #fff;
+    padding: 6px;
+    height: 52vh;
+    min-height: 180px;
+    overflow: auto;
+    resize: vertical;
+}
+
+#treeSvgCanvas .tree-branch-hit,
+#treeSvgCanvas .tree-node-hit {
     cursor: pointer;
 }
 
-#treeSvgCanvas .tree-node-hit {
-    cursor: pointer;
+/* Full screen: lift the panel out of the modal and give it the whole window. */
+#treeSvgOutput.tree-fullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 10050;
+    margin: 0;
+    padding: 10px 12px 12px;
+    background: #fff;
+    display: flex;
+    flex-direction: column;
+}
+
+#treeSvgOutput.tree-fullscreen #treeSvgCanvas {
+    flex: 1 1 auto;
+    height: auto;
+    max-height: none;
+    resize: none;
 }
 
 /* Undo/redo: one segmented control rather than four separately-styled buttons, with
