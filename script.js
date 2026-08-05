@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v151';
+const BUILD_TAG = 'v152';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -9244,6 +9244,23 @@ function displayClusteringResults(results) {
             ${results.summary.nAssigned} sequences assigned | ${results.summary.nUnassigned} unassigned
         </div>
     `;
+
+    // A bare "0 clusters" reads as a failed run. Name the settings that discarded
+    // everything, using the labels the clustering panel itself uses, so the result can be
+    // acted on instead of guessed at.
+    if (results.summary.nClusters === 0) {
+        const p = (typeof getClusteringParameters === 'function') ? getClusteringParameters() : null;
+        html += `
+        <div style="margin-bottom: 16px; padding: 8px; background: #fff6e5; border: 1px solid #f0d6a8; border-radius: 4px; font-size: 12px; line-height: 1.5;">
+            <strong>No group met the current settings</strong> - this is a threshold result, not an error.${p ? `
+            Groups of fewer than <strong>Min Size ${p.minSize}</strong> are discarded, as are groups with fewer than
+            <strong>Min Features ${p.minPerfect}</strong> diagnostic positions, or below the
+            <strong>Quality Thresholds</strong> of ${p.qualitySmall}/${p.qualityMedium}/${p.qualityLarge}%.` : ''}
+            Lowering <strong>Min Size</strong> is usually what admits small groups: at Min Size 3, sequences that pair up
+            two at a time are all rejected.
+        </div>
+        `;
+    }
 
     // Display each cluster
     results.clusters.forEach((cluster, idx) => {
