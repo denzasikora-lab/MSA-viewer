@@ -410,7 +410,10 @@
                                 <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px;">
                                     <button id="clusteringSavePresetButton" style="flex: 1; min-width: 60px; height: 22px; font-size: 10px;" title="Save current parameters as a named preset">Save</button>
                                     <button id="clusteringLoadPresetButton" style="flex: 1; min-width: 60px; height: 22px; font-size: 10px;" title="Load parameters from the selected preset">Load</button>
-                                    <button id="clusteringOptimalPresetButton" style="flex: 1; min-width: 70px; height: 22px; font-size: 10px;" title="Auto-fill parameters optimized for balanced subfamily detection">Optimal</button>
+                                    <button id="clusteringOptimalPresetButton" style="flex: 1; min-width: 70px; height: 22px; font-size: 10px;" title="Restore the standard starting parameters (Min Size 3, Min Features 5, quality 80/70/60, Min Occurrences 3). These are the values already loaded by default; nothing is tuned to your data.">Defaults</button>
+                                </div>
+                                <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px;">
+                                    <button id="clusteringProbeButton" style="flex: 1; height: 22px; font-size: 10px;" title="Run clustering across a range of settings to see whether this alignment clusters at all, and which parameters change the outcome">Clusterability</button>
                                 </div>
                                 <select id="clusteringPresetList" style="width: 100%; max-width: 150px; height: 24px; font-size: 11px;" title="Select a saved parameter preset to load">
                                     <option value="">-- Select preset --</option>
@@ -709,7 +712,7 @@
             <div id="headerInfoPanel">
                 <!-- Static fallback shown before script.js runs; script.js overwrites it
                      from BUILD_TAG. Keep in sync with BUILD_TAG or it silently rots. -->
-                <div id="versionIndicator">version v152</div>
+                <div id="versionIndicator">version v153</div>
                 <div id="sourceInfo">No file loaded</div>
             </div>
         </div>
@@ -1082,7 +1085,7 @@ B: -</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=152"></script>
+    <script src="script.js?v=153"></script>
     <script src="tree-draw.js"></script>
     <script>
     // All functionality moved to script.js

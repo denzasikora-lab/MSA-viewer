@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v152';
+const BUILD_TAG = 'v153';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -8700,17 +8700,11 @@ function undoTrimming() {
     debounceRender();
 }
 
-function clusterSequences() {
-    if (state.seqs.length < 3) {
-        showMessage("Need at least 3 sequences to cluster.", 3000);
-        return;
-    }
-
-    updateClusteringStatus('Running clustering algorithm...');
-
-    // Prepare sequences for clustering - respect soft trim if active
+// Sequences as the clusterer wants them, respecting soft trim if active. Shared with the
+// clusterability probe so the two can never disagree about what was clustered.
+function getSeqsForClustering() {
     const stb = state.softTrimBoundaries;
-    const seqsForClustering = state.seqs.map(seq => {
+    return state.seqs.map(seq => {
         let s = seq.seq;
         if (stb) {
             const leftEnd = (stb.leftTrimEnd >= 0) ? stb.leftTrimEnd + 1 : 0;
@@ -8719,6 +8713,165 @@ function clusterSequences() {
         }
         return { id: seq.header || seq.name || 'unnamed', seq: s };
     });
+}
+
+// ---- Clusterability probe -------------------------------------------------------------
+// A single run answers "did these settings cluster?", which cannot distinguish settings
+// that are too strict from data with no structure to find. This runs the clusterer over a
+// spread of settings and reports what changed the outcome and what did not, so a zero can
+// be read for what it is.
+
+function _clusterabilityGrid(base) {
+    const runs = [{ label: 'current settings', o: {} }];
+    const add = (label, o) => runs.push({ label, o });
+    [2, 3, 4, 5].forEach(v => { if (v !== base.minSize) add(`Min Size ${v}`, { minSize: v }); });
+    [1, 3, 5, 10].forEach(v => { if (v !== base.minPerfect) add(`Min Features ${v}`, { minPerfect: v }); });
+    [2, 3, 5, 10].forEach(v => { if (v !== base.minOccurrences) add(`Min Occurrences ${v}`, { minOccurrences: v }); });
+    [[90, 80, 70], [80, 70, 60], [60, 50, 40], [40, 30, 20]].forEach(q => {
+        if (q[0] !== base.qualitySmall) {
+            add(`Quality ${q[0]}/${q[1]}/${q[2]}`, { qualitySmall: q[0], qualityMedium: q[1], qualityLarge: q[2] });
+        }
+    });
+    // The loosest combination the panel allows: if this finds nothing, nothing will.
+    add('everything loosest', {
+        minSize: 2, minPerfect: 1, minOccurrences: 2,
+        qualitySmall: 40, qualityMedium: 30, qualityLarge: 20
+    });
+    return runs;
+}
+
+async function analyzeClusterability() {
+    if (state.seqs.length < 3) {
+        showMessage('Need at least 3 sequences to cluster.', 3000);
+        return;
+    }
+    const seqs = getSeqsForClustering();
+    const base = getClusteringParameters();
+    const grid = _clusterabilityGrid(base);
+    const modal = el('clusteringModal');
+    if (modal) modal.style.display = 'block';
+
+    const rows = [];
+    for (let i = 0; i < grid.length; i++) {
+        const g = grid[i];
+        updateClusteringStatus(`Clusterability: run ${i + 1} of ${grid.length} - ${g.label}...`);
+        // Repaint between runs, and show the table filling in: a full survey takes tens of
+        // seconds on a large alignment, and a blank panel that long reads as a hang.
+        _renderClusterabilityReport(rows, base, state.seqs.length, { done: i, total: grid.length });
+        await new Promise(r => setTimeout(r, 0));
+        try {
+            const res = new SINEClusterer(seqs).cluster(Object.assign({}, base, g.o));
+            rows.push({
+                label: g.label,
+                clusters: res.clusters.length,
+                assigned: res.summary.nAssigned,
+                largest: res.clusters.length ? Math.max(...res.clusters.map(c => c.size)) : 0
+            });
+        } catch (e) {
+            rows.push({ label: g.label, error: e.message });
+        }
+    }
+    updateClusteringStatus('');
+    _renderClusterabilityReport(rows, base, state.seqs.length);
+}
+
+function _renderClusterabilityReport(rows, base, nSeqs, progress) {
+    const content = el('clusteringContent');
+    if (!content) return;
+    if (progress) {
+        // Partial pass: show what has completed, without drawing conclusions yet.
+        let ph = `
+        <div style="margin-bottom: 14px; padding: 10px; background: #eef4fb; border: 1px solid #c5d8ee; border-radius: 4px; font-size: 12px;">
+            <div style="font-size: 13px; margin-bottom: 4px;">Clusterability</div>
+            Surveying settings - run ${progress.done + 1} of ${progress.total}. Results appear as each finishes.
+        </div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+            <tr style="background: #f2f5f8;">
+                <th style="text-align:left;padding:4px 6px;border-bottom:1px solid #ddd;">Setting</th>
+                <th style="text-align:right;padding:4px 6px;border-bottom:1px solid #ddd;">Clusters</th>
+                <th style="text-align:right;padding:4px 6px;border-bottom:1px solid #ddd;">Assigned</th>
+                <th style="text-align:right;padding:4px 6px;border-bottom:1px solid #ddd;">Largest</th>
+            </tr>`;
+        rows.forEach(r => {
+            ph += r.error
+                ? `<tr><td style="padding:3px 6px;">${r.label}</td><td colspan="3" style="padding:3px 6px;color:#a00;">${r.error}</td></tr>`
+                : `<tr><td style="padding:3px 6px;border-bottom:1px solid #f0f0f0;">${r.label}</td>
+                       <td style="padding:3px 6px;text-align:right;border-bottom:1px solid #f0f0f0;">${r.clusters}</td>
+                       <td style="padding:3px 6px;text-align:right;border-bottom:1px solid #f0f0f0;">${r.assigned}</td>
+                       <td style="padding:3px 6px;text-align:right;border-bottom:1px solid #f0f0f0;">${r.largest || ''}</td></tr>`;
+        });
+        content.innerHTML = ph + '</table>';
+        return;
+    }
+    const ok = rows.filter(r => !r.error);
+    const best = ok.reduce((a, b) => (b.assigned > (a ? a.assigned : -1) ? b : a), null);
+    const current = ok.find(r => r.label === 'current settings');
+    const anyClusters = ok.some(r => r.clusters > 0);
+
+    // Which knobs moved the outcome at all? A parameter that never changes the result is
+    // worth knowing about: it means tuning it on this alignment is wasted effort.
+    const groups = { 'Min Size': [], 'Min Features': [], 'Min Occurrences': [], 'Quality': [] };
+    ok.forEach(r => {
+        const key = Object.keys(groups).find(k => r.label.startsWith(k));
+        if (key) groups[key].push(r.assigned);
+    });
+    const baseAssigned = current ? current.assigned : 0;
+    const inert = Object.keys(groups).filter(k => groups[k].length && groups[k].every(v => v === baseAssigned));
+    const active = Object.keys(groups).filter(k => groups[k].length && groups[k].some(v => v !== baseAssigned));
+
+    let verdict;
+    if (!anyClusters) {
+        verdict = `<strong>No settings produced any cluster.</strong> Across ${ok.length} combinations, including the loosest the panel allows, nothing grouped. That points at the data rather than the thresholds: these ${nSeqs} sequences carry no shared diagnostic positions this method can act on.`;
+    } else if (best && best.label === 'current settings') {
+        verdict = `<strong>Your current settings are already the best of the ${ok.length} tried</strong>, assigning ${best.assigned} of ${nSeqs} sequences.`;
+    } else if (best) {
+        verdict = `<strong>This alignment does cluster, but not at the current settings.</strong> The best of the ${ok.length} combinations tried was <strong>${best.label}</strong>: ${best.clusters} cluster${best.clusters !== 1 ? 's' : ''}, ${best.assigned} of ${nSeqs} sequences assigned, largest cluster ${best.largest}.`;
+    }
+
+    let html = `
+        <div style="margin-bottom: 14px; padding: 10px; background: #eef4fb; border: 1px solid #c5d8ee; border-radius: 4px; font-size: 12px; line-height: 1.5;">
+            <div style="font-size: 13px; margin-bottom: 6px;">Clusterability</div>
+            ${verdict}
+            ${active.length ? `<div style="margin-top: 6px;">Changed the outcome: <strong>${active.join(', ')}</strong>.</div>` : ''}
+            ${inert.length ? `<div style="margin-top: 4px; color: #6b6b6b;">No effect anywhere in its range on this alignment: ${inert.join(', ')} - tuning ${inert.length > 1 ? 'those' : 'that'} here will not help.</div>` : ''}
+        </div>
+        <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
+            <tr style="background: #f2f5f8;">
+                <th style="text-align: left; padding: 4px 6px; border-bottom: 1px solid #ddd;">Setting</th>
+                <th style="text-align: right; padding: 4px 6px; border-bottom: 1px solid #ddd;">Clusters</th>
+                <th style="text-align: right; padding: 4px 6px; border-bottom: 1px solid #ddd;">Assigned</th>
+                <th style="text-align: right; padding: 4px 6px; border-bottom: 1px solid #ddd;">Largest</th>
+            </tr>`;
+    rows.forEach(r => {
+        const isBest = best && r.label === best.label && best.clusters > 0;
+        const isCurrent = r.label === 'current settings';
+        const bg = isBest ? 'background:#eaf7ea;' : (isCurrent ? 'background:#fdf6e3;' : '');
+        html += r.error
+            ? `<tr style="${bg}"><td style="padding:3px 6px;">${r.label}</td><td colspan="3" style="padding:3px 6px;color:#a00;">${r.error}</td></tr>`
+            : `<tr style="${bg}">
+                   <td style="padding:3px 6px;border-bottom:1px solid #f0f0f0;">${r.label}${isCurrent ? ' <em>(now)</em>' : ''}${isBest ? ' <strong>&larr; best</strong>' : ''}</td>
+                   <td style="padding:3px 6px;text-align:right;border-bottom:1px solid #f0f0f0;">${r.clusters}</td>
+                   <td style="padding:3px 6px;text-align:right;border-bottom:1px solid #f0f0f0;">${r.assigned}</td>
+                   <td style="padding:3px 6px;text-align:right;border-bottom:1px solid #f0f0f0;">${r.largest || ''}</td>
+               </tr>`;
+    });
+    html += `</table>
+        <div style="margin-top: 8px; font-size: 11px; color: #6b6b6b;">
+            Each row varies one setting from your current values; the last row loosens everything at once.
+            This is a survey only - nothing has been changed. Set the parameters you want and press Run Clustering.
+        </div>`;
+    content.innerHTML = html;
+}
+
+function clusterSequences() {
+    if (state.seqs.length < 3) {
+        showMessage("Need at least 3 sequences to cluster.", 3000);
+        return;
+    }
+
+    updateClusteringStatus('Running clustering algorithm...');
+
+    const seqsForClustering = getSeqsForClustering();
 
     // Get clustering parameters from UI
     const clusterParams = getClusteringParameters();
@@ -9133,7 +9286,7 @@ function createOptimalPreset(silent = false) {
     }
 
     if (!silent) {
-        showMessage('Created "optimal" preset (minOccurrences=3) - now run clustering!', 3000);
+        showMessage('Standard starting parameters restored - these are defaults, not tuned to your data.', 3000);
     }
     console.log('[Clustering] Created optimal preset:', optimalPreset);
 }
@@ -12018,6 +12171,7 @@ function initializeAppUI() {
         'clusteringSavePresetButton': saveClusteringPreset,
         'clusteringLoadPresetButton': loadClusteringPreset,
         'clusteringOptimalPresetButton': createOptimalPreset,
+        'clusteringProbeButton': analyzeClusterability,
         'savePresetButton': savePreset,
         'loadPresetButton': loadPreset,
         'snapshotCreateTopButton': createSnapshot,
