@@ -70,11 +70,29 @@
             <button id="saveAlignToolbarButton" class="edit-toggle-button" title="Download alignment as FASTA file" onclick="downloadAlignment()" style="font-size:10px;padding:0 5px;margin-left:2px;font-weight:normal;margin-right:6px;">Save</button>
             <input type="file" id="bamFileInput" accept=".bam,.sam" style="display:none;" onchange="handleBamFile(event)">
 
-            <div class="undo-redo-bar" style="display: inline-flex; gap: 1px; vertical-align: middle;">
-                <button id="undoButton" title="Undo (Ctrl+Z)" style="padding: 0 3px; font-size: 12px; height: 18px; line-height: 16px; cursor: pointer; border: 1px solid #ccc; background: #f0f0f0; border-radius: 3px 0 0 3px; min-width: 18px;"><-</button>
-                <button id="undoDropdownBtn" title="Undo history" style="padding: 0 2px; font-size: 8px; height: 18px; line-height: 16px; cursor: pointer; border: 1px solid #ccc; border-left: none; background: #f0f0f0; min-width: 10px;">v</button>
-                <button id="redoButton" title="Redo (Ctrl+Y)" style="padding: 0 3px; font-size: 12px; height: 18px; line-height: 16px; cursor: pointer; border: 1px solid #ccc; background: #f0f0f0; min-width: 18px;">-></button>
-                <button id="redoDropdownBtn" title="Redo history" style="padding: 0 2px; font-size: 8px; height: 18px; line-height: 16px; cursor: pointer; border: 1px solid #ccc; border-left: none; background: #f0f0f0; border-radius: 0 3px 3px 0; min-width: 10px;">v</button>
+            <div class="undo-redo-bar">
+                <button id="undoButton" class="history-btn" title="Undo (Ctrl+Z)" aria-label="Undo">
+                    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+                        <path d="M6.5 12.25H9.5a3.75 3.75 0 0 0 0-7.5H3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M5.75 2 2.5 4.75 5.75 7.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <button id="undoDropdownBtn" class="history-btn history-btn-caret" title="Undo history" aria-label="Undo history">
+                    <svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true" focusable="false">
+                        <path d="M1.75 3.75 5 7l3.25-3.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <button id="redoButton" class="history-btn history-btn-group-start" title="Redo (Ctrl+Y)" aria-label="Redo">
+                    <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true" focusable="false">
+                        <path d="M9.5 12.25H6.5a3.75 3.75 0 0 1 0-7.5H13" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                        <path d="M10.25 2 13.5 4.75 10.25 7.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <button id="redoDropdownBtn" class="history-btn history-btn-caret" title="Redo history" aria-label="Redo history">
+                    <svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true" focusable="false">
+                        <path d="M1.75 3.75 5 7l3.25-3.25" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
             </div>
 
             <button id="editToggleButton" class="edit-toggle-button" aria-pressed="false" title="Toggle GeneDoc-style sequence editing tools">Edit</button>
@@ -691,7 +709,7 @@
             <div id="headerInfoPanel">
                 <!-- Static fallback shown before script.js runs; script.js overwrites it
                      from BUILD_TAG. Keep in sync with BUILD_TAG or it silently rots. -->
-                <div id="versionIndicator">version v148</div>
+                <div id="versionIndicator">version v149</div>
                 <div id="sourceInfo">No file loaded</div>
             </div>
         </div>
@@ -1064,7 +1082,7 @@ B: -</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=148"></script>
+    <script src="script.js?v=149"></script>
     <script src="tree-draw.js"></script>
     <script>
     // All functionality moved to script.js

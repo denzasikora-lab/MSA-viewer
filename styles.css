@@ -543,6 +543,100 @@ button:hover {
     margin: 0;
 }
 
+/* Tree modal toolbar */
+.tree-tool {
+    height: 18px;
+    min-width: 20px;
+    padding: 0 5px;
+    font-size: 11px;
+    line-height: 16px;
+    border: 1px solid #c5d2df;
+    border-radius: 3px;
+    background: #f7f9fb;
+    color: #31485c;
+    cursor: pointer;
+}
+
+.tree-tool:hover {
+    background: #e8f0fe;
+    color: #103f66;
+}
+
+.tree-mode {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    white-space: nowrap;
+}
+
+.tree-mode input {
+    margin: 0;
+}
+
+#treeSvgCanvas .tree-branch-hit {
+    cursor: pointer;
+}
+
+#treeSvgCanvas .tree-node-hit {
+    cursor: pointer;
+}
+
+/* Undo/redo: one segmented control rather than four separately-styled buttons, with
+   drawn glyphs instead of ASCII arrows so they align on the same optical baseline. */
+.undo-redo-bar {
+    display: inline-flex;
+    vertical-align: middle;
+    margin: 0 4px 0 2px;
+}
+
+.history-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 18px;
+    min-width: 21px;
+    padding: 0;
+    border: 1px solid #c5d2df;
+    border-left-width: 0;
+    background: #f7f9fb;
+    color: #31485c;
+    cursor: pointer;
+}
+
+.history-btn:first-child {
+    border-left-width: 1px;
+    border-radius: 3px 0 0 3px;
+}
+
+.history-btn:last-child {
+    border-radius: 0 3px 3px 0;
+}
+
+/* Visual seam between the undo pair and the redo pair. */
+.history-btn-group-start {
+    border-left-width: 1px;
+    margin-left: 2px;
+    border-radius: 3px 0 0 3px;
+}
+
+.history-btn-caret {
+    min-width: 13px;
+    color: #6b8299;
+}
+
+.history-btn:hover {
+    background: #e8f0fe;
+    color: #103f66;
+}
+
+.history-btn:active {
+    background: #d7e5f8;
+}
+
+.history-btn svg {
+    display: block;
+}
+
 .edit-tool-separator {
     width: 1px;
     height: 16px;

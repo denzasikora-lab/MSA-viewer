@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v148';
+const BUILD_TAG = 'v149';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -13578,7 +13578,7 @@ function handleGeneDocEditDragEnd() {
             state.seqs[drag.rowIndex].seq,
             drag.originalAlignmentLength,
             nextAlignmentLength,
-            `${toolLabel} ${columns} col ${drag.moved > 0 ? 'right' : 'left'} - ${rowName}`
+            `${toolLabel} ${columns} col ${drag.moved > 0 ? 'right' : 'left'} · ${rowName}`
         );
         if (state.editLiveConservation || nextAlignmentLength !== drag.originalAlignmentLength) {
             renderAlignment({ deferConservation: !state.editLiveConservation });
