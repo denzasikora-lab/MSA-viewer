@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v146';
+const BUILD_TAG = 'v147';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -3896,8 +3896,10 @@ function renderAlignment(options = {}) {
 
     // -- Auto-detect: Canvas for large alignments --
     const TOTAL_RESIDUES = state.seqs.length * len;
-    // Disable span cache for large alignments (>80K residues) during view-only rendering
-    state._enableSpanCache = (TOTAL_RESIDUES <= 80000);
+    // Disable span cache for large alignments (>80K residues) during view-only rendering.
+    // Edit mode keeps it at any size: the cache is what lets a GeneDoc drag repaint one row
+    // instead of re-rendering the whole alignment on every column step.
+    state._enableSpanCache = (TOTAL_RESIDUES <= 80000) || !!state.editModeActive;
     const CANVAS_AUTO_THRESHOLD = 150000; // ~100 seq x 1500 col
     let _renderStartTime = performance.now();
     const userWantsCanvas = document.getElementById('modeCanvas')?.checked;
@@ -3912,6 +3914,9 @@ function renderAlignment(options = {}) {
             `Switch back to Block/Full for editing.`,
             6000
         );
+        // Canvas cannot service the edit tools. Silent: the message above already says so,
+        // and rerender:false because we are already inside the render that draws Canvas.
+        exitEditModeForUnsupportedView({ rerender: false, silent: true });
         // Re-read to pick up the new checked state
         // Canvas dispatch is handled below
     }
@@ -4784,6 +4789,9 @@ function getResidueAnnotationClasses(base, standard = RENDER_STANDARD_BASES, amb
     return classes.join(' ');
 }
 
+// Shared empty conservation array: every lookup misses, so residues render unshaded.
+const NO_CONSERVATION_DATA = [];
+
 function getSequenceRenderConfig() {
     return {
         blackThresh: parseInt(el('blackSlider')?.value || '100', 10) / 100,
@@ -4840,12 +4848,16 @@ function getTsdMarkDisplay(rowIndex, pos) {
 }
 
 function setSpanTsdMarkDisplay(span, rowIndex, pos) {
+    const rowMarks = state.tsdMarks?.get(rowIndex);
+    const marked = !!rowMarks?.has(pos);
+    // Unmarked span with nothing to clear: skip seven DOM writes. This runs per residue
+    // on every drag step, and these inline styles are only ever set by this function.
+    if (!marked && !span.classList.contains('tsd-mark')) return;
     span.classList.remove('tsd-mark', 'tsd-mark-bold', 'tsd-mark-color');
     span.style.backgroundColor = '';
     span.style.color = '';
     span.style.fontWeight = '';
-    const rowMarks = state.tsdMarks?.get(rowIndex);
-    if (!rowMarks || !rowMarks.has(pos)) return;
+    if (!marked) return;
     span.classList.add('tsd-mark');
     if (state.tsdMarkStyle === 'bold') {
         span.classList.add('tsd-mark-bold');
@@ -4858,7 +4870,15 @@ function setSpanTsdMarkDisplay(span, rowIndex, pos) {
     }
 }
 
-function refreshSequenceRowDom(rowIndex) {
+// limitPositions: optional Set of columns to repaint. Everything outside it is left
+// stale, so callers must reconcile the whole row before the edit is considered done
+// (the drag does this on mouse-up).
+// referenceSeq: the row as it was before the current edit. Columns that still match it
+// keep their existing conservation shading, because nothing about them changed: same
+// residue in this row, and no other row was touched, so the column consensus is
+// identical. Only repositioned residues drop to unshaded. Without a reference the row
+// falls back to unshaded throughout, which is what a plain refresh has always done.
+function refreshSequenceRowDom(rowIndex, limitPositions = null, referenceSeq = null) {
     const seqObj = state.seqs[rowIndex];
     if (!seqObj || !alignmentContainer) return false;
     const rowCache = state.spanCache?.get(rowIndex);
@@ -4866,14 +4886,17 @@ function refreshSequenceRowDom(rowIndex) {
 
     const len = Math.max(...state.seqs.map(s => s.seq.length));
     const config = getSequenceRenderConfig();
-    const conservationData = state.editLiveConservation
+    const conservationData = (state.editLiveConservation || referenceSeq)
         ? (getDeferredConservationData(len, config.shadeMode) || state.conservationDataCache?.data || [])
-        : [];
+        : NO_CONSERVATION_DATA;
 
     rowCache.forEach((span, pos) => {
+        if (limitPositions && !limitPositions.has(pos)) return;
         const base = seqObj.seq[pos] || GENEDOC_FILLER;
+        const repositioned = referenceSeq !== null && base !== (referenceSeq[pos] || GENEDOC_FILLER);
         span.textContent = base;
-        span.className = getSequenceBaseRenderClass(base, pos, config, conservationData);
+        span.className = getSequenceBaseRenderClass(
+            base, pos, config, repositioned ? NO_CONSERVATION_DATA : conservationData);
         setSpanTsdMarkDisplay(span, rowIndex, pos);
     });
 
@@ -5068,6 +5091,21 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
     }
     return lineDiv;
 }
+// A consensus letter is upper case when its column is conserved at or above the
+// threshold, lower case otherwise. Shared by the full render and the in-place reshade so
+// the two cannot drift apart.
+function consensusDisplayBase(base, pos, threshold) {
+    if (base === '-' || base === '.') return base;
+    const baseUp = base.toUpperCase();
+    const col = state.seqs.map(s => (s.seq[pos] || '-').toUpperCase());
+    const nonGapCol = col.filter(b => b !== '-' && b !== '.');
+    if (nonGapCol.length === 0) return base;
+    const counts = {};
+    nonGapCol.forEach(b => counts[b] = (counts[b] || 0) + 1);
+    const maxCount = Math.max(...Object.values(counts));
+    return (maxCount / col.length) >= threshold ? baseUp : baseUp.toLowerCase();
+}
+
 function addConsensusLine(parent, consensus, start, end, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, showLength = false, position = 'bottom', options = {}) {
     const consLine = document.createElement('div');
     consLine.className = `seq-line consensus-line consensus-${position}`;
@@ -5101,23 +5139,12 @@ function addConsensusLine(parent, consensus, start, end, nameLen, stickyNames, b
             dataSpan.appendChild(brkSpan);
         }
         const base = pos < consensus.length ? consensus[pos] : '-';
-        const baseUp = base.toUpperCase();
         const baseClass = getResidueAnnotationClasses(base);
 
         // Determine display case from column conservation (consensus STRING stays uppercase)
-        let displayBase = base;
-        if (!options.deferConservation && base !== '-' && base !== '.') {
-            const col = state.seqs.map(s => (s.seq[pos] || '-').toUpperCase());
-            const nonGapCol = col.filter(b => b !== '-' && b !== '.');
-            if (nonGapCol.length > 0) {
-                const counts = {};
-                nonGapCol.forEach(b => counts[b] = (counts[b] || 0) + 1);
-                const maxCount = Math.max(...Object.values(counts));
-                const threshold = clampConsensusPercent(el('consensusThreshold').value) / 100;
-                const freq = maxCount / col.length;
-                displayBase = freq >= threshold ? baseUp : baseUp.toLowerCase();
-            }
-        }
+        const displayBase = options.deferConservation
+            ? base
+            : consensusDisplayBase(base, pos, clampConsensusPercent(el('consensusThreshold').value) / 100);
 
         const span = document.createElement('span');
         span.className = baseClass;
@@ -5696,6 +5723,9 @@ function onModeChange() {
         container.style.pointerEvents = isBlocks ? 'auto' : 'none';
     }
     _updateCompactControlsVisibility();
+    // Switching to a view without residue spans: drop edit mode rather than leave a tool
+    // panel open over a display its tools cannot touch. Renders below, so no re-render here.
+    exitEditModeForUnsupportedView({ rerender: false });
     renderAlignment();
     setupHoverMenuReveal();
 }
@@ -12677,7 +12707,169 @@ function _recalcConservation() {
     showMessage('Conservation recalculated.', 1500);
 }
 
+// Block/Full are the only modes that build per-residue spans, so they are the only
+// ones with a span cache to keep warm.
+function isSpanRenderMode() {
+    return !el('modeCanvas')?.checked && !el('modeCompact')?.checked && !el('modeReads')?.checked;
+}
+
+// Canvas and Reads draw no per-residue spans, so the edit tools have nothing to act on:
+// the mouse handler never matches a residue and every tool silently does nothing. Say so
+// instead of opening a tool panel that appears to work.
+function editModeUnavailableMessage() {
+    const mode = el('modeCanvas')?.checked ? 'Canvas' : el('modeReads')?.checked ? 'Reads' : 'this';
+    return `Editing is not available in ${mode} mode. Switch back to Block/Full for editing.`;
+}
+
+// Leaving edit mode on in a view that cannot service it is the same trap, so drop out of
+// it when the view changes. rerender:false is for callers already inside a render pass.
+function exitEditModeForUnsupportedView({ rerender = true, silent = false } = {}) {
+    if (!state.editModeActive || isSpanRenderMode()) return false;
+    if (rerender) {
+        setGeneDocEditMode(false);
+    } else {
+        state.editModeActive = false;
+        clearGeneDocEditDrag();
+        state.editCell = null;
+        updateGeneDocEditUI();
+        updateEditActiveCell();
+    }
+    if (!silent) showMessage(editModeUnavailableMessage(), 3500);
+    return true;
+}
+
+// The last render may have skipped the span cache (size guard). Rebuild it once on
+// entering edit mode, so the first drag doesn't fall back to a full re-render per
+// column step.
+// Sequence strings are immutable, so holding a reference per row is free and any edit —
+// by any tool — replaces the string. That makes "did this edit session change anything?"
+// an O(rows) reference comparison rather than a flag every edit path must remember to set.
+function markEditSessionStart() {
+    state.editEntrySeqs = state.seqs.map(s => s.seq);
+}
+
+// Columns that differ from the session snapshot. null means the alignment's geometry
+// changed (row count or length), so nothing can be matched up column-wise.
+function columnsChangedSinceEditStart(snapshot) {
+    if (!snapshot || snapshot.length !== state.seqs.length) return null;
+    const lenBefore = snapshot.reduce((m, s) => Math.max(m, s.length), 0);
+    const lenAfter = state.seqs.reduce((m, s) => Math.max(m, s.seq.length), 0);
+    if (lenBefore !== lenAfter) return null;
+    const cols = new Set();
+    for (let i = 0; i < state.seqs.length; i++) {
+        const before = snapshot[i];
+        const after = state.seqs[i].seq;
+        if (before === after) continue;          // identical string reference: untouched row
+        for (let p = 0; p < lenAfter; p++) {
+            if (before[p] !== after[p]) cols.add(p);
+        }
+    }
+    return cols;
+}
+
+// A full render recomputes several things it then paints into spans — variable-site
+// columns, breakpoint markers, trim overlays. Reshading in place does not, so if any of
+// those are active, rebuild rather than risk a stale display.
+function canReshadeInPlace() {
+    return isSpanRenderMode()
+        && !!state.spanCache && state.spanCache.size > 0
+        && !(state._diffColumns && state._diffColumns.size)
+        && !(state._brkBeforePos && state._brkBeforePos.size)
+        && !state.trimBoundaries
+        && !state.softTrimBoundaries;
+}
+
+// Restore true shading in the columns the session actually changed, reusing the spans
+// already in the DOM. Rebuilding them instead costs ~1.4 s at 97k residues, almost all
+// of it style recalc and layout over elements whose geometry did not change.
+function reshadeChangedColumnsInPlace(cols) {
+    const len = state.seqs.reduce((m, s) => Math.max(m, s.seq.length), 0);
+    const shadeMode = _checkedRadioValue('shadeMode', 'all');
+    state.conservationDataCache = { len, shadeMode, data: preCalculateConservation(state.seqs, len, shadeMode) };
+
+    // Passing each row its own current sequence as the reference means no column counts
+    // as in-flux, so every repainted column takes the freshly computed shading.
+    state.spanCache.forEach((_rowCache, row) => {
+        if (row === CONSENSUS_ROW_INDEX) return;
+        const seqObj = state.seqs[row];
+        if (seqObj) refreshSequenceRowDom(row, cols, seqObj.seq);
+    });
+
+    const consRow = state.spanCache.get(CONSENSUS_ROW_INDEX);
+    if (consRow && consRow.size && el('showConsensus')?.checked) {
+        const consensus = computeConsensusForSequences(state.seqs.map(s => s.seq)).split('');
+        state.consensusCache = { len, values: consensus.slice() };
+        state.consensusSeq = consensus.join('').replace(/-/g, '');
+        const threshold = clampConsensusPercent(el('consensusThreshold').value) / 100;
+        consRow.forEach((span, pos) => {
+            if (!cols.has(pos)) return;
+            const base = pos < consensus.length ? consensus[pos] : '-';
+            span.className = getResidueAnnotationClasses(base);
+            span.textContent = consensusDisplayBase(base, pos, threshold);
+        });
+    }
+}
+
+// Leaving edit mode has to restore true conservation shading, which the session left
+// unshaded on repositioned residues. Do the least work that achieves that.
+function exitEditModeRepaint() {
+    const snapshot = state.editEntrySeqs;
+    state.editEntrySeqs = null;
+    const cols = columnsChangedSinceEditStart(snapshot);
+    if (cols && cols.size === 0) return;                 // nothing was edited
+    if (cols && cols.size && canReshadeInPlace()) {
+        reshadeChangedColumnsInPlace(cols);
+        return;
+    }
+    state.conservationDataCache = null;
+    renderAlignment();
+}
+
+function ensureEditSpanCache() {
+    if (state._enableSpanCache !== false || !isSpanRenderMode()) return;
+    // The spans are already in the DOM; the last render just declined to index them. Index
+    // what is there rather than re-rendering to get an index, which costs a full rebuild of
+    // every span (~1.4 s on a 97k-residue alignment) on a button press that should be free.
+    const cache = new Map();
+    let harvested = 0;
+    document.querySelectorAll('#alignmentContainer .seq-line').forEach(line => {
+        if (line.classList.contains('scale-ruler-line')) return;
+        // Block mode repeats a row once per block, so rows accumulate across .seq-line elements.
+        const row = line.classList.contains('consensus-line')
+            ? CONSENSUS_ROW_INDEX
+            : parseInt(line.dataset.seqIndex, 10);
+        if (!Number.isInteger(row)) return;
+        let rowCache = cache.get(row);
+        if (!rowCache) { rowCache = new Map(); cache.set(row, rowCache); }
+        const dataEl = line.querySelector('.seq-data');
+        if (!dataEl) return;
+        // Walk children directly with getAttribute: a descendant selector plus .dataset per
+        // span is markedly slower across ~100k nodes, and this runs on a button press.
+        const kids = dataEl.children;
+        for (let i = 0; i < kids.length; i++) {
+            const span = kids[i];
+            const raw = span.getAttribute('data-pos');
+            if (raw === null) continue;          // trailing seq-length label
+            rowCache.set(+raw, span);
+            harvested++;
+        }
+    });
+    if (!harvested) {
+        // Nothing rendered to harvest: fall back to a render, which indexes as it builds.
+        renderAlignment({ deferConservation: !state.editLiveConservation });
+        return;
+    }
+    state.spanCache = cache;
+    state._enableSpanCache = true;
+}
+
 function setGeneDocEditMode(active) {
+    const wasActive = state.editModeActive;
+    if (active && !isSpanRenderMode()) {
+        showMessage(editModeUnavailableMessage(), 3500);
+        updateGeneDocEditUI();
+        return;
+    }
     state.editModeActive = !!active;
     if (state.editModeActive && !GENEDOC_MOVE_TOOLS.has(state.editTool) && !GENEDOC_GAP_TOOLS.has(state.editTool) && state.editTool !== 'residue' && state.editTool !== 'selectColumn') {
         state.editTool = 'moveNoGaps';
@@ -12685,9 +12877,10 @@ function setGeneDocEditMode(active) {
     if (!state.editModeActive) {
         clearGeneDocEditDrag();
         state.editCell = null;
-        // Recalculate conservation on edit mode exit
-        state.conservationDataCache = null;
-        renderAlignment();
+        exitEditModeRepaint();
+    } else if (!wasActive) {
+        markEditSessionStart();
+        ensureEditSpanCache();
     }
     updateGeneDocEditUI();
     updateEditActiveCell();
@@ -12696,9 +12889,18 @@ function setGeneDocEditMode(active) {
 
 function setGeneDocEditTool(tool) {
     if (!GENEDOC_MOVE_TOOLS.has(tool) && !GENEDOC_GAP_TOOLS.has(tool) && tool !== 'residue' && tool !== 'selectColumn') return;
+    if (!isSpanRenderMode()) {
+        showMessage(editModeUnavailableMessage(), 3500);
+        return;
+    }
+    const wasActive = state.editModeActive;
     state.editTool = tool;
     state.editModeActive = true;
     clearGeneDocEditDrag();
+    if (!wasActive) {
+        markEditSessionStart();
+        ensureEditSpanCache();
+    }
     if (tool !== 'residue') state.editCell = null;
     updateGeneDocEditUI();
     updateEditActiveCell();
@@ -12810,13 +13012,11 @@ function geneDocSlideStepString(seq, pos, direction) {
         const result = geneDocInsertDashString(seq, pos);
         return { seq: result.seq, moved: result.changed ? 1 : 0 };
     }
-    // Left: scan for any gap to the left (not just immediately adjacent)
-    let gapPos = -1;
-    for (let i = pos - 1; i >= 0; i--) {
-        if (isGeneDocGapChar(chars[i])) { gapPos = i; break; }
-    }
-    if (gapPos === -1) return { seq, moved: 0 };
-    chars.splice(gapPos, 1);
+    // Left: only the gap immediately left of the grab is consumable. Scanning further
+    // (653047d) let a mid-run drag splice out a gap hundreds of columns away, which
+    // rewrites every column between that gap and the end of the row.
+    if (pos === 0 || !isGeneDocGapChar(chars[pos - 1])) return { seq, moved: 0 };
+    chars.splice(pos - 1, 1);
     chars.push(GENEDOC_FILLER);
     return { seq: chars.join(''), moved: -1 };
 }
@@ -12927,13 +13127,8 @@ function canGeneDocMove(rowIndex, pos, direction, tool) {
         }
         return false;
     }
-    if (tool === 'slideKeepGaps') {
-        // Slide Keep Gaps: any gap to the left is consumable
-        for (let scan = pos - 1; scan >= 0; scan--) {
-            if (isGeneDocGapChar(seq[scan])) return true;
-        }
-        return false;
-    }
+    // Slide Keep Gaps falls through: it may only start a left move when the gap it would
+    // consume is immediately left of the grab, matching geneDocSlideStepString.
     return pos > 0 && isGeneDocGapChar(seq[pos - 1]);
 }
 
@@ -12952,6 +13147,142 @@ function getGeneDocCharWidth(span) {
     if (rect.width > 0) return rect.width;
     const fontSize = parseFloat(getComputedStyle(span).fontSize) || 13;
     return Math.max(6, fontSize * 0.62);
+}
+
+// ---- Drag overlay -------------------------------------------------------------------
+// Mutating a residue span costs ~20-35 ms because the browser re-rasterises the visible
+// grid, and that cost is nearly independent of how many spans changed. So during a drag
+// the DOM is left alone entirely: a canvas over the dragged row paints the repositioned
+// residues instead. Everything else stays transparent, so untouched columns keep showing
+// their real spans, correctly shaded and pixel-aligned. The DOM is reconciled on mouse-up.
+
+// Anything that changes the geometry or decoration of a row's spans breaks either the
+// fixed-pitch column arithmetic below or the illusion that the canvas matches the DOM.
+// In those cases the drag falls back to repainting spans.
+function canUseGeneDocDragOverlay(rowIndex) {
+    return isSpanRenderMode()
+        && !state.editLiveConservation
+        && !(state._brkBeforePos && state._brkBeforePos.size)   // breakpoints insert extra spans
+        && !(state._diffColumns && state._diffColumns.size)     // var-sites hides columns
+        && !(state.selectedColumns && state.selectedColumns.size)
+        && !(state.repeatHighlights && state.repeatHighlights.size)
+        && !(state.tsdMarks && state.tsdMarks.get(rowIndex)?.size)
+        && !document.body.classList.contains('codon-mode');
+}
+
+function _firstNonTransparentBackground(startEl) {
+    for (let el = startEl; el && el !== document.documentElement; el = el.parentElement) {
+        const bg = getComputedStyle(el).backgroundColor;
+        if (bg && bg !== 'transparent' && !bg.startsWith('rgba(0, 0, 0, 0)')) return bg;
+    }
+    return '#ffffff';
+}
+
+// What is genuinely on screen: the alignment container clipped to the window. The
+// container itself is usually taller than the window, so testing against its rect alone
+// treats every wrapped block as visible.
+function visibleAlignmentRect() {
+    if (!alignmentContainer) return null;
+    const r = alignmentContainer.getBoundingClientRect();
+    const top = Math.max(r.top, 0);
+    const left = Math.max(r.left, 0);
+    const bottom = Math.min(r.bottom, window.innerHeight || document.documentElement.clientHeight);
+    const right = Math.min(r.right, window.innerWidth || document.documentElement.clientWidth);
+    if (bottom <= top || right <= left) return null;
+    return { top, left, bottom, right };
+}
+
+// Sample the real colours off the row rather than hard-coding them, so the canvas matches
+// whatever theme/colour scheme is in force.
+function _sampleGeneDocRowStyle(dataEl) {
+    const probe = document.createElement('span');
+    dataEl.appendChild(probe);
+    probe.className = 'other';
+    const cs = getComputedStyle(probe);
+    const font = cs.font || `${cs.fontSize} ${cs.fontFamily}`;
+    const fg = cs.color;
+    probe.className = 'gap';
+    const gapFg = getComputedStyle(probe).color;
+    probe.remove();
+    return { font, fg, gapFg, bg: _firstNonTransparentBackground(dataEl) };
+}
+
+function createGeneDocDragOverlay(drag) {
+    if (!alignmentContainer || !canUseGeneDocDragOverlay(drag.rowIndex)) return null;
+    const dataEls = document.querySelectorAll(`.seq-line[data-seq-index="${drag.rowIndex}"] .seq-data`);
+    if (!dataEls.length) return null;
+
+    const view = visibleAlignmentRect();
+    if (!view) return null;
+    const dpr = window.devicePixelRatio || 1;
+    const layers = [];
+    let style = null;
+
+    dataEls.forEach(dataEl => {
+        const r = dataEl.getBoundingClientRect();
+        if (r.bottom <= view.top || r.top >= view.bottom) return;      // block off-screen
+        const first = dataEl.firstElementChild;
+        const firstPos = first ? +first.getAttribute('data-pos') : NaN;
+        if (!Number.isInteger(firstPos)) return;
+        const left = Math.max(r.left, view.left);
+        const right = Math.min(r.right, view.right);
+        if (right - left < 1 || r.height < 1) return;
+
+        if (!style) style = _sampleGeneDocRowStyle(dataEl);
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.ceil((right - left) * dpr);
+        canvas.height = Math.ceil(r.height * dpr);
+        canvas.style.cssText = `position:fixed;left:${left}px;top:${r.top}px;`
+            + `width:${right - left}px;height:${r.height}px;pointer-events:none;z-index:30;`;
+        document.body.appendChild(canvas);
+        const ctx = canvas.getContext('2d');
+        ctx.scale(dpr, dpr);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.font = style.font;
+        layers.push({ canvas, ctx, firstPos, originX: r.left, left, right, width: right - left, height: r.height });
+    });
+
+    if (!layers.length) return null;
+    return { layers, style, scheme: getEffectiveColorScheme() };
+}
+
+function drawGeneDocDragOverlay(drag) {
+    const overlay = drag.overlay;
+    if (!overlay) return;
+    const seq = state.seqs[drag.rowIndex]?.seq || '';
+    const before = drag.originalSeq;
+    const cw = drag.charWidth;
+    const { fg, gapFg, bg } = overlay.style;
+    const monochrome = usesMonochromeShading(overlay.scheme);
+
+    for (const L of overlay.layers) {
+        L.ctx.clearRect(0, 0, L.width, L.height);
+        const from = Math.max(0, Math.floor((L.left - L.originX) / cw) - 1);
+        const to = Math.ceil((L.right - L.originX) / cw) + 1;
+        for (let i = from; i <= to; i++) {
+            const pos = L.firstPos + i;
+            const ch = seq[pos];
+            if (ch === undefined) break;
+            // Untouched column: leave it transparent so its real span shows through.
+            if (ch === (before[pos] === undefined ? GENEDOC_FILLER : before[pos])) continue;
+            const x = L.originX + i * cw - L.left;
+            const scheme = monochrome ? null : getResidueSchemeStyle(ch, overlay.scheme);
+            L.ctx.fillStyle = (scheme && scheme.bg) || bg;
+            L.ctx.fillRect(x, 0, cw, L.height);
+            L.ctx.fillStyle = (scheme && scheme.fg) || (isGeneDocResidueChar(ch) ? fg : gapFg);
+            L.ctx.fillText(ch, x + cw / 2, L.height / 2);
+        }
+    }
+}
+
+// syncDom: the DOM is stale wherever the overlay has been painting, so bring the row back
+// in step whenever the overlay goes away mid-drag (a scroll moves it out of position).
+function destroyGeneDocDragOverlay(drag, syncDom) {
+    if (!drag || !drag.overlay) return;
+    drag.overlay.layers.forEach(L => L.canvas.remove());
+    drag.overlay = null;
+    if (syncDom) refreshSequenceRowDom(drag.rowIndex, null, drag.originalSeq);
 }
 
 function handleGeneDocEditMouseDown(e) {
@@ -12999,13 +13330,18 @@ function startGeneDocMoveDrag(e, rowIndex, pos, tool, span) {
         charWidth: getGeneDocCharWidth(span),
         originalSeq: state.seqs[rowIndex].seq,
         originalAlignmentLength: Math.max(...state.seqs.map(seqObj => seqObj.seq.length)),
-        moved: 0
+        moved: 0,
+        visiblePositions: null,
+        visibleComputedAtMoved: 0,
+        rafPending: false,
+        pendingClientX: e.clientX
     };
     state.editCell = { row: rowIndex, pos };
     updateEditActiveCell();
     document.body.style.cursor = 'default';
     document.addEventListener('mousemove', handleGeneDocEditDragMove);
     document.addEventListener('mouseup', handleGeneDocEditDragEnd);
+    alignmentContainer?.addEventListener('scroll', invalidateGeneDocDragVisiblePositions, { passive: true });
 }
 
 function startGeneDocColumnDrag(pos) {
@@ -13048,7 +13384,22 @@ function handleGeneDocEditDragMove(e) {
     }
 
     if (drag.type !== 'move') return;
-    const rawSteps = Math.trunc((e.clientX - drag.lastClientX) / drag.charWidth);
+
+    // Coalesce every mousemove within a frame into a single repaint, so the repaint rate is
+    // capped by the display rather than by how fast the mouse reports. A fast flick still
+    // lands on the right column: the deferred step reads the latest position.
+    drag.pendingClientX = e.clientX;
+    if (drag.rafPending) return;
+    drag.rafPending = true;
+    requestAnimationFrame(() => {
+        drag.rafPending = false;
+        // Guard against a frame landing after mouse-up, which would edit past the undo snapshot.
+        if (state.editDrag === drag) applyGeneDocDragStep(drag, drag.pendingClientX);
+    });
+}
+
+function applyGeneDocDragStep(drag, clientX) {
+    const rawSteps = Math.trunc((clientX - drag.lastClientX) / drag.charWidth);
     if (rawSteps === 0) return;
     const amount = Math.max(-50, Math.min(50, rawSteps));
     const direction = Math.sign(amount);
@@ -13063,19 +13414,97 @@ function handleGeneDocEditDragMove(e) {
         state.seqs[drag.rowIndex].gaplessPositions = calculateGaplessPositions(state.seqs[drag.rowIndex].seq);
         drag.anchorPos += totalMoved;
         state.editCell = { row: drag.rowIndex, pos: drag.anchorPos };
-        if (state.editLiveConservation || !refreshSequenceRowDom(drag.rowIndex)) {
-            renderAlignment({ deferConservation: !state.editLiveConservation });
-        }
-        drag.lastClientX += totalMoved * drag.charWidth;
         drag.moved += totalMoved;
+        repaintGeneDocDragRow(drag);
+        drag.lastClientX += totalMoved * drag.charWidth;
     } else {
-        drag.lastClientX = e.clientX;
+        drag.lastClientX = clientX;
+    }
+}
+
+// One column step of a Move/Slide drag repaints only the on-screen columns of the dragged
+// row. Columns scrolled out of view are left stale until mouse-up, which reconciles the
+// whole row (see handleGeneDocEditDragEnd).
+function repaintGeneDocDragRow(drag) {
+    // Live conservation reshades every row, so it can only be served by a full render.
+    if (state.editLiveConservation) {
+        renderAlignment({ deferConservation: false });
+        return;
+    }
+    // Preferred path: paint the moved residues onto a canvas and never touch the DOM.
+    if (drag.overlay === undefined) drag.overlay = createGeneDocDragOverlay(drag);
+    if (drag.overlay) {
+        drawGeneDocDragOverlay(drag);
+        return;
+    }
+    if (!refreshSequenceRowDom(drag.rowIndex, getGeneDocDragVisiblePositions(drag), drag.originalSeq)) {
+        // No span cache for this row (mode without spans, or a render that skipped it).
+        renderAlignment({ deferConservation: true });
+    }
+}
+
+// Columns of the dragged row currently on screen, padded so residues sliding in from
+// just outside the viewport still repaint. Cached per drag: recomputed on scroll and
+// every 20 columns of travel, since inserting columns shifts the row under the cursor.
+function getGeneDocDragVisiblePositions(drag) {
+    if (drag.visiblePositions && Math.abs(drag.moved - drag.visibleComputedAtMoved) <= 20) {
+        return drag.visiblePositions;
+    }
+    const rowCache = state.spanCache?.get(drag.rowIndex);
+    if (!rowCache || !alignmentContainer) return null;
+
+    // Measure the row's containers, not its residues: Block mode gives one .seq-data per
+    // block (~20 of them), Full mode a single one. Rect-testing every span instead costs
+    // more than the repaint it saves, which is the whole point of this engine.
+    const dataEls = document.querySelectorAll(`.seq-line[data-seq-index="${drag.rowIndex}"] .seq-data`);
+    if (!dataEls.length) return null;
+
+    const view = visibleAlignmentRect();
+    if (!view) return null;
+    const pad = 200;
+    const cw = drag.charWidth || 8;
+    const positions = new Set();
+
+    dataEls.forEach(dataEl => {
+        const r = dataEl.getBoundingClientRect();
+        // Whole block scrolled out of view vertically.
+        if (r.bottom < view.top - pad || r.top > view.bottom + pad) return;
+        const first = dataEl.firstElementChild;
+        const firstPos = first ? parseInt(first.dataset.pos, 10) : NaN;
+        if (!Number.isInteger(firstPos)) return;
+        // Columns are a fixed-width run from the block's left edge, so the horizontally
+        // visible slice is arithmetic — no per-span measurement needed.
+        const count = dataEl.childElementCount;
+        const from = Math.max(0, Math.floor((view.left - pad - r.left) / cw));
+        const to = Math.min(count - 1, Math.ceil((view.right + pad - r.left) / cw));
+        for (let i = from; i <= to; i++) positions.add(firstPos + i);
+    });
+
+    drag.visiblePositions = positions;
+    drag.visibleComputedAtMoved = drag.moved;
+    return positions;
+}
+
+function invalidateGeneDocDragVisiblePositions() {
+    if (!state.editDrag) return;
+    state.editDrag.visiblePositions = null;
+    // The overlay is positioned in viewport coordinates, so scrolling leaves it over the
+    // wrong cells. Drop it (syncing the DOM it was covering) and rebuild on the next step.
+    if (state.editDrag.overlay) {
+        destroyGeneDocDragOverlay(state.editDrag, true);
+        state.editDrag.overlay = undefined;
     }
 }
 
 function handleGeneDocEditDragEnd() {
     const drag = state.editDrag;
+    const usedOverlay = !!(drag && drag.overlay);
     clearGeneDocEditDrag();
+    // A net move of zero does not guarantee the row came back to its starting string, and
+    // with the overlay the DOM was never touched, so sync it before returning.
+    if (usedOverlay && drag && drag.moved === 0 && state.seqs[drag.rowIndex]?.seq !== drag.originalSeq) {
+        refreshSequenceRowDom(drag.rowIndex, null, drag.originalSeq);
+    }
     if (drag?.type === 'move' && drag.moved !== 0) {
         pushUndoRowPatch(
             drag.tool === 'slideKeepGaps' ? 'geneDocSlideText' : 'geneDocMoveText',
@@ -13090,7 +13519,8 @@ function handleGeneDocEditDragEnd() {
         if (state.editLiveConservation || nextAlignmentLength !== drag.originalAlignmentLength) {
             renderAlignment({ deferConservation: !state.editLiveConservation });
         } else {
-            refreshSequenceRowDom(drag.rowIndex);
+            // Reconcile the whole row, keeping shading on every column the drag left alone.
+            refreshSequenceRowDom(drag.rowIndex, null, drag.originalSeq);
             if (typeof updateSourceInfo === 'function') updateSourceInfo();
         }
         const label = drag.tool === 'slideKeepGaps' ? 'SlideText' : 'MoveText';
@@ -13099,8 +13529,12 @@ function handleGeneDocEditDragEnd() {
 }
 
 function clearGeneDocEditDrag() {
+    // Drop the canvas without syncing: every caller either reconciles the row itself
+    // (drag end) or is abandoning the drag entirely.
+    destroyGeneDocDragOverlay(state.editDrag, false);
     document.removeEventListener('mousemove', handleGeneDocEditDragMove);
     document.removeEventListener('mouseup', handleGeneDocEditDragEnd);
+    alignmentContainer?.removeEventListener('scroll', invalidateGeneDocDragVisiblePositions);
     document.body.style.cursor = '';
     state.editDrag = null;
 }
