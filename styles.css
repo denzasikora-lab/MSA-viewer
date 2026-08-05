@@ -2267,9 +2267,6 @@ span.diagnostic-mutation {
 /* Highlight-diffs mode: dim columns that match the consensus (highlight differences) */
 body.highlight-diffs .seq-data > span:not(.diff-highlight) { opacity: 0.4; }
 body.highlight-diffs .seq-data > span.diff-highlight { font-weight: bold; }
-  opacity: 0.25;
-  font-size: 0.7em;
-}
 
 
 /* ── Codon Analysis ── */
