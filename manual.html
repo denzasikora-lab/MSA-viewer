@@ -394,6 +394,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="gs-updates">1.6 Recent Updates</h3>
   <p>Recent updates added or improved the following features:</p>
   <ul>
+    <li><strong>Tree drawing</strong> - the Tree window now draws the tree with zoom, rooted and unrooted (equal-angle) layouts, branch swapping, re-rooting on a clicked branch, a resizable box, full screen, and SVG or PNG export of the picture.</li>
+    <li><strong>Faster editing</strong> - Move and Slide dragging, entering and leaving Edit Mode, and undo/redo are no longer slowed by alignment size; conservation shading now drops only on residues a drag actually moved, instead of the whole row.</li>
     <li><strong>Variable-sites threshold &amp; breakpoint markers</strong> - percentage-based slider (0–100%) controls minimum variation for a column to be shown; breakpoint separators (⋮) indicate where conserved columns were hidden.</li>
     <li><strong>BLAST search with database management</strong> - right-click BLAST search with dynamic local database creation (makeblastdb), add/remove databases from the viewer, batch BLAST against all databases.</li>
     <li><strong>Restriction Sites</strong> search in the Search menu, with 50 common enzymes, manual site input, IUPAC ambiguity support, and optional reverse-complement search.</li>
@@ -1031,7 +1033,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="ed-editmode">8.3 GeneDoc-Style Edit Mode</h3>
   <p>
     Toggle <strong>Edit Mode</strong> from the Edit menu or the toolbar.
-    When active, three edit tools appear:
+    When active, these edit tools appear:
   </p>
   <ul>
     <li>
@@ -1061,14 +1063,33 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <strong>Note:</strong> All editing operations are undoable. The status bar shows the
     current alignment length so you can verify changes.
   </div>
+  <div class="note">
+    <strong>Editing needs Block or Full view.</strong> Canvas and Reads draw no per-residue
+    cells for the tools to act on, so Edit Mode is unavailable there and says so. Switch back
+    to Block or Full to edit. Very large alignments switch to Canvas automatically, which is
+    why editing can appear to be missing on them.
+  </div>
 
   <h3 id="ed-move-slide">8.4 Move &amp; Slide Tools</h3>
   <p>
-    These tools operate on selected sequences only. <strong>Move NoGaps</strong> shifts
-    residues left or right within the row, collapsing gaps. <strong>Slide KeepGaps</strong>
-    shifts the entire segment (residues + gaps) as a block. Both are controlled by dragging
-    within the alignment viewport.
+    Both tools act on the row you drag in - not on the current selection - and are controlled
+    by dragging within the alignment viewport.
   </p>
+  <ul>
+    <li>
+      <strong>Move NoGaps</strong> shifts the residues between the one you grabbed and the
+      nearest gap in the direction you drag, closing that gap up. Residues on the far side of
+      the grab point stay where they are, so the edit stays local.
+    </li>
+    <li>
+      <strong>Slide KeepGaps</strong> inserts (dragging right) or removes (dragging left) a
+      single gap at the grab point, so the whole remainder of that row shifts by one column
+      with its internal gaps intact. Dragging left therefore does nothing unless there is a
+      gap immediately to the left of the residue you grabbed - that requirement is what makes
+      a left slide the exact inverse of a right one. If the row has no trailing gap to absorb
+      the insertion, a right slide lengthens the whole alignment by a column.
+    </li>
+  </ul>
 
   <h3 id="ed-seqedit">8.5 Sequence Text Editor</h3>
   <p>
@@ -1090,6 +1111,13 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     type, insert-gap, degap, trim - is tracked in an undo stack.
     <kbd>Ctrl+Z</kbd> steps backward; <kbd>Ctrl+Y</kbd> steps forward.
     The undo history is cleared when a new alignment is loaded.
+  </p>
+  <p>
+    The toolbar carries undo and redo arrows, each with a small caret beside it that opens the
+    history list. Drag entries name the tool, how far the move went and which sequence it was
+    on - for example <em>MoveText 4 col right &middot; NW_004567116.1&hellip;</em> - so a move
+    can be found without stepping through the stack one action at a time. Clicking an entry
+    unwinds everything back to that point.
   </p>
 
   <h3 id="ed-degap">8.7 Degap Tool</h3>
@@ -1151,9 +1179,29 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><th>Tool</th><th>Description</th></tr>
     <tr><td><strong>New Tab</strong></td><td>Open selected sequences in a new browser tab (<kbd>Ctrl+T</kbd>)</td></tr>
     <tr><td><strong>TSD Finder</strong></td><td>Find target site duplications around SINE insertion boundaries</td></tr>
-    <tr><td><strong>Tree</strong></td><td>Build UPGMA or Neighbor-Joining trees from selected sequences. Three distance correction models are available: p-distance (raw), Jukes-Cantor (JC69), and Kimura 2-parameter (K80). Switching UPGMA/NJ or model in the modal rebuilds the tree. Outputs text view and Newick with Copy Newick and Download .nwk options</td></tr>
+    <tr><td><strong>Tree</strong></td><td>Build UPGMA or Neighbor-Joining trees from selected sequences. Three distance correction models are available: p-distance (raw), Jukes-Cantor (JC69), and Kimura 2-parameter (K80). Switching UPGMA/NJ or model in the modal rebuilds the tree. Outputs a drawn tree (see below), a text view, and Newick with Copy Newick and Download .nwk options</td></tr>
     <tr><td><strong>Statistics</strong></td><td>Compute alignment statistics: sequence count, alignment length (with/without gaps), number of variable sites, parsimony-informative sites, average pairwise identity, GC content. Pairwise p-distance and identity matrices include copy-to-clipboard buttons</td></tr>
   </table>
+
+  <p>
+    The Tree window draws the tree above the Newick text, with its own toolbar:
+  </p>
+  <table>
+    <tr><th>Control</th><th>What it does</th></tr>
+    <tr><td><strong>Zoom</strong> &minus; / + / Fit</td><td>Scale the drawing between 25% and 400%. <kbd>Ctrl</kbd>+mouse wheel over the tree does the same; <strong>Fit</strong> returns to 100%</td></tr>
+    <tr><td><strong>Layout: rooted</strong></td><td>Rectangular phylogram: branch lengths run left to right, leaf labels in a column on the right, with a scale bar</td></tr>
+    <tr><td><strong>Layout: unrooted</strong></td><td>Equal-angle unrooted drawing, in which each branch radiates at an angle proportional to the number of leaves beyond it. Useful when the root position is not meaningful, e.g. for a mid-point-free distance tree</td></tr>
+    <tr><td><strong>Click: swap branches</strong></td><td>Click any internal node (small dot) to rotate the branches hanging off it. This changes only the drawing order, never the topology or branch lengths</td></tr>
+    <tr><td><strong>Click: re-root</strong></td><td>Click a branch to place the root at that branch's midpoint. Every edge between there and the old root is reversed; the leaf set and the total branch length are unchanged</td></tr>
+    <tr><td><strong>SVG</strong> / <strong>PNG</strong></td><td>Download the drawing as it appears. SVG is vector and stays sharp at any size, which is what you want for a figure; PNG is rasterised at 2&times; for slides and quick sharing. Both are drawn on white</td></tr>
+    <tr><td><strong>Full screen</strong></td><td>Expand the tree to the whole window; <kbd>Esc</kbd> returns. The tree box can also be resized by dragging its lower edge, and redraws to fit</td></tr>
+    <tr><td><strong>Reset</strong></td><td>Discard swaps and re-rootings and return to the tree as computed</td></tr>
+  </table>
+  <div class="note">
+    <strong>Note:</strong> Swapping and re-rooting rewrite the Newick box as well as the picture,
+    so <strong>Copy Newick</strong> and <strong>Download .nwk</strong> export the tree you are
+    looking at. Use <strong>Reset</strong> to get back to the computed tree.
+  </div>
 
   <h3 id="ac-colour">9.5 Colour &amp; Shading</h3>
   <p><strong>Conservation shading thresholds</strong> (Display menu):</p>
