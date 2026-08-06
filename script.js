@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v156';
+const BUILD_TAG = 'v157';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -7820,30 +7820,36 @@ function exportAlignmentAsRtf() {
         return colorMap.get(k);
     };
 
+    // The shading decision is delegated to the same function the on-screen renderer uses,
+    // so the exported document cannot drift from the display. The previous code read
+    // cons.count, cons.best and cons.baseCounts - none of which preCalculateConservation
+    // returns - so every cell fell through to white and the export carried no shading.
+    const renderConfig = getSequenceRenderConfig();
+    const shadeColour = {
+        black: el('blackColorPicker')?.value || '#000000',
+        dark: el('darkColorPicker')?.value || '#555555',
+        light: el('lightColorPicker')?.value || '#cccccc'
+    };
+    const NO_POS_DATA = { hasData: false, hasValidCoverage: false };
+
     // Pre-compute colors for each position in each sequence
     for (let i = 0; i < state.seqs.length; i++) {
         const rowColors = [];
+        const seq = state.seqs[i].seq;
         for (let pos = 0; pos < len; pos++) {
-            const cons = conservation[pos];
-            const base = state.seqs[i].seq[pos] || '-';
-            let color = defaultColor;
-            if (cons && cons.count > 0) {
-                const bestCount = cons.best ? cons.best.count : 0;
-                const count = (cons.baseCounts || {})[base.toUpperCase()] || 0;
-                const pct = cons.count > 0 ? count / cons.count : 0;
-                if (enableBlack && pct >= blackThresh) color = el('blackColorPicker')?.value || '#000000';
-                else if (enableDark && pct >= darkThresh) color = el('darkColorPicker')?.value || '#555555';
-                else if (enableLight && pct >= lightThresh) color = el('lightColorPicker')?.value || '#cccccc';
-            }
-            rowColors.push(getColorIdx(color));
+            const baseUp = (seq[pos] || '-').toUpperCase();
+            const cls = applyConservationShadeClass(baseUp, conservation[pos] || NO_POS_DATA, renderConfig);
+            rowColors.push(getColorIdx(shadeColour[cls] || defaultColor));
         }
         seqColors.push(rowColors);
     }
 
-    // Consensus colors
+    // Consensus colors. consSeq is computed once here and reused when the line is written;
+    // it used to be recomputed inside that loop, once per column, over every sequence.
     const showConsensus = el('showConsensus')?.checked;
+    let consSeq = '';
     if (showConsensus) {
-        const consSeq = computeConsensusForSequences(state.seqs.map(s => s.seq));
+        consSeq = computeConsensusForSequences(state.seqs.map(s => s.seq));
         for (let pos = 0; pos < len; pos++) {
             consColors.push(getColorIdx('#e8e8e8')); // light gray for consensus
         }
@@ -7886,7 +7892,7 @@ function exportAlignmentAsRtf() {
         let consLine = '';
         for (let pos = 0; pos < len; pos++) {
             const ci = consColors[pos] || 0;
-            const ch = computeConsensusForSequences(state.seqs.map(s => s.seq))[pos] || '-';
+            const ch = consSeq[pos] || '-';
             consLine += `{\\highlight${ci} ${ch}}`;
         }
         rtfParts.push(`\\b Consensus\\b0\\line`);
