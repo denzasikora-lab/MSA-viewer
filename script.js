@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v161';
+const BUILD_TAG = 'v162';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -8916,10 +8916,13 @@ function _clusterabilityGrid(base) {
             add(`Quality ${q[0]}/${q[1]}/${q[2]}`, { qualitySmall: q[0], qualityMedium: q[1], qualityLarge: q[2] });
         }
     });
-    // The loosest combination the panel allows: if this finds nothing, nothing will.
+    // The loosest combination the panel allows. It must genuinely match the inputs'
+    // minimums: this previously passed minOccurrences 2 while the panel accepts 1, so the
+    // survey could conclude "nothing clusters" without ever trying the lowest setting a
+    // user can pick. Keep these in step with the min attributes in index.html.
     add('everything loosest', {
-        minSize: 2, minPerfect: 1, minOccurrences: 2,
-        qualitySmall: 40, qualityMedium: 30, qualityLarge: 20
+        minSize: 2, minPerfect: 1, minOccurrences: 1,
+        qualitySmall: 0, qualityMedium: 0, qualityLarge: 0
     });
     return runs;
 }
@@ -9005,7 +9008,7 @@ function _renderClusterabilityReport(rows, base, nSeqs, progress) {
 
     let verdict;
     if (!anyClusters) {
-        verdict = `<strong>No settings produced any cluster.</strong> Across ${ok.length} combinations, including the loosest the panel allows, nothing grouped. That points at the data rather than the thresholds: these ${nSeqs} sequences carry no shared diagnostic positions this method can act on.`;
+        verdict = `<strong>No settings produced any cluster.</strong> Across ${ok.length} combinations, including the loosest the panel allows, nothing grouped. That points at the data rather than the thresholds: on this evidence these ${nSeqs} sequences share no diagnostic positions this method can act on. The survey varies one setting at a time plus one all-loosest run, so it samples the space rather than covering it.`;
     } else if (best && best.label === 'current settings') {
         verdict = `<strong>Your current settings are already the best of the ${ok.length} tried</strong>, assigning ${best.assigned} of ${nSeqs} sequences.`;
     } else if (best) {
@@ -9017,7 +9020,7 @@ function _renderClusterabilityReport(rows, base, nSeqs, progress) {
             <div style="font-size: 13px; margin-bottom: 6px;">Clusterability</div>
             ${verdict}
             ${active.length ? `<div style="margin-top: 6px;">Changed the outcome: <strong>${active.join(', ')}</strong>.</div>` : ''}
-            ${inert.length ? `<div style="margin-top: 4px; color: #6b6b6b;">No effect anywhere in its range on this alignment: ${inert.join(', ')} - tuning ${inert.length > 1 ? 'those' : 'that'} here will not help.</div>` : ''}
+            ${inert.length ? `<div style="margin-top: 4px; color: #6b6b6b;">Changed nothing when varied on ${inert.length > 1 ? 'their' : 'its'} own from the current settings: ${inert.join(', ')}. Each row below alters one setting at a time, so this cannot rule out an effect in combination with another - compare the "everything loosest" row.</div>` : ''}
         </div>
         <table style="width: 100%; border-collapse: collapse; font-size: 11px;">
             <tr style="background: #f2f5f8;">
@@ -13652,6 +13655,13 @@ function canUseGeneDocDragOverlay(rowIndex) {
         && !(state.selectedColumns && state.selectedColumns.size)
         && !(state.repeatHighlights && state.repeatHighlights.size)
         && !(state.tsdMarks && state.tsdMarks.get(rowIndex)?.size)
+        // The canvas paints a residue's scheme colours only. Trim shading, nucleotide
+        // selection and row selection are drawn by CSS on the spans it hides, so a drag
+        // with any of them active made them vanish from the moved cells until mouse-up.
+        && !state.trimBoundaries
+        && !state.softTrimBoundaries
+        && !(state.selectedNucs && state.selectedNucs.size)
+        && !(state.selectedRows && state.selectedRows.size)
         && !document.body.classList.contains('codon-mode');
 }
 
