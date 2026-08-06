@@ -415,6 +415,12 @@
                                 <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px;">
                                     <button id="clusteringProbeButton" style="flex: 1; height: 22px; font-size: 10px;" title="Run clustering across a range of settings to see whether this alignment clusters at all, and which parameters change the outcome">Clusterability</button>
                                 </div>
+                                <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin-bottom: 6px;">
+                                    <button id="clusterGuideTreeButton" style="flex: 1; height: 22px; font-size: 10px;" title="Group by overall similarity by cutting the 6-mer guide tree - the same tree used to order sequences after alignment. Fast, and assigns every sequence, but finds no diagnostic positions.">Guide-tree groups</button>
+                                    <label style="font-size: 10px; white-space: nowrap;" title="How many groups to cut the guide tree into">Groups:
+                                        <input type="number" id="guideTreeGroups" min="2" max="50" value="5" step="1" style="width: 44px; height: 20px; font-size: 11px;">
+                                    </label>
+                                </div>
                                 <select id="clusteringPresetList" style="width: 100%; max-width: 150px; height: 24px; font-size: 11px;" title="Select a saved parameter preset to load">
                                     <option value="">-- Select preset --</option>
                                 </select>
@@ -712,7 +718,7 @@
             <div id="headerInfoPanel">
                 <!-- Static fallback shown before script.js runs; script.js overwrites it
                      from BUILD_TAG. Keep in sync with BUILD_TAG or it silently rots. -->
-                <div id="versionIndicator">version v158</div>
+                <div id="versionIndicator">version v159</div>
                 <div id="sourceInfo">No file loaded</div>
             </div>
         </div>
@@ -1085,7 +1091,7 @@ B: -</pre>
 
     <script src="cluster.js"></script>
     <script src="bam-parser.js"></script>
-    <script src="script.js?v=158"></script>
+    <script src="script.js?v=159"></script>
     <script src="tree-draw.js"></script>
     <script>
     // All functionality moved to script.js

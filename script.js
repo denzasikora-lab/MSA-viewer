@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v158';
+const BUILD_TAG = 'v159';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -8802,6 +8802,81 @@ function getSeqsForClustering() {
     });
 }
 
+// Fast grouping by cutting the k-mer guide tree. Where the diagnostic-position clusterer
+// searches for shared discriminating columns - thorough, but its cost grows far faster
+// than the alignment - this simply cuts the tree the aligner already uses for ordering.
+// Every sequence lands in a group, so there is no "unassigned" pile.
+async function clusterByGuideTree() {
+    if (state.seqs.length < 3) {
+        showMessage('Need at least 3 sequences to group.', 3000);
+        return;
+    }
+    const groups = Math.max(2, Math.min(50, parseInt(el('guideTreeGroups')?.value, 10) || 5));
+    return runWithProgress('Grouping by guide tree...', () => {
+        const seqs = getSeqsForClustering();
+        const t0 = performance.now();
+        const cut = cutGuideTree(seqs, groups);
+        const ms = performance.now() - t0;
+
+        const colors = SINEClusterer.getClusterColors();
+        state.clusterMap = {};
+        const clusters = cut.groups.map((members, idx) => {
+            const color = colors[idx % colors.length];
+            members.forEach(i => {
+                state.clusterMap[i] = { cluster: idx, color, name: `Group ${idx + 1}` };
+            });
+            return {
+                size: members.length,
+                nPerfect: 0,
+                perfectFeatures: [],
+                sequences: members.map(i => ({ id: seqs[i].id, index: i }))
+            };
+        });
+        state.clusterResults = {
+            clusters,
+            unassigned: [],
+            summary: { nClusters: clusters.length, nAssigned: state.seqs.length, nUnassigned: 0, nTotal: state.seqs.length }
+        };
+        _renderGuideTreeGroups(clusters, cut, ms);
+        applyClusterVisualsFromState();
+        const modal = el('clusteringModal');
+        if (modal) modal.style.display = 'block';
+    }, `${state.seqs.length} sequences into ${groups} groups`);
+}
+
+function _renderGuideTreeGroups(clusters, cut, ms) {
+    const content = el('clusteringContent');
+    if (!content) return;
+    const colors = SINEClusterer.getClusterColors();
+    const sep = cut.nextHeight !== null && cut.nextHeight > 0
+        ? `The next merge would have joined groups at distance ${cut.nextHeight.toFixed(3)}, so a larger number of groups splits them further.`
+        : '';
+    let html = `
+        <div style="margin-bottom: 14px; padding: 10px; background: #eef4fb; border: 1px solid #c5d8ee; border-radius: 4px; font-size: 12px; line-height: 1.5;">
+            <div style="font-size: 13px; margin-bottom: 4px;">Guide-tree groups</div>
+            <strong>${clusters.length} groups</strong> covering all ${state.seqs.length} sequences, in ${ms.toFixed(0)} ms.
+            Cut at 6-mer distance ${cut.cutHeight.toFixed(3)}. ${sep}
+            <div style="margin-top: 6px; color: #6b6b6b;">
+                This groups by overall sequence similarity. It does not identify diagnostic positions -
+                use Cluster Now for that.
+            </div>
+        </div>`;
+    clusters.forEach((c, idx) => {
+        const color = colors[idx % colors.length];
+        html += `
+            <div style="margin-bottom: 10px; padding: 8px; border: 1px solid #ddd; border-left: 4px solid ${color}; border-radius: 2px;">
+                <div style="cursor:pointer;font-weight:bold;user-select:none;margin-bottom:4px;"
+                     onclick="var e=document.getElementById('gtg${idx}');e.style.display=e.style.display==='none'?'block':'none';">
+                    &gt; Group ${idx + 1}: ${c.size} sequence${c.size !== 1 ? 's' : ''}
+                </div>
+                <div id="gtg${idx}" style="display:none;margin-left:8px;">
+                    ${c.sequences.map(s => `<div style="font-family:monospace;font-size:10px;">- ${s.id}</div>`).join('')}
+                </div>
+            </div>`;
+    });
+    content.innerHTML = html;
+}
+
 // ---- Clusterability probe -------------------------------------------------------------
 // A single run answers "did these settings cluster?", which cannot distinguish settings
 // that are too strict from data with no structure to find. This runs the clusterer over a
@@ -9691,22 +9766,15 @@ function _adjustDirection(fasta) {
  * Input: FASTA string (ungapped).
  * Returns: reordered FASTA string + the ordered headers list.
  */
-function _reorderByGuideTree(fasta) {
-    const seqs = [];
-    let cur = null;
-    for (const line of fasta.split('\n')) {
-        if (line.startsWith('>')) {
-            if (cur) seqs.push(cur);
-            cur = { header: line.substring(1).trim(), seq: '', fullLine: line };
-        } else if (cur) {
-            cur.seq += line.trim();
-        }
-    }
-    if (cur) seqs.push(cur);
-    if (seqs.length <= 2) return { fasta, order: seqs.map(s => s.header) };
-
+// Core of the guide tree: 6-mer distances plus UPGMA, returning the leaf order used for
+// reordering AND the merge history, which is what makes the tree cuttable into groups.
+// Shared by _reorderByGuideTree and clusterByGuideTree, so the order a user sees and the
+// grouping they get always come from the same tree.
+// seqs: [{ header, seq }]  ->  { order: leafIndices, merges: [{ i, j, d }] }
+function _kmerGuideTree(seqs) {
     const n = seqs.length;
     const K = 6;
+    const merges = [];
 
     // Build k-mer frequency vectors for each sequence
     const kmerVecs = [];
@@ -9779,6 +9847,7 @@ function _reorderByGuideTree(fasta) {
         const orderedB = best.revB ? [...cB].reverse() : cB;
         clusters[ci] = orderedA.concat(orderedB);
         active[cj] = 0;
+        merges.push({ i: ci, j: cj, d: minD });
 
         // Update distances (average linkage / UPGMA)
         const sizeI = orderedA.length, sizeJ = orderedB.length;
@@ -9792,13 +9861,60 @@ function _reorderByGuideTree(fasta) {
 
     // Find the last active cluster - its leaf order is the guide tree order
     const finalCluster = clusters.find((_, i) => active[i]) || clusters[0];
-    const order = finalCluster;
+    return { order: finalCluster, merges };
+}
+
+function _reorderByGuideTree(fasta) {
+    const seqs = [];
+    let cur = null;
+    for (const line of fasta.split('\n')) {
+        if (line.startsWith('>')) {
+            if (cur) seqs.push(cur);
+            cur = { header: line.substring(1).trim(), seq: '', fullLine: line };
+        } else if (cur) {
+            cur.seq += line.trim();
+        }
+    }
+    if (cur) seqs.push(cur);
+    if (seqs.length <= 2) return { fasta, order: seqs.map(s => s.header) };
+
+    const order = _kmerGuideTree(seqs).order;
 
     // Build reordered FASTA
     const reordered = order.map(i => `${seqs[i].fullLine}\n${seqs[i].seq}`).join('\n');
     const orderedHeaders = order.map(i => seqs[i].header);
 
     return { fasta: reordered, order: orderedHeaders };
+}
+
+// Cut the guide tree into groups. UPGMA performs n-1 merges, so applying the first
+// (n - groups) of them leaves exactly `groups` clusters - no threshold to guess at, and
+// the cut height is reported so the separation can be judged.
+function cutGuideTree(seqs, groups) {
+    const n = seqs.length;
+    const target = Math.max(1, Math.min(groups, n));
+    const { merges } = _kmerGuideTree(seqs);
+    const parent = Array.from({ length: n }, (_, i) => i);
+    const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+
+    const toApply = Math.max(0, Math.min(n - target, merges.length));
+    let cutHeight = 0;
+    for (let m = 0; m < toApply; m++) {
+        const { i, j, d } = merges[m];
+        const ri = find(i), rj = find(j);
+        if (ri !== rj) parent[rj] = ri;
+        cutHeight = Math.max(cutHeight, d);
+    }
+    const nextHeight = merges[toApply] ? merges[toApply].d : null;
+
+    const byRoot = new Map();
+    for (let i = 0; i < n; i++) {
+        const r = find(i);
+        if (!byRoot.has(r)) byRoot.set(r, []);
+        byRoot.get(r).push(i);
+    }
+    const groupsOut = [...byRoot.values()].sort((a, b) => b.length - a.length);
+    return { groups: groupsOut, cutHeight, nextHeight };
 }
 
 function _treeIsBase(char) {
@@ -12279,6 +12395,7 @@ function initializeAppUI() {
         'clusteringLoadPresetButton': loadClusteringPreset,
         'clusteringOptimalPresetButton': createOptimalPreset,
         'clusteringProbeButton': analyzeClusterability,
+        'clusterGuideTreeButton': clusterByGuideTree,
         'savePresetButton': savePreset,
         'loadPresetButton': loadPreset,
         'snapshotCreateTopButton': createSnapshot,
