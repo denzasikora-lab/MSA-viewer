@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v157';
+const BUILD_TAG = 'v158';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1107,6 +1107,78 @@ window.handleDrop = function(e) {
 };
 // DOM ELEMENTS
 const el = id => document.getElementById(id);
+
+// ---- Busy indicator ------------------------------------------------------------------
+// A long synchronous task holds the main thread, so the browser cannot repaint until it
+// finishes. Setting a status message immediately before such a task therefore shows the
+// user nothing at all - the page goes straight from frozen to done. Everything below
+// exists to yield one frame first, so the indicator is actually on screen while the work
+// runs, and the viewer never looks like it has hung.
+
+function _busyOverlay() {
+    let box = document.getElementById('busyOverlay');
+    if (!box) {
+        box = document.createElement('div');
+        box.id = 'busyOverlay';
+        box.hidden = true;
+        box.innerHTML =
+            '<div id="busyPanel">' +
+              '<div id="busySpinner"></div>' +
+              '<div><div id="busyLabel"></div><div id="busyDetail"></div></div>' +
+            '</div>';
+        document.body.appendChild(box);
+    }
+    return box;
+}
+
+function showBusy(label, detail) {
+    const box = _busyOverlay();
+    const l = document.getElementById('busyLabel');
+    const d = document.getElementById('busyDetail');
+    if (l) l.textContent = label || 'Working...';
+    if (d) { d.textContent = detail || ''; d.hidden = !detail; }
+    box.hidden = false;
+    document.body.style.cursor = 'progress';
+}
+
+function updateBusy(detail) {
+    const d = document.getElementById('busyDetail');
+    if (d) { d.textContent = detail || ''; d.hidden = !detail; }
+}
+
+function hideBusy() {
+    const box = document.getElementById('busyOverlay');
+    if (box) box.hidden = true;
+    document.body.style.cursor = '';
+}
+
+// Hand the browser a frame so anything just written to the DOM is painted. Without this
+// the indicator is invisible for exactly as long as the work takes.
+function yieldToPaint() {
+    return new Promise(resolve => requestAnimationFrame(() => setTimeout(resolve, 0)));
+}
+
+// Wrap a blocking operation so the user sees that it started. `work` may be sync or async;
+// it receives an updater for its own progress detail.
+async function runWithProgress(label, work, detail) {
+    showBusy(label, detail);
+    await yieldToPaint();
+    try {
+        return await work(updateBusy);
+    } finally {
+        hideBusy();
+    }
+}
+
+// Rough guard for operations whose cost grows faster than the alignment does, so the user
+// can decline rather than discover a multi-minute freeze by living through it.
+function confirmIfLarge(operation, residues, threshold, estimate) {
+    if (residues <= threshold) return true;
+    return window.confirm(
+        `${operation} on this alignment (${residues.toLocaleString()} residues) ${estimate}.\n\n` +
+        `The viewer cannot be used until it finishes. Continue?`);
+}
+
 const dropZone = el('dropZone');
 const fastaInput = el('fastaInput');
 const alignmentContainer = el('alignmentContainer');
@@ -7705,6 +7777,13 @@ function _exportAlignmentAsSvg(mode = 'viewport') {
         showMessage('Load an alignment first.', 3000);
         return;
     }
+    // This walks the rendered residue spans, which Canvas and Reads never create. Without
+    // this guard the export silently produced an empty file - and Canvas engages by itself
+    // above 150,000 residues, so it failed exactly on the alignments most worth exporting.
+    if (!alignmentContainer.querySelector('.seq-data span[data-pos]')) {
+        showMessage('SVG export needs Block or Full view - the current view draws no per-residue cells.', 4500);
+        return;
+    }
 
     const containerRect = alignmentContainer.getBoundingClientRect();
     const fullMode = mode === 'full';
@@ -7786,8 +7865,10 @@ function exportVisibleViewportAsSvg() {
     _exportAlignmentAsSvg('viewport');
 }
 
-function exportFullAlignmentAsSvg() {
-    _exportAlignmentAsSvg('full');
+async function exportFullAlignmentAsSvg() {
+    // A whole-alignment SVG carries one element per residue, so it is slow and very large.
+    return runWithProgress('Building SVG...', () => _exportAlignmentAsSvg('full'),
+        'one element per residue - large alignments make large files');
 }
 
 // GeneDoc-style RTF export with per-residue conservation shading
@@ -8869,12 +8950,25 @@ function _renderClusterabilityReport(rows, base, nSeqs, progress) {
     content.innerHTML = html;
 }
 
-function clusterSequences() {
+// The clusterer holds the main thread for its whole run - seconds on a typical alignment,
+// minutes on a large one - so the click handler shows the indicator, yields a frame, and
+// only then starts. Without the yield the message never paints and the tab looks hung.
+async function clusterSequences() {
     if (state.seqs.length < 3) {
         showMessage("Need at least 3 sequences to cluster.", 3000);
         return;
     }
+    const residues = state.seqs.length * Math.max(...state.seqs.map(s => s.seq.length));
+    if (!confirmIfLarge('Clustering', residues, 200000,
+        'can take several minutes - its cost grows much faster than the alignment does')) {
+        return;
+    }
+    return runWithProgress('Clustering...',
+        () => _clusterSequencesNow(),
+        `${state.seqs.length} sequences - the viewer stays busy until this finishes`);
+}
 
+function _clusterSequencesNow() {
     updateClusteringStatus('Running clustering algorithm...');
 
     const seqsForClustering = getSeqsForClustering();
@@ -10120,7 +10214,14 @@ function downloadTreeNewick() {
  * from the Easel library by Sean Eddy, HHMI Janelia.
  * http://eddylab.org/easel/
  */
-function openStats() {
+// Pairwise matrices are O(sequences^2 x columns), so this reaches seconds on a large
+// alignment. Show the indicator and yield before starting.
+async function openStats() {
+    return runWithProgress('Computing statistics...', () => _openStatsNow(),
+        'pairwise distance and identity matrices');
+}
+
+function _openStatsNow() {
     try {
         const seqs = getTreeInputSequences();
         if (seqs.length < 2) {

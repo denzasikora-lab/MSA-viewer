@@ -573,6 +573,65 @@ button:hover {
     margin: 0;
 }
 
+/* Busy indicator for operations that hold the main thread. Deliberately covers the page:
+   the viewer genuinely cannot be used while these run, and a dimmed page says so more
+   honestly than a small spinner that invites clicking. */
+#busyOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10060;
+    background: rgba(255, 255, 255, 0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#busyOverlay[hidden] {
+    display: none;
+}
+
+#busyPanel {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    max-width: 460px;
+    padding: 14px 18px;
+    background: #fff;
+    border: 1px solid #c5d2df;
+    border-radius: 6px;
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.18);
+    font-size: 13px;
+    color: #22303c;
+}
+
+#busySpinner {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+    border: 2px solid #d7e2ee;
+    border-top-color: #2f73b7;
+    border-radius: 50%;
+    animation: busySpin 0.8s linear infinite;
+}
+
+@keyframes busySpin {
+    to { transform: rotate(360deg); }
+}
+
+#busyLabel {
+    font-weight: 600;
+}
+
+#busyDetail {
+    margin-top: 3px;
+    font-size: 11px;
+    color: #6b8299;
+}
+
+#busyDetail[hidden] {
+    display: none;
+}
+
 #treeSvgOutput {
     margin: 0 0 8px;
 }
