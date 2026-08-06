@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v159';
+const BUILD_TAG = 'v160';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1124,19 +1124,32 @@ function _busyOverlay() {
         box.innerHTML =
             '<div id="busyPanel">' +
               '<div id="busySpinner"></div>' +
-              '<div><div id="busyLabel"></div><div id="busyDetail"></div></div>' +
+              '<div style="flex:1 1 auto;"><div id="busyLabel"></div><div id="busyDetail"></div></div>' +
+              '<button type="button" id="busyStop" class="tree-tool" hidden>Stop</button>' +
             '</div>';
         document.body.appendChild(box);
     }
     return box;
 }
 
-function showBusy(label, detail) {
+// onStop: supply it only for work that can actually be interrupted, so a Stop button is
+// never offered for something that will ignore it.
+function showBusy(label, detail, onStop) {
     const box = _busyOverlay();
     const l = document.getElementById('busyLabel');
     const d = document.getElementById('busyDetail');
+    const stop = document.getElementById('busyStop');
     if (l) l.textContent = label || 'Working...';
     if (d) { d.textContent = detail || ''; d.hidden = !detail; }
+    if (stop) {
+        stop.hidden = !onStop;
+        stop.onclick = onStop ? () => {
+            stop.disabled = true;
+            stop.textContent = 'Stopping...';
+            onStop();
+        } : null;
+        if (onStop) { stop.disabled = false; stop.textContent = 'Stop'; }
+    }
     box.hidden = false;
     document.body.style.cursor = 'progress';
 }
@@ -1160,8 +1173,8 @@ function yieldToPaint() {
 
 // Wrap a blocking operation so the user sees that it started. `work` may be sync or async;
 // it receives an updater for its own progress detail.
-async function runWithProgress(label, work, detail) {
-    showBusy(label, detail);
+async function runWithProgress(label, work, detail, onStop) {
+    showBusy(label, detail, onStop);
     await yieldToPaint();
     try {
         return await work(updateBusy);
@@ -9038,12 +9051,14 @@ async function clusterSequences() {
         'can take several minutes - its cost grows much faster than the alignment does')) {
         return;
     }
+    state.clusterCancelled = false;
     return runWithProgress('Clustering...',
-        () => _clusterSequencesNow(),
-        `${state.seqs.length} sequences - the viewer stays busy until this finishes`);
+        (update) => _clusterSequencesNow(update),
+        `${state.seqs.length} sequences`,
+        () => { state.clusterCancelled = true; });
 }
 
-function _clusterSequencesNow() {
+async function _clusterSequencesNow(update) {
     updateClusteringStatus('Running clustering algorithm...');
 
     const seqsForClustering = getSeqsForClustering();
@@ -9051,9 +9066,12 @@ function _clusterSequencesNow() {
     // Get clustering parameters from UI
     const clusterParams = getClusteringParameters();
 
-    // Run clustering
+    // Run clustering. clusterChunked yields between rounds, so the indicator can update
+    // and Stop can take effect; a round in progress still runs to completion.
     const clusterer = new SINEClusterer(seqsForClustering);
-    const clusterResults = clusterer.cluster({
+    const clusterResults = await clusterer.clusterChunked({
+        onProgress: (msg) => { updateClusteringStatus(msg); if (update) update(msg); },
+        shouldCancel: () => state.clusterCancelled,
         minSize: clusterParams.minSize,
         minPerfect: clusterParams.minPerfect,
         maxIterations: clusterParams.maxIterations,
@@ -9062,8 +9080,7 @@ function _clusterSequencesNow() {
         qualityLarge: clusterParams.qualityLarge,
         sizeSmallMedium: clusterParams.sizeSmallMedium,
         sizeMediumLarge: clusterParams.sizeMediumLarge,
-        minOccurrences: clusterParams.minOccurrences,
-        onProgress: (msg) => updateClusteringStatus(msg)
+        minOccurrences: clusterParams.minOccurrences
     });
 
     // Store results in state

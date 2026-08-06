@@ -228,8 +228,8 @@ class SINEClusterer {
         return {perfectFeatures: perfect, imperfectFeatures: imperfect};
     }
 
-    cluster(opts = {}) {
-        const o = {
+    _makeOptions(opts = {}) {
+        return {
             minSize: 3,
             minPerfect: 4,
             maxIterations: 20,
@@ -241,6 +241,10 @@ class SINEClusterer {
             trimEnd: this.alnLen,    // Default to full length
             ...opts
         };
+    }
+
+    cluster(opts = {}) {
+        const o = this._makeOptions(opts);
 
         const clusters = [];
         let avail = Array.from({length:this.nSeqs},(_,i)=>i);
@@ -251,6 +255,19 @@ class SINEClusterer {
         let it = 0;
         while (avail.length >= o.minSize && it < o.maxIterations) {
             it++;
+            const step = this._clusterIteration(avail, clusters, o, it);
+            if (!step.group) break;
+            clusters.push(step.group);
+            avail = step.avail;
+            onProgress(`Cluster ${clusters.length}: ${step.group.size} seqs, ${clusters.reduce((a,c)=>a+c.size,0)} assigned, ${avail.length} remaining`);
+        }
+
+        return this._finaliseClusters(clusters, avail, o);
+    }
+
+    // One round of the search, shared by the synchronous cluster() and the chunked
+    // clusterChunked() below, so the two cannot drift apart.
+    _clusterIteration(avail, clusters, o, it) {
             const prog = it / o.maxIterations;
 
             const curMinP = Math.max(1, Math.round(o.minPerfect * (1 - prog * 0.75)));
@@ -297,17 +314,41 @@ class SINEClusterer {
                 const f = this.getFeaturesByQuality(group);
                 group.perfectFeatures = f.perfectFeatures;
                 group.imperfectFeatures = f.imperfectFeatures;
-
-                clusters.push(group);
-                avail = avail.filter(i => !group.sequences.includes(i));
-                onProgress(`Cluster ${clusters.length}: ${group.size} seqs, ${clusters.reduce((a,c)=>a+c.size,0)} assigned, ${avail.length} remaining`);
-                console.log(`Cluster ${clusters.length}: size=${group.size} perfect=${f.perfectFeatures.length} total=${group.nOccurrences}`);
-            } else {
-                if (avail.length >= o.minSize) console.log(`Stopped — ${avail.length} left as noise`);
-                break;
+                console.log(`Cluster ${clusters.length + 1}: size=${group.size} perfect=${f.perfectFeatures.length} total=${group.nOccurrences}`);
+                return { group, avail: avail.filter(i => !group.sequences.includes(i)) };
             }
-        }
+            if (avail.length >= o.minSize) console.log(`Stopped — ${avail.length} left as noise`);
+            return { group: null, avail };
+    }
 
+    // Same search, yielding between rounds so the page can repaint and the run can be
+    // stopped. The grain is one round: a single findBestGroup call does not yield, so a
+    // cancel takes effect after the round in progress finishes.
+    async clusterChunked(opts = {}) {
+        const o = this._makeOptions(opts);
+        const clusters = [];
+        let avail = Array.from({length:this.nSeqs},(_,i)=>i);
+        const onProgress = o.onProgress || (() => {});
+        const shouldCancel = o.shouldCancel || (() => false);
+        const yieldNow = () => new Promise(r => setTimeout(r, 0));
+
+        let it = 0, cancelled = false;
+        while (avail.length >= o.minSize && it < o.maxIterations) {
+            it++;
+            onProgress(`Round ${it} of at most ${o.maxIterations} - ${clusters.length} found, ${avail.length} sequences left`);
+            await yieldNow();
+            if (shouldCancel()) { cancelled = true; break; }
+            const step = this._clusterIteration(avail, clusters, o, it);
+            if (!step.group) break;
+            clusters.push(step.group);
+            avail = step.avail;
+        }
+        const out = this._finaliseClusters(clusters, avail, o);
+        out.cancelled = cancelled;
+        return out;
+    }
+
+    _finaliseClusters(clusters, avail, o) {
         // Return object structure expected by script.js
         // Map sequence indices to full sequence objects for the clusters
         const validClusters = clusters.map(c => ({
