@@ -1355,6 +1355,51 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li><strong>Group at Top</strong> - move all coloured sequences to the top of the alignment</li>
     <li><strong>Inspect Colors</strong> - open a colour history inspector showing every colour assignment with timestamps and methods (pattern, auto-similarity, manual)</li>
   </ul>
+
+  <h4 style="margin: 16px 0 4px;">Worked example</h4>
+  <p>
+    The repository includes <code>example-colour-names.fa</code> - 12 sequences, 120 columns,
+    named <em>organism_family_locus</em>:
+  </p>
+  <pre style="font-size: 11px; line-height: 1.45;">Hsap_AluY_chr1_10023    Mmus_B1_chr4_33012     Rnor_ID_chr5_55120
+Hsap_AluY_chr7_88110    Mmus_B1_chr11_90455    Rnor_ID_chr8_66301
+Hsap_AluY_chr12_31740   Mmus_B1_chr19_50877
+Hsap_AluSx_chr2_45501   Mmus_B2_chr6_21877
+Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
+
+  <p><strong>1. Pattern Match.</strong> Type a pattern, pick a colour, click Apply:</p>
+  <table>
+    <tr><th>Pattern</th><th>Colours</th><th>Point</th></tr>
+    <tr><td><code>^Hsap</code></td><td>5 names</td><td><code>^</code> anchors to the start, so this takes the organism and nothing else</td></tr>
+    <tr><td><code>Alu</code></td><td>5 names</td><td>plain text needs no regex syntax - here it happens to select the same five</td></tr>
+    <tr><td><code>B1|ID</code></td><td>5 names</td><td><code>|</code> is alternation: mouse B1 <em>and</em> rat ID together, across two organisms</td></tr>
+    <tr><td><code>chr1</code></td><td>5 names</td><td>an unanchored substring also matches chr12, chr11, chr19 and chr13</td></tr>
+    <tr><td><code>chr1_</code></td><td>1 name</td><td>the trailing underscore pins it to chromosome 1 alone</td></tr>
+  </table>
+  <div class="note">
+    <strong>The <code>chr1</code> row is the one worth remembering.</strong> Patterns match anywhere
+    in the name unless you anchor them, so a pattern that looks specific can quietly pick up
+    neighbours. Colour it, glance at which names changed, and adjust before moving on.
+  </div>
+
+  <p><strong>2. Auto by Similarity.</strong> Set <em>First N chars</em> and <em>Sensitivity</em>, then apply:</p>
+  <table>
+    <tr><th>First N chars</th><th>Sensitivity</th><th>Result</th></tr>
+    <tr><td>4</td><td>3</td><td><strong>3 groups</strong> - one per organism (Hsap, Mmus, Rnor), because only the prefix is compared</td></tr>
+    <tr><td>10</td><td>3</td><td><strong>5 groups</strong> - one per element family (AluY, AluSx, B1, B2, ID), since 10 characters reach past the organism</td></tr>
+    <tr><td>10</td><td>0</td><td><strong>5 groups</strong> - strict (90% similarity) keeps the families apart</td></tr>
+    <tr><td>10</td><td>8</td><td><strong>3 groups</strong> - loose (about 40%) merges the families back into organisms</td></tr>
+  </table>
+  <p>
+    Those two controls do different jobs: <em>First N chars</em> decides how much of the name is
+    read, <em>Sensitivity</em> decides how alike two prefixes must be to share a colour. The last
+    two rows show they can reach the same answer from opposite directions.
+  </p>
+  <p>
+    Then <strong>Sort by Color</strong> brings same-coloured sequences together, and the alignment
+    shows the grouping is real: in this file each family has its own consensus, so the coloured
+    blocks line up with visibly distinct sequence blocks.
+  </p>
 </section>
 
 <!-- ════════════════════════════════════════ -->
