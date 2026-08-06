@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v160';
+const BUILD_TAG = 'v161';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -6597,7 +6597,16 @@ function trimAlignmentWidthTo(target) {
         state.seqs.forEach(s => { if (s.seq.length < target) s.seq = s.seq.padEnd(target, GENEDOC_FILLER); });
         return true;
     }
-    if (state.seqs.some(s => /[A-Za-z]/.test(s.seq.slice(target)))) return false;
+    // Refuse unless every column past the target is a gap. Asking "is there a letter out
+    // there" missed '*' - a stop codon is content, and truncating it is data loss.
+    const hasContentPastTarget = state.seqs.some(s => {
+        const tail = s.seq.slice(target);
+        for (let i = 0; i < tail.length; i++) {
+            if (isGeneDocResidueChar(tail[i])) return true;
+        }
+        return false;
+    });
+    if (hasContentPastTarget) return false;
     state.seqs.forEach(s => { if (s.seq.length > target) s.seq = s.seq.slice(0, target); });
     return true;
 }
@@ -13415,8 +13424,16 @@ function updateEditActiveCell() {
     }
 }
 
+// A gap is a dash, dot, tilde or whitespace. Everything else the parser keeps is sequence
+// content - including '*', a stop codon, which the FASTA reader preserves deliberately
+// (see FASTA_PROTEIN_ONLY_CHARS). Testing for [A-Za-z] instead classified '*' as a gap, so
+// a Move/Slide drag consumed it and trimAlignmentWidthTo truncated it - both destroying a
+// residue in protein alignments. Defining a gap positively, and a residue as "not a gap",
+// keeps any future symbol on the safe side of that distinction.
+const GENEDOC_GAP_CHAR = /[-.~\s]/;
+
 function isGeneDocResidueChar(char) {
-    return typeof char === 'string' && /^[A-Za-z]$/.test(char.charAt(0));
+    return typeof char === 'string' && char.length > 0 && !GENEDOC_GAP_CHAR.test(char.charAt(0));
 }
 
 function isGeneDocGapChar(char) {
