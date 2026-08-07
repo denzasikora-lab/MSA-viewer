@@ -17321,45 +17321,66 @@ function _findSineBoundaryColumns(seqs, mode, params, aliLen) {
     }
 
     const ref = _pickTsdReferenceSeq(seqs);
-    if (mode === 'topseq' || mode === 'auto') {
-        const refBoundary = _boundaryFromReferenceSeq(
-            ref.seq,
-            aliLen,
-            flankSize,
-            mode === 'topseq' ? `reference: ${ref.label}` : `reference: ${ref.label}`
-        );
+
+    // 'topseq' is explicitly "use the reference row" - unchanged.
+    if (mode === 'topseq') {
+        const refBoundary = _boundaryFromReferenceSeq(ref.seq, aliLen, flankSize, `reference: ${ref.label}`);
         if (refBoundary) return refBoundary;
     }
 
-    const scoringSeqs = _seqsForTsdBoundaryScoring(seqs);
-    const scoreSeqs = scoringSeqs.length ? scoringSeqs : seqs;
-    const scores = _columnConservationScores(scoreSeqs, aliLen);
-    const windowWidth = Math.max(8, Math.min(16, Math.floor(aliLen / 24) || 8));
-    const threshold = scoreSeqs.length < 8 ? 0.68 : 0.58;
-    let leftBoundary = 0;
-    let rightBoundary = aliLen - 1;
+    // 'auto' tries genuine alignment-wide column-conservation detection first (matching
+    // its UI description), and only falls back to the reference row if conservation
+    // scoring finds no real signal on both sides - it used to always prefer the reference
+    // row and only reach this path when that row was 100% gaps, making 'auto' functionally
+    // identical to 'topseq' in every normal case.
+    if (mode === 'auto') {
+        const scoringSeqs = _seqsForTsdBoundaryScoring(seqs);
+        const scoreSeqs = scoringSeqs.length ? scoringSeqs : seqs;
+        const scores = _columnConservationScores(scoreSeqs, aliLen);
+        const windowWidth = Math.max(8, Math.min(16, Math.floor(aliLen / 24) || 8));
+        const threshold = scoreSeqs.length < 8 ? 0.68 : 0.58;
+        let leftBoundary = -1;
+        let rightBoundary = -1;
 
-    for (let start = 0; start <= aliLen - windowWidth; start++) {
-        if (_windowMean(scores, start, windowWidth) >= threshold) {
-            leftBoundary = start;
-            break;
+        for (let start = 0; start <= aliLen - windowWidth; start++) {
+            if (_windowMean(scores, start, windowWidth) >= threshold) {
+                leftBoundary = start;
+                break;
+            }
         }
-    }
-    for (let start = aliLen - windowWidth; start >= 0; start--) {
-        if (_windowMean(scores, start, windowWidth) >= threshold) {
-            rightBoundary = start + windowWidth - 1;
-            break;
+        for (let start = aliLen - windowWidth; start >= 0; start--) {
+            if (_windowMean(scores, start, windowWidth) >= threshold) {
+                rightBoundary = start + windowWidth - 1;
+                break;
+            }
         }
+
+        if (leftBoundary >= 0 && rightBoundary >= leftBoundary) {
+            return {
+                leftBoundary,
+                rightBoundary,
+                upStart: Math.max(0, leftBoundary - flankSize),
+                upEnd: Math.max(0, leftBoundary - 1),
+                downStart: Math.min(aliLen - 1, rightBoundary + 1),
+                downEnd: Math.min(aliLen - 1, rightBoundary + flankSize),
+                label: `auto conservation ${leftBoundary + 1}/${rightBoundary + 1}`
+            };
+        }
+
+        const refBoundary = _boundaryFromReferenceSeq(ref.seq, aliLen, flankSize, `reference: ${ref.label} (conservation found no signal)`);
+        if (refBoundary) return refBoundary;
     }
 
+    // Last-resort fallback: no reference row content and (for 'auto') no conservation
+    // signal either - treat the whole alignment as the insertion, same as the old default.
     return {
-        leftBoundary,
-        rightBoundary,
-        upStart: Math.max(0, leftBoundary - flankSize),
-        upEnd: Math.max(0, leftBoundary - 1),
-        downStart: Math.min(aliLen - 1, rightBoundary + 1),
-        downEnd: Math.min(aliLen - 1, rightBoundary + flankSize),
-        label: `auto conservation ${leftBoundary + 1}/${rightBoundary + 1}`
+        leftBoundary: 0,
+        rightBoundary: aliLen - 1,
+        upStart: 0,
+        upEnd: -1,
+        downStart: aliLen,
+        downEnd: aliLen - 1,
+        label: 'fallback: no boundary detected'
     };
 }
 
