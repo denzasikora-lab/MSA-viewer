@@ -14645,10 +14645,11 @@ function clusterByName(seqNames, maxChars = 10, threshold = 3) {
 
     const clusters = []; // [{ repKey, keys: [] }]
     for (const key of uniqueKeys) {
-        if (sensitivity >= 10 || minSim >= 1.0) {
-            clusters.push({ repKey: key, keys: [key] });
-            continue;
-        }
+        // The merge loop below already handles every sensitivity correctly on its own
+        // (a strict 0.90 threshold just means almost nothing merges, which is exactly
+        // right for the strictest setting) - no separate shortcut needed. There used to
+        // be one here gated on `sensitivity >= 10`, which disabled ALL merging at the
+        // LOOSEST setting instead of the strictest - the opposite of its intent.
 
         let bestCluster = -1;
         let bestSim = -1;
