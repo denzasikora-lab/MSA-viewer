@@ -14,7 +14,7 @@
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
-const BAM_MAGIC = 0x42414D01; // "BAM\1" little-endian
+const BAM_MAGIC = 0x014D4142; // "BAM\1" as read by getUint32(0, /*littleEndian=*/true)
 const MAX_READS = 1000;
 const SEQ_DECODE = '=ACMGRSVTWYHKDBN'; // 4-bit → IUPAC base (0==, 1=A, 2=C, 4=G, 8=T...)
 const CIGAR_OPS = 'MIDNSHP=X';

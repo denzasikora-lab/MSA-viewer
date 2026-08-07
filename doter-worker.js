@@ -8,7 +8,10 @@ self.addEventListener('message', (event) => {
     const { seqA, seqB, windowSize, mode } = event.data;
     const N = seqA.length;
     const M = seqB.length;
-    const half = (windowSize - 1) >> 1;
+    // Split unevenly for even windowSize (e.g. 4 -> 1 before, 2 after) so the
+    // window actually spans windowSize positions instead of always rounding down.
+    const halfBefore = (windowSize - 1) >> 1;
+    const halfAfter = windowSize - 1 - halfBefore;
     const mismatch = mode === 'dna-simple' ? -1 : 0;
 
     const aEnc = new Uint8Array(N);
@@ -36,9 +39,18 @@ self.addEventListener('message', (event) => {
       }
 
       for (let k = 0; k < len; k++) {
-        const lo = k - half;
-        const hi = k + half + 1;
-        const s = prefix[hi < len ? hi : len] - prefix[lo > 0 ? lo : 0];
+        const lo = k - halfBefore;
+        const hi = k + halfAfter + 1;
+        const loClamped = lo > 0 ? lo : 0;
+        const hiClamped = hi < len ? hi : len;
+        const actualLen = hiClamped - loClamped;
+        const raw = prefix[hiClamped] - prefix[loClamped];
+        // Near the ends of a diagonal (or on diagonals shorter than windowSize)
+        // the window gets clamped to fewer than windowSize positions. Scale the
+        // raw sum back up to windowSize-equivalent units so a clamped edge window
+        // is comparable to a full centered window instead of always reading lower
+        // and drawing a fake similarity gradient toward the plot's edges.
+        const s = actualLen > 0 ? Math.round(raw * windowSize / actualLen) : 0;
         scores[(iStart + k) * M + (jStart + k)] = s;
         if (s < globalMin) globalMin = s;
         if (s > globalMax) globalMax = s;

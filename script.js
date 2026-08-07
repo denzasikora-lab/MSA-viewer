@@ -2171,6 +2171,10 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
     const aaSeq = new Array(nSeqs).fill(null).map(() => []);
 
     const refIdx = 0;
+    // Populated once the reference sequence (i === refIdx, processed first) is done, so
+    // later sequences can look up "the ref codon starting at this alignment column" instead
+    // of "the ref codon at the same ordinal index" (see fix note below).
+    const refCodonByCol = new Map();
 
     for (let i = 0; i < nSeqs; i++) {
         const seq = seqs[i].seq;
@@ -2199,16 +2203,18 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
             const isMissing = base === undefined || base === '';
             const isGap = isMissing || base === '-' || base === '.';
 
-            // Skip alignment columns before frameOffset
-            if (pos < frameOffset) continue;
-
-            // Gaps: count run length; multiples of 3 preserve frame, 1 or 2 bp indels mark frameshift
+            // Gaps: count run length; multiples of 3 preserve frame, 1 or 2 bp indels mark frameshift.
+            // Tracked before the frameOffset skip below so a run that straddles the frameOffset
+            // boundary is measured at its true full length, not truncated to the part on one side.
             if (isGap) {
                 if (gapRunStart < 0) gapRunStart = pos;
                 gapRunLen++;
                 continue;
             }
             flushGapRun();
+
+            // Skip non-gap columns before frameOffset (not part of the analyzed CDS)
+            if (pos < frameOffset) continue;
 
             // Non-gap base - add to codon
             phase[i][pos] = codonPhase;
@@ -2219,16 +2225,17 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
             if (codonPhase >= 3) {
                 const codon = codonBuf.replace(/[Nn]/g, 'N');
                 const aa = activeCode[codon] || 'X';
-                const codonIdx = aaSeq[i].length;
                 aaSeq[i].push({ cols: codonCols.slice(), codon, aa });
 
                 if (aa === '*') {
                     for (const c of codonCols) stops[i].push(c);
                 }
 
-                // Syn/non-syn vs reference codon at same ordinal (skip after frameshift indels)
-                if (i !== refIdx && frameOffset === 0 && !outOfFrame) {
-                    const refEntry = aaSeq[refIdx][codonIdx];
+                // Syn/non-syn vs the reference codon that starts at the SAME alignment column
+                // (not the same ordinal index in the codon list, which drifts out of sync as
+                // soon as one sequence has an in-frame indel the other doesn't).
+                if (i !== refIdx && !outOfFrame) {
+                    const refEntry = refCodonByCol.get(codonCols[0]);
                     if (refEntry) {
                         const refCodon = refEntry.codon;
                         const refAA = refEntry.aa;
@@ -2253,6 +2260,10 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
 
         if (codonPhase > 0 && codonPhase < 3) {
             frameShifts[i].push({ pos: len - 1, phase: codonPhase, type: 'incomplete' });
+        }
+
+        if (i === refIdx) {
+            for (const entry of aaSeq[refIdx]) refCodonByCol.set(entry.cols[0], entry);
         }
     }
 
@@ -16965,55 +16976,89 @@ function _findRepeats(seq, minLen, maxDivPct, type) {
 
     // For direct/inverted: find matches between different positions
     const maxDiv = maxDivPct / 100;
-    const stepLen = Math.max(1, Math.floor(minLen / 2));
+    const COMP = { A: 'T', C: 'G', G: 'C', T: 'A', U: 'A', N: 'N' };
 
-    for (let i = 0; i < n - minLen; i += 1) {
-        const startJ = type === 'direct' ? i + minLen : 0;
-        const endJ = type === 'direct' ? n : i;
-        for (let j = startJ; j <= n - minLen; j += 1) {
-            if (type === 'direct' && j <= i) continue;
-            // Try to extend match
-            let matchLen = 0;
-            let mismatches = 0;
-            const seqI = seqU.substring(i);
-            const seqJ = type === 'inverted' ? _revComp(seqU.substring(j)) : seqU.substring(j);
-            const maxExtend = Math.min(seqI.length, seqJ.length);
-            for (let k = 0; k < maxExtend; k++) {
-                if (seqI[k] !== seqJ[k]) mismatches++;
-                matchLen++;
-                if (mismatches / matchLen > maxDiv && matchLen > minLen) {
-                    // Roll back the character that pushed us over threshold
-                    matchLen--;
-                    if (seqI[k] !== seqJ[k]) mismatches--;
-                    break;
+    if (type === 'inverted') {
+        // An inverted repeat pairs seq[i+k] with the complement of seq[jEnd-k]:
+        // as the match grows from i forward, it consumes the second copy backward
+        // from its plus-strand end jEnd. (Reverse-complementing the whole suffix
+        // once, as the direct-repeat code does, only lines up correctly when the
+        // second copy happens to end at the very end of the sequence.)
+        for (let i = 0; i < n - minLen; i += 1) {
+            for (let jEnd = minLen - 1; jEnd < n; jEnd += 1) {
+                let matchLen = 0;
+                let mismatches = 0;
+                const maxExtend = Math.min(n - i, jEnd + 1);
+                for (let k = 0; k < maxExtend; k++) {
+                    const a = seqU[i + k];
+                    const b = COMP[seqU[jEnd - k]] || 'N';
+                    if (a !== b) mismatches++;
+                    matchLen++;
+                    if (mismatches / matchLen > maxDiv && matchLen > minLen) {
+                        matchLen--;
+                        if (a !== b) mismatches--;
+                        break;
+                    }
+                }
+                const finalDiv = matchLen > 0 ? mismatches / matchLen : 1;
+                if (matchLen >= minLen && finalDiv <= maxDiv) {
+                    const j = jEnd - matchLen + 1;
+                    // Reject self-overlapping pairs (e.g. a plain palindrome matching itself).
+                    const aEnd = i + matchLen - 1;
+                    const disjoint = aEnd < j || jEnd < i;
+                    if (!disjoint) continue;
+
+                    candidates.push({
+                        posA: i,
+                        posB: j,
+                        length: matchLen,
+                        divergence: (finalDiv * 100).toFixed(1),
+                        seqA: seqU.substring(i, i + matchLen),
+                        seqB: _revComp(seqU.substring(j, jEnd + 1))
+                    });
                 }
             }
-            const finalDiv = matchLen > 0 ? mismatches / matchLen : 1;
-            if (matchLen >= minLen && finalDiv <= maxDiv) {
-                // For direct repeats in the same strand, reject self-overlapping pairs
-                // to avoid trivial shifted-suffix artifacts.
-                if (type === 'direct') {
+            if (candidates.length > 500) break; // safety limit
+        }
+    } else {
+        for (let i = 0; i < n - minLen; i += 1) {
+            for (let j = i + minLen; j <= n - minLen; j += 1) {
+                // Try to extend match
+                let matchLen = 0;
+                let mismatches = 0;
+                const seqI = seqU.substring(i);
+                const seqJ = seqU.substring(j);
+                const maxExtend = Math.min(seqI.length, seqJ.length);
+                for (let k = 0; k < maxExtend; k++) {
+                    if (seqI[k] !== seqJ[k]) mismatches++;
+                    matchLen++;
+                    if (mismatches / matchLen > maxDiv && matchLen > minLen) {
+                        // Roll back the character that pushed us over threshold
+                        matchLen--;
+                        if (seqI[k] !== seqJ[k]) mismatches--;
+                        break;
+                    }
+                }
+                const finalDiv = matchLen > 0 ? mismatches / matchLen : 1;
+                if (matchLen >= minLen && finalDiv <= maxDiv) {
+                    // Reject self-overlapping pairs to avoid trivial shifted-suffix artifacts.
                     const aEnd = i + matchLen - 1;
                     const bEnd = j + matchLen - 1;
                     const disjoint = aEnd < j || bEnd < i;
                     if (!disjoint) continue;
-                }
 
-                candidates.push({
-                    posA: i,
-                    posB: j,
-                    length: matchLen,
-                    divergence: (finalDiv * 100).toFixed(1),
-                    seqA: seqI.substring(0, matchLen),
-                    seqB: seqJ.substring(0, matchLen)
-                });
+                    candidates.push({
+                        posA: i,
+                        posB: j,
+                        length: matchLen,
+                        divergence: (finalDiv * 100).toFixed(1),
+                        seqA: seqI.substring(0, matchLen),
+                        seqB: seqJ.substring(0, matchLen)
+                    });
+                }
             }
-            // Skip ahead if no match at minimum length
-            if (matchLen < minLen) {
-                // jump
-            }
+            if (candidates.length > 500) break; // safety limit
         }
-        if (candidates.length > 500) break; // safety limit
     }
 
     // Deduplicate highly overlapping shifted hits from the same repeat pair.

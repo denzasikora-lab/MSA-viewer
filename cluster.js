@@ -180,8 +180,8 @@ class SINEClusterer {
                 } else {
                     // Re-validate features after prune: recalculate nPerfect and score
                     const gsize = best.size;
-                    const thresh = gsize < options.sizeSmallMedium ? options.qualitySmall
-                        : gsize < options.sizeMediumLarge ? options.qualityMedium : options.qualityLarge;
+                    const thresh = gsize < breakSM ? qSmall
+                        : gsize < breakML ? qMed : qLarge;
                     let good = 0, score = 0;
                     const validFeats = [];
                     for (const {pos, ch} of best.occurrences) {
