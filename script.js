@@ -7502,6 +7502,9 @@ function _loadSnapshotPayload(payload) {
 
 function _applySnapshotColourState(cs) {
     if (!cs || !Array.isArray(cs.mappings)) return;
+    // Replace, not merge - like selectedRows/selectedColumns above, loading a snapshot
+    // should give back exactly what was saved, not saved-plus-whatever-was-already-there.
+    colourState.mappings.clear();
     cs.mappings.forEach(([name, color]) => {
         colourState.mappings.set(name, color);
     });
