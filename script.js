@@ -10389,7 +10389,12 @@ function _openStatsNow() {
     const nseq = seqs.length;
     let totalResidues = 0, totalGaps = 0;
     for (const s of seqs) {
-        for (const ch of s.seq) {
+        // Walk to alen, not s.seq.length: rows shorter than the alignment are implicitly
+        // gap-padded everywhere else in this function (identity calc uses `s.seq[p] || '-'`),
+        // so the gap count needs to include those implicit trailing positions too, or it
+        // undercounts gaps for any alignment with unequal-length rows.
+        for (let p = 0; p < alen; p++) {
+            const ch = s.seq[p] || '-';
             if (ch === '-' || ch === '.') totalGaps++;
             else totalResidues++;
         }
@@ -10401,6 +10406,7 @@ function _openStatsNow() {
     const identities = [];
     let minId = 100, maxId = 0, sumId = 0, pairCount = 0;
     const identityMatrix = Array.from({ length: nseq }, () => new Array(nseq).fill('100.0'));
+    const pidRaw = Array.from({ length: nseq }, () => new Array(nseq).fill(100));
     for (let i = 0; i < nseq; i++) {
         for (let j = 0; j < nseq; j++) {
             if (i === j) { identityMatrix[i][j] = '100.0'; continue; }
@@ -10418,6 +10424,8 @@ function _openStatsNow() {
                 identities.push(pid);
                 identityMatrix[i][j] = pid.toFixed(1);
                 identityMatrix[j][i] = pid.toFixed(1);
+                pidRaw[i][j] = pid;
+                pidRaw[j][i] = pid;
                 minId = Math.min(minId, pid);
                 maxId = Math.max(maxId, pid);
                 sumId += pid;
@@ -10427,12 +10435,15 @@ function _openStatsNow() {
     }
     const avgId = pairCount > 0 ? (sumId / pairCount) : 0;
 
-    // Distance matrix (p-distance = 1 - identity)
+    // Distance matrix (p-distance = 1 - identity). Derived from the unrounded pidRaw
+    // value, not the identityMatrix display string (already rounded to 1 decimal) — reading
+    // the rounded string back in would manufacture false 4-decimal precision from data that
+    // only supports 1.
     const distMatrix = Array.from({ length: nseq }, () => new Array(nseq).fill('0.0000'));
     for (let i = 0; i < nseq; i++) {
         for (let j = 0; j < nseq; j++) {
             if (i < j) {
-                const d = 1 - parseFloat(identityMatrix[i][j]) / 100;
+                const d = 1 - pidRaw[i][j] / 100;
                 distMatrix[i][j] = d.toFixed(4);
                 distMatrix[j][i] = d.toFixed(4);
             }
