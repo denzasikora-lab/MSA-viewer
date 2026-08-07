@@ -6605,8 +6605,12 @@ function pushUndoRowPatch(type, rowIndex, beforeSeq, afterSeq, beforeWidth, afte
 function trimAlignmentWidthTo(target) {
     if (!Number.isInteger(target) || target <= 0) return false;
     const current = state.seqs.reduce((m, s) => Math.max(m, s.seq.length), 0);
-    if (current === target) return true;
-    if (current < target) {
+    // Every row must actually BE `target` long, not just "the longest one already is" - a
+    // caller that already set one row to its new (longer) length before calling this (e.g.
+    // redo of a row-patch edit) would otherwise short-circuit here with other rows still
+    // short, leaving the alignment non-rectangular.
+    if (current === target && state.seqs.every(s => s.seq.length === target)) return true;
+    if (current <= target) {
         state.seqs.forEach(s => { if (s.seq.length < target) s.seq = s.seq.padEnd(target, GENEDOC_FILLER); });
         return true;
     }
