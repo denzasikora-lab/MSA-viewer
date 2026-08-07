@@ -373,7 +373,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td><strong>Input</strong></td><td>Load, save, import, export - file handling and snapshots</td></tr>
     <tr><td><strong>Alignment</strong></td><td>MAFFT realignment, BLAST, add sequences, degap</td></tr>
     <tr><td><strong>Clustering</strong></td><td>Trim alignment ends, subfamily clustering, parameter presets</td></tr>
-    <tr><td><strong>Display</strong></td><td>View mode, shading, zoom, name length, Sticky Names, codon toggle, variable sites filter with percentage threshold and breakpoint markers</td></tr>
+    <tr><td><strong>Shade</strong></td><td>Black/Dark/Light conservation shading thresholds and colours, and the All/Non-Gap conservation calculation mode (§5.3)</td></tr>
+    <tr><td><strong>Display</strong></td><td>View mode, zoom, name length, Sticky Names, codon toggle, variable sites filter with percentage threshold and breakpoint markers</td></tr>
     <tr><td><strong>Consensus</strong></td><td>Consensus line settings, group consensus computation</td></tr>
     <tr><td><strong>Search</strong></td><td>Motif search with regex and mismatch support</td></tr>
     <tr><td><strong>Edit...</strong></td><td>Edit mode toggle, degap button, GeneDoc-style editing tools</td></tr>
@@ -382,6 +383,12 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <p>
     The top-right corner shows the current application version and the loaded file name.
   </p>
+  <div class="note">
+    <strong>[Screenshot needed]</strong> A full-window screenshot with the menu bar expanded,
+    labelling: the dropdown menu row, the always-visible top-bar mode switcher, the alignment
+    viewport below, and the top-right version/filename panel - this section is describing a
+    spatial layout that a single annotated image would convey far faster than the table above.
+  </div>
 
   <h3 id="gs-recent">1.5 Recent Files &amp; History</h3>
   <p>
@@ -515,9 +522,17 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <ul>
     <li>
       <strong>Browser-based (MAFFT WASM)</strong> - runs MAFFT directly in the browser via
-      WebAssembly. No server required. Select from the strategy dropdown (auto, FFT-NS-2,
-      G-INS-i, L-INS-i, E-INS-i) and click <strong>Align</strong>. Suitable for alignments
-      up to ~200 sequences x ~2,000 columns.
+      WebAssembly. No server required. Select from the strategy dropdown and click
+      <strong>Align</strong>. Suitable for alignments up to ~200 sequences x ~2,000 columns.
+      <strong>auto</strong> picks a strategy based on your input size and is the right choice
+      unless you have a specific reason to override it. <strong>FFT-NS-2</strong> is the
+      fastest, progressive-alignment strategy - good for large or already-similar datasets.
+      <strong>G-INS-i</strong>, <strong>L-INS-i</strong>, and <strong>E-INS-i</strong> are
+      slower, more accurate iterative-refinement strategies for smaller alignments (roughly
+      under 200 sequences): G-INS-i assumes the sequences are globally similar end-to-end,
+      L-INS-i assumes only local, patchy similarity (e.g. a shared domain in otherwise
+      divergent sequences), and E-INS-i additionally allows large, unaligned insertions
+      between conserved blocks.
     </li>
     <li>
       <strong>Server-based MAFFT</strong> - when the Node.js server is running, alignment
@@ -558,7 +573,9 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     Search runs in the browser. The dialog lists the databases registered on the optional
     local server (<code>GET /api/blast-db</code>); each database is served as a plain FASTA
     URL, which a Web Worker downloads and caches in IndexedDB, so the first query against a
-    database is slower than subsequent ones. Scoring uses Smith-Waterman local alignment.
+    database is slower than subsequent ones. Scoring uses <strong>Smith-Waterman local
+    alignment</strong> - a standard algorithm that finds the best-matching sub-region between
+    your query and each database sequence, rather than requiring the two to align end-to-end.
     Batch search against every registered database at once is also supported.
   </p>
   <ul>
@@ -569,7 +586,9 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
         static GitHub Pages deployment the dialog reports
         &quot;Server not available - no BLAST databases&quot;</li>
   </ul>
-  <p>Results are shown inline with alignment previews and one-click retrieval of matching sequences.</p>
+  <p>Results appear in the same dialog as a ranked list, each with a short preview of the
+    matched region aligned against your query; click a result to add that sequence to your
+    alignment.</p>
 
   <h3 id="al-blast-db">3.5 BLAST Database Management</h3>
   <p>
@@ -659,7 +678,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
     <tr><td>Small -> Medium</td><td>11</td><td>Clusters below this size use the Small quality threshold</td></tr>
     <tr><td>Medium -> Large</td><td>20</td><td>Clusters at or above this size use the Large quality threshold</td></tr>
-    <tr><td>Min Occur</td><td>2</td><td>Minimum number of diagnostic positions required to form a cluster</td></tr>
+    <tr><td>Min Occur</td><td>3</td><td>Minimum number of diagnostic positions required to form a cluster</td></tr>
   </table>
 
   <h3 id="cl-presets">4.5 Presets &amp; Workflow</h3>
@@ -832,6 +851,11 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <strong>1</strong> when a flagged "conserved" region looks suspicious on inspection -
     it surfaces the individually-rare variants a percentage cutoff was built to filter out.
   </p>
+  <div class="note">
+    <strong>[Screenshot needed]</strong> A close-up of the Variable Sites control row showing
+    the %/count mode dropdown, threshold slider, and paired number box together, so their
+    left-to-right grouping and relative sizes are clear at a glance.
+  </div>
 
   <h4 id="di-var-breakpoints">5.2.2 Breakpoint Markers</h4>
   <p>
@@ -875,10 +899,12 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>Amino Acid: Jalview-like</td><td>Groups amino acids in a Jalview-style property palette</td></tr>
   </table>
   <p>
-    The selected colour scheme is saved in presets and snapshots. Compact and Canvas modes
-    keep their own existing high-performance colouring behaviour.
+    The selected colour scheme is saved in presets and snapshots. Canvas mode
+    keeps its own existing high-performance colouring behaviour.
   </p>
-  <p><strong>Conservation calculation mode:</strong></p>
+  <p><strong>Conservation calculation mode</strong> (the <strong>All</strong>/<strong>Non-Gap</strong>
+    radio buttons next to <strong>Shade By</strong> - in the separate <strong>Shade</strong> menu,
+    not this Display menu, alongside the Black/Dark/Light shading sliders):</p>
   <table>
     <tr><th>Mode</th><th>Behaviour</th></tr>
     <tr><td>All (default)</td><td>Conservation is measured against every sequence in the alignment; a gap counts against conservation, the same way most MSA viewers compute percent identity. A column where most sequences are gapped cannot score highly conserved just because the few sequences that do have a base happen to agree.</td></tr>
@@ -919,6 +945,12 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>Non-synonymous mutations</td><td>Double red underline - amino acid changed</td></tr>
     <tr><td>AA translation row</td><td>Amino acid letters below each sequence; stops in bold red <code>*</code></td></tr>
   </table>
+  <div class="note">
+    <strong>[Screenshot needed]</strong> A codon-mode alignment showing at least one example
+    of each annotation in the table above (frame-position underlines, a stop codon, a
+    frameshift, a synonymous and a non-synonymous call) side by side, since all six are purely
+    colour/decoration distinctions that are hard to picture from a text description alone.
+  </div>
 
   <h3 id="di-sticky">5.5 Sticky Names</h3>
   <p>
@@ -1082,12 +1114,41 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       or <code>-</code> for a gap. Modifies the cell directly.
     </li>
     <li>
-      <strong>Insert Column</strong> - insert a gap column at the cursor position.
+      <strong>Ins Gap Seq</strong> / <strong>Del Gap Seq</strong> - click a position to
+      insert or remove a single gap in that row only. Deleting requires a gap already at
+      that position.
     </li>
     <li>
-      <strong>Select Column</strong> - click or drag to select columns for bulk delete.
+      <strong>Ins Gap Other</strong> / <strong>Del Gap Other</strong> - same, but applied
+      to every row <em>except</em> the one you clicked.
+    </li>
+    <li>
+      <strong>Ins Gap All</strong> / <strong>Del Gap All</strong> - same, applied to every
+      row including the one you clicked.
+    </li>
+    <li>
+      <strong>Select Column</strong> - click or drag to select columns, then use
+      <strong>Delete Cols</strong> to remove them from every sequence.
+    </li>
+    <li>
+      <strong>Clear Gap Cols</strong> - remove every column that is a gap in all sequences.
+    </li>
+    <li>
+      <strong>R Cons</strong> - recompute conservation shading immediately (useful when
+      <em>Live Conservation</em>, below, is off).
+    </li>
+    <li>
+      <strong>SeqEdit</strong> - open the full-sequence text editor for the row you last
+      clicked (see §8.5).
     </li>
   </ul>
+  <div class="note">
+    <strong>Inserting a gap widens the whole alignment.</strong> The row you inserted into
+    gets the new gap at the exact column you clicked; every other row gets a gap appended
+    at the <em>end</em> instead, so the alignment stays rectangular. This is why an Ins Gap
+    Seq/Other on one row can shift where residues fall in rows you didn't touch - check the
+    result before continuing to edit.
+  </div>
   <p>
     A <em>Live Conservation</em> checkbox updates conservation shading in real time during
     Move/Slide dragging.
@@ -1123,6 +1184,12 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       the insertion, a right slide lengthens the whole alignment by a column.
     </li>
   </ul>
+  <div class="note">
+    <strong>[Screenshot needed]</strong> Two or three frames of a before/during/after drag for
+    each tool (Move NoGaps and Slide KeepGaps), showing exactly which residues moved and which
+    gap was consumed or inserted - this section's mechanics are inherently about motion and
+    direction, which is difficult to fully picture from prose alone.
+  </div>
 
   <h3 id="ed-seqedit">8.5 Sequence Text Editor</h3>
   <p>
@@ -1213,7 +1280,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td><strong>New Tab</strong></td><td>Open selected sequences in a new browser tab (<kbd>Ctrl+T</kbd>)</td></tr>
     <tr><td><strong>TSD Finder</strong></td><td>Find target site duplications around SINE insertion boundaries</td></tr>
     <tr><td><strong>Tree</strong></td><td>Build UPGMA or Neighbor-Joining trees from selected sequences. Three distance correction models are available: p-distance (raw), Jukes-Cantor (JC69), and Kimura 2-parameter (K80). Switching UPGMA/NJ or model in the modal rebuilds the tree. Outputs a drawn tree (see below), a text view, and Newick with Copy Newick and Download .nwk options</td></tr>
-    <tr><td><strong>Statistics</strong></td><td>Compute alignment statistics: sequence count, alignment length (with/without gaps), number of variable sites, parsimony-informative sites, average pairwise identity, GC content. Pairwise p-distance and identity matrices include copy-to-clipboard buttons</td></tr>
+    <tr><td><strong>Statistics</strong></td><td>Compute alignment statistics (esl-alistat/esl-alipid style): sequence count, alignment length, total gaps and gap percentage, and mean/min/max pairwise identity across every sequence pair. Full pairwise p-distance and identity matrices are shown with copy-to-clipboard buttons</td></tr>
   </table>
 
   <p>
@@ -1234,6 +1301,11 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <strong>Note:</strong> Swapping and re-rooting rewrite the Newick box as well as the picture,
     so <strong>Copy Newick</strong> and <strong>Download .nwk</strong> export the tree you are
     looking at. Use <strong>Reset</strong> to get back to the computed tree.
+  </div>
+  <div class="note">
+    <strong>[Screenshot needed]</strong> The Tree window with a drawn phylogram and its full
+    toolbar visible, so the zoom/layout/export controls in the table above are shown in the
+    context of the actual UI they belong to, not just described by name.
   </div>
 
   <h3 id="ac-colour">9.5 Colour &amp; Shading</h3>
@@ -1272,6 +1344,12 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   click-to-navigate to alignment position, copy region as FASTA,
   export as PNG or SVG. Right-click a sequence and select <strong>Dot-plot (self)</strong>
   for self-comparison (useful for finding internal repeats).</p>
+  <div class="note">
+    <strong>[Screenshot needed]</strong> A completed dot plot showing the main diagonal, at
+    least one off-diagonal repeat region, the Top Regions list, and the alignment-position
+    preview that appears on hover - together in one view, since the point of a dot plot is
+    the visual pattern, which prose can only gesture at.
+  </div>
 
   <h3 id="ac-repeat-finder">9.8 Repeat Finder</h3>
   <p>
@@ -1295,16 +1373,25 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="ac-tsd-finder">9.9 TSD Finder</h3>
   <p>
     The TSD (Target Site Duplication) Finder locates short duplications flanking SINE/TE
-    insertion boundaries in aligned sequences. It uses Smith-Waterman local alignment
-    to match flanking sequences against each other.
+    insertion boundaries in aligned sequences. For each sequence it compares a short window
+    just upstream of the insertion against a short window just downstream, trying a small
+    range of nearby offsets and lengths, and keeps the best-scoring near-match as the TSD.
   </p>
   <p><strong>SINE boundary detection modes:</strong></p>
   <table>
     <tr><th>Mode</th><th>How it works</th></tr>
-    <tr><td><strong>Auto</strong> (default)</td><td>Uses column-level conservation across all sequences to detect the SINE body automatically. Columns with high conservation are identified as SINE; flanking regions are searched for TSDs.</td></tr>
+    <tr><td><strong>Auto</strong> (default)</td><td>Scans every alignment column for a run where most sequences agree on the same base ("column-level conservation") - this identifies the SINE body without relying on any one sequence's gap pattern. Falls back to <strong>Reference</strong> mode if no clear conserved run is found (e.g. too few non-reference sequences to score conservation against).</td></tr>
     <tr><td><strong>Reference</strong></td><td>Uses row 1 (or consensus) gap pattern to locate SINE borders. Gap-free regions in the reference define the SINE body; flanking gaps define the host sequence.</td></tr>
     <tr><td><strong>Manual</strong></td><td>User specifies pre-SINE and post-SINE column ranges explicitly. A <strong>Use selected cols as SINE</strong> button auto-fills flanking ranges from Ctrl+Alt-selected columns.</td></tr>
   </table>
+  <p>
+    <strong>Which to use:</strong> start with <strong>Auto</strong> - it needs no reference
+    row and works from the whole alignment's agreement pattern. Switch to
+    <strong>Reference</strong> if your alignment has a clear, trusted "empty site" or
+    consensus row and you want the boundary tied to that row specifically rather than a
+    conservation vote. Use <strong>Manual</strong> when both automatic modes pick a boundary
+    you can see is wrong on inspection, or when you already know the exact columns.
+  </p>
   <p>
     Results show TSD sequence, position in 5' and 3' flanks, length, and mismatch count.
     TSDs are visually marked on the alignment and can be undone.
@@ -1316,7 +1403,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>FASTA</td><td>Downstream tools</td><td>Full alignment or selected sequences only</td></tr>
     <tr><td>RTF</td><td>Microsoft Word</td><td>Monospace, per-residue shading, scale ruler, consensus line</td></tr>
     <tr><td>SVG</td><td>Publication figures</td><td>Vector graphics - viewport or full alignment</td></tr>
-    <tr><td>Newick (<code>.nwk</code>)</td><td>Phylogenetics tools</td><td>UPGMA tree with branch lengths</td></tr>
+    <tr><td>Newick (<code>.nwk</code>)</td><td>Phylogenetics tools</td><td>UPGMA or Neighbor-Joining tree with branch lengths, whichever the Tree window last built</td></tr>
     <tr><td>Standalone HTML</td><td>Sharing</td><td>Self-contained HTML snapshot page with embedded alignment</td></tr>
     <tr><td>New tab</td><td>Quick copy</td><td>Selected sequences as plain FASTA text in a new browser tab (<kbd>Ctrl+T</kbd>)</td></tr>
     <tr><td>Copy Selected</td><td>Clipboard</td><td>FASTA of selected sequences (<kbd>Ctrl+Shift+C</kbd>)</td></tr>
@@ -1553,7 +1640,7 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
 
   <h3 id="tp-figures">12.2 Publication Figures</h3>
   <ul>
-    <li><strong>Block mode</strong> + <strong>Zappo shading</strong> for amino acid alignments</li>
+    <li><strong>Block mode</strong> + <strong>Amino Acid: Jalview-like</strong> colour scheme for amino acid alignments</li>
     <li><strong>Export SVG</strong> for vector graphics - refine in Inkscape or Illustrator</li>
     <li><strong>Export RTF</strong> for Word-compatible alignments with conservation shading</li>
     <li><strong>Dot plot -> Export SVG</strong> for high-quality dot plots</li>
