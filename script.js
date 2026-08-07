@@ -5093,10 +5093,12 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
     lineDiv.appendChild(nameSpan);
     const dataSpan = document.createElement('div');
     dataSpan.className = 'seq-data';
-    // NO ACTION on plain click - only Ctrl+Click for selection
+    // This 'click' handler itself does nothing - plain click is handled on the earlier
+    // document-level mousedown (handleGeneDocEditMouseDown), which now enters GeneDoc
+    // residue-edit mode on a plain click; Ctrl+Click selection is also handled by mousedown.
     dataSpan.addEventListener('click', (e) => {
         if (e.ctrlKey || e.metaKey) return; // handled by mousedown
-        // Do nothing on single click - no copy, no selection
+        // Do nothing here - no copy, no selection, no-op by design
     });
 
     // *** PERFORMANCE: Pre-cache references and build HTML string ***
@@ -13803,7 +13805,7 @@ function destroyGeneDocDragOverlay(drag, syncDom) {
 }
 
 function handleGeneDocEditMouseDown(e) {
-    if (!state.editModeActive || e.button !== 0) return;
+    if (e.button !== 0) return;
     if (isCtrlModifier(e)) return;
     const span = closestFromEvent(e, '.seq-data > span[data-pos]');
     if (!span) return;
@@ -13812,6 +13814,14 @@ function handleGeneDocEditMouseDown(e) {
     const rowIndex = parseInt(seqLine.dataset.seqIndex, 10);
     const pos = parseInt(span.dataset.pos, 10);
     if (!Number.isInteger(rowIndex) || !Number.isInteger(pos) || !state.seqs[rowIndex]) return;
+
+    if (!state.editModeActive) {
+        // A plain click on a residue outside edit mode jumps straight into GeneDoc
+        // residue-typing mode positioned at the clicked cell, instead of requiring a
+        // separate click on the Edit toggle button first.
+        setGeneDocEditTool('residue');
+        if (!state.editModeActive) return; // refused (e.g. Canvas mode) - message already shown
+    }
 
     const tool = state.editTool;
     if (!GENEDOC_MOVE_TOOLS.has(tool) && !GENEDOC_GAP_TOOLS.has(tool) && tool !== 'residue' && tool !== 'selectColumn') return;
