@@ -196,7 +196,13 @@
 
     var spanX = Math.max(maxX - minX, 1e-9), spanY = Math.max(maxY - minY, 1e-9);
     var innerW = Math.max(120, boxW - 2 * margin), innerH = Math.max(120, boxH - 2 * margin);
-    var scale = Math.min(innerW / spanX, innerH / spanY) * zoom;
+    // Same reasoning as the rooted layout's rowH floor: fontSize stops shrinking at 8px,
+    // so letting the geometric scale keep shrinking past that leaves too little room
+    // between nearby leaves and their labels start to overlap. Equal-angle placement has
+    // no uniform row spacing to floor exactly, so this is a proportionate mitigation, not
+    // a full guarantee - leaves in a genuinely dense clade can still sit close enough to
+    // overlap their labels at any zoom, which needs real collision detection to fix.
+    var scale = Math.min(innerW / spanX, innerH / spanY) * Math.max(0.4, zoom);
     var totalW = spanX * scale + 2 * margin, totalH = spanY * scale + 2 * margin;
     function PX(n) { return margin + (n.ux - minX) * scale; }
     function PY(n) { return margin + (n.uy - minY) * scale; }
@@ -251,7 +257,10 @@
 
     var anyLen = false;
     (function chk(n) { if (n.len > 0) anyLen = true; n.children.forEach(chk); })(root);
-    var usePhylo = anyLen, rowH = 26 * zoom, padT = 18, padL = 12, padB = usePhylo ? 34 : 16;
+    // rowH has a floor so it can never shrink below what the label font's own floor
+    // (see fontSize below) needs - without one, zooming out past ~0.31 packs rows
+    // tighter than the 8px-minimum label text, and adjacent leaf labels overlap.
+    var usePhylo = anyLen, rowH = Math.max(14, 26 * zoom), padT = 18, padL = 12, padB = usePhylo ? 34 : 16;
 
     var leafCount = 0, maxX = 0, uid = 0;
     (function assign(n, x, depth) {
@@ -436,6 +445,9 @@
   }
 
   function onCanvasClick(ev) {
+    // A real click-drag pan (see the mousedown/mousemove/mouseup wiring below) fires a
+    // native click on release too; suppress that one so panning never also swaps/re-roots.
+    if (st._suppressNextClick) { st._suppressNextClick = false; return; }
     var hit = ev.target.closest ? ev.target.closest('.tree-hit') : null;
     if (!hit || !st.root) return;
     var id = parseInt(hit.getAttribute('data-node'), 10);
@@ -527,6 +539,33 @@
     }
     var canvas = panel.querySelector('#treeSvgCanvas');
     canvas.addEventListener('click', onCanvasClick);
+    // Click-drag to pan, matching iTOL. A small movement threshold (not just any mousedown-
+    // then-mouseup) keeps ordinary swap/re-root clicks from being treated as a pan.
+    (function () {
+      var dragging = false, startX = 0, startY = 0, startScrollX = 0, startScrollY = 0, moved = false;
+      var DRAG_THRESHOLD = 4;
+      canvas.addEventListener('mousedown', function (ev) {
+        if (ev.button !== 0) return;
+        dragging = true; moved = false;
+        startX = ev.clientX; startY = ev.clientY;
+        startScrollX = canvas.scrollLeft; startScrollY = canvas.scrollTop;
+      });
+      document.addEventListener('mousemove', function (ev) {
+        if (!dragging) return;
+        var dx = ev.clientX - startX, dy = ev.clientY - startY;
+        if (!moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+        moved = true;
+        canvas.style.cursor = 'grabbing';
+        canvas.scrollLeft = startScrollX - dx;
+        canvas.scrollTop = startScrollY - dy;
+      });
+      document.addEventListener('mouseup', function () {
+        if (!dragging) return;
+        dragging = false;
+        canvas.style.cursor = '';
+        if (moved) st._suppressNextClick = true;
+      });
+    })();
     // Plain wheel zooms, matching iTOL/most tree viewers (Ctrl/Cmd+wheel also works, for
     // anyone used to the rest of this app's Ctrl+wheel convention). Shift+wheel is left
     // alone so it still does the browser's native horizontal-scroll-pan on this box's own
