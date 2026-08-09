@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v162';
+const BUILD_TAG = 'v164';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -10556,14 +10556,19 @@ function initStatsTabs() {
 }
 
 function initTreeBuilderControls() {
+    const rebuildIfOpen = () => {
+        const modal = document.getElementById('treeBuilderModal');
+        if (modal && modal.style.display !== 'none') {
+            openTreeBuilder();
+        }
+    };
     document.querySelectorAll('input[name="treeMethod"]').forEach(radio => {
-        radio.addEventListener('change', () => {
-            const modal = document.getElementById('treeBuilderModal');
-            if (modal && modal.style.display !== 'none') {
-                openTreeBuilder();
-            }
-        });
+        radio.addEventListener('change', rebuildIfOpen);
     });
+    // The distance-correction dropdown (p-distance/JC69/K80) had no listener at all - changing
+    // it silently did nothing while the modal was open, unlike the UPGMA/NJ method radios above.
+    const modelSelect = document.getElementById('treeDistanceModel');
+    if (modelSelect) modelSelect.addEventListener('change', rebuildIfOpen);
 }
 
 function realignSelectedBlock() {
@@ -16081,7 +16086,7 @@ function _dotClearHoverInfo() {
 }
 
 function _getDotWorker() {
-    if (!_dotPlotWorker) _dotPlotWorker = new Worker('doter-worker.js');
+    if (!_dotPlotWorker) _dotPlotWorker = new Worker('doter-worker.js?v=' + BUILD_TAG);
     return _dotPlotWorker;
 }
 
