@@ -527,9 +527,12 @@
     }
     var canvas = panel.querySelector('#treeSvgCanvas');
     canvas.addEventListener('click', onCanvasClick);
-    // Ctrl/Cmd + wheel zooms, matching the rest of the viewer.
+    // Plain wheel zooms, matching iTOL/most tree viewers (Ctrl/Cmd+wheel also works, for
+    // anyone used to the rest of this app's Ctrl+wheel convention). Shift+wheel is left
+    // alone so it still does the browser's native horizontal-scroll-pan on this box's own
+    // scrollbars when the tree is too wide to fit.
     canvas.addEventListener('wheel', function (ev) {
-      if (!(ev.ctrlKey || ev.metaKey)) return;
+      if (ev.shiftKey) return;
       ev.preventDefault();
       st.zoom = ev.deltaY < 0 ? Math.min(4, st.zoom * 1.1) : Math.max(0.25, st.zoom / 1.1);
       draw();

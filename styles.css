@@ -636,7 +636,9 @@ button:hover {
     margin: 0 0 8px;
 }
 
-/* Drag the bottom edge to make the tree box taller; it redraws to fit. */
+/* Drag the bottom-right corner to make the tree box taller; it redraws to fit.
+   The browser's native resize grip there is small and easy to miss against a plain
+   white corner, so an explicit diagonal-stripe affordance marks the drag target. */
 #treeSvgCanvas {
     border: 1px solid #ddd;
     border-radius: 6px;
@@ -646,6 +648,21 @@ button:hover {
     min-height: 180px;
     overflow: auto;
     resize: vertical;
+    position: relative;
+}
+#treeSvgCanvas::after {
+    content: '';
+    position: absolute;
+    right: 2px;
+    bottom: 2px;
+    width: 11px;
+    height: 11px;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+        135deg,
+        #b9c3cc 0px, #b9c3cc 1.5px,
+        transparent 1.5px, transparent 4px
+    );
 }
 
 #treeSvgCanvas .tree-branch-hit,
