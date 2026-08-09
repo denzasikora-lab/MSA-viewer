@@ -196,13 +196,28 @@
 
     var spanX = Math.max(maxX - minX, 1e-9), spanY = Math.max(maxY - minY, 1e-9);
     var innerW = Math.max(120, boxW - 2 * margin), innerH = Math.max(120, boxH - 2 * margin);
-    // Same reasoning as the rooted layout's rowH floor: fontSize stops shrinking at 8px,
-    // so letting the geometric scale keep shrinking past that leaves too little room
-    // between nearby leaves and their labels start to overlap. Equal-angle placement has
-    // no uniform row spacing to floor exactly, so this is a proportionate mitigation, not
-    // a full guarantee - leaves in a genuinely dense clade can still sit close enough to
-    // overlap their labels at any zoom, which needs real collision detection to fix.
-    var scale = Math.min(innerW / spanX, innerH / spanY) * Math.max(0.4, zoom);
+    var fitScale = Math.min(innerW / spanX, innerH / spanY);
+    // Fitting the WHOLE tree into the visible box (fitScale above) is exactly the wrong
+    // goal once there are many leaves: it shrinks per-leaf spacing as leaf count grows,
+    // guaranteeing illegible overlap for anything much past ~30-40 leaves regardless of
+    // zoom. The rooted layout never has this problem because its canvas height already
+    // grows with leaf count and scrolls; the equal-angle layout needs the same idea. This
+    // estimates the average arc-length available per leaf around the tree's TYPICAL radius
+    // (mean distance from origin, not the bounding box's half-span) and floors the scale so
+    // that stays at least one label-height apart. Using the mean rather than the bounding
+    // box matters: a bushy tree with a couple of long outlier branches has a large bounding
+    // box while most leaves sit much closer to the centre, so a bounding-box-derived radius
+    // badly underestimates how cramped the typical leaf actually is.
+    var radiusSum = 0;
+    leaves.forEach(function (l) { radiusSum += Math.hypot(l.ux, l.uy); });
+    var approxRadius = Math.max(radiusSum / leaves.length, 1e-9);
+    var minSpacingPx = 14;
+    var densityFloorScale = (leaves.length * minSpacingPx) / (2 * Math.PI * approxRadius);
+    // This is still a proportionate mitigation, not a full guarantee: it assumes leaves are
+    // roughly evenly spread around the boundary, so a genuinely lopsided/clumped topology
+    // can still pack some leaves closer than others and overlap locally. Real collision
+    // detection would be needed to guarantee zero overlap in every case.
+    var scale = Math.max(fitScale, densityFloorScale) * Math.max(0.4, zoom);
     var totalW = spanX * scale + 2 * margin, totalH = spanY * scale + 2 * margin;
     function PX(n) { return margin + (n.ux - minX) * scale; }
     function PY(n) { return margin + (n.uy - minY) * scale; }
