@@ -1579,6 +1579,27 @@ function calculateGaplessPositions(sequence) {
     }
     return positions;
 }
+
+// Computes which row/column indices are currently visible in the scrollable
+// alignment viewport, expanded by overscan. Not yet called from any render
+// path; intended as a building block for future virtualized rendering.
+function getVisibleRowColumnRange(container, rowHeightPx, charWidthPx, nameColWidthPx, overscanRows = 5, overscanCols = 20) {
+    const { scrollTop, scrollLeft, clientHeight, clientWidth } = container;
+
+    // Visible row range (0-based, inclusive end)
+    const rowStart = Math.max(0, Math.floor(scrollTop / rowHeightPx) - overscanRows);
+    const rowEnd = Math.max(0, Math.ceil((scrollTop + clientHeight) / rowHeightPx) - 1 + overscanRows);
+
+    // Visible column range (0-based, inclusive end). The name column is sticky
+    // and does not scroll horizontally, so data column 0 starts at scrollLeft.
+    // The name column occupies nameColWidthPx of the viewport, leaving the
+    // remainder for visible data.
+    const visibleDataWidth = Math.max(0, clientWidth - nameColWidthPx);
+    const colStart = Math.max(0, Math.floor(scrollLeft / charWidthPx) - overscanCols);
+    const colEnd = Math.max(0, Math.ceil((scrollLeft + visibleDataWidth) / charWidthPx) - 1 + overscanCols);
+
+    return { rowStart, rowEnd, colStart, colEnd };
+}
 function reverseComplement(seq) {
     const complement = { 'A':'T','T':'A','C':'G','G':'C','N':'N','-':'-','.':'.', 'U':'A','R':'Y','Y':'R','M':'K','K':'M','S':'S','W':'W','H':'D','B':'V','V':'B','D':'H' };
     return seq.split('').reverse().map(b => {
