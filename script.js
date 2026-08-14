@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v166';
+const BUILD_TAG = 'v167';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1581,8 +1581,8 @@ function calculateGaplessPositions(sequence) {
 }
 
 // Computes which row/column indices are currently visible in the scrollable
-// alignment viewport, expanded by overscan. Not yet called from any render
-// path; intended as a building block for future virtualized rendering.
+// alignment viewport, expanded by overscan. Used by renderFullModeWindowedRows
+// below (row range only, for now - column windowing isn't wired in yet).
 function getVisibleRowColumnRange(container, rowHeightPx, charWidthPx, nameColWidthPx, overscanRows = 5, overscanCols = 20) {
     const { scrollTop, scrollLeft, clientHeight, clientWidth } = container;
 
@@ -1600,6 +1600,97 @@ function getVisibleRowColumnRange(container, rowHeightPx, charWidthPx, nameColWi
 
     return { rowStart, rowEnd, colStart, colEnd };
 }
+
+// -- Full-mode row virtualization (large alignments only) -------------------
+// Full mode's DOM-per-residue rendering scales with rows x columns and has no
+// windowing, unlike Block mode (chunked into smaller containers) or Canvas
+// (viewport-culled entirely). Measured directly: on a 3408x1753 alignment,
+// unwindowed Full mode blocked the main thread past 45s. This renders only
+// the currently-visible rows (+ overscan) as real DOM, backed by top/bottom
+// spacer divs so native scrolling still reflects the true full height -
+// editing/selection keep working unchanged on whatever rows are in the DOM
+// (same classes, same handlers, just fewer elements alive at once). Rows
+// scrolled out of view simply aren't in the DOM until scrolled back in - the
+// same limitation every virtualized list/editor has. Column windowing is not
+// implemented yet (each visible row still renders its full width); this
+// specifically targets the "many sequences" dimension that caused the
+// reported freeze. Gated strictly to isCrazy alignments in Full mode - every
+// other mode/size combination is completely unaffected.
+let _fullModeRowHeightPx = null;
+
+function _measureFullModeRowHeight(sampleRowEl) {
+    if (sampleRowEl) {
+        const h = sampleRowEl.getBoundingClientRect().height;
+        if (h > 0) _fullModeRowHeightPx = h;
+    }
+    return _fullModeRowHeightPx || 16; // fallback before any row has ever been measured
+}
+
+function renderFullModeWindowedRows(container, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, preservedScrollTop) {
+    const nSeq = state.seqs.length;
+    const rowHeightPx = _fullModeRowHeightPx || 16;
+    // Clearing the container's innerHTML (just before this function runs)
+    // resets its real scrollTop to 0 in every browser - the caller captured
+    // the pre-clear value, which is what we must use to compute the window,
+    // not container.scrollTop (already 0 by now).
+    const effectiveScrollTop = preservedScrollTop != null ? preservedScrollTop : container.scrollTop;
+    // charWidthPx/nameColWidthPx/overscanCols are irrelevant here (rows only,
+    // full column width per row) - pass placeholders so colStart/colEnd (unused)
+    // don't throw on a zero-width divisor.
+    const range = getVisibleRowColumnRange({
+        scrollTop: effectiveScrollTop, scrollLeft: container.scrollLeft,
+        clientHeight: container.clientHeight, clientWidth: container.clientWidth,
+    }, rowHeightPx, 1, 0, 15, 0);
+    const rowStart = Math.min(range.rowStart, Math.max(0, nSeq - 1));
+    const rowEnd = Math.min(range.rowEnd, Math.max(0, nSeq - 1));
+
+    const topSpacer = document.createElement('div');
+    topSpacer.className = 'full-mode-row-spacer';
+    topSpacer.style.height = (rowStart * rowHeightPx) + 'px';
+    container.appendChild(topSpacer);
+
+    let firstRealRow = null;
+    for (let i = rowStart; i <= rowEnd; i++) {
+        const lineDiv = createSequenceLine(i, 0, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, conservationData);
+        container.appendChild(lineDiv);
+        if (!firstRealRow) firstRealRow = lineDiv;
+    }
+
+    const bottomSpacer = document.createElement('div');
+    bottomSpacer.className = 'full-mode-row-spacer';
+    bottomSpacer.style.height = (Math.max(0, nSeq - 1 - rowEnd) * rowHeightPx) + 'px';
+    container.appendChild(bottomSpacer);
+
+    _measureFullModeRowHeight(firstRealRow);
+    // The DOM's real scrollTop was reset to 0 by the innerHTML clear before
+    // this ran (see the caller); the spacers now give the container the
+    // correct total scrollable height again, so restore the actual scroll
+    // position for both the browser's own scrollbar and the next scroll
+    // event's baseline.
+    if (preservedScrollTop != null) container.scrollTop = preservedScrollTop;
+    _setupFullModeScrollListener(container);
+}
+
+let _fullModeScrollBoundContainer = null;
+function _setupFullModeScrollListener(container) {
+    if (_fullModeScrollBoundContainer === container) return; // already bound
+    _fullModeScrollBoundContainer = container;
+    let scrollRaf = null;
+    container.addEventListener('scroll', () => {
+        // Re-check conditions live: the listener stays bound to the container
+        // element (which persists across renders) even if the user later
+        // switches mode or loads a smaller file - it must no-op then, not
+        // keep re-rendering into an unrelated view.
+        if (!document.getElementById('modeSingle')?.checked) return;
+        if (!state.alignmentIndex?.isCrazy) return;
+        if (scrollRaf) return;
+        scrollRaf = requestAnimationFrame(() => {
+            scrollRaf = null;
+            renderAlignment({ deferConservation: true });
+        });
+    });
+}
+
 function reverseComplement(seq) {
     const complement = { 'A':'T','T':'A','C':'G','G':'C','N':'N','-':'-','.':'.', 'U':'A','R':'Y','Y':'R','M':'K','K':'M','S':'S','W':'W','H':'D','B':'V','V':'B','D':'H' };
     return seq.split('').reverse().map(b => {
@@ -3982,12 +4073,35 @@ function renderAlignment(options = {}) {
         return;
     }
     const coverageMin = clampMinCoverage(el('consensusMinCoverage')?.value) / 100;
+    // Clearing innerHTML resets scrollTop to 0 in every browser, which would
+    // silently defeat Full-mode row windowing below (its scroll listener
+    // triggers exactly this re-render, then getVisibleRowColumnRange would
+    // always read the just-reset 0 instead of where the user actually
+    // scrolled to). Save and restore around the rebuild, scoped to when
+    // windowing might apply so this doesn't change scroll behavior anywhere
+    // else - renderFullModeWindowedRows's row-only case is the only path
+    // that currently needs it.
+    const _preserveScrollTop = (document.getElementById('modeSingle')?.checked && state.alignmentIndex?.isCrazy)
+        ? alignmentContainer.scrollTop : null;
     alignmentContainer.innerHTML = '';
     // Ensure Full/Block modes have correct scroll/layout behaviour
     // (any leftover Canvas/Compact inline styles are overwritten)
     alignmentContainer.style.position = 'static';
-    alignmentContainer.style.height = 'auto';
-    alignmentContainer.style.overflow = 'auto';
+    if (_preserveScrollTop !== null) {
+        // Windowed Full mode needs alignmentContainer itself to be the real
+        // scrolling viewport (fixed height, native overflow scroll) so its
+        // own scrollTop/clientHeight are meaningful - height:auto (the
+        // normal Full/Block behaviour, which scrolls via the page instead)
+        // would make scrollHeight always equal clientHeight and defeat
+        // windowing entirely. Same formula Canvas mode already uses for its
+        // own fixed-height viewport.
+        const top = alignmentContainer.getBoundingClientRect().top;
+        alignmentContainer.style.height = (window.innerHeight - top - 28) + 'px';
+        alignmentContainer.style.overflow = 'auto';
+    } else {
+        alignmentContainer.style.height = 'auto';
+        alignmentContainer.style.overflow = 'auto';
+    }
     setAlignmentColorSchemeClass();
     // Container-level drag handlers: allow drops anywhere, show preview
     // Remove old handlers first to avoid stacking
@@ -4422,10 +4536,16 @@ function renderAlignment(options = {}) {
         if (shouldRenderConsensus && consensusPosition === 'top') {
             addConsensusLine(alignmentContainer, consensus, 0, len, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, 'top', options);
         }
-        for (let i = 0; i < state.seqs.length; i++) {
-            // *** PASS conservationData to createSequenceLine ***
-            const lineDiv = createSequenceLine(i, 0, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, conservationData);
-            alignmentContainer.appendChild(lineDiv);
+        // Row-virtualize Full mode on "crazy"-sized alignments only - every
+        // other size/mode combination renders exactly as before.
+        if (state.alignmentIndex?.isCrazy) {
+            renderFullModeWindowedRows(alignmentContainer, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, _preserveScrollTop);
+        } else {
+            for (let i = 0; i < state.seqs.length; i++) {
+                // *** PASS conservationData to createSequenceLine ***
+                const lineDiv = createSequenceLine(i, 0, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, conservationData);
+                alignmentContainer.appendChild(lineDiv);
+            }
         }
         if (shouldRenderConsensus && consensusPosition === 'bottom') {
             addConsensusLine(alignmentContainer, consensus, 0, len, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, 'bottom', options);
