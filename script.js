@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v167';
+const BUILD_TAG = 'v168';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1626,7 +1626,16 @@ function _measureFullModeRowHeight(sampleRowEl) {
     return _fullModeRowHeightPx || 16; // fallback before any row has ever been measured
 }
 
+// Cached so scroll-triggered updates can rebuild just the row window
+// (see _refreshFullModeWindowOnScroll) without re-running the full,
+// expensive renderAlignment() pipeline on every scroll tick - a real
+// alignment on this file's DOM cost was measured to make that path take
+// ~1-2s per call, more than one scroll event's worth of wall-clock time,
+// which read as sluggish stepping rather than smooth scrolling.
+let _fullModeWindowRenderParams = null;
+
 function renderFullModeWindowedRows(container, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, preservedScrollTop) {
+    _fullModeWindowRenderParams = { len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData };
     const nSeq = state.seqs.length;
     const rowHeightPx = _fullModeRowHeightPx || 16;
     // Clearing the container's innerHTML (just before this function runs)
@@ -1666,28 +1675,100 @@ function renderFullModeWindowedRows(container, len, nameLen, stickyNames, standa
     // this ran (see the caller); the spacers now give the container the
     // correct total scrollable height again, so restore the actual scroll
     // position for both the browser's own scrollbar and the next scroll
-    // event's baseline.
-    if (preservedScrollTop != null) container.scrollTop = preservedScrollTop;
+    // event's baseline. This assignment itself fires a 'scroll' event -
+    // suppress exactly that one so it doesn't re-trigger the render cycle
+    // that's already in progress.
+    if (preservedScrollTop != null && container.scrollTop !== preservedScrollTop) {
+        _suppressNextFullModeScrollEvent = true;
+        container.scrollTop = preservedScrollTop;
+    }
     _setupFullModeScrollListener(container);
 }
 
+// Lightweight scroll-driven update: swaps only the rendered row window in
+// place (removes rows between the two spacers, rebuilds the new range,
+// resizes both spacers), without clearing/rebuilding the ruler, consensus
+// row, or anything else, and without any of renderAlignment()'s unrelated
+// side effects (updateSourceInfo, search-highlight reapplication, etc).
+// Falls back to a full renderAlignment() if the DOM doesn't look like what
+// this function expects (e.g. an in-between mode switch) rather than risk
+// operating on a stale/mismatched structure.
+function _refreshFullModeWindowOnScroll(container) {
+    const p = _fullModeWindowRenderParams;
+    if (!p) { renderAlignment({ deferConservation: true }); return; }
+    const spacers = [...container.querySelectorAll(':scope > .full-mode-row-spacer')];
+    if (spacers.length !== 2) { renderAlignment({ deferConservation: true }); return; }
+    const [topSpacer, bottomSpacer] = spacers;
+
+    const nSeq = state.seqs.length;
+    const rowHeightPx = _fullModeRowHeightPx || 16;
+    const range = getVisibleRowColumnRange(container, rowHeightPx, 1, 0, 15, 0);
+    const rowStart = Math.min(range.rowStart, Math.max(0, nSeq - 1));
+    const rowEnd = Math.min(range.rowEnd, Math.max(0, nSeq - 1));
+
+    let node = topSpacer.nextSibling;
+    while (node && node !== bottomSpacer) {
+        const next = node.nextSibling;
+        node.remove();
+        node = next;
+    }
+    for (let i = rowStart; i <= rowEnd; i++) {
+        const lineDiv = createSequenceLine(i, 0, p.len, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, true, p.conservationData);
+        container.insertBefore(lineDiv, bottomSpacer);
+    }
+    topSpacer.style.height = (rowStart * rowHeightPx) + 'px';
+    bottomSpacer.style.height = (Math.max(0, nSeq - 1 - rowEnd) * rowHeightPx) + 'px';
+    // Selection/edit-mode DOM bindings only exist for rows currently in the
+    // DOM - re-sync so newly-scrolled-in rows pick up any active selection.
+    _syncSelectionDomFromState();
+}
+
 let _fullModeScrollBoundContainer = null;
+// Restoring scrollTop programmatically (see renderFullModeWindowedRows)
+// fires its own 'scroll' event in every browser - without suppressing that
+// specific event, the render-triggered-by-scroll cycle re-triggers itself
+// forever, even with zero further real user input (confirmed: caused a
+// genuine infinite loop that hung the tab under a rapid-scroll stress test).
+let _suppressNextFullModeScrollEvent = false;
 function _setupFullModeScrollListener(container) {
     if (_fullModeScrollBoundContainer === container) return; // already bound
     _fullModeScrollBoundContainer = container;
-    let scrollRaf = null;
+    // A render is more expensive than one animation frame (it rebuilds the
+    // container's DOM, not just the windowed rows), so gating solely on "is
+    // an rAF pending" isn't enough under rapid scroll input - clearing the
+    // pending flag at the START of the rAF callback (before the expensive
+    // render actually runs) let new scroll events slip through and queue
+    // additional renders while one was still in flight, piling up faster
+    // than they could complete and blocking the page (confirmed: a 50-event
+    // rapid-scroll stress test hung the tab with the old logic). renderInProgress
+    // stays true for the render's full duration; a scroll arriving mid-render
+    // just marks "one more catch-up render needed" instead of starting another.
+    let renderInProgress = false;
+    let renderPending = false;
+    const triggerWindowedRender = () => {
+        if (renderInProgress) { renderPending = true; return; }
+        renderInProgress = true;
+        requestAnimationFrame(() => {
+            _refreshFullModeWindowOnScroll(container);
+            renderInProgress = false;
+            if (renderPending) {
+                renderPending = false;
+                triggerWindowedRender();
+            }
+        });
+    };
     container.addEventListener('scroll', () => {
+        if (_suppressNextFullModeScrollEvent) {
+            _suppressNextFullModeScrollEvent = false;
+            return;
+        }
         // Re-check conditions live: the listener stays bound to the container
         // element (which persists across renders) even if the user later
         // switches mode or loads a smaller file - it must no-op then, not
         // keep re-rendering into an unrelated view.
         if (!document.getElementById('modeSingle')?.checked) return;
         if (!state.alignmentIndex?.isCrazy) return;
-        if (scrollRaf) return;
-        scrollRaf = requestAnimationFrame(() => {
-            scrollRaf = null;
-            renderAlignment({ deferConservation: true });
-        });
+        triggerWindowedRender();
     });
 }
 
