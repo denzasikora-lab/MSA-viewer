@@ -962,6 +962,11 @@ input[type="number"] {
 #alignmentContainer::-webkit-scrollbar:horizontal { height: 0; }
 #alignmentContainer::-webkit-scrollbar { display: none; }
 #alignmentContainer { -ms-overflow-style: none; scrollbar-width: none; }
+/* Full-mode row virtualization: invisible spacers that stand in for the
+   rows currently scrolled out of view, so native scrolling still reflects
+   the alignment's true full height even though only a window of rows is
+   actually rendered as DOM. */
+.full-mode-row-spacer { display: block; margin: 0; padding: 0; pointer-events: none; }
     /* revert layout: seq-line stretches to container width */
 .seq-line {
     display: flex;
