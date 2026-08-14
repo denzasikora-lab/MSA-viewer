@@ -1161,7 +1161,10 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <strong>Editing needs Block or Full view.</strong> Canvas and Reads draw no per-residue
     cells for the tools to act on, so Edit Mode is unavailable there and says so. Switch back
     to Block or Full to edit. Very large alignments switch to Canvas automatically, which is
-    why editing can appear to be missing on them.
+    why editing can appear to be missing on them. Manually switching into Full mode on such an
+    alignment shows a confirmation dialog first - Full mode has no windowing at all (Block at
+    least splits each row into smaller chunks) and can fully freeze the browser tab for a long
+    time on a large file, not just run slowly.
   </div>
 
   <h3 id="ed-move-slide">8.4 Move &amp; Slide Tools</h3>

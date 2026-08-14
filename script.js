@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v164';
+const BUILD_TAG = 'v165';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1551,7 +1551,17 @@ function toggleStickyNames() {
     document.querySelectorAll('.seq-name').forEach(name => {
         name.classList.toggle('static', !sticky);
     });
-    alignmentContainer.offsetHeight; // Force reflow
+    // Forcing a reflow here makes the .static class change take effect
+    // immediately rather than on the next natural paint. Cost scales with
+    // total DOM size, and this runs via setTimeout(0) after EVERY render
+    // (see the call site in renderAlignment) - meaning on a "crazy"-sized
+    // alignment (millions of residue spans) it's a genuine multi-second
+    // main-thread block that isn't captured by anything awaiting the render
+    // call itself. Skip the forced-immediate part above that size; the
+    // class toggle above still applies on the next natural paint either way.
+    if (!(state.alignmentIndex?.isCrazy)) {
+        alignmentContainer.offsetHeight; // Force reflow
+    }
     // DOM mode picks this up via the CSS class toggle above (no .seq-name
     // elements exist in Canvas mode); Canvas bakes stickyNames into its
     // render closure instead, so it needs an explicit re-render to take effect.
@@ -5510,10 +5520,15 @@ function _formatResidueCount(n) {
 }
 
 /**
- * Modal shown for "crazy" alignments before any heavy parse work.
+ * Modal shown for "crazy"/tall/long alignments before heavy parse work, and
+ * again if the user later switches into Full mode specifically (it has no
+ * windowing at all - measured to fully block the main thread past 45s on a
+ * 3408x1753 alignment that Block mode, itself no speed demon at ~12s, could
+ * at least render).
+ * @param {string} [context] 'load' (default) or 'full-mode-switch'
  * @returns {Promise<'cancel'|'proceed'>}
  */
-function showLargeAlignmentDialog(stats, classification) {
+function showLargeAlignmentDialog(stats, classification, context = 'load') {
     return new Promise((resolve) => {
         const backdrop = document.createElement('div');
         backdrop.className = 'blast-modal-backdrop align-load-dialog';
@@ -5521,9 +5536,10 @@ function showLargeAlignmentDialog(stats, classification) {
         dialog.className = 'blast-dialog';
         dialog.style.maxWidth = '460px';
 
+        const isModeSwitch = context === 'full-mode-switch';
         const title = document.createElement('div');
         title.className = 'blast-dialog-title';
-        title.textContent = 'Large alignment';
+        title.textContent = isModeSwitch ? 'Full mode on a large alignment' : 'Large alignment';
 
         const content = document.createElement('div');
         content.className = 'blast-dialog-content';
@@ -5531,13 +5547,17 @@ function showLargeAlignmentDialog(stats, classification) {
         content.style.lineHeight = '1.55';
 
         const reasons = [];
-        if (classification.isTall && classification.isLong) {
-            reasons.push('both sequence count and alignment width are very large');
-        }
-        if (stats.totalResidues > ALIGN_CRAZY_VOLUME) {
-            reasons.push(`total size exceeds ${_formatResidueCount(ALIGN_CRAZY_VOLUME)} residues`);
-        }
+        if (classification.isTall) reasons.push(`${stats.nSeqs.toLocaleString()} sequences`);
+        if (classification.isLong) reasons.push(`${stats.maxLen.toLocaleString()} columns`);
+        if (stats.totalResidues > ALIGN_CRAZY_VOLUME) reasons.push(`over ${_formatResidueCount(ALIGN_CRAZY_VOLUME)} total residues`);
         const reasonText = reasons.length ? reasons.join(' and ') : 'this alignment is very large';
+
+        const bodyText = isModeSwitch
+            ? `Full mode renders the entire alignment as one continuous block with no windowing, unlike
+               Block (chunked) or Canvas (viewport-only). On alignments this size it can fully freeze the
+               browser tab for a long time, not just run slowly - Canvas mode is strongly recommended instead.`
+            : `Loading may be slow or briefly freeze the browser because ${reasonText}.
+               Canvas mode is recommended for viewing; switch to Block/Full only for editing.`;
 
         content.innerHTML = `
             <p style="margin:0 0 10px;">
@@ -5545,13 +5565,10 @@ function showLargeAlignmentDialog(stats, classification) {
                 <strong>${stats.maxLen.toLocaleString()}</strong> columns
                 (<strong>${_formatResidueCount(stats.totalResidues)}</strong> residues)
             </p>
-            <p style="margin:0 0 12px;color:#555;">
-                Loading may be slow or briefly freeze the browser because ${reasonText}.
-                Canvas mode is recommended for viewing; switch to Block/Full only for editing.
-            </p>
+            <p style="margin:0 0 12px;color:#555;">${bodyText}</p>
             <div style="display:flex;gap:8px;justify-content:flex-end;">
                 <button type="button" id="alignLoadCancel" style="padding:6px 14px;font-size:12px;cursor:pointer;">Cancel</button>
-                <button type="button" id="alignLoadProceed" style="padding:6px 14px;font-size:12px;cursor:pointer;background:#1a73e8;color:#fff;border:1px solid #1557b0;border-radius:3px;">Load anyway</button>
+                <button type="button" id="alignLoadProceed" style="padding:6px 14px;font-size:12px;cursor:pointer;background:#1a73e8;color:#fff;border:1px solid #1557b0;border-radius:3px;">${isModeSwitch ? 'Switch anyway' : 'Load anyway'}</button>
             </div>
         `;
 
@@ -5802,7 +5819,37 @@ function syncQuickModeSwitch() {
     syncSearchControlsAvailability();
 }
 
-function onModeChange() {
+// The last mode radio id that actually completed a switch (not just got
+// clicked) - used to revert the UI if a user cancels the Full-mode warning
+// below. Matches the radio marked `checked` by default in the HTML.
+let _lastModeRadioId = 'modeBlocks';
+
+async function onModeChange() {
+    // Full mode renders every column of every row as children of a single,
+    // unblocked container (Block mode splits each row into ~20 smaller
+    // containers instead; Canvas culls to the viewport and never builds the
+    // rest at all) - measured directly against a real 3408-sequence x
+    // 1753-column alignment, Block mode took ~12s and Full mode blocked the
+    // main thread past 45s with no sign of finishing. The existing
+    // load-time "Large alignment" dialog already warns about this class of
+    // alignment, but only once, before any mode is chosen - a user landing
+    // in Block or Canvas from that dialog and later clicking Full manually
+    // gets no further warning, which is exactly what happened here. Gate
+    // entry into Full mode specifically, using the same size classification,
+    // regardless of whether the load-time dialog was already dismissed once.
+    const enteringFull = document.getElementById('modeSingle')?.checked;
+    if (enteringFull) {
+        const idx = state.alignmentIndex;
+        if (idx && (idx.isCrazy || idx.isTall || idx.isLong)) {
+            const choice = await showLargeAlignmentDialog(idx, idx, 'full-mode-switch');
+            if (choice === 'cancel') {
+                const prev = document.getElementById(_lastModeRadioId) || document.getElementById('modeBlocks');
+                if (prev) prev.checked = true;
+                syncQuickModeSwitch();
+                return;
+            }
+        }
+    }
     // This only fires from a real user click on a mode radio (the auto-switch
     // heuristic in renderAlignment sets .checked programmatically, which does
     // not dispatch 'change'), so this is an unambiguous signal to stop
@@ -5832,6 +5879,7 @@ function onModeChange() {
     exitEditModeForUnsupportedView({ rerender: false });
     renderAlignment();
     setupHoverMenuReveal();
+    _lastModeRadioId = document.querySelector('input[name="mode"]:checked')?.id || _lastModeRadioId;
 }
 
 function _updateCompactControlsVisibility() {
