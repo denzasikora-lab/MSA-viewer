@@ -3101,6 +3101,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             const y = SCALE_H + i * rowPitch - oy;
             const seq = state.seqs[i].seq;
             const consPos = conservationData;
+            const tsdRowMarks = state.tsdMarks?.get(i);
 
             // Residues (glyph-cached: 1 drawImage per cell vs fillRect+fillText)
             for (let p = firstCol; p <= lastCol; p++) {
@@ -3129,6 +3130,22 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                 } else if (baseUp === '-' || baseUp === '.') {
                     textFill = '#888';
                     bgFill = '#fff';
+                }
+
+                // TSD mark override (mirrors setSpanTsdMarkDisplay for DOM spans)
+                if (tsdRowMarks?.has(p)) {
+                    if (state.tsdMarkStyle === 'color') {
+                        const tsdColor = /^#[0-9A-Fa-f]{6}$/.test(state.tsdMarkColor || '') ? state.tsdMarkColor : '#ffd54f';
+                        bgFill = tsdColor;
+                        textFill = '#111';
+                    } else if (state.tsdMarkStyle === 'bold') {
+                        if (bgFill) { ctx.fillStyle = bgFill; ctx.fillRect(x, y, CHAR_W, CHAR_H); }
+                        ctx.fillStyle = textFill;
+                        ctx.font = 'bold ' + fontStr;
+                        ctx.fillText(base, x, y);
+                        ctx.font = fontStr;
+                        continue;
+                    }
                 }
 
                 // Single blit from glyph cache (eliminates fillStyle+fillRect+fillStyle+fillText)
@@ -18894,6 +18911,15 @@ function _clearRepeatHighlights() {
 function _scrollToColumn(colIndex) {
     const container = document.getElementById('alignmentContainer');
     if (!container) return;
+    // Canvas mode: pan the canvas instead of scrolling the container
+    if (document.getElementById('modeCanvas')?.checked) {
+        const m = _canvasState.metrics;
+        if (m?.charW) {
+            _canvasState.offsetX = Math.max(0, colIndex * m.charW - 120);
+            _canvasState.scheduleDraw?.();
+        }
+        return;
+    }
     // Measure actual character width from a rendered span
     const sampleSpan = container.querySelector('.seq-data > span[data-pos]');
     let charW = 7.8; // fallback for 13px Courier New
