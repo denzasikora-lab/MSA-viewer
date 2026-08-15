@@ -2775,7 +2775,7 @@ function _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd) {
 // totalContentW: current alignment's full pixel width (for the persistent scrollbar's thumb sizing).
 // onOffsetChange: optional callback (registered by setupPersistentScrollbar) invoked after each
 // draw() so the scrollbar can mirror wheel-scroll/drag-pan that didn't originate from the bar itself.
-const _canvasState = { offsetX: 0, offsetY: 0, ctx: null, metrics: null, seqsLen: 0, scheduleDraw: null, totalContentW: 0, totalContentH: 0, onOffsetChange: null, resizeHandler: null, mousemoveHandler: null, mouseupHandler: null };
+const _canvasState = { offsetX: 0, offsetY: 0, ctx: null, metrics: null, seqsLen: 0, scheduleDraw: null, totalContentW: 0, totalContentH: 0, onOffsetChange: null, resizeHandler: null, mousemoveHandler: null, mouseupHandler: null, canvas: null, rowPitch: 0 };
 // Cancellation token for the Canvas mode's deferred (chunked) conservation/
 // consensus jobs; reassigned + old one cancelled on every render so a
 // superseded background job can't clobber a newer one's results.
@@ -2794,6 +2794,153 @@ function _initCanvasMetrics(ctx, fontSizePx) {
     return _canvasState.metrics;
 }
 
+// ── Canvas hit-testing ─────────────────────────────────────────────────────
+// Converts a screen pixel coordinate (clientX/clientY) to a {row, col} index
+// in the alignment, or null if the point falls outside the data area (e.g. on
+// the name column, the scale ruler, or past the last row/column).
+//
+// The math mirrors the drawing code in _renderCanvasAlignment's draw():
+//   - The canvas is positioned at the top-left of alignmentContainer.
+//   - NAME_W pixels on the left are the sticky name column (no data there).
+//   - SCALE_H pixels at the top are the position ruler (no data there).
+//   - Each residue cell is CHAR_W × CHAR_H pixels.
+//   - offsetX/offsetY are the pan offsets (content scrolled away from origin).
+//
+// Worked examples (assuming CHAR_W=8, CHAR_H=15, NAME_W=208, SCALE_H=15,
+// offsetX=0, offsetY=0, canvas at screen position (100, 50)):
+//
+//   1. clientX=316, clientY=80  → canvas-relative (216, 30)
+//      col = floor((216 - 208 + 0) / 8) = floor(1) = 1
+//      row = floor((30 - 15 + 0) / 15) = floor(1) = 1
+//      → {row: 1, col: 1}  ✓ (second residue of second sequence)
+//
+//   2. clientX=100, clientY=50  → canvas-relative (0, 0)
+//      col = floor((0 - 208 + 0) / 8) = floor(-26) = -26  → negative, null
+//      → null  ✓ (top-left corner is the name column / ruler, not data)
+//
+//   3. clientX=312, clientY=65  → canvas-relative (212, 15)
+//      col = floor((212 - 208 + 0) / 8) = floor(0.5) = 0
+//      row = floor((15 - 15 + 0) / 15) = floor(0) = 0
+//      → {row: 0, col: 0}  ✓ (first residue of first sequence)
+//
+//   4. clientX=900, clientY=900 (past last col/row) → canvas-relative (800, 850)
+//      If alignment is 50 cols × 20 rows: col=74, row=55 → both out of range → null
+//      → null  ✓
+function _canvasHitTest(clientX, clientY) {
+    const canvas = _canvasState.canvas;
+    if (!canvas) return null;
+    const m = _canvasState.metrics;
+    if (!m || !m.nameW) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const NAME_W = m.nameW;
+    const SCALE_H = m.charH; // one ruler row, same height as a data row
+    const CHAR_W = m.charW;
+    const CHAR_H = m.charH;
+    const rowPitch = _canvasState.rowPitch || CHAR_H;
+    // Subtract the name column and scale ruler offsets, then add back the pan
+    // offset so the result is in content (not viewport) coordinates.
+    const col = Math.floor((x - NAME_W + _canvasState.offsetX) / CHAR_W);
+    const row = Math.floor((y - SCALE_H + _canvasState.offsetY) / rowPitch);
+    if (col < 0 || row < 0) return null;
+    const nSeqs = _canvasState.seqsLen || (state.seqs ? state.seqs.length : 0);
+    const len = state.seqs && state.seqs.length > 0
+        ? Math.max(...state.seqs.map(s => s.seq.length))
+        : 0;
+    if (row >= nSeqs || col >= len) return null;
+    return { row, col };
+}
+
+// Hit-test the scale ruler area (top row, y < SCALE_H in canvas coords).
+// Returns { col } or null if outside the ruler's column range.
+function _canvasHitTestRuler(clientX, clientY) {
+    const canvas = _canvasState.canvas;
+    if (!canvas) return null;
+    const m = _canvasState.metrics;
+    if (!m || !m.nameW) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (y < 0 || y >= m.charH) return null;  // not in ruler row
+    if (x < m.nameW) return null;             // name column corner
+    const col = Math.floor((x - m.nameW + _canvasState.offsetX) / m.charW);
+    const len = state.seqs && state.seqs.length > 0
+        ? Math.max(...state.seqs.map(s => s.seq.length))
+        : 0;
+    if (col < 0 || col >= len) return null;
+    return { col };
+}
+
+// Hit-test the name column area (left side, x < NAME_W in canvas coords).
+// Returns { row } or null if outside the name column's row range.
+function _canvasHitTestName(clientX, clientY) {
+    const canvas = _canvasState.canvas;
+    if (!canvas) return null;
+    const m = _canvasState.metrics;
+    if (!m || !m.nameW) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || x >= m.nameW) return null;   // not in name column
+    if (y < m.charH) return null;               // ruler corner
+    const row = Math.floor((y - m.charH + _canvasState.offsetY) / (_canvasState.rowPitch || m.charH));
+    const nSeqs = _canvasState.seqsLen || (state.seqs ? state.seqs.length : 0);
+    if (row < 0 || row >= nSeqs) return null;
+    return { row };
+}
+
+// Get the row index from a y coordinate in canvas viewport space.
+// Unlike _canvasHitTestName, this works for any x (used during drag).
+function _canvasRowFromClientY(clientY) {
+    const canvas = _canvasState.canvas;
+    if (!canvas) return -1;
+    const m = _canvasState.metrics;
+    if (!m || !m.nameW) return -1;
+    const rect = canvas.getBoundingClientRect();
+    const y = clientY - rect.top;
+    const row = Math.floor((y - m.charH + _canvasState.offsetY) / (_canvasState.rowPitch || m.charH));
+    const nSeqs = _canvasState.seqsLen || (state.seqs ? state.seqs.length : 0);
+    if (row < 0 || row >= nSeqs) return -1;
+    return row;
+}
+
+// Get the column index from an x coordinate in canvas viewport space.
+// Unlike _canvasHitTestRuler, this works for any y (used during drag).
+function _canvasColFromClientX(clientX) {
+    const canvas = _canvasState.canvas;
+    if (!canvas) return -1;
+    const m = _canvasState.metrics;
+    if (!m || !m.nameW) return -1;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    if (x < m.nameW) return -1;
+    const col = Math.floor((x - m.nameW + _canvasState.offsetX) / m.charW);
+    const len = state.seqs && state.seqs.length > 0
+        ? Math.max(...state.seqs.map(s => s.seq.length))
+        : 0;
+    if (col < 0 || col >= len) return -1;
+    return col;
+}
+
+// Module-level hover tracking: updated by mousemove, read by future phases
+// (tooltip, redraw-on-hover). No visual feedback yet — Phase 0 only.
+let _canvasHoverCell = null;
+
+// Phase 4: reusable 1×1 px element positioned at a canvas cell, used as the
+// positioning anchor for showTooltipAt (which calls getBoundingClientRect on
+// its target).  Created lazily so it only exists when Canvas mode is active.
+let _canvasTooltipTarget = null;
+
+function _getCanvasTooltipTarget() {
+    if (!_canvasTooltipTarget || !_canvasTooltipTarget.isConnected) {
+        _canvasTooltipTarget = document.createElement('div');
+        _canvasTooltipTarget.style.cssText = 'position:fixed;width:1px;height:1px;pointer-events:none;z-index:-1;';
+        document.body.appendChild(_canvasTooltipTarget);
+    }
+    return _canvasTooltipTarget;
+}
+
 // Reads the shading palette from the same CSS custom properties the DOM
 // renderer uses (customizable via the black/dark/light colour pickers), so
 // Canvas mode's conservation colours stay in sync with Normal mode instead
@@ -2808,8 +2955,100 @@ function _getCanvasShadePalette() {
     };
 }
 
+// Cache for search-hit highlights in Canvas mode. Maps rowIndex -> { seq, searchLen, hits }.
+// Invalidated on re-render and when the sequence or search history changes.
+let _canvasSearchHitsCache = null;
+
+// Compute search-hit positions for a single row, mirroring _paintSearchEntryOnAlignment's
+// logic but returning a Map(col -> color) instead of adding CSS classes to DOM spans.
+function _computeSearchHitsForRow(rowIndex) {
+    const hits = new Map();
+    if (!state.searchHistory?.length) return hits;
+    if (rowIndex < 0 || rowIndex >= state.seqs.length) return hits;
+
+    const seq = state.seqs[rowIndex].seq;
+    // Build mapping: degapped index -> alignment column (mirrors _paintSearchEntryOnAlignment)
+    const nonGapCols = [];
+    const displayedChars = [];
+    for (let col = 0; col < seq.length; col++) {
+        const ch = (seq[col] || '-').toUpperCase();
+        if (ch !== '-' && ch !== '.') {
+            nonGapCols.push(col);
+            displayedChars.push(ch);
+        }
+    }
+    const displayString = displayedChars.join('').replace(/U/g, 'T');
+    if (!displayString) return hits;
+
+    state.searchHistory.forEach(entry => {
+        if (!entry.className) return;
+        let searchMotifValue = entry.searchValue || entry.label || '';
+        searchMotifValue = String(searchMotifValue).replace(/\s*\(rev comp\)\s*$/i, '').trim();
+        if (!searchMotifValue && entry.motif) {
+            searchMotifValue = String(entry.motif).replace(/:(fwd|rev comp|rev)$/i, '').trim();
+        }
+        if (!searchMotifValue) return;
+
+        const normalizedMotif = searchMotifValue.replace(/U/g, 'T');
+        const maxMismatches = Number.isInteger(entry.maxMismatches) ? entry.maxMismatches : (parseInt(el('maxMismatches')?.value, 10) || 0);
+        const useRegex = !!entry.useRegex;
+        const color = entry.color || '#ffcc00';
+
+        let matches;
+        if (useRegex) {
+            matches = [];
+            try {
+                const re = new RegExp(normalizedMotif, 'gi');
+                let m;
+                while ((m = re.exec(displayString)) !== null) {
+                    matches.push({ idx: m.index, len: m[0].length || 1, matchingPositions: null });
+                    if (m[0].length === 0) re.lastIndex++;
+                }
+            } catch (_) {
+                return;
+            }
+        } else {
+            matches = findFuzzyMatches(displayString, normalizedMotif, maxMismatches)
+                .map(m => ({ idx: m.idx, len: m.len, matchingPositions: m.matchingPositions }));
+        }
+
+        const paintPartialMatches = !useRegex && maxMismatches > 0;
+        matches.forEach(m => {
+            if (paintPartialMatches && m.matchingPositions?.length) {
+                m.matchingPositions.forEach(offset => {
+                    const col = nonGapCols[m.idx + offset];
+                    if (col !== undefined) hits.set(col, color);
+                });
+            } else {
+                for (let j = 0; j < m.len; j++) {
+                    const col = nonGapCols[m.idx + j];
+                    if (col !== undefined) hits.set(col, color);
+                }
+            }
+        });
+    });
+
+    return hits;
+}
+
+// Cached per-row search-hit lookup. Invalidates when the sequence string or
+// search history length changes, so edits and search add/remove are handled.
+function _getSearchHitsForRow(rowIndex) {
+    const seq = state.seqs[rowIndex]?.seq;
+    if (!seq) return new Map();
+    if (!_canvasSearchHitsCache) _canvasSearchHitsCache = new Map();
+    const cached = _canvasSearchHitsCache.get(rowIndex);
+    if (cached && cached.seq === seq && cached.searchLen === state.searchHistory.length) {
+        return cached.hits;
+    }
+    const hits = _computeSearchHitsForRow(rowIndex);
+    _canvasSearchHitsCache.set(rowIndex, { seq, searchLen: state.searchHistory.length, hits });
+    return hits;
+}
+
 function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, darkThresh, lightThresh,
                                   enableBlack, enableDark, enableLight, nameLen, stickyNames) {
+    _canvasSearchHitsCache = null; // invalidate search-hit cache on re-render
     alignmentContainer.innerHTML = '';
     alignmentContainer.style.overflow = 'hidden';
     alignmentContainer.style.position = 'relative';
@@ -2837,6 +3076,18 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     const CHAR_W = m.charW;
     const CHAR_H = m.charH;
     const NAME_W = nameLen * CHAR_W + 8;
+    // Store nameW in metrics so _canvasHitTest can use it without re-deriving
+    m.nameW = NAME_W;
+    // Store canvas reference for hit-testing
+    _canvasState.canvas = canvas;
+    // Codon analysis: AA translation rows increase the per-row pitch.
+    // All-frames mode (state._codonActiveFrame === -1) draws 3 AA rows per
+    // sequence (frames 0, 1, 2), matching DOM mode's 3-row layout.
+    const hasCodon = !!(state._codonData && state._codonData.aaSeq);
+    const aaRowCount = hasCodon ? (state._codonActiveFrame === -1 ? 3 : 1) : 0;
+    const aaRowH = hasCodon ? CHAR_H : 0;
+    const rowPitch = CHAR_H + aaRowCount * aaRowH;
+    _canvasState.rowPitch = rowPitch;
     // Glyph cache: pre-rendered (char, bg-color, fg-color) -> off-screen canvas
     // Turns fillRect()+fillText() into a single drawImage() per cell after warm-up
     const _glyphCache = new Map();
@@ -2858,12 +3109,13 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     }
 
     const nSeqs = state.seqs.length;
+    _canvasState.seqsLen = nSeqs;
     const SCALE_H = CHAR_H; // one row at top, matching Full/Block .scale-ruler-line
     let _lastOffX = -1, _lastOffY = -1, _dirty = false;
     function _markDirty() { _dirty = true; }
 
     const totalContentW = NAME_W + len * CHAR_W + 4;
-    const totalContentH = SCALE_H + nSeqs * CHAR_H + 4;
+    const totalContentH = SCALE_H + nSeqs * rowPitch + 4;
     // Exposed so the persistent horizontal/vertical scrollbars (real DOM
     // elements, since Canvas mode's own content isn't natively scrollable)
     // can size their thumbs and mirror pan position.
@@ -2927,8 +3179,8 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         const oy = _canvasState.offsetY;
         const firstCol = Math.max(0, Math.floor((ox - NAME_W) / CHAR_W));
         const lastCol = Math.min(len - 1, Math.ceil((ox - NAME_W + w) / CHAR_W));
-        const firstRow = Math.max(0, Math.floor((oy - SCALE_H) / CHAR_H));
-        const lastRow = Math.min(nSeqs - 1, Math.floor((oy - SCALE_H + h - 1) / CHAR_H));
+        const firstRow = Math.max(0, Math.floor((oy - SCALE_H) / rowPitch));
+        const lastRow = Math.min(nSeqs - 1, Math.floor((oy - SCALE_H + h - 1) / rowPitch));
 
         ctx.clearRect(0, 0, w, h);
         ctx.font = fontStr;
@@ -2963,9 +3215,11 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         }
 
         for (let i = firstRow; i <= lastRow; i++) {
-            const y = SCALE_H + i * CHAR_H - oy;
+            const y = SCALE_H + i * rowPitch - oy;
             const seq = state.seqs[i].seq;
             const consPos = conservationData;
+            const tsdRowMarks = state.tsdMarks?.get(i);
+            const searchHits = _getSearchHitsForRow(i);
 
             // Residues (glyph-cached: 1 drawImage per cell vs fillRect+fillText)
             for (let p = firstCol; p <= lastCol; p++) {
@@ -2996,8 +3250,50 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                     bgFill = '#fff';
                 }
 
+                // TSD mark override (mirrors setSpanTsdMarkDisplay for DOM spans)
+                if (tsdRowMarks?.has(p)) {
+                    if (state.tsdMarkStyle === 'color') {
+                        const tsdColor = /^#[0-9A-Fa-f]{6}$/.test(state.tsdMarkColor || '') ? state.tsdMarkColor : '#ffd54f';
+                        bgFill = tsdColor;
+                        textFill = '#111';
+                    } else if (state.tsdMarkStyle === 'bold') {
+                        if (bgFill) { ctx.fillStyle = bgFill; ctx.fillRect(x, y, CHAR_W, CHAR_H); }
+                        ctx.fillStyle = textFill;
+                        ctx.font = 'bold ' + fontStr;
+                        ctx.fillText(base, x, y);
+                        ctx.font = fontStr;
+                        continue;
+                    }
+                }
+
+                // Search hit override (mirrors CSS .search-hit-* { background-color; color: black })
+                if (searchHits.has(p)) {
+                    bgFill = searchHits.get(p);
+                    textFill = '#000';
+                }
+
                 // Single blit from glyph cache (eliminates fillStyle+fillRect+fillStyle+fillText)
                 ctx.drawImage(_makeGlyph(base, bgFill, textFill), x, y, CHAR_W, CHAR_H);
+            }
+
+            // Breakpoint markers (var-sites mode) — drawn on top of residues at
+            // the breakpoint position. In DOM mode these replace hidden columns;
+            // Canvas mode doesn't hide columns yet, so the marker overlays the
+            // residue at that position with the breakpoint colour + symbol.
+            if (state._brkBeforePos && state._brkBeforePos.size > 0) {
+                ctx.font = fontStr;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                state._brkBeforePos.forEach(brkPos => {
+                    if (brkPos < firstCol || brkPos > lastCol) return;
+                    const bx = NAME_W + brkPos * CHAR_W - ox;
+                    if (bx + CHAR_W < 0 || bx > w) return;
+                    ctx.fillStyle = brkStyle.color || '#d0d0d0';
+                    ctx.fillRect(bx, y, CHAR_W, CHAR_H);
+                    ctx.fillStyle = '#333';
+                    ctx.fillText(brkStyle.symbol || '\u22EE', bx + CHAR_W / 2, y);
+                });
+                ctx.textAlign = 'start';
             }
 
             // Sequence name - drawn last so it sits on top of any residues that
@@ -3023,6 +3319,129 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                 ctx.restore();
             }
             ctx.font = fontStr;
+
+            // AA translation row(s) (codon analysis)
+            if (hasCodon && state._codonData.aaSeq[i]) {
+                const framesToDraw = state._codonActiveFrame === -1
+                    ? [2, 1, 0]  // all-frames: frame 2 at top, 0 at bottom (matches DOM)
+                    : [null];     // single frame: use state._codonData directly
+                const bestFrame = state._codonFrames?.bestFrame ?? 0;
+
+                for (let frIdx = 0; frIdx < framesToDraw.length; frIdx++) {
+                    const fr = framesToDraw[frIdx];
+                    const aaY = y + CHAR_H + frIdx * aaRowH;
+                    const aaData = fr !== null
+                        ? (state._codonFrames?.frames[fr]?.aaSeq[i])
+                        : state._codonData.aaSeq[i];
+                    if (!aaData) continue;
+
+                    // Name label in the name column
+                    const labelFrame = fr !== null ? fr : (state._codonActiveFrame >= 0 ? state._codonActiveFrame : bestFrame);
+                    const aaLabel = 'Pos ' + (labelFrame + 1) + ':';
+                    ctx.font = fontStr;
+                    if (stickyNames) {
+                        ctx.fillStyle = '#fff';
+                        ctx.fillRect(0, aaY, NAME_W, aaRowH);
+                        ctx.fillStyle = '#666';
+                        ctx.textAlign = 'right';
+                        ctx.fillText(aaLabel, NAME_W - 4, aaY);
+                    } else if (ox < NAME_W) {
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.rect(0, aaY, NAME_W, aaRowH);
+                        ctx.clip();
+                        ctx.fillStyle = '#666';
+                        ctx.textAlign = 'right';
+                        ctx.fillText(aaLabel, NAME_W - 4 - ox, aaY);
+                        ctx.restore();
+                    }
+
+                    // AA characters
+                    ctx.textAlign = 'center';
+                    for (const entry of aaData) {
+                        if (!entry.cols || entry.cols.length === 0) continue;
+                        const colStart = entry.cols[0];
+                        const colEnd = entry.cols[entry.cols.length - 1];
+                        const xStart = NAME_W + colStart * CHAR_W - ox;
+                        const xEnd = NAME_W + (colEnd + 1) * CHAR_W - ox;
+                        if (xEnd < 0 || xStart > w) continue;
+                        const width = (colEnd - colStart + 1) * CHAR_W;
+                        const centerX = xStart + width / 2;
+                        ctx.fillStyle = entry.aa === '*' ? '#e74c3c' : '#333';
+                        ctx.fillText(entry.aa, centerX, aaY);
+                    }
+                    ctx.textAlign = 'start';
+                }
+            }
+        }
+
+        // Highlight selected columns (semi-transparent vertical strips)
+        if (state.selectedColumns.size > 0) {
+            ctx.fillStyle = 'rgba(25, 118, 210, 0.15)';
+            state.selectedColumns.forEach(pos => {
+                const x = NAME_W + pos * CHAR_W - ox;
+                if (x + CHAR_W < 0 || x > w) return;
+                const dataTop = Math.max(0, SCALE_H - oy);
+                const dataBottom = Math.min(h, SCALE_H + nSeqs * CHAR_H - oy);
+                ctx.fillRect(x, dataTop, CHAR_W, dataBottom - dataTop);
+            });
+        }
+
+        // Highlight selected rows (semi-transparent horizontal strips)
+        if (state.selectedRows.size > 0) {
+            ctx.fillStyle = 'rgba(25, 118, 210, 0.15)';
+            state.selectedRows.forEach(rowIdx => {
+                const y = SCALE_H + rowIdx * rowPitch - oy;
+                if (y + rowPitch < 0 || y > h) return;
+                ctx.fillRect(0, y, w, rowPitch);
+            });
+        }
+
+        // Highlight selected nucleotides (mirrors DOM .nuc-selected in Full/Block mode)
+        if (state.selectedNucs.size > 0) {
+            ctx.fillStyle = 'rgba(25, 118, 210, 0.25)';
+            ctx.strokeStyle = '#1976D2';
+            ctx.lineWidth = 1;
+            state.selectedNucs.forEach((posSet, rowIdx) => {
+                if (rowIdx < 0 || !posSet || posSet.size === 0) return;
+                const y = SCALE_H + rowIdx * rowPitch - oy;
+                if (y + CHAR_H < 0 || y > h) return;
+                posSet.forEach(pos => {
+                    const x = NAME_W + pos * CHAR_W - ox;
+                    if (x + CHAR_W < 0 || x > w) return;
+                    ctx.fillRect(x, y, CHAR_W, CHAR_H);
+                    ctx.strokeRect(x + 0.5, y + 0.5, CHAR_W - 1, CHAR_H - 1);
+                });
+            });
+        }
+        // Draw pending nucleotide start indicator (dashed border, two-click system)
+        if (state.pendingNucStart) {
+            const pr = state.pendingNucStart.row, pp = state.pendingNucStart.pos;
+            if (pr >= 0) {
+                const y = SCALE_H + pr * rowPitch - oy;
+                const x = NAME_W + pp * CHAR_W - ox;
+                if (x + CHAR_W >= 0 && x <= w && y + CHAR_H >= 0 && y <= h) {
+                    ctx.strokeStyle = '#1976D2';
+                    ctx.setLineDash([3, 2]);
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(x + 0.5, y + 0.5, CHAR_W - 1, CHAR_H - 1);
+                    ctx.setLineDash([]);
+                }
+            }
+        }
+
+        // Draw active edit cell highlight (residue typing mode)
+        if (state.editModeActive && state.editTool === 'residue' && state.editCell) {
+            const er = state.editCell.row, ep = state.editCell.pos;
+            if (er >= 0 && er < nSeqs && ep >= 0) {
+                const y = SCALE_H + er * rowPitch - oy;
+                const x = NAME_W + ep * CHAR_W - ox;
+                if (x + CHAR_W >= 0 && x <= w && y + CHAR_H >= 0 && y <= h) {
+                    ctx.strokeStyle = '#e74c3c';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + 1, y + 1, CHAR_W - 2, CHAR_H - 2);
+                }
+            }
         }
 
         // Name column separator (fixed on-screen when sticky, scrolls with
@@ -3048,18 +3467,246 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     // Touch/drag pan
     let dragging = false, dragStartX, dragStartY, dragOx, dragOy;
     canvas.addEventListener('mousedown', (e) => {
-        if (e.button === 0) {
-            dragging = true;
-            dragStartX = e.clientX;
-            dragStartY = e.clientY;
-            dragOx = _canvasState.offsetX;
-            dragOy = _canvasState.offsetY;
-            canvas.style.cursor = 'grabbing';
-                   _markDirty();
+        if (e.button !== 0) return;
+
+        // GeneDoc edit mode: handle edit tool clicks (mirrors handleGeneDocEditMouseDown)
+        if (state.editModeActive && !isCtrlModifier(e) && !isAltModifier(e)) {
+            const tool = state.editTool;
+            if (GENEDOC_MOVE_TOOLS.has(tool)) {
+                const hit = _canvasHitTest(e.clientX, e.clientY);
+                if (hit && isGeneDocResidueChar(state.seqs[hit.row]?.seq[hit.col])) {
+                    startGeneDocMoveDrag(e, hit.row, hit.col, tool, null);
+                    e.preventDefault();
+                    return;
+                }
+            } else if (GENEDOC_GAP_TOOLS.has(tool)) {
+                const hit = _canvasHitTest(e.clientX, e.clientY);
+                if (hit) {
+                    handleGeneDocGapToolClick(hit.row, hit.col, tool);
+                    e.preventDefault();
+                    return;
+                }
+            } else if (tool === 'residue') {
+                const hit = _canvasHitTest(e.clientX, e.clientY);
+                if (hit) {
+                    state.editCell = { row: hit.row, pos: hit.col };
+                    updateEditActiveCell();
+                    e.preventDefault();
+                    return;
+                }
+            } else if (tool === 'selectColumn') {
+                let col = -1;
+                const rulerHit = _canvasHitTestRuler(e.clientX, e.clientY);
+                if (rulerHit) {
+                    col = rulerHit.col;
+                } else {
+                    const dataHit = _canvasHitTest(e.clientX, e.clientY);
+                    if (dataHit) col = dataHit.col;
+                }
+                if (col >= 0) {
+                    startGeneDocColumnDrag(col);
+                    _canvasState.scheduleDraw?.();
+                    e.preventDefault();
+                    return;
+                }
+            }
         }
+
+        // Column selection: Ctrl+Alt+click (mirrors handleColumnSelectMouseDown)
+        if (isCtrlModifier(e) && isAltModifier(e)) {
+            let col = -1;
+            const rulerHit = _canvasHitTestRuler(e.clientX, e.clientY);
+            if (rulerHit) {
+                col = rulerHit.col;
+            } else {
+                const dataHit = _canvasHitTest(e.clientX, e.clientY);
+                if (dataHit) col = dataHit.col;
+            }
+            if (col >= 0) {
+                state.isDragging = true;
+                state.dragStartCol = col;
+                state.dragMode = 'col';
+                if (e.shiftKey && state.lastSelectedColumn !== null) {
+                    const s = Math.min(state.lastSelectedColumn, col);
+                    const en = Math.max(state.lastSelectedColumn, col);
+                    for (let p = s; p <= en; p++) state.selectedColumns.add(p);
+                } else if (state.selectedColumns.has(col)) {
+                    state.selectedColumns.delete(col);
+                } else {
+                    state.selectedColumns.add(col);
+                }
+                state.lastSelectedColumn = col;
+                hideTooltip();
+                _markDirty();
+                scheduleDraw();
+                return;
+            }
+        }
+
+        // Row selection: Ctrl+click on name column (mirrors handleRowSelectMouseDown)
+        if (isCtrlModifier(e) && !isAltModifier(e)) {
+            const nameHit = _canvasHitTestName(e.clientX, e.clientY);
+            if (nameHit) {
+                const index = nameHit.row;
+                state.isDragging = true;
+                state.dragStartRow = index;
+                state.dragMode = 'row';
+                state.selectedNucs.clear();
+                state.pendingNucStart = null;
+                scheduleNucSelectionRefresh();
+                toggleRowSelection(index);
+                hideTooltip();
+                _markDirty();
+                scheduleDraw();
+                return;
+            }
+        }
+
+        // Row range selection: Shift+click on name column
+        if (e.shiftKey && state.lastSelectedIndex !== null) {
+            const nameHit = _canvasHitTestName(e.clientX, e.clientY);
+            if (nameHit) {
+                const index = nameHit.row;
+                const start = Math.min(state.lastSelectedIndex, index);
+                const end = Math.max(state.lastSelectedIndex, index);
+                for (let i = start; i <= end; i++) state.selectedRows.add(i);
+                state.lastSelectedIndex = index;
+                updateRowSelections();
+                hideTooltip();
+                _markDirty();
+                scheduleDraw();
+                return;
+            }
+        }
+
+        const hit = _canvasHitTest(e.clientX, e.clientY);
+        if (hit) {
+            // Selection: mirror handleNucleotideSelectMouseDown's state mutations
+            const idx = hit.row, pos = hit.col;
+            if (state.pendingNucStart === null) {
+                state.selectedNucs.clear();
+                state.pendingNucStart = { row: idx, pos };
+                state.isDragging = true;
+                state.dragStartRow = idx;
+                state.dragStartCol = pos;
+                state.dragMode = 'nuc';
+                state.selectedNucs.set(idx, new Set([pos]));
+            } else if (state.pendingNucStart.row === idx) {
+                state.selectedNucs.set(idx, buildNucSelectionSet(idx, state.pendingNucStart.pos, pos));
+                state.pendingNucStart = null;
+            } else {
+                state.selectedNucs.clear();
+                state.pendingNucStart = { row: idx, pos };
+                state.isDragging = true;
+                state.dragStartRow = idx;
+                state.dragStartCol = pos;
+                state.dragMode = 'nuc';
+                state.selectedNucs.set(idx, new Set([pos]));
+            }
+            hideTooltip();
+            _markDirty();
+            scheduleDraw();
+            return;
+        }
+        // Pan (existing behavior)
+        dragging = true;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        dragOx = _canvasState.offsetX;
+        dragOy = _canvasState.offsetY;
+        canvas.style.cursor = 'grabbing';
+        _markDirty();
     });
     window.addEventListener('mousemove', _canvasState.mousemoveHandler);
     window.addEventListener('mouseup', _canvasState.mouseupHandler);
+
+    // Phase 0/4: hover tracking + tooltip display.
+    // Mirrors DOM mode's alignmentContainer mouseover handler: show
+    // "header: gaplessPos" for non-gap residues, hide on gaps or when
+    // a modifier-drag (column select) is in progress.
+    let _lastTooltipCell = null;
+    canvas.addEventListener('mousemove', (e) => {
+        _canvasHoverCell = _canvasHitTest(e.clientX, e.clientY);
+
+        // Suppress tooltip during pan-drag, selection drag, or column-select mode
+        if (canvas.style.cursor === 'grabbing' || state.isDragging) {
+            if (_lastTooltipCell) { _lastTooltipCell = null; hideTooltip(); }
+            return;
+        }
+        if (isCtrlModifier(e) && isAltModifier(e)) {
+            if (_lastTooltipCell) { _lastTooltipCell = null; hideTooltip(); }
+            return;
+        }
+
+        if (_canvasHoverCell) {
+            const { row, col } = _canvasHoverCell;
+            // Only update tooltip when the cell changes (like DOM mouseover
+            // fires once per element, not per pixel).
+            if (_lastTooltipCell && _lastTooltipCell.row === row && _lastTooltipCell.col === col) return;
+            _lastTooltipCell = { row, col };
+
+            // Breakpoint marker hover tooltip (mirrors DOM .col-breakpoint title)
+            if (state._brkBeforePos && state._brkBeforePos.has(col)) {
+                const brkInfo = state._brkInfo[col];
+                if (brkInfo) {
+                    const tipText = `${brkInfo.count} column${brkInfo.count > 1 ? 's' : ''} hidden (positions ${brkInfo.start + 1}\u2013${brkInfo.end + 1})`;
+                    const m = _canvasState.metrics;
+                    const rect = canvas.getBoundingClientRect();
+                    const target = _getCanvasTooltipTarget();
+                    target.style.left = (rect.left + m.nameW + col * m.charW - _canvasState.offsetX + m.charW / 2) + 'px';
+                    target.style.top = (rect.top + m.charH + row * (_canvasState.rowPitch || m.charH) - _canvasState.offsetY) + 'px';
+                    showTooltipAt(tipText, target);
+                    return;
+                }
+            }
+
+            const seqObj = state.seqs[row];
+            if (seqObj) {
+                const base = seqObj.seq[col] || '-';
+                if (base !== '-' && base !== '.') {
+                    const gaplessPos = seqObj.gaplessPositions[col];
+                    // Position the 1×1 target at the cell's top-centre so
+                    // showTooltipAt places the tooltip directly above the
+                    // cell, matching DOM mode's span-anchored positioning.
+                    const m = _canvasState.metrics;
+                    const rect = canvas.getBoundingClientRect();
+                    const target = _getCanvasTooltipTarget();
+                    target.style.left = (rect.left + m.nameW + col * m.charW - _canvasState.offsetX + m.charW / 2) + 'px';
+                    target.style.top = (rect.top + m.charH + row * m.charH - _canvasState.offsetY) + 'px';
+                    showTooltipAt(`${seqObj.header}: ${gaplessPos}`, target);
+                    return;
+                }
+            }
+        }
+        _lastTooltipCell = null;
+        hideTooltip();
+    });
+
+    // Phase 4: hide tooltip when the mouse leaves the canvas
+    canvas.addEventListener('mouseleave', () => {
+        _lastTooltipCell = null;
+        hideTooltip();
+    });
+
+    // Phase 5: right-click context menu (mirrors DOM mode's alignmentContainer contextmenu handler)
+    canvas.addEventListener('contextmenu', (e) => {
+        // Right-click on name column → context menu for that sequence's row
+        const nameHit = _canvasHitTestName(e.clientX, e.clientY);
+        if (nameHit) {
+            e.preventDefault();
+            showContextMenu(e, nameHit.row);
+            return;
+        }
+        // Right-click on data area → context menu for that row
+        const hit = _canvasHitTest(e.clientX, e.clientY);
+        if (hit) {
+            e.preventDefault();
+            showContextMenu(e, hit.row);
+            return;
+        }
+        // Right-click on ruler or outside data area: no context menu
+        // (matches DOM mode, which returns early for scale-ruler-line)
+    });
 
     scheduleDraw();
 }
@@ -4361,6 +5008,143 @@ function renderCompactAlignment(len, conservationData, shadeMode, blackThresh, d
 // so a newly loaded large alignment still gets the initial suggestion.
 let _userDismissedAutoCanvas = false;
 
+function _updateCodonAnalysisState(len) {
+    const codonAnalysis = document.getElementById('codonAnalysis')?.checked;
+    if (codonAnalysis) {
+        try {
+            state._codonFrames = _computeMultiFrameCodonAnalysis(state.seqs, len);
+            const frameSel = document.getElementById('codonFrame')?.value || 'auto';
+            const validFrames = state._codonFrames?.frames?.filter(Boolean);
+            if (state._codonFrames && validFrames && validFrames.length > 0) {
+                let activeFrame;
+                if (frameSel === 'auto') {
+                    activeFrame = state._codonFrames.bestFrame;
+                } else if (frameSel === 'all') {
+                    activeFrame = -1;
+                } else {
+                    activeFrame = parseInt(frameSel) || 0;
+                }
+                const displayFrame = activeFrame >= 0 ? activeFrame : 0;
+                state._codonData = state._codonFrames.frames[displayFrame] || validFrames[0];
+                state._codonActiveFrame = activeFrame;
+                document.body.classList.add('codon-mode');
+                if (frameSel === 'auto') {
+                    const bf = state._codonFrames.bestFrame;
+                    if (state._lastAnnouncedCodonFrame !== bf) {
+                        state._lastAnnouncedCodonFrame = bf;
+                        showMessage(`Codon analysis: auto-selected frame ${bf} (ATG start)`, 2500);
+                    }
+                }
+            } else {
+                state._codonFrames = null;
+                state._codonData = null;
+                state._codonActiveFrame = 0;
+                document.body.classList.remove('codon-mode');
+                showMessage('Codon analysis requires a nucleotide alignment', 4000);
+            }
+        } catch (codonErr) {
+            console.error('Codon analysis failed:', codonErr);
+            state._codonFrames = null;
+            state._codonData = null;
+            state._codonActiveFrame = 0;
+            document.body.classList.remove('codon-mode');
+            showMessage('Codon analysis failed: ' + codonErr.message, 4000);
+        }
+    } else {
+        state._codonData = null;
+        state._codonFrames = null;
+        state._codonActiveFrame = 0;
+        document.body.classList.remove('codon-mode');
+    }
+}
+
+function _computeVarSites(len) {
+    const highlightDiffs = document.getElementById('highlightDiffs')?.checked;
+    const varSites = document.getElementById('varSitesOnly')?.checked;
+    updateVarThresholdBounds();
+    const varThresholdMode = document.getElementById('varThresholdMode')?.value || 'pct';
+    const varThresholdRaw = parseInt(document.getElementById('varSitesThreshold')?.value) || 0;
+    const nSeq = state.seqs.length;
+    const varThreshold = varThresholdMode === 'count'
+        ? varThresholdRaw
+        : (varThresholdRaw === 0 ? 0 : Math.ceil((varThresholdRaw / 100) * nSeq));
+    const showBreakpoints = document.getElementById('varSitesBreakpoints')?.checked !== false;
+    if ((highlightDiffs || varSites) && state.seqs.length > 1) {
+        const diffCols = new Set();
+        const spans = state.seqs.map(s => {
+            const seq = s.seq;
+            let first = -1, last = -1;
+            for (let i = 0; i < seq.length; i++) {
+                const c = seq[i];
+                if (c !== '-' && c !== '.') { if (first === -1) first = i; last = i; }
+            }
+            return { first, last };
+        });
+        for (let pos = 0; pos < len; pos++) {
+            const counts = {};
+            let covered = 0;
+            for (let i = 0; i < state.seqs.length; i++) {
+                const { first, last } = spans[i];
+                if (first === -1 || pos < first || pos > last) continue;
+                const base = (state.seqs[i].seq[pos] || '-').toUpperCase();
+                const ch = (base === '-' || base === '.') ? '-' : base;
+                counts[ch] = (counts[ch] || 0) + 1;
+                covered++;
+            }
+            const diffCount = covered > 0 ? covered - Math.max(...Object.values(counts)) : 0;
+            if (varThreshold === 0 || diffCount >= varThreshold) diffCols.add(pos);
+        }
+        state._diffColumns = diffCols;
+        if (varSites) {
+            const hiddenRanges = [];
+            let hiddenStart = -1;
+            for (let pos = 0; pos < len; pos++) {
+                if (!diffCols.has(pos)) {
+                    if (hiddenStart === -1) hiddenStart = pos;
+                } else {
+                    if (hiddenStart !== -1) {
+                        hiddenRanges.push({ start: hiddenStart, end: pos - 1, count: pos - hiddenStart });
+                        hiddenStart = -1;
+                    }
+                }
+            }
+            if (hiddenStart !== -1) hiddenRanges.push({ start: hiddenStart, end: len - 1, count: len - hiddenStart });
+            state._varSiteHiddenRanges = hiddenRanges;
+            document.body.classList.toggle('hide-breakpoints', !showBreakpoints);
+        } else {
+            state._varSiteHiddenRanges = null;
+        }
+        if (highlightDiffs) {
+            document.body.classList.add('highlight-diffs');
+            document.body.classList.remove('var-sites-only');
+        }
+        if (varSites) {
+            document.body.classList.add('var-sites-only');
+            document.body.classList.remove('highlight-diffs');
+        }
+    } else {
+        state._diffColumns = null;
+        state._varSiteHiddenRanges = null;
+        document.body.classList.remove('highlight-diffs');
+        document.body.classList.remove('var-sites-only');
+        document.body.classList.remove('hide-breakpoints');
+    }
+
+    const _varSitesActive = document.body.classList.contains('var-sites-only');
+    const _showBrk = _varSitesActive && !document.body.classList.contains('hide-breakpoints');
+    state._brkBeforePos = new Set();
+    state._brkInfo = {};
+    if (_showBrk && state._varSiteHiddenRanges && state._diffColumns) {
+        for (const r of state._varSiteHiddenRanges) {
+            const afterPos = r.end + 1;
+            if (state._diffColumns.has(afterPos)) {
+                state._brkBeforePos.add(afterPos);
+                state._brkInfo[afterPos] = r;
+            }
+        }
+    }
+}
+
 function renderAlignment(options = {}) {
     // Catch-all sync: covers every path that flips a mode radio programmatically
     // (BAM load, snapshot/session restore, the auto-switch heuristic below,
@@ -4472,13 +5256,9 @@ function renderAlignment(options = {}) {
         syncQuickModeSwitch();
         syncCodonModePanel(); // this bypasses onModeChange, so sync explicitly
         showMessage(
-            `Auto-switched to Canvas mode for ${TOTAL_RESIDUES.toLocaleString()} residues. ` +
-            `Switch back to Block/Full for editing.`,
+            `Auto-switched to Canvas mode for ${TOTAL_RESIDUES.toLocaleString()} residues.`,
             6000
         );
-        // Canvas cannot service the edit tools. Silent: the message above already says so,
-        // and rerender:false because we are already inside the render that draws Canvas.
-        exitEditModeForUnsupportedView({ rerender: false, silent: true });
         // Re-read to pick up the new checked state
         // Canvas dispatch is handled below
     }
@@ -4508,15 +5288,17 @@ function renderAlignment(options = {}) {
     const useCompact = document.getElementById('modeCompact')?.checked;
     const useCanvas = document.getElementById('modeCanvas')?.checked;
 
+    // Var-sites / highlight-diffs computation must run before the Canvas path
+    // (which returns early) so Canvas mode has access to _diffColumns,
+    // _brkBeforePos and _brkInfo for breakpoint marker rendering.
+    _computeVarSites(len);
+
     // -- Canvas fast path (UGENE-style: first paint costs only the visible region) --
     // Canvas shows no consensus row, so consensus is skipped entirely here.
     // Conservation shading is deferred: draw an unshaded frame immediately, then
     // compute conservation off the critical path (idle, time-sliced) and repaint shaded.
     if (useCanvas) {
-        state._codonData = null;
-        state._codonFrames = null;
-        state._codonActiveFrame = 0;
-        document.body.classList.remove('codon-mode');
+        _updateCodonAnalysisState(len);
         const cachedConservation = (state.conservationDataCache?.len === len
             && state.conservationDataCache?.shadeMode === shadeMode)
             ? state.conservationDataCache.data : null;
@@ -4617,164 +5399,9 @@ function renderAlignment(options = {}) {
         return;
     }
 
-    // Highlight-diffs + Var-sites: mark columns that differ from consensus
-    const highlightDiffs = document.getElementById('highlightDiffs')?.checked;
-    const varSites = document.getElementById('varSitesOnly')?.checked;
-    // Keeps count-mode's upper bound in step with the current alignment's
-    // sequence count even when the mode/checkboxes weren't touched (e.g. a
-    // new file was just loaded).
-    updateVarThresholdBounds();
-    const varThresholdMode = document.getElementById('varThresholdMode')?.value || 'pct';
-    const varThresholdRaw = parseInt(document.getElementById('varSitesThreshold')?.value) || 0;
-    const nSeq = state.seqs.length;
-    // Percentage mode rounds up to a whole sequence count (Math.ceil), which
-    // on small alignments can jump by more than 1 sequence between adjacent
-    // percentages - e.g. at nSeq=10, 10% and 11% both round to requiring a
-    // different count, so a column with exactly 1 differing sequence can
-    // flip from shown to hidden across a single percentage point. Count mode
-    // takes the same number as an exact sequence count with no rounding, so
-    // every value from 1 up to nSeq is individually reachable.
-    const varThreshold = varThresholdMode === 'count'
-        ? varThresholdRaw
-        : (varThresholdRaw === 0 ? 0 : Math.ceil((varThresholdRaw / 100) * nSeq));
-    const showBreakpoints = document.getElementById('varSitesBreakpoints')?.checked !== false;
-    if ((highlightDiffs || varSites) && state.seqs.length > 1) {
-        const diffCols = new Set();
-        // A gap outside a sequence's own first/last real-base span is missing
-        // data (the sequence just doesn't reach here) and carries no
-        // evidence either way, so it's excluded from both the majority count
-        // and the diff count below. A gap inside that span is a real
-        // deletion and is counted like any other character - on equal
-        // footing with A/C/G/T, not special-cased - so indel polymorphism
-        // (a gap-majority column with a minority of real insertions, or vice
-        // versa) is detected the same way a substitution would be.
-        const spans = state.seqs.map(s => {
-            const seq = s.seq;
-            let first = -1, last = -1;
-            for (let i = 0; i < seq.length; i++) {
-                const c = seq[i];
-                if (c !== '-' && c !== '.') { if (first === -1) first = i; last = i; }
-            }
-            return { first, last };
-        });
-        for (let pos = 0; pos < len; pos++) {
-            const counts = {};
-            let covered = 0;
-            for (let i = 0; i < state.seqs.length; i++) {
-                const { first, last } = spans[i];
-                if (first === -1 || pos < first || pos > last) continue; // flanking gap: no data
-                const base = (state.seqs[i].seq[pos] || '-').toUpperCase();
-                const ch = (base === '-' || base === '.') ? '-' : base;
-                counts[ch] = (counts[ch] || 0) + 1;
-                covered++;
-            }
-            // The column's dominant state is simply whichever character (base
-            // or internal-gap) the most covered sequences share; every other
-            // covered sequence "differs" from it. Ties don't matter here -
-            // only the size of the largest group affects the count.
-            const diffCount = covered > 0 ? covered - Math.max(...Object.values(counts)) : 0;
-            if (varThreshold === 0 || diffCount >= varThreshold) diffCols.add(pos);
-        }
-        state._diffColumns = diffCols;
-        // Build hidden ranges for breakpoint markers (only in var-sites mode)
-        if (varSites) {
-            const hiddenRanges = [];
-            let hiddenStart = -1;
-            for (let pos = 0; pos < len; pos++) {
-                if (!diffCols.has(pos)) {
-                    if (hiddenStart === -1) hiddenStart = pos;
-                } else {
-                    if (hiddenStart !== -1) {
-                        hiddenRanges.push({ start: hiddenStart, end: pos - 1, count: pos - hiddenStart });
-                        hiddenStart = -1;
-                    }
-                }
-            }
-            if (hiddenStart !== -1) hiddenRanges.push({ start: hiddenStart, end: len - 1, count: len - hiddenStart });
-            state._varSiteHiddenRanges = hiddenRanges;
-            document.body.classList.toggle('hide-breakpoints', !showBreakpoints);
-        } else {
-            state._varSiteHiddenRanges = null;
-        }
-        if (highlightDiffs) {
-            document.body.classList.add('highlight-diffs');
-            document.body.classList.remove('var-sites-only');
-        }
-        if (varSites) {
-            document.body.classList.add('var-sites-only');
-            document.body.classList.remove('highlight-diffs');
-        }
-    } else {
-        state._diffColumns = null;
-        state._varSiteHiddenRanges = null;
-        document.body.classList.remove('highlight-diffs');
-        document.body.classList.remove('var-sites-only');
-        document.body.classList.remove('hide-breakpoints');
-    }
-
-    // Build breakpoint lookup for rendering (used by createSequenceLine and addConsensusLine)
-    const _varSitesActive = document.body.classList.contains('var-sites-only');
-    const _showBrk = _varSitesActive && !document.body.classList.contains('hide-breakpoints');
-    state._brkBeforePos = new Set();
-    state._brkInfo = {};
-    if (_showBrk && state._varSiteHiddenRanges && state._diffColumns) {
-        for (const r of state._varSiteHiddenRanges) {
-            const afterPos = r.end + 1;
-            if (state._diffColumns.has(afterPos)) {
-                state._brkBeforePos.add(afterPos);
-                state._brkInfo[afterPos] = r;
-            }
-        }
-    }
-
-// Codon analysis
-    const codonAnalysis = document.getElementById('codonAnalysis')?.checked;
-    if (codonAnalysis) {
-        try {
-            state._codonFrames = _computeMultiFrameCodonAnalysis(state.seqs, len);
-            const frameSel = document.getElementById('codonFrame')?.value || 'auto';
-            const validFrames = state._codonFrames?.frames?.filter(Boolean);
-            if (state._codonFrames && validFrames && validFrames.length > 0) {
-                let activeFrame;
-                if (frameSel === 'auto') {
-                    activeFrame = state._codonFrames.bestFrame;
-                } else if (frameSel === 'all') {
-                    activeFrame = -1;
-                } else {
-                    activeFrame = parseInt(frameSel) || 0;
-                }
-                const displayFrame = activeFrame >= 0 ? activeFrame : 0;
-                state._codonData = state._codonFrames.frames[displayFrame] || validFrames[0];
-                state._codonActiveFrame = activeFrame;
-                document.body.classList.add('codon-mode');
-                if (frameSel === 'auto') {
-                    const bf = state._codonFrames.bestFrame;
-                    if (state._lastAnnouncedCodonFrame !== bf) {
-                        state._lastAnnouncedCodonFrame = bf;
-                        showMessage(`Codon analysis: auto-selected frame ${bf} (ATG start)`, 2500);
-                    }
-                }
-            } else {
-                state._codonFrames = null;
-                state._codonData = null;
-                state._codonActiveFrame = 0;
-                document.body.classList.remove('codon-mode');
-                showMessage('Codon analysis requires a nucleotide alignment', 4000);
-            }
-        } catch (codonErr) {
-            console.error('Codon analysis failed:', codonErr);
-            state._codonFrames = null;
-            state._codonData = null;
-            state._codonActiveFrame = 0;
-            document.body.classList.remove('codon-mode');
-            showMessage('Codon analysis failed: ' + codonErr.message, 4000);
-        }
-    } else {
-        state._codonData = null;
-        state._codonFrames = null;
-        state._codonActiveFrame = 0;
-        document.body.classList.remove('codon-mode');
-    }
+    // Var-sites / highlight-diffs already computed above (before Canvas path)
+    // so Canvas mode has access to breakpoint data. No need to recompute here.
+    _updateCodonAnalysisState(len);
 
     if (useBlocks) {
         // Block-virtualize on "crazy"-sized alignments only, mirroring Full
@@ -6610,10 +7237,7 @@ function handleNucleotideSelectMouseDown(e) {
     if (!span || span.classList.contains('seq-length')) return false;
 
     if (document.getElementById('modeCanvas')?.checked || document.getElementById('modeReads')?.checked) {
-        showMessage('Nucleotide selection requires Full or Block mode (not Canvas/Reads).', 3500);
-        e.preventDefault();
-        e.stopPropagation();
-        return true;
+        return false; // Canvas mode handles selection via its own mousedown handler
     }
 
     const row = span.closest('.seq-line');
@@ -6704,45 +7328,78 @@ function toggleRowSelection(index) {
 function handleMouseMove(e) {
     if (!state.isDragging) return;
     if (state.dragMode === 'row') {
-        const row = closestFromEvent(e, '.seq-line');
-        if (row) {
-            const index = parseInt(row.dataset.seqIndex);
-            if (index !== undefined) {
+        if (document.getElementById('modeCanvas')?.checked) {
+            const index = _canvasRowFromClientY(e.clientY);
+            if (index >= 0) {
                 const start = Math.min(state.dragStartRow, index);
                 const end = Math.max(state.dragStartRow, index);
-                for (let i = start; i <= end; i++) {
-                    state.selectedRows.add(i);
-                }
+                for (let i = start; i <= end; i++) state.selectedRows.add(i);
                 updateRowSelections();
+                _canvasState.scheduleDraw?.();
+            }
+        } else {
+            const row = closestFromEvent(e, '.seq-line');
+            if (row) {
+                const index = parseInt(row.dataset.seqIndex);
+                if (index !== undefined) {
+                    const start = Math.min(state.dragStartRow, index);
+                    const end = Math.max(state.dragStartRow, index);
+                    for (let i = start; i <= end; i++) {
+                        state.selectedRows.add(i);
+                    }
+                    updateRowSelections();
+                }
             }
         }
     } else if (state.dragMode === 'col') {
         hideTooltip();
-        const span = closestFromEvent(e, '.seq-data span[data-pos]');
-        if (span) {
-            const pos = parseInt(span.dataset.pos);
-            if (isNaN(pos)) return;
-            const start = Math.min(state.dragStartCol, pos);
-            const end = Math.max(state.dragStartCol, pos);
-            for (let p = start; p <= end; p++) {
-                state.selectedColumns.add(p);
+        if (document.getElementById('modeCanvas')?.checked) {
+            const pos = _canvasColFromClientX(e.clientX);
+            if (pos >= 0) {
+                const start = Math.min(state.dragStartCol, pos);
+                const end = Math.max(state.dragStartCol, pos);
+                for (let p = start; p <= end; p++) state.selectedColumns.add(p);
+                updateColumnSelections();
+                _canvasState.scheduleDraw?.();
             }
-            updateColumnSelections();
+        } else {
+            const span = closestFromEvent(e, '.seq-data span[data-pos]');
+            if (span) {
+                const pos = parseInt(span.dataset.pos);
+                if (isNaN(pos)) return;
+                const start = Math.min(state.dragStartCol, pos);
+                const end = Math.max(state.dragStartCol, pos);
+                for (let p = start; p <= end; p++) {
+                    state.selectedColumns.add(p);
+                }
+                updateColumnSelections();
+            }
         }
     } else if (state.dragMode === 'nuc') {
-        const span = closestFromEvent(e, '.seq-data span[data-pos]');
-        if (span) {
-            const pos = parseInt(span.dataset.pos);
-            if (isNaN(pos)) return;
-            const rowEl = span.closest('.seq-line');
-            const currentIndex = resolveNucRowIndex(rowEl);
-            if (!Number.isInteger(currentIndex)) return;
-            // Only allow drag within the same row
-            if (currentIndex === state.dragStartRow) {
-                const rowSet = buildNucSelectionSet(currentIndex, state.dragStartCol, pos);
+        if (document.getElementById('modeCanvas')?.checked) {
+            // Canvas mode: hit-test instead of DOM span lookup
+            const hit = _canvasHitTest(e.clientX, e.clientY);
+            if (hit && hit.row === state.dragStartRow) {
+                const rowSet = buildNucSelectionSet(hit.row, state.dragStartCol, hit.col);
                 state.selectedNucs.clear();
-                state.selectedNucs.set(currentIndex, rowSet);
-                scheduleNucSelectionRefresh();
+                state.selectedNucs.set(hit.row, rowSet);
+                _canvasState.scheduleDraw?.();
+            }
+        } else {
+            const span = closestFromEvent(e, '.seq-data span[data-pos]');
+            if (span) {
+                const pos = parseInt(span.dataset.pos);
+                if (isNaN(pos)) return;
+                const rowEl = span.closest('.seq-line');
+                const currentIndex = resolveNucRowIndex(rowEl);
+                if (!Number.isInteger(currentIndex)) return;
+                // Only allow drag within the same row
+                if (currentIndex === state.dragStartRow) {
+                    const rowSet = buildNucSelectionSet(currentIndex, state.dragStartCol, pos);
+                    state.selectedNucs.clear();
+                    state.selectedNucs.set(currentIndex, rowSet);
+                    scheduleNucSelectionRefresh();
+                }
             }
         }
     }
@@ -13759,18 +14416,26 @@ function isSpanRenderMode() {
     return !el('modeCanvas')?.checked && !el('modeCompact')?.checked && !el('modeReads')?.checked;
 }
 
+function isCanvasMode() {
+    return !!el('modeCanvas')?.checked;
+}
+
+function isEditModeSupported() {
+    return isSpanRenderMode() || isCanvasMode();
+}
+
 // Canvas and Reads draw no per-residue spans, so the edit tools have nothing to act on:
 // the mouse handler never matches a residue and every tool silently does nothing. Say so
 // instead of opening a tool panel that appears to work.
 function editModeUnavailableMessage() {
-    const mode = el('modeCanvas')?.checked ? 'Canvas' : el('modeReads')?.checked ? 'Reads' : 'this';
-    return `Editing is not available in ${mode} mode. Switch back to Block/Full for editing.`;
+    const mode = el('modeReads')?.checked ? 'Reads' : 'this';
+    return `Editing is not available in ${mode} mode. Switch back to Block/Full/Canvas for editing.`;
 }
 
 // Leaving edit mode on in a view that cannot service it is the same trap, so drop out of
 // it when the view changes. rerender:false is for callers already inside a render pass.
 function exitEditModeForUnsupportedView({ rerender = true, silent = false } = {}) {
-    if (!state.editModeActive || isSpanRenderMode()) return false;
+    if (!state.editModeActive || isEditModeSupported()) return false;
     if (rerender) {
         setGeneDocEditMode(false);
     } else {
@@ -13938,7 +14603,7 @@ function ensureEditSpanCache() {
 
 function setGeneDocEditMode(active) {
     const wasActive = state.editModeActive;
-    if (active && !isSpanRenderMode()) {
+    if (active && !isEditModeSupported()) {
         showMessage(editModeUnavailableMessage(), 3500);
         updateGeneDocEditUI();
         return;
@@ -13962,7 +14627,7 @@ function setGeneDocEditMode(active) {
 
 function setGeneDocEditTool(tool) {
     if (!GENEDOC_MOVE_TOOLS.has(tool) && !GENEDOC_GAP_TOOLS.has(tool) && tool !== 'residue' && tool !== 'selectColumn') return;
-    if (!isSpanRenderMode()) {
+    if (!isEditModeSupported()) {
         showMessage(editModeUnavailableMessage(), 3500);
         return;
     }
@@ -14013,6 +14678,10 @@ function updateEditActiveCell() {
         state.editActiveSpan = null;
     }
     if (!state.editModeActive || state.editTool !== 'residue' || !state.editCell) return;
+    if (isCanvasMode()) {
+        _canvasState.scheduleDraw?.();
+        return;
+    }
     const span = getSpanElement(state.editCell.row, state.editCell.pos);
     if (span) {
         span.classList.add('edit-active-cell');
@@ -14376,6 +15045,7 @@ function destroyGeneDocDragOverlay(drag, syncDom) {
 function handleGeneDocEditMouseDown(e) {
     if (e.button !== 0) return;
     if (isCtrlModifier(e)) return;
+    if (isCanvasMode()) return; // Canvas mode handles edit clicks in its own mousedown handler
     const span = closestFromEvent(e, '.seq-data > span[data-pos]');
     if (!span) return;
     const seqLine = span.closest('.seq-line');
@@ -14417,20 +15087,25 @@ function startGeneDocMoveDrag(e, rowIndex, pos, tool, span) {
         return;
     }
     clearGeneDocEditDrag();
+    const canvasMode = isCanvasMode();
+    const charWidth = canvasMode
+        ? (_canvasState.metrics?.charW || 8)
+        : getGeneDocCharWidth(span);
     state.editDrag = {
         type: 'move',
         rowIndex,
         anchorPos: pos,
         tool,
         lastClientX: e.clientX,
-        charWidth: getGeneDocCharWidth(span),
+        charWidth,
         originalSeq: state.seqs[rowIndex].seq,
         originalAlignmentLength: Math.max(...state.seqs.map(seqObj => seqObj.seq.length)),
         moved: 0,
         visiblePositions: null,
         visibleComputedAtMoved: 0,
         rafPending: false,
-        pendingClientX: e.clientX
+        pendingClientX: e.clientX,
+        isCanvas: canvasMode
     };
     state.editCell = { row: rowIndex, pos };
     updateEditActiveCell();
@@ -14469,13 +15144,21 @@ function handleGeneDocEditDragMove(e) {
     e.preventDefault();
 
     if (drag.type === 'selectColumn') {
-        const target = document.elementFromPoint(e.clientX, e.clientY);
-        const span = target?.closest?.('.seq-data > span[data-pos]');
-        if (!span) return;
-        const pos = parseInt(span.dataset.pos, 10);
-        if (!Number.isInteger(pos) || pos === drag.lastPos) return;
-        drag.lastPos = pos;
-        setGeneDocColumnRange(drag.startPos, pos);
+        if (isCanvasMode()) {
+            const col = _canvasColFromClientX(e.clientX);
+            if (col < 0 || col === drag.lastPos) return;
+            drag.lastPos = col;
+            setGeneDocColumnRange(drag.startPos, col);
+            _canvasState.scheduleDraw?.();
+        } else {
+            const target = document.elementFromPoint(e.clientX, e.clientY);
+            const span = target?.closest?.('.seq-data > span[data-pos]');
+            if (!span) return;
+            const pos = parseInt(span.dataset.pos, 10);
+            if (!Number.isInteger(pos) || pos === drag.lastPos) return;
+            drag.lastPos = pos;
+            setGeneDocColumnRange(drag.startPos, pos);
+        }
         return;
     }
 
@@ -14525,6 +15208,10 @@ function repaintGeneDocDragRow(drag) {
     // Live conservation reshades every row, so it can only be served by a full render.
     if (state.editLiveConservation) {
         renderAlignment({ deferConservation: false });
+        return;
+    }
+    if (drag.isCanvas) {
+        _canvasState.scheduleDraw?.();
         return;
     }
     // Preferred path: paint the moved residues onto a canvas and never touch the DOM.
@@ -14620,7 +15307,14 @@ function handleGeneDocEditDragEnd() {
             nextAlignmentLength,
             `${toolLabel} ${columns} col ${drag.moved > 0 ? 'right' : 'left'} · ${rowName}`
         );
-        if (state.editLiveConservation || nextAlignmentLength !== drag.originalAlignmentLength) {
+        if (drag.isCanvas) {
+            if (state.editLiveConservation || nextAlignmentLength !== drag.originalAlignmentLength) {
+                renderAlignment({ deferConservation: !state.editLiveConservation });
+            } else {
+                _canvasState.scheduleDraw?.();
+                if (typeof updateSourceInfo === 'function') updateSourceInfo();
+            }
+        } else if (state.editLiveConservation || nextAlignmentLength !== drag.originalAlignmentLength) {
             renderAlignment({ deferConservation: !state.editLiveConservation });
         } else {
             // Reconcile the whole row, keeping shading on every column the drag left alone.
@@ -14764,6 +15458,10 @@ function handleGeneDocResidueKey(e) {
  * using cached DOM references. No full re-render. Like GeneDoc.
  */
 function fastUpdateEditCellAt(row, pos) {
+    if (isCanvasMode()) {
+        _canvasState.scheduleDraw?.();
+        return;
+    }
     const span = getSpanElement(row, pos);
     if (!span) {
         renderAlignment(); return;
@@ -18508,6 +19206,15 @@ function _clearRepeatHighlights() {
 function _scrollToColumn(colIndex) {
     const container = document.getElementById('alignmentContainer');
     if (!container) return;
+    // Canvas mode: pan the canvas instead of scrolling the container
+    if (document.getElementById('modeCanvas')?.checked) {
+        const m = _canvasState.metrics;
+        if (m?.charW) {
+            _canvasState.offsetX = Math.max(0, colIndex * m.charW - 120);
+            _canvasState.scheduleDraw?.();
+        }
+        return;
+    }
     // Measure actual character width from a rendered span
     const sampleSpan = container.querySelector('.seq-data > span[data-pos]');
     let charW = 7.8; // fallback for 13px Courier New
