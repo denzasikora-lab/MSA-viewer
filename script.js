@@ -3206,6 +3206,20 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             }
         }
 
+        // Draw active edit cell highlight (residue typing mode)
+        if (state.editModeActive && state.editTool === 'residue' && state.editCell) {
+            const er = state.editCell.row, ep = state.editCell.pos;
+            if (er >= 0 && er < nSeqs && ep >= 0) {
+                const y = SCALE_H + er * CHAR_H - oy;
+                const x = NAME_W + ep * CHAR_W - ox;
+                if (x + CHAR_W >= 0 && x <= w && y + CHAR_H >= 0 && y <= h) {
+                    ctx.strokeStyle = '#e74c3c';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + 1, y + 1, CHAR_W - 2, CHAR_H - 2);
+                }
+            }
+        }
+
         // Name column separator (fixed on-screen when sticky, scrolls with
         // content otherwise, matching the name column's own behaviour above)
         ctx.fillStyle = '#ddd';
@@ -3230,6 +3244,49 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     let dragging = false, dragStartX, dragStartY, dragOx, dragOy;
     canvas.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
+
+        // GeneDoc edit mode: handle edit tool clicks (mirrors handleGeneDocEditMouseDown)
+        if (state.editModeActive && !isCtrlModifier(e) && !isAltModifier(e)) {
+            const tool = state.editTool;
+            if (GENEDOC_MOVE_TOOLS.has(tool)) {
+                const hit = _canvasHitTest(e.clientX, e.clientY);
+                if (hit && isGeneDocResidueChar(state.seqs[hit.row]?.seq[hit.col])) {
+                    startGeneDocMoveDrag(e, hit.row, hit.col, tool, null);
+                    e.preventDefault();
+                    return;
+                }
+            } else if (GENEDOC_GAP_TOOLS.has(tool)) {
+                const hit = _canvasHitTest(e.clientX, e.clientY);
+                if (hit) {
+                    handleGeneDocGapToolClick(hit.row, hit.col, tool);
+                    e.preventDefault();
+                    return;
+                }
+            } else if (tool === 'residue') {
+                const hit = _canvasHitTest(e.clientX, e.clientY);
+                if (hit) {
+                    state.editCell = { row: hit.row, pos: hit.col };
+                    updateEditActiveCell();
+                    e.preventDefault();
+                    return;
+                }
+            } else if (tool === 'selectColumn') {
+                let col = -1;
+                const rulerHit = _canvasHitTestRuler(e.clientX, e.clientY);
+                if (rulerHit) {
+                    col = rulerHit.col;
+                } else {
+                    const dataHit = _canvasHitTest(e.clientX, e.clientY);
+                    if (dataHit) col = dataHit.col;
+                }
+                if (col >= 0) {
+                    startGeneDocColumnDrag(col);
+                    _canvasState.scheduleDraw?.();
+                    e.preventDefault();
+                    return;
+                }
+            }
+        }
 
         // Column selection: Ctrl+Alt+click (mirrors handleColumnSelectMouseDown)
         if (isCtrlModifier(e) && isAltModifier(e)) {
@@ -4823,13 +4880,9 @@ function renderAlignment(options = {}) {
         syncQuickModeSwitch();
         syncCodonModePanel(); // this bypasses onModeChange, so sync explicitly
         showMessage(
-            `Auto-switched to Canvas mode for ${TOTAL_RESIDUES.toLocaleString()} residues. ` +
-            `Switch back to Block/Full for editing.`,
+            `Auto-switched to Canvas mode for ${TOTAL_RESIDUES.toLocaleString()} residues.`,
             6000
         );
-        // Canvas cannot service the edit tools. Silent: the message above already says so,
-        // and rerender:false because we are already inside the render that draws Canvas.
-        exitEditModeForUnsupportedView({ rerender: false, silent: true });
         // Re-read to pick up the new checked state
         // Canvas dispatch is handled below
     }
@@ -14093,18 +14146,26 @@ function isSpanRenderMode() {
     return !el('modeCanvas')?.checked && !el('modeCompact')?.checked && !el('modeReads')?.checked;
 }
 
+function isCanvasMode() {
+    return !!el('modeCanvas')?.checked;
+}
+
+function isEditModeSupported() {
+    return isSpanRenderMode() || isCanvasMode();
+}
+
 // Canvas and Reads draw no per-residue spans, so the edit tools have nothing to act on:
 // the mouse handler never matches a residue and every tool silently does nothing. Say so
 // instead of opening a tool panel that appears to work.
 function editModeUnavailableMessage() {
-    const mode = el('modeCanvas')?.checked ? 'Canvas' : el('modeReads')?.checked ? 'Reads' : 'this';
-    return `Editing is not available in ${mode} mode. Switch back to Block/Full for editing.`;
+    const mode = el('modeReads')?.checked ? 'Reads' : 'this';
+    return `Editing is not available in ${mode} mode. Switch back to Block/Full/Canvas for editing.`;
 }
 
 // Leaving edit mode on in a view that cannot service it is the same trap, so drop out of
 // it when the view changes. rerender:false is for callers already inside a render pass.
 function exitEditModeForUnsupportedView({ rerender = true, silent = false } = {}) {
-    if (!state.editModeActive || isSpanRenderMode()) return false;
+    if (!state.editModeActive || isEditModeSupported()) return false;
     if (rerender) {
         setGeneDocEditMode(false);
     } else {
@@ -14272,7 +14333,7 @@ function ensureEditSpanCache() {
 
 function setGeneDocEditMode(active) {
     const wasActive = state.editModeActive;
-    if (active && !isSpanRenderMode()) {
+    if (active && !isEditModeSupported()) {
         showMessage(editModeUnavailableMessage(), 3500);
         updateGeneDocEditUI();
         return;
@@ -14296,7 +14357,7 @@ function setGeneDocEditMode(active) {
 
 function setGeneDocEditTool(tool) {
     if (!GENEDOC_MOVE_TOOLS.has(tool) && !GENEDOC_GAP_TOOLS.has(tool) && tool !== 'residue' && tool !== 'selectColumn') return;
-    if (!isSpanRenderMode()) {
+    if (!isEditModeSupported()) {
         showMessage(editModeUnavailableMessage(), 3500);
         return;
     }
@@ -14347,6 +14408,10 @@ function updateEditActiveCell() {
         state.editActiveSpan = null;
     }
     if (!state.editModeActive || state.editTool !== 'residue' || !state.editCell) return;
+    if (isCanvasMode()) {
+        _canvasState.scheduleDraw?.();
+        return;
+    }
     const span = getSpanElement(state.editCell.row, state.editCell.pos);
     if (span) {
         span.classList.add('edit-active-cell');
@@ -14710,6 +14775,7 @@ function destroyGeneDocDragOverlay(drag, syncDom) {
 function handleGeneDocEditMouseDown(e) {
     if (e.button !== 0) return;
     if (isCtrlModifier(e)) return;
+    if (isCanvasMode()) return; // Canvas mode handles edit clicks in its own mousedown handler
     const span = closestFromEvent(e, '.seq-data > span[data-pos]');
     if (!span) return;
     const seqLine = span.closest('.seq-line');
@@ -14751,20 +14817,25 @@ function startGeneDocMoveDrag(e, rowIndex, pos, tool, span) {
         return;
     }
     clearGeneDocEditDrag();
+    const canvasMode = isCanvasMode();
+    const charWidth = canvasMode
+        ? (_canvasState.metrics?.charW || 8)
+        : getGeneDocCharWidth(span);
     state.editDrag = {
         type: 'move',
         rowIndex,
         anchorPos: pos,
         tool,
         lastClientX: e.clientX,
-        charWidth: getGeneDocCharWidth(span),
+        charWidth,
         originalSeq: state.seqs[rowIndex].seq,
         originalAlignmentLength: Math.max(...state.seqs.map(seqObj => seqObj.seq.length)),
         moved: 0,
         visiblePositions: null,
         visibleComputedAtMoved: 0,
         rafPending: false,
-        pendingClientX: e.clientX
+        pendingClientX: e.clientX,
+        isCanvas: canvasMode
     };
     state.editCell = { row: rowIndex, pos };
     updateEditActiveCell();
@@ -14803,13 +14874,21 @@ function handleGeneDocEditDragMove(e) {
     e.preventDefault();
 
     if (drag.type === 'selectColumn') {
-        const target = document.elementFromPoint(e.clientX, e.clientY);
-        const span = target?.closest?.('.seq-data > span[data-pos]');
-        if (!span) return;
-        const pos = parseInt(span.dataset.pos, 10);
-        if (!Number.isInteger(pos) || pos === drag.lastPos) return;
-        drag.lastPos = pos;
-        setGeneDocColumnRange(drag.startPos, pos);
+        if (isCanvasMode()) {
+            const col = _canvasColFromClientX(e.clientX);
+            if (col < 0 || col === drag.lastPos) return;
+            drag.lastPos = col;
+            setGeneDocColumnRange(drag.startPos, col);
+            _canvasState.scheduleDraw?.();
+        } else {
+            const target = document.elementFromPoint(e.clientX, e.clientY);
+            const span = target?.closest?.('.seq-data > span[data-pos]');
+            if (!span) return;
+            const pos = parseInt(span.dataset.pos, 10);
+            if (!Number.isInteger(pos) || pos === drag.lastPos) return;
+            drag.lastPos = pos;
+            setGeneDocColumnRange(drag.startPos, pos);
+        }
         return;
     }
 
@@ -15098,6 +15177,10 @@ function handleGeneDocResidueKey(e) {
  * using cached DOM references. No full re-render. Like GeneDoc.
  */
 function fastUpdateEditCellAt(row, pos) {
+    if (isCanvasMode()) {
+        _canvasState.scheduleDraw?.();
+        return;
+    }
     const span = getSpanElement(row, pos);
     if (!span) {
         renderAlignment(); return;
