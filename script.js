@@ -3392,6 +3392,26 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         hideTooltip();
     });
 
+    // Phase 5: right-click context menu (mirrors DOM mode's alignmentContainer contextmenu handler)
+    canvas.addEventListener('contextmenu', (e) => {
+        // Right-click on name column → context menu for that sequence's row
+        const nameHit = _canvasHitTestName(e.clientX, e.clientY);
+        if (nameHit) {
+            e.preventDefault();
+            showContextMenu(e, nameHit.row);
+            return;
+        }
+        // Right-click on data area → context menu for that row
+        const hit = _canvasHitTest(e.clientX, e.clientY);
+        if (hit) {
+            e.preventDefault();
+            showContextMenu(e, hit.row);
+            return;
+        }
+        // Right-click on ruler or outside data area: no context menu
+        // (matches DOM mode, which returns early for scale-ruler-line)
+    });
+
     scheduleDraw();
 }
 
