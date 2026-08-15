@@ -3821,44 +3821,8 @@ function parseSAMToBuffer(text) {
 }
 
 /**
- * Walk a read's CIGAR and return a Map of refPos -> { base, type } for each
- * reference-consuming position (M/=/X ops). Type is 'match' or 'mismatch'.
- * Insertions, deletions, soft-clips and skips are not included (they don't
- * occupy a reference column to draw a base in).
- */
-function _getReadBasesByRefPos(read, refSeq) {
-    const bases = new Map();
-    if (!read.seq || !read.cigar) return bases;
-    let readPos = 0;
-    let refPos = read.pos;
-    for (const op of read.cigar) {
-        const len = op.len;
-        const type = op.op;
-        switch (type) {
-            case 'M': case '=': case 'X':
-                for (let i = 0; i < len; i++) {
-                    const rb = (read.seq[readPos + i] || 'N').toUpperCase();
-                    const refb = (refSeq[refPos + i] || 'N').toUpperCase();
-                    const isMatch = type === '=' || (type === 'M' && rb === refb);
-                    bases.set(refPos + i, { base: rb, type: isMatch ? 'match' : 'mismatch' });
-                }
-                readPos += len;
-                refPos += len;
-                break;
-            case 'D': case 'N':
-                refPos += len;
-                break;
-            case 'I': case 'S':
-                readPos += len;
-                break;
-        }
-    }
-    return bases;
-}
-
-/**
  * Walk a read's CIGAR and return a comprehensive set of features for
- * Phase 5 visual treatment: match/mismatch bases (same as _getReadBasesByRefPos),
+ * Phase 5 visual treatment: match/mismatch bases,
  * deletion positions, insertion positions, and left/right soft-clip lengths.
  */
 function _getReadCigarFeatures(read, refSeq) {
@@ -4436,335 +4400,6 @@ function clearReadsData() {
     showMessage('Reads cleared.', 2000);
 }
 
-// IGV-style compact read packing renderer
-function renderCompactAlignment(len, conservationData, shadeMode, blackThresh, darkThresh, lightThresh,
-    enableBlack, enableDark, enableLight, nameLen, stickyNames, standard, ambiguous, ambiguousMap,
-    showConsensus, consType, threshold, fallbackMode, coverageMin) {
-
-    alignmentContainer.innerHTML = '';
-    // Reset styles from other modes (Canvas sets position/height/overflow)
-    alignmentContainer.style.position = '';
-    alignmentContainer.style.height = '';
-    alignmentContainer.style.overflow = 'auto';
-    state.spanCache = new Map();
-    state.domSelectedNucs = new Map();
-    state.domSelectedColumns = new Map();
-
-    const seqs = state.seqs;
-    const nSeqs = seqs.length;
-    if (nSeqs === 0) return;
-
-    // Find reference sequence (longest or first non-gappy)
-    let refIdx = 0;
-    let refLen = 0;
-    let refGappiness = 999;
-    for (let i = 0; i < nSeqs; i++) {
-        const s = seqs[i].seq;
-        const gapCount = (s.match(/[-.]/g) || []).length;
-        const gappiness = gapCount / Math.max(1, s.length);
-        if (s.length > refLen || (s.length === refLen && gappiness < refGappiness)) {
-            refIdx = i;
-            refLen = s.length;
-            refGappiness = gappiness;
-        }
-    }
-
-    // Parse read positions from reference-aligned sequences
-    // Each read: {seqIdx, start, end, seq, name, mismatches[]}
-    const reads = [];
-    for (let i = 0; i < nSeqs; i++) {
-        if (i === refIdx && nSeqs > 1) continue; // skip reference
-        const s = seqs[i].seq;
-        // Find first and last non-gap position
-        let start = -1, end = -1;
-        for (let p = 0; p < len; p++) {
-            const ch = s[p] || '-';
-            if (ch !== '-' && ch !== '.') {
-                if (start < 0) start = p;
-                end = p;
-            }
-        }
-        if (start < 0) continue;
-        const seq = s.substring(start, end + 1);
-        const mismatches = [];
-        const refSeq = seqs[refIdx].seq;
-        for (let p = start; p <= end; p++) {
-            const rb = (s[p] || '-').toUpperCase();
-            const refb = (refSeq[p] || '-').toUpperCase();
-            if (rb !== '-' && rb !== '.' && refb !== '-' && refb !== '.' && rb !== refb) {
-                mismatches.push(p);
-            }
-        }
-        reads.push({
-            seqIdx: i,
-            start, end, seq,
-            name: seqs[i].header || ('Read' + (i + 1)),
-            mismatches: new Set(mismatches),
-            gaplessLen: seq.replace(/[-.]/g, '').length,
-            _pairInfo: seqs[i]._samPair || null
-        });
-    }
-
-    // Greedy track-packing (sorts reads in place by start, assigns .track)
-    const nTracks = assignReadTracks(reads);
-
-    // Compute coverage per position
-    const coverage = new Uint16Array(len);
-    for (const read of reads) {
-        for (let p = read.start; p <= read.end; p++) {
-            const ch = seqs[read.seqIdx].seq[p] || '-';
-            if (ch !== '-' && ch !== '.') coverage[p]++;
-        }
-    }
-    const maxCov = Math.max(1, ...coverage);
-
-    // Color helpers
-    const bgColorPicker = document.getElementById('blackColorPicker');
-    const dkColorPicker = document.getElementById('darkColorPicker');
-    const ltColorPicker = document.getElementById('lightColorPicker');
-    const defBlack = bgColorPicker?.value || '#000000';
-    const defDark = dkColorPicker?.value || '#555555';
-    const defLight = ltColorPicker?.value || '#cccccc';
-
-    const getShade = (p, base) => {
-        const cons = conservationData[p];
-        if (!cons || cons.count === 0) return null;
-        const count = (cons.baseCounts || {})[base.toUpperCase()] || 0;
-        const pct = count / cons.count;
-        if (enableBlack && pct >= blackThresh) return defBlack;
-        if (enableDark && pct >= darkThresh) return defDark;
-        if (enableLight && pct >= lightThresh) return defLight;
-        return null;
-    };
-
-    const refSeq = seqs[refIdx].seq;
-    const CHAR_W = 10;
-    const ROW_H = 14;
-    const COV_H = 50;
-    const REF_H = 16;
-    const TRACK_H = 12;
-    const SCALE_H = 20;
-    const NAME_W = Math.min(nameLen * 7, 200);
-    const totalW = NAME_W + len * CHAR_W + 20;
-    const totalH = COV_H + nTracks * TRACK_H + REF_H + SCALE_H + 20;
-
-    // Build SVG
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', totalW);
-    svg.setAttribute('height', totalH);
-    svg.setAttribute('style', 'font-family:monospace;font-size:11px;');
-    svg.setAttribute('id', 'compactSvg');
-
-    let y = 10;
-
-    // Coverage histogram
-    const covGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    for (let p = 0; p < len; p++) {
-        const h = Math.max(1, (coverage[p] / maxCov) * COV_H);
-        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        rect.setAttribute('x', NAME_W + p * CHAR_W);
-        rect.setAttribute('y', y + COV_H - h);
-        rect.setAttribute('width', CHAR_W - 1);
-        rect.setAttribute('height', h);
-        rect.setAttribute('fill', coverage[p] > 0 ? '#4682b4' : '#eee');
-        covGroup.appendChild(rect);
-    }
-    // Coverage label
-    const covLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    covLabel.setAttribute('x', 4);
-    covLabel.setAttribute('y', y + COV_H / 2 + 4);
-    covLabel.setAttribute('fill', '#333');
-    covLabel.setAttribute('font-size', '10');
-    covLabel.textContent = 'Coverage';
-    covGroup.appendChild(covLabel);
-    svg.appendChild(covGroup);
-    y += COV_H + 4;
-
-    // Read tracks
-    const diffOnly = document.getElementById('compactDiffOnly')?.checked;
-    const showPairs = document.getElementById('compactPairs')?.checked;
-    const pairLines = []; // collect pair connections to draw after all tracks
-
-    // Build pair map: qname -> [read1, read2]
-    const pairMap = new Map();
-    if (showPairs) {
-        for (const read of reads) {
-            if (!read._pairInfo) continue;
-            const key = read.name;
-            if (!pairMap.has(key)) pairMap.set(key, []);
-            pairMap.get(key).push(read);
-        }
-    }
-
-    for (let t = 0; t < nTracks; t++) {
-        const trackReads = reads.filter(r => r.track === t);
-        for (const read of trackReads) {
-            const rx = NAME_W + read.start * CHAR_W;
-            const rw = (read.end - read.start + 1) * CHAR_W;
-            const ry = y;
-            const rh = diffOnly ? 4 : TRACK_H - 2;
-
-            if (diffOnly) {
-                // Thin line mode - just a hairline with mismatch ticks
-                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                line.setAttribute('x1', rx);
-                line.setAttribute('y1', ry + 2);
-                line.setAttribute('x2', rx + rw);
-                line.setAttribute('y2', ry + 2);
-                line.setAttribute('stroke', '#b0c4de');
-                line.setAttribute('stroke-width', '1');
-                svg.appendChild(line);
-            } else {
-                // Full bar mode
-                const bar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                bar.setAttribute('x', rx);
-                bar.setAttribute('y', ry);
-                bar.setAttribute('width', rw);
-                bar.setAttribute('height', rh);
-                bar.setAttribute('fill', '#c8d8e8');
-                bar.setAttribute('stroke', '#8ab4d6');
-                bar.setAttribute('stroke-width', '0.5');
-                bar.setAttribute('rx', '2');
-                svg.appendChild(bar);
-            }
-
-            // Mismatch marks (always shown)
-            for (const mp of read.mismatches) {
-                const mx = NAME_W + mp * CHAR_W + CHAR_W / 2;
-                const mark = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                mark.setAttribute('x', mx - 1);
-                mark.setAttribute('y', ry);
-                mark.setAttribute('width', 2);
-                mark.setAttribute('height', diffOnly ? 4 : rh);
-                mark.setAttribute('fill', '#e74c3c');
-                svg.appendChild(mark);
-            }
-
-            // Read name label (only when enough space - not in diffOnly thin-line mode)
-            if (!diffOnly && NAME_W > 30) {
-                const name = read.name;
-                const maxChars = Math.max(3, Math.floor(rw / 6));
-                if (maxChars > 2) {
-                    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    label.setAttribute('x', rx + 2);
-                    label.setAttribute('y', ry + rh - 3);
-                    label.setAttribute('fill', '#555');
-                    label.setAttribute('font-size', '7');
-                    label.setAttribute('font-family', 'monospace');
-                    label.setAttribute('clip-path', `inset(0 ${rw - NAME_W + rx}px 0 0)`);
-                    label.textContent = name.substring(0, maxChars);
-                    svg.appendChild(label);
-                }
-            }
-
-            // Collect pair info for connecting lines
-            if (showPairs && read._pairInfo) {
-                const mates = pairMap.get(read.name);
-                if (mates && mates.length === 2) {
-                    const other = mates[0] === read ? mates[1] : mates[0];
-                    // Store: {track, read} for connection drawing
-                    pairLines.push({
-                        t1: t, t2: other.track,
-                        x1: NAME_W + read.start * CHAR_W + rw / 2,
-                        x2: NAME_W + other.start * CHAR_W + (other.end - other.start + 1) * CHAR_W / 2,
-                        y1: y + rh / 2,
-                        y2: -1 // filled after all tracks rendered
-                    });
-                }
-            }
-        }
-        y += diffOnly ? 6 : TRACK_H;
-    }
-
-    // Draw pair connecting lines
-    if (showPairs && pairLines.length > 0) {
-        for (const pl of pairLines) {
-            if (pl.y2 < 0) {
-                // Find y2 from the mate's track
-                const mateTrack = pl.t2;
-                const trackY = COV_H + 4 + mateTrack * (diffOnly ? 6 : TRACK_H) + (diffOnly ? 2 : TRACK_H / 2);
-                pl.y2 = trackY;
-            }
-            const conn = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            conn.setAttribute('x1', pl.x1);
-            conn.setAttribute('y1', pl.y1);
-            conn.setAttribute('x2', pl.x2);
-            conn.setAttribute('y2', pl.y2);
-            conn.setAttribute('stroke', '#999');
-            conn.setAttribute('stroke-width', '0.5');
-            conn.setAttribute('stroke-dasharray', '3,2');
-            conn.setAttribute('opacity', '0.5');
-            svg.appendChild(conn);
-        }
-    }
-
-    y += 4;
-
-    // Reference sequence
-    const refLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    refLabel.setAttribute('x', 4);
-    refLabel.setAttribute('y', y + 12);
-    refLabel.setAttribute('fill', '#333');
-    refLabel.setAttribute('font-weight', 'bold');
-    refLabel.setAttribute('font-size', '10');
-    refLabel.textContent = seqs[refIdx].header || 'Reference';
-    svg.appendChild(refLabel);
-
-    for (let p = 0; p < len; p++) {
-        const base = refSeq[p] || '-';
-        const shade = getShade(p, base);
-        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        text.setAttribute('x', NAME_W + p * CHAR_W + CHAR_W / 2);
-        text.setAttribute('y', y + 12);
-        text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('fill', shade || '#333');
-        text.setAttribute('font-weight', shade ? 'bold' : 'normal');
-        text.setAttribute('font-size', '10');
-        text.textContent = base;
-        svg.appendChild(text);
-
-        // Background rect for shaded positions
-        if (shade) {
-            const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            bg.setAttribute('x', NAME_W + p * CHAR_W);
-            bg.setAttribute('y', y + 1);
-            bg.setAttribute('width', CHAR_W - 1);
-            bg.setAttribute('height', REF_H - 2);
-            bg.setAttribute('fill', shade);
-            bg.setAttribute('opacity', '0.3');
-            svg.insertBefore(bg, text);
-        }
-    }
-
-    // Scale ruler
-    y += REF_H + 4;
-    for (let p = 0; p < len; p += 5) {
-        const tick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        tick.setAttribute('x1', NAME_W + p * CHAR_W);
-        tick.setAttribute('y1', y);
-        tick.setAttribute('x2', NAME_W + p * CHAR_W);
-        tick.setAttribute('y2', y + (p % 10 === 0 ? 8 : 4));
-        tick.setAttribute('stroke', '#999');
-        svg.appendChild(tick);
-        if (p % 10 === 0) {
-            const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            t.setAttribute('x', NAME_W + p * CHAR_W);
-            t.setAttribute('y', y + 16);
-            t.setAttribute('fill', '#666');
-            t.setAttribute('font-size', '8');
-            t.setAttribute('text-anchor', 'start');
-            t.textContent = String(p + 1);
-            svg.appendChild(t);
-        }
-    }
-
-    alignmentContainer.appendChild(svg);
-    alignmentContainer.style.overflow = 'auto';
-
-    // Update info
-    if (typeof updateSourceInfo === 'function') updateSourceInfo();
-}
-
 // Set whenever the user explicitly picks a display mode (see onModeChange),
 // so the auto-switch-to-Canvas heuristic below stops overriding their choice
 // back to Canvas on every subsequent render. Reset per-file in parseAndRender
@@ -4915,7 +4550,6 @@ function renderAlignment(options = {}) {
     // (len is declared above, before TOTAL_RESIDUES calculation)
 
     const shadeMode = _checkedRadioValue('shadeMode', 'all');
-    const useCompact = document.getElementById('modeCompact')?.checked;
     const useCanvas = document.getElementById('modeCanvas')?.checked;
 
     // -- Canvas fast path (UGENE-style: first paint costs only the visible region) --
@@ -5012,19 +4646,6 @@ function renderAlignment(options = {}) {
         || preCalculateConservation(state.seqs, len, shadeMode);
     if (!options.deferConservation) {
         state.conservationDataCache = { len, shadeMode, data: conservationData };
-    }
-
-    if (useCompact) {
-        state._codonData = null;
-        state._codonFrames = null;
-        state._codonActiveFrame = 0;
-        document.body.classList.remove('codon-mode');
-        renderCompactAlignment(len, conservationData, shadeMode, blackThresh, darkThresh, lightThresh,
-            enableBlack, enableDark, enableLight, nameLen, stickyNames, standard, ambiguous, ambiguousMap,
-            showConsensus, consType, threshold, fallbackMode, coverageMin);
-        _syncSelectionDomFromState();
-        syncCodonModePanel();
-        return;
     }
 
     // Highlight-diffs + Var-sites: mark columns that differ from consensus
@@ -6589,7 +6210,6 @@ async function parseAndRender(isFromDrop = false) {
         updateSourceInfo();
         renderAlignment();
         updateBamButtonVisibility();
-        _updateCompactControlsVisibility();
         // Auto-fit block size to screen width on every load
         setBlockSizeToScreen();
         setupHoverMenuReveal();
@@ -6736,23 +6356,12 @@ async function onModeChange() {
         container.style.opacity = isBlocks ? '1' : '0.4';
         container.style.pointerEvents = isBlocks ? 'auto' : 'none';
     }
-    _updateCompactControlsVisibility();
     // Switching to a view without residue spans: drop edit mode rather than leave a tool
     // panel open over a display its tools cannot touch. Renders below, so no re-render here.
     exitEditModeForUnsupportedView({ rerender: false });
     renderAlignment();
     setupHoverMenuReveal();
     _lastModeRadioId = document.querySelector('input[name="mode"]:checked')?.id || _lastModeRadioId;
-}
-
-function _updateCompactControlsVisibility() {
-    const isCompact = el('modeCompact')?.checked;
-    const hasPairs = state.seqs.some(s => s._pairInfo || s._samPair);
-    // The compact-only row is a div with class compact-only
-    const compactRow = document.querySelector('.mode-container .compact-only');
-    if (compactRow) compactRow.style.display = isCompact ? 'flex' : 'none';
-    const pairsEl = document.querySelector('.mode-container .compact-pairs-only');
-    if (pairsEl) pairsEl.style.display = (isCompact && hasPairs) ? '' : 'none';
 }
 
 function setBlockSizeToScreen() {
@@ -13825,7 +13434,7 @@ function attachUIListeners() {
 
     // Set up checkbox listeners
     const checkboxes = ['enableBlack', 'enableDark', 'enableLight', 'showConsensus',
-                        'compactDiffOnly', 'compactPairs', 'highlightDiffs', 'varSitesOnly',
+                        'highlightDiffs', 'varSitesOnly',
                         'codonAnalysis'];
     checkboxes.forEach(id => {
         const elRef = el(id);
@@ -14138,7 +13747,7 @@ function _recalcConservation() {
 // Block/Full are the only modes that build per-residue spans, so they are the only
 // ones with a span cache to keep warm.
 function isSpanRenderMode() {
-    return !el('modeCanvas')?.checked && !el('modeCompact')?.checked && !el('modeReads')?.checked;
+    return !el('modeCanvas')?.checked && !el('modeReads')?.checked;
 }
 
 // Canvas and Reads draw no per-residue spans, so the edit tools have nothing to act on:
