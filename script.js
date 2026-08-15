@@ -5705,42 +5705,39 @@ function renderAlignment(options = {}) {
             }
         }
     } else {
-        // Add scale/ruler at the top for full mode
-        const scaleDiv = document.createElement('div');
-        scaleDiv.className = 'seq-line scale-ruler-line';
-        const scaleNameDiv = document.createElement('div');
-        scaleNameDiv.className = 'seq-name';
-        scaleNameDiv.textContent = '';
-        const scaleDataDiv = document.createElement('div');
-        scaleDataDiv.className = 'seq-data';
-        // See the matching comment in the Block-mode branch above: gate on
-        // whether an overlay is active at all (state._diffColumns), not on
-        // whether there happen to be breakpoints to draw.
-        if (state._diffColumns) {
-            scaleDataDiv.innerHTML = generateScaleHTML(len, 10, 0);
-        } else {
-            scaleDataDiv.textContent = generateScale(len);
-        }
-        scaleDiv.appendChild(scaleNameDiv);
-        scaleDiv.appendChild(scaleDataDiv);
-        alignmentContainer.appendChild(scaleDiv);
-
-        if (shouldRenderConsensus && consensusPosition === 'top') {
-            addConsensusLine(alignmentContainer, consensus, 0, len, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, 'top', options);
-        }
-        // Row-virtualize Full mode on "crazy"-sized alignments only - every
-        // other size/mode combination renders exactly as before.
         if (state.alignmentIndex?.isCrazy) {
-            renderFullModeWindowedRows(alignmentContainer, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, _preserveScrollTop);
+            // Unified windowed path: ruler + consensus are built INSIDE the
+            // block by _buildUnifiedBlock, so we skip the external builds
+            // that the non-windowed path below still uses.
+            renderUnifiedWindowedDom(alignmentContainer, len, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
         } else {
+            // Add scale/ruler at the top for full mode
+            const scaleDiv = document.createElement('div');
+            scaleDiv.className = 'seq-line scale-ruler-line';
+            const scaleNameDiv = document.createElement('div');
+            scaleNameDiv.className = 'seq-name';
+            scaleNameDiv.textContent = '';
+            const scaleDataDiv = document.createElement('div');
+            scaleDataDiv.className = 'seq-data';
+            if (state._diffColumns) {
+                scaleDataDiv.innerHTML = generateScaleHTML(len, 10, 0);
+            } else {
+                scaleDataDiv.textContent = generateScale(len);
+            }
+            scaleDiv.appendChild(scaleNameDiv);
+            scaleDiv.appendChild(scaleDataDiv);
+            alignmentContainer.appendChild(scaleDiv);
+
+            if (shouldRenderConsensus && consensusPosition === 'top') {
+                addConsensusLine(alignmentContainer, consensus, 0, len, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, 'top', options);
+            }
             for (let i = 0; i < state.seqs.length; i++) {
-                // *** PASS conservationData to createSequenceLine ***
                 const lineDiv = createSequenceLine(i, 0, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, conservationData);
                 alignmentContainer.appendChild(lineDiv);
             }
-        }
-        if (shouldRenderConsensus && consensusPosition === 'bottom') {
-            addConsensusLine(alignmentContainer, consensus, 0, len, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, 'bottom', options);
+            if (shouldRenderConsensus && consensusPosition === 'bottom') {
+                addConsensusLine(alignmentContainer, consensus, 0, len, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, 'bottom', options);
+            }
         }
     }
     setTimeout(() => toggleStickyNames(), 0);
