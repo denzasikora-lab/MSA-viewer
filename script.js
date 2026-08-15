@@ -3555,6 +3555,8 @@ let bamState = {
 
 // Currently highlighted read bar in Reads mode (click-to-highlight)
 let _readsHighlightedBar = null;
+// Reads-mode display: 'diff' (mismatches only) or 'bases' (all bases colored)
+let _readsDisplayMode = 'diff';
 
 /**
  * Show the BAM file picker when user clicks the BAM button.
@@ -3818,10 +3820,83 @@ function parseSAMToBuffer(text) {
 }
 
 /**
+ * Walk a read's CIGAR and return a Map of refPos -> { base, type } for each
+ * reference-consuming position (M/=/X ops). Type is 'match' or 'mismatch'.
+ * Insertions, deletions, soft-clips and skips are not included (they don't
+ * occupy a reference column to draw a base in).
+ */
+function _getReadBasesByRefPos(read, refSeq) {
+    const bases = new Map();
+    if (!read.seq || !read.cigar) return bases;
+    let readPos = 0;
+    let refPos = read.pos;
+    for (const op of read.cigar) {
+        const len = op.len;
+        const type = op.op;
+        switch (type) {
+            case 'M': case '=': case 'X':
+                for (let i = 0; i < len; i++) {
+                    const rb = (read.seq[readPos + i] || 'N').toUpperCase();
+                    const refb = (refSeq[refPos + i] || 'N').toUpperCase();
+                    const isMatch = type === '=' || (type === 'M' && rb === refb);
+                    bases.set(refPos + i, { base: rb, type: isMatch ? 'match' : 'mismatch' });
+                }
+                readPos += len;
+                refPos += len;
+                break;
+            case 'D': case 'N':
+                refPos += len;
+                break;
+            case 'I': case 'S':
+                readPos += len;
+                break;
+        }
+    }
+    return bases;
+}
+
+/**
+ * Lazily create the "Show bases" checkbox for Reads mode and insert it
+ * next to the quick mode switcher. Returns the toggle label element.
+ */
+function ensureReadsDisplayToggle() {
+    let toggle = document.getElementById('readsDisplayToggle');
+    if (toggle) {
+        const cb = document.getElementById('readsDisplayBases');
+        if (cb) cb.checked = (_readsDisplayMode === 'bases');
+        return toggle;
+    }
+    toggle = document.createElement('label');
+    toggle.id = 'readsDisplayToggle';
+    toggle.style.cssText = 'display:none;align-items:center;gap:4px;font-size:11px;margin-left:8px;cursor:pointer;user-select:none;';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = 'readsDisplayBases';
+    cb.checked = (_readsDisplayMode === 'bases');
+    cb.style.margin = '0';
+    cb.addEventListener('change', () => {
+        _readsDisplayMode = cb.checked ? 'bases' : 'diff';
+        renderReadsAlignment();
+    });
+    const span = document.createElement('span');
+    span.textContent = 'Show bases';
+    toggle.appendChild(cb);
+    toggle.appendChild(span);
+    const quickSwitch = document.getElementById('quickModeSwitch');
+    if (quickSwitch && quickSwitch.parentNode) {
+        quickSwitch.parentNode.insertBefore(toggle, quickSwitch.nextSibling);
+    } else {
+        document.body.appendChild(toggle);
+    }
+    return toggle;
+}
+
+/**
  * Render the reads alignment view (BAM mode).
  * Shows reference track at top, reads below in pileup order.
  */
 function renderReadsAlignment() {
+    ensureReadsDisplayToggle();
     if (!bamState.reads.length || !bamState.refSeq) {
         alignmentContainer.innerHTML = '<div style="padding:20px;color:#888;">No reads loaded. Open a BAM file with the BAM button.</div>';
         return;
@@ -4030,6 +4105,44 @@ function renderReadsAlignment() {
             svg.appendChild(bar);
             svg.appendChild(startCap);
             svg.appendChild(endCap);
+
+            // Per-base content inside bar (diff/bases display mode)
+            if (cellW >= 7) {
+                const readBases = _getReadBasesByRefPos(read, refSeq);
+                for (let p = read.start; p <= read.end; p++) {
+                    const entry = readBases.get(p);
+                    if (!entry) continue;
+                    const bx = NAME_W + (p - refStart) * cellW + cellW / 2;
+                    const by = ry + 2 + rh / 2;
+                    if (_readsDisplayMode === 'diff') {
+                        if (entry.type === 'mismatch') {
+                            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                            text.setAttribute('x', bx);
+                            text.setAttribute('y', by);
+                            text.setAttribute('text-anchor', 'middle');
+                            text.setAttribute('dominant-baseline', 'middle');
+                            text.setAttribute('font-size', '9');
+                            text.setAttribute('font-family', 'monospace');
+                            text.setAttribute('fill', '#e74c3c');
+                            text.setAttribute('pointer-events', 'none');
+                            text.textContent = entry.base;
+                            svg.appendChild(text);
+                        }
+                    } else {
+                        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                        text.setAttribute('x', bx);
+                        text.setAttribute('y', by);
+                        text.setAttribute('text-anchor', 'middle');
+                        text.setAttribute('dominant-baseline', 'middle');
+                        text.setAttribute('font-size', '9');
+                        text.setAttribute('font-family', 'monospace');
+                        text.setAttribute('fill', baseColorRef(entry.base));
+                        text.setAttribute('pointer-events', 'none');
+                        text.textContent = entry.base;
+                        svg.appendChild(text);
+                    }
+                }
+            }
         }
     }
 
@@ -6334,6 +6447,8 @@ function syncQuickModeSwitch() {
 
     const canvasNotice = ensureCanvasModeNotice();
     setCanvasNoticeVisible(!!isCanvasMode);
+    const readsToggle = ensureReadsDisplayToggle();
+    if (readsToggle) readsToggle.style.display = isReadsMode ? 'flex' : 'none';
     syncSearchControlsAvailability();
 }
 
