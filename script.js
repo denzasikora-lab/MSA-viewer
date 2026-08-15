@@ -6788,19 +6788,30 @@ function handleMouseMove(e) {
             updateColumnSelections();
         }
     } else if (state.dragMode === 'nuc') {
-        const span = closestFromEvent(e, '.seq-data span[data-pos]');
-        if (span) {
-            const pos = parseInt(span.dataset.pos);
-            if (isNaN(pos)) return;
-            const rowEl = span.closest('.seq-line');
-            const currentIndex = resolveNucRowIndex(rowEl);
-            if (!Number.isInteger(currentIndex)) return;
-            // Only allow drag within the same row
-            if (currentIndex === state.dragStartRow) {
-                const rowSet = buildNucSelectionSet(currentIndex, state.dragStartCol, pos);
+        if (document.getElementById('modeCanvas')?.checked) {
+            // Canvas mode: hit-test instead of DOM span lookup
+            const hit = _canvasHitTest(e.clientX, e.clientY);
+            if (hit && hit.row === state.dragStartRow) {
+                const rowSet = buildNucSelectionSet(hit.row, state.dragStartCol, hit.col);
                 state.selectedNucs.clear();
-                state.selectedNucs.set(currentIndex, rowSet);
-                scheduleNucSelectionRefresh();
+                state.selectedNucs.set(hit.row, rowSet);
+                _canvasState.scheduleDraw?.();
+            }
+        } else {
+            const span = closestFromEvent(e, '.seq-data span[data-pos]');
+            if (span) {
+                const pos = parseInt(span.dataset.pos);
+                if (isNaN(pos)) return;
+                const rowEl = span.closest('.seq-line');
+                const currentIndex = resolveNucRowIndex(rowEl);
+                if (!Number.isInteger(currentIndex)) return;
+                // Only allow drag within the same row
+                if (currentIndex === state.dragStartRow) {
+                    const rowSet = buildNucSelectionSet(currentIndex, state.dragStartCol, pos);
+                    state.selectedNucs.clear();
+                    state.selectedNucs.set(currentIndex, rowSet);
+                    scheduleNucSelectionRefresh();
+                }
             }
         }
     }
