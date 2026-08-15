@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v171';
+const BUILD_TAG = 'v172';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1814,6 +1814,184 @@ function _setupFullModeScrollListener(container) {
         // switches mode or loads a smaller file - it must no-op then, not
         // keep re-rendering into an unrelated view.
         if (!document.getElementById('modeSingle')?.checked) return;
+        if (!state.alignmentIndex?.isCrazy) return;
+        triggerWindowedRender();
+    });
+}
+
+// -- Block-mode virtualization (large alignments only) ----------------------
+// Block mode chunks columns into fixed-width blocks, but until now built
+// every block for every column chunk up front - each block itself contains
+// ALL rows, so total DOM cost is (numBlocks * nSeq), the same order as
+// unwindowed Full mode. Measured directly: on a 2000x20000 (40M-residue)
+// synthetic alignment, Block mode hung the tab past 60s. Because blocks
+// stack vertically and each one is uniformly tall (nSeq rows regardless of
+// blockLen), windowing by block - only building the currently-visible block
+// (+ overscan) - is single-axis, unlike Full mode's row+column split, and
+// collapses the same (numBlocks * nSeq) cost down to (visibleBlocks * nSeq).
+let _blockModeBlockHeightPx = null;
+
+// A block contains ALL rows (unlike Full mode's row-height fallback of
+// 16px, which is right-order-of-magnitude for a single row), so a naive
+// 16px fallback before the first block is ever measured drastically
+// undercounts how tall one block really is - it made the very first
+// windowed render think dozens of blocks fit in the viewport instead of
+// ~1, each with thousands of rows, and built all of them (confirmed:
+// hung the tab on first switch into Block mode on a 40M-residue file even
+// after windowing was added). Estimate from row count instead until a
+// real block has been measured.
+function _blockModeFallbackHeightPx() {
+    const rowHeightPx = _fullModeRowHeightPx || 16;
+    return Math.max(rowHeightPx, (state.seqs?.length || 1) * rowHeightPx + 40);
+}
+
+function _measureBlockModeBlockHeight(sampleBlockEl) {
+    if (sampleBlockEl) {
+        const h = sampleBlockEl.getBoundingClientRect().height;
+        if (h > 0) _blockModeBlockHeightPx = h;
+    }
+    return _blockModeBlockHeightPx || _blockModeFallbackHeightPx();
+}
+
+// Builds one block's DOM exactly as the non-windowed Block-mode loop in
+// renderAlignment() used to inline - factored out so both the windowed and
+// (small-alignment) non-windowed paths share one implementation.
+function _buildBlockElement(start, end, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options) {
+    const blockLen = end - start;
+    const blockDiv = document.createElement('div');
+    blockDiv.className = 'block-block';
+
+    const scaleDiv = document.createElement('div');
+    scaleDiv.className = 'seq-line scale-ruler-line';
+    const scaleNameDiv = document.createElement('div');
+    scaleNameDiv.className = 'seq-name';
+    scaleNameDiv.textContent = '';
+    const scaleDataDiv = document.createElement('div');
+    scaleDataDiv.className = 'seq-data';
+    if (state._diffColumns) {
+        scaleDataDiv.innerHTML = generateScaleHTML(blockLen, 10, start);
+    } else {
+        scaleDataDiv.textContent = generateScale(blockLen, 10, start);
+    }
+    scaleDiv.appendChild(scaleNameDiv);
+    scaleDiv.appendChild(scaleDataDiv);
+    blockDiv.appendChild(scaleDiv);
+    const isLastBlock = (start + (end - start) >= len) || end >= len;
+
+    if (shouldRenderConsensus && consensusPosition === 'top') {
+        addConsensusLine(blockDiv, consensus, start, end, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, 'top', options);
+    }
+    for (let i = 0; i < state.seqs.length; i++) {
+        const lineDiv = createSequenceLine(i, start, end, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, conservationData);
+        blockDiv.appendChild(lineDiv);
+    }
+    if (shouldRenderConsensus && consensusPosition === 'bottom') {
+        addConsensusLine(blockDiv, consensus, start, end, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, 'bottom', options);
+    }
+    return blockDiv;
+}
+
+// Cached so scroll-triggered updates can rebuild just the block window
+// without re-running the full renderAlignment() pipeline, mirroring
+// _fullModeWindowRenderParams.
+let _blockModeWindowRenderParams = null;
+
+function renderBlockModeWindowedBlocks(container, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, preservedScrollTop) {
+    _blockModeWindowRenderParams = { len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options };
+    const numBlocks = Math.max(1, Math.ceil(len / blockWidth));
+    const blockHeightPx = _blockModeBlockHeightPx || _blockModeFallbackHeightPx();
+    const effectiveScrollTop = preservedScrollTop != null ? preservedScrollTop : container.scrollTop;
+    const overscan = 1;
+    const blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
+    const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + container.clientHeight) / blockHeightPx) + overscan);
+
+    const topSpacer = document.createElement('div');
+    topSpacer.className = 'block-mode-spacer';
+    topSpacer.style.height = (blockStart * blockHeightPx) + 'px';
+    container.appendChild(topSpacer);
+
+    let firstRealBlock = null;
+    for (let b = blockStart; b <= blockEnd; b++) {
+        const start = b * blockWidth;
+        const end = Math.min(start + blockWidth, len);
+        const blockDiv = _buildBlockElement(start, end, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options);
+        container.appendChild(blockDiv);
+        if (!firstRealBlock) firstRealBlock = blockDiv;
+    }
+
+    const bottomSpacer = document.createElement('div');
+    bottomSpacer.className = 'block-mode-spacer';
+    bottomSpacer.style.height = (Math.max(0, numBlocks - 1 - blockEnd) * blockHeightPx) + 'px';
+    container.appendChild(bottomSpacer);
+
+    _measureBlockModeBlockHeight(firstRealBlock);
+    // Same scrollTop-restore/suppress dance as renderFullModeWindowedRows -
+    // clearing innerHTML reset scrollTop to 0 before this ran.
+    if (preservedScrollTop != null && container.scrollTop !== preservedScrollTop) {
+        _suppressNextBlockModeScrollEvent = true;
+        container.scrollTop = preservedScrollTop;
+    }
+    _setupBlockModeScrollListener(container);
+}
+
+function _refreshBlockModeWindowOnScroll(container) {
+    const p = _blockModeWindowRenderParams;
+    if (!p) { renderAlignment({ deferConservation: true }); return; }
+    const spacers = [...container.querySelectorAll(':scope > .block-mode-spacer')];
+    if (spacers.length !== 2) { renderAlignment({ deferConservation: true }); return; }
+    const [topSpacer, bottomSpacer] = spacers;
+
+    const numBlocks = Math.max(1, Math.ceil(p.len / p.blockWidth));
+    const blockHeightPx = _blockModeBlockHeightPx || _blockModeFallbackHeightPx();
+    const overscan = 1;
+    const blockStart = Math.max(0, Math.floor(container.scrollTop / blockHeightPx) - overscan);
+    const blockEnd = Math.min(numBlocks - 1, Math.floor((container.scrollTop + container.clientHeight) / blockHeightPx) + overscan);
+
+    let node = topSpacer.nextSibling;
+    while (node && node !== bottomSpacer) {
+        const next = node.nextSibling;
+        node.remove();
+        node = next;
+    }
+    let firstRealBlock = null;
+    for (let b = blockStart; b <= blockEnd; b++) {
+        const start = b * p.blockWidth;
+        const end = Math.min(start + p.blockWidth, p.len);
+        const blockDiv = _buildBlockElement(start, end, p.len, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, p.shouldRenderConsensus, p.consensusPosition, p.consensus, p.options);
+        container.insertBefore(blockDiv, bottomSpacer);
+        if (!firstRealBlock) firstRealBlock = blockDiv;
+    }
+    topSpacer.style.height = (blockStart * blockHeightPx) + 'px';
+    bottomSpacer.style.height = (Math.max(0, numBlocks - 1 - blockEnd) * blockHeightPx) + 'px';
+    _measureBlockModeBlockHeight(firstRealBlock);
+    _syncSelectionDomFromState();
+}
+
+let _blockModeScrollBoundContainer = null;
+let _suppressNextBlockModeScrollEvent = false;
+function _setupBlockModeScrollListener(container) {
+    if (_blockModeScrollBoundContainer === container) return;
+    _blockModeScrollBoundContainer = container;
+    let renderInProgress = false;
+    let renderPending = false;
+    const triggerWindowedRender = () => {
+        if (renderInProgress) { renderPending = true; return; }
+        renderInProgress = true;
+        requestAnimationFrame(() => {
+            _refreshBlockModeWindowOnScroll(container);
+            renderInProgress = false;
+            if (renderPending) {
+                renderPending = false;
+                triggerWindowedRender();
+            }
+        });
+    };
+    container.addEventListener('scroll', () => {
+        if (_suppressNextBlockModeScrollEvent) {
+            _suppressNextBlockModeScrollEvent = false;
+            return;
+        }
+        if (!document.getElementById('modeBlocks')?.checked) return;
         if (!state.alignmentIndex?.isCrazy) return;
         triggerWindowedRender();
     });
@@ -4209,7 +4387,7 @@ function renderAlignment(options = {}) {
     // windowing might apply so this doesn't change scroll behavior anywhere
     // else - renderFullModeWindowedRows's row-only case is the only path
     // that currently needs it.
-    const _preserveScrollTop = (document.getElementById('modeSingle')?.checked && state.alignmentIndex?.isCrazy)
+    const _preserveScrollTop = ((document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && state.alignmentIndex?.isCrazy)
         ? alignmentContainer.scrollTop : null;
     alignmentContainer.innerHTML = '';
     // Ensure Full/Block modes have correct scroll/layout behaviour
@@ -4591,55 +4769,16 @@ function renderAlignment(options = {}) {
     }
 
     if (useBlocks) {
-        for (let start = 0; start < len; start += blockWidth) {
-            const end = Math.min(start + blockWidth, len);
-            const blockLen = end - start;
-            const blockDiv = document.createElement('div');
-            blockDiv.className = 'block-block';
-
-            // Add scale/ruler above each block (replaces separator)
-            const scaleDiv = document.createElement('div');
-            scaleDiv.className = 'seq-line scale-ruler-line';
-            const scaleNameDiv = document.createElement('div');
-            scaleNameDiv.className = 'seq-name';
-            scaleNameDiv.textContent = '';
-            const scaleDataDiv = document.createElement('div');
-            scaleDataDiv.className = 'seq-data';
-            // Use the span-wrapped renderer whenever EITHER overlay mode is
-            // active (state._diffColumns is non-null), not only when there
-            // are breakpoints to draw. Those are independent questions: one
-            // is "does per-column hiding/dimming apply to the ruler at all"
-            // (needed for both Highlight-diffs and Variable-sites-only), the
-            // other is "should breakpoint marker glyphs be drawn" (only
-            // meaningful for Variable-sites-only with Breakpoints on).
-            // Conflating them via _brkBeforePos.size (itself only ever
-            // populated for that one sub-case) meant the ruler silently fell
-            // back to unwrapped, unfiltered plain text - full of every
-            // position number - in Highlight-diffs mode always, and in
-            // Variable-sites-only mode whenever Breakpoints was unchecked,
-            // while the rows beneath it kept hiding/dimming correctly.
-            if (state._diffColumns) {
-                scaleDataDiv.innerHTML = generateScaleHTML(blockLen, 10, start);
-            } else {
-                scaleDataDiv.textContent = generateScale(blockLen, 10, start);
+        // Block-virtualize on "crazy"-sized alignments only, mirroring Full
+        // mode's isCrazy gate - every other size renders exactly as before.
+        if (state.alignmentIndex?.isCrazy) {
+            renderBlockModeWindowedBlocks(alignmentContainer, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
+        } else {
+            for (let start = 0; start < len; start += blockWidth) {
+                const end = Math.min(start + blockWidth, len);
+                const blockDiv = _buildBlockElement(start, end, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options);
+                alignmentContainer.appendChild(blockDiv);
             }
-            scaleDiv.appendChild(scaleNameDiv);
-            scaleDiv.appendChild(scaleDataDiv);
-            blockDiv.appendChild(scaleDiv);
-            const isLastBlock = (start + blockWidth >= len);
-
-            if (shouldRenderConsensus && consensusPosition === 'top') {
-                addConsensusLine(blockDiv, consensus, start, end, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, 'top', options);
-            }
-            for (let i = 0; i < state.seqs.length; i++) {
-                // *** PASS conservationData to createSequenceLine ***
-                const lineDiv = createSequenceLine(i, start, end, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, conservationData);
-                blockDiv.appendChild(lineDiv);
-            }
-            if (shouldRenderConsensus && consensusPosition === 'bottom') {
-                addConsensusLine(blockDiv, consensus, start, end, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, 'bottom', options);
-            }
-            alignmentContainer.appendChild(blockDiv);
         }
     } else {
         // Add scale/ruler at the top for full mode
@@ -5836,9 +5975,10 @@ function showLargeAlignmentDialog(stats, classification, context = 'load') {
                still computes shading for the whole alignment once, which can take several seconds on
                an alignment this size. Canvas mode stays instant if you're only viewing, not editing.`
             : context === 'block-mode-switch'
-            ? `Block mode has no windowing yet - unlike Full mode, it renders every row for every
-               column chunk up front, and can fully freeze the browser tab for a long time on an
-               alignment this size, not just run slowly. Canvas mode is strongly recommended instead.`
+            ? `Block mode now windows column-chunks vertically, so it won't freeze - but the very
+               first paint still computes shading for the whole alignment once, which can take
+               several seconds on an alignment this size. Canvas mode stays instant if you're only
+               viewing, not editing.`
             : `Loading may be slow or briefly freeze the browser because ${reasonText}.
                Canvas mode is recommended for viewing; switch to Block/Full only for editing.`;
 
