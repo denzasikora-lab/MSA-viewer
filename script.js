@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v172';
+const BUILD_TAG = 'v173';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1601,6 +1601,62 @@ function getVisibleRowColumnRange(container, rowHeightPx, charWidthPx, nameColWi
     return { rowStart, rowEnd, colStart, colEnd };
 }
 
+// -- Shared windowed-list scroll/render machinery ----------------------------
+// Full-mode row windowing and Block-mode block windowing each need the same
+// three things: (a) suppress the one scroll event a programmatic scrollTop
+// restore fires, so it doesn't re-trigger the render cycle into an infinite
+// loop (confirmed possible under rapid-scroll stress testing); (b) coalesce
+// scroll events into one render per animation frame, keeping "a render is in
+// progress" true for the render's FULL duration rather than just until the
+// rAF fires (confirmed: clearing the flag too early let events pile up
+// faster than renders could complete and hung the tab); (c) remove/rebuild
+// only the DOM between two spacer sentinels rather than the whole container.
+// Factored out here so the two modes share one implementation instead of
+// two copies that can silently drift out of sync.
+function _removeNodesBetweenSpacers(topSpacer, bottomSpacer) {
+    let node = topSpacer.nextSibling;
+    while (node && node !== bottomSpacer) {
+        const next = node.nextSibling;
+        node.remove();
+        node = next;
+    }
+}
+
+function _createWindowedScrollController(refreshFn, isActiveFn) {
+    let boundContainer = null;
+    let suppressNext = false;
+    let renderInProgress = false;
+    let renderPending = false;
+    return {
+        bind(container) {
+            if (boundContainer === container) return; // already bound
+            boundContainer = container;
+            const triggerWindowedRender = () => {
+                if (renderInProgress) { renderPending = true; return; }
+                renderInProgress = true;
+                requestAnimationFrame(() => {
+                    refreshFn(container);
+                    renderInProgress = false;
+                    if (renderPending) {
+                        renderPending = false;
+                        triggerWindowedRender();
+                    }
+                });
+            };
+            container.addEventListener('scroll', () => {
+                if (suppressNext) { suppressNext = false; return; }
+                // Re-check conditions live: the listener stays bound to the
+                // container element (which persists across renders) even if
+                // the user later switches mode or loads a smaller file - it
+                // must no-op then, not keep re-rendering into an unrelated view.
+                if (!isActiveFn()) return;
+                triggerWindowedRender();
+            });
+        },
+        suppressNextEvent() { suppressNext = true; },
+    };
+}
+
 // -- Full-mode row virtualization (large alignments only) -------------------
 // Full mode's DOM-per-residue rendering scales with rows x columns and has no
 // windowing, unlike Block mode (chunked into smaller containers) or Canvas
@@ -1718,7 +1774,7 @@ function renderFullModeWindowedRows(container, len, nameLen, stickyNames, standa
     // suppress exactly that one so it doesn't re-trigger the render cycle
     // that's already in progress.
     if (preservedScrollTop != null && container.scrollTop !== preservedScrollTop) {
-        _suppressNextFullModeScrollEvent = true;
+        _fullModeScrollController.suppressNextEvent();
         container.scrollTop = preservedScrollTop;
     }
     _setupFullModeScrollListener(container);
@@ -1748,12 +1804,7 @@ function _refreshFullModeWindowOnScroll(container) {
     const colStart = Math.min(range.colStart, Math.max(0, p.len - 1));
     const colEnd = Math.min(range.colEnd, Math.max(0, p.len - 1));
 
-    let node = topSpacer.nextSibling;
-    while (node && node !== bottomSpacer) {
-        const next = node.nextSibling;
-        node.remove();
-        node = next;
-    }
+    _removeNodesBetweenSpacers(topSpacer, bottomSpacer);
     let firstRealRow = null;
     for (let i = rowStart; i <= rowEnd; i++) {
         const lineDiv = createSequenceLine(i, colStart, colEnd + 1, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, true, p.conservationData);
@@ -1770,53 +1821,12 @@ function _refreshFullModeWindowOnScroll(container) {
     _syncSelectionDomFromState();
 }
 
-let _fullModeScrollBoundContainer = null;
-// Restoring scrollTop programmatically (see renderFullModeWindowedRows)
-// fires its own 'scroll' event in every browser - without suppressing that
-// specific event, the render-triggered-by-scroll cycle re-triggers itself
-// forever, even with zero further real user input (confirmed: caused a
-// genuine infinite loop that hung the tab under a rapid-scroll stress test).
-let _suppressNextFullModeScrollEvent = false;
+const _fullModeScrollController = _createWindowedScrollController(
+    (container) => _refreshFullModeWindowOnScroll(container),
+    () => !!document.getElementById('modeSingle')?.checked && !!state.alignmentIndex?.isCrazy
+);
 function _setupFullModeScrollListener(container) {
-    if (_fullModeScrollBoundContainer === container) return; // already bound
-    _fullModeScrollBoundContainer = container;
-    // A render is more expensive than one animation frame (it rebuilds the
-    // container's DOM, not just the windowed rows), so gating solely on "is
-    // an rAF pending" isn't enough under rapid scroll input - clearing the
-    // pending flag at the START of the rAF callback (before the expensive
-    // render actually runs) let new scroll events slip through and queue
-    // additional renders while one was still in flight, piling up faster
-    // than they could complete and blocking the page (confirmed: a 50-event
-    // rapid-scroll stress test hung the tab with the old logic). renderInProgress
-    // stays true for the render's full duration; a scroll arriving mid-render
-    // just marks "one more catch-up render needed" instead of starting another.
-    let renderInProgress = false;
-    let renderPending = false;
-    const triggerWindowedRender = () => {
-        if (renderInProgress) { renderPending = true; return; }
-        renderInProgress = true;
-        requestAnimationFrame(() => {
-            _refreshFullModeWindowOnScroll(container);
-            renderInProgress = false;
-            if (renderPending) {
-                renderPending = false;
-                triggerWindowedRender();
-            }
-        });
-    };
-    container.addEventListener('scroll', () => {
-        if (_suppressNextFullModeScrollEvent) {
-            _suppressNextFullModeScrollEvent = false;
-            return;
-        }
-        // Re-check conditions live: the listener stays bound to the container
-        // element (which persists across renders) even if the user later
-        // switches mode or loads a smaller file - it must no-op then, not
-        // keep re-rendering into an unrelated view.
-        if (!document.getElementById('modeSingle')?.checked) return;
-        if (!state.alignmentIndex?.isCrazy) return;
-        triggerWindowedRender();
-    });
+    _fullModeScrollController.bind(container);
 }
 
 // -- Block-mode virtualization (large alignments only) ----------------------
@@ -1928,7 +1938,7 @@ function renderBlockModeWindowedBlocks(container, len, blockWidth, nameLen, stic
     // Same scrollTop-restore/suppress dance as renderFullModeWindowedRows -
     // clearing innerHTML reset scrollTop to 0 before this ran.
     if (preservedScrollTop != null && container.scrollTop !== preservedScrollTop) {
-        _suppressNextBlockModeScrollEvent = true;
+        _blockModeScrollController.suppressNextEvent();
         container.scrollTop = preservedScrollTop;
     }
     _setupBlockModeScrollListener(container);
@@ -1947,12 +1957,7 @@ function _refreshBlockModeWindowOnScroll(container) {
     const blockStart = Math.max(0, Math.floor(container.scrollTop / blockHeightPx) - overscan);
     const blockEnd = Math.min(numBlocks - 1, Math.floor((container.scrollTop + container.clientHeight) / blockHeightPx) + overscan);
 
-    let node = topSpacer.nextSibling;
-    while (node && node !== bottomSpacer) {
-        const next = node.nextSibling;
-        node.remove();
-        node = next;
-    }
+    _removeNodesBetweenSpacers(topSpacer, bottomSpacer);
     let firstRealBlock = null;
     for (let b = blockStart; b <= blockEnd; b++) {
         const start = b * p.blockWidth;
@@ -1967,34 +1972,12 @@ function _refreshBlockModeWindowOnScroll(container) {
     _syncSelectionDomFromState();
 }
 
-let _blockModeScrollBoundContainer = null;
-let _suppressNextBlockModeScrollEvent = false;
+const _blockModeScrollController = _createWindowedScrollController(
+    (container) => _refreshBlockModeWindowOnScroll(container),
+    () => !!document.getElementById('modeBlocks')?.checked && !!state.alignmentIndex?.isCrazy
+);
 function _setupBlockModeScrollListener(container) {
-    if (_blockModeScrollBoundContainer === container) return;
-    _blockModeScrollBoundContainer = container;
-    let renderInProgress = false;
-    let renderPending = false;
-    const triggerWindowedRender = () => {
-        if (renderInProgress) { renderPending = true; return; }
-        renderInProgress = true;
-        requestAnimationFrame(() => {
-            _refreshBlockModeWindowOnScroll(container);
-            renderInProgress = false;
-            if (renderPending) {
-                renderPending = false;
-                triggerWindowedRender();
-            }
-        });
-    };
-    container.addEventListener('scroll', () => {
-        if (_suppressNextBlockModeScrollEvent) {
-            _suppressNextBlockModeScrollEvent = false;
-            return;
-        }
-        if (!document.getElementById('modeBlocks')?.checked) return;
-        if (!state.alignmentIndex?.isCrazy) return;
-        triggerWindowedRender();
-    });
+    _blockModeScrollController.bind(container);
 }
 
 function reverseComplement(seq) {
