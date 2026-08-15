@@ -1017,11 +1017,46 @@ input[type="number"] {
     pointer-events: auto;
 }
 
+/* Vertical counterpart of .horizontal-scrollbar - Canvas mode has no native
+   scrollable DOM node (alignmentContainer uses overflow:hidden there and
+   panning happens via _canvasState.offsetY instead), so unlike Full/Block
+   mode - which get a real vertical scrollbar for free from the browser -
+   Canvas mode had NO visible vertical scrollbar at all: wheel/drag panning
+   worked but there was nothing on screen to show it, grab it, or see
+   position within a tall alignment. Positioned absolutely over
+   alignmentContainer's right edge; JS shows/hides and sizes it per mode. */
+.vertical-scrollbar {
+    position: absolute;
+    top: 0;
+    right: 0;
+    width: 14px;
+    background: transparent;
+    overflow-y: auto;
+    overflow-x: hidden;
+    z-index: 50;
+    box-sizing: content-box;
+    cursor: grab;
+    user-select: none;
+    touch-action: pan-y;
+    display: none; /* JS shows this only while Canvas mode is active */
+}
+.vertical-scrollbar-thumb { width: 1px; }
+.vertical-scrollbar.grabbing { cursor: grabbing; }
+.vertical-scrollbar::before {
+    content: '';
+    position: absolute;
+    top: 0; bottom: 0;
+    left: -10px; right: -10px;
+    background: transparent;
+    pointer-events: auto;
+}
+
 /* Utility to temporarily disable text selection during drag */
 .no-select { user-select: none !important; }
 
 /* Optional: ensure container stacks alignment and bar vertically */
 #viewer-container {
+    position: relative;
     display: flex;
     flex-direction: column;
     gap: 0;
@@ -1935,6 +1970,13 @@ span.column-selected {
     font-size: 14px;
     z-index: 1000;
     display: none;
+    /* Purely a passive toast (no click handler anywhere), but centered and
+       sized to its text - it was intercepting wheel/click events meant for
+       whatever's underneath, most noticeably Canvas mode's wheel-to-pan,
+       for as long as a message stayed visible (e.g. the 6s auto-switch
+       notice), making vertical scroll silently do nothing during that
+       window. */
+    pointer-events: none;
 }
 #minimizeBar {
     display: none;
