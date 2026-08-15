@@ -2931,8 +2931,100 @@ function _getCanvasShadePalette() {
     };
 }
 
+// Cache for search-hit highlights in Canvas mode. Maps rowIndex -> { seq, searchLen, hits }.
+// Invalidated on re-render and when the sequence or search history changes.
+let _canvasSearchHitsCache = null;
+
+// Compute search-hit positions for a single row, mirroring _paintSearchEntryOnAlignment's
+// logic but returning a Map(col -> color) instead of adding CSS classes to DOM spans.
+function _computeSearchHitsForRow(rowIndex) {
+    const hits = new Map();
+    if (!state.searchHistory?.length) return hits;
+    if (rowIndex < 0 || rowIndex >= state.seqs.length) return hits;
+
+    const seq = state.seqs[rowIndex].seq;
+    // Build mapping: degapped index -> alignment column (mirrors _paintSearchEntryOnAlignment)
+    const nonGapCols = [];
+    const displayedChars = [];
+    for (let col = 0; col < seq.length; col++) {
+        const ch = (seq[col] || '-').toUpperCase();
+        if (ch !== '-' && ch !== '.') {
+            nonGapCols.push(col);
+            displayedChars.push(ch);
+        }
+    }
+    const displayString = displayedChars.join('').replace(/U/g, 'T');
+    if (!displayString) return hits;
+
+    state.searchHistory.forEach(entry => {
+        if (!entry.className) return;
+        let searchMotifValue = entry.searchValue || entry.label || '';
+        searchMotifValue = String(searchMotifValue).replace(/\s*\(rev comp\)\s*$/i, '').trim();
+        if (!searchMotifValue && entry.motif) {
+            searchMotifValue = String(entry.motif).replace(/:(fwd|rev comp|rev)$/i, '').trim();
+        }
+        if (!searchMotifValue) return;
+
+        const normalizedMotif = searchMotifValue.replace(/U/g, 'T');
+        const maxMismatches = Number.isInteger(entry.maxMismatches) ? entry.maxMismatches : (parseInt(el('maxMismatches')?.value, 10) || 0);
+        const useRegex = !!entry.useRegex;
+        const color = entry.color || '#ffcc00';
+
+        let matches;
+        if (useRegex) {
+            matches = [];
+            try {
+                const re = new RegExp(normalizedMotif, 'gi');
+                let m;
+                while ((m = re.exec(displayString)) !== null) {
+                    matches.push({ idx: m.index, len: m[0].length || 1, matchingPositions: null });
+                    if (m[0].length === 0) re.lastIndex++;
+                }
+            } catch (_) {
+                return;
+            }
+        } else {
+            matches = findFuzzyMatches(displayString, normalizedMotif, maxMismatches)
+                .map(m => ({ idx: m.idx, len: m.len, matchingPositions: m.matchingPositions }));
+        }
+
+        const paintPartialMatches = !useRegex && maxMismatches > 0;
+        matches.forEach(m => {
+            if (paintPartialMatches && m.matchingPositions?.length) {
+                m.matchingPositions.forEach(offset => {
+                    const col = nonGapCols[m.idx + offset];
+                    if (col !== undefined) hits.set(col, color);
+                });
+            } else {
+                for (let j = 0; j < m.len; j++) {
+                    const col = nonGapCols[m.idx + j];
+                    if (col !== undefined) hits.set(col, color);
+                }
+            }
+        });
+    });
+
+    return hits;
+}
+
+// Cached per-row search-hit lookup. Invalidates when the sequence string or
+// search history length changes, so edits and search add/remove are handled.
+function _getSearchHitsForRow(rowIndex) {
+    const seq = state.seqs[rowIndex]?.seq;
+    if (!seq) return new Map();
+    if (!_canvasSearchHitsCache) _canvasSearchHitsCache = new Map();
+    const cached = _canvasSearchHitsCache.get(rowIndex);
+    if (cached && cached.seq === seq && cached.searchLen === state.searchHistory.length) {
+        return cached.hits;
+    }
+    const hits = _computeSearchHitsForRow(rowIndex);
+    _canvasSearchHitsCache.set(rowIndex, { seq, searchLen: state.searchHistory.length, hits });
+    return hits;
+}
+
 function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, darkThresh, lightThresh,
                                   enableBlack, enableDark, enableLight, nameLen, stickyNames) {
+    _canvasSearchHitsCache = null; // invalidate search-hit cache on re-render
     alignmentContainer.innerHTML = '';
     alignmentContainer.style.overflow = 'hidden';
     alignmentContainer.style.position = 'relative';
@@ -3102,6 +3194,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             const seq = state.seqs[i].seq;
             const consPos = conservationData;
             const tsdRowMarks = state.tsdMarks?.get(i);
+            const searchHits = _getSearchHitsForRow(i);
 
             // Residues (glyph-cached: 1 drawImage per cell vs fillRect+fillText)
             for (let p = firstCol; p <= lastCol; p++) {
@@ -3146,6 +3239,12 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                         ctx.font = fontStr;
                         continue;
                     }
+                }
+
+                // Search hit override (mirrors CSS .search-hit-* { background-color; color: black })
+                if (searchHits.has(p)) {
+                    bgFill = searchHits.get(p);
+                    textFill = '#000';
                 }
 
                 // Single blit from glyph cache (eliminates fillStyle+fillRect+fillStyle+fillText)
