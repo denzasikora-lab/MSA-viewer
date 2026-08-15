@@ -3856,6 +3856,66 @@ function _getReadBasesByRefPos(read, refSeq) {
 }
 
 /**
+ * Walk a read's CIGAR and return a comprehensive set of features for
+ * Phase 5 visual treatment: match/mismatch bases (same as _getReadBasesByRefPos),
+ * deletion positions, insertion positions, and left/right soft-clip lengths.
+ */
+function _getReadCigarFeatures(read, refSeq) {
+    const features = {
+        bases: new Map(),
+        deletions: new Set(),
+        insertions: [],
+        softClipLeft: 0,
+        softClipRight: 0
+    };
+    if (!read.seq || !read.cigar) return features;
+    let readPos = 0;
+    let refPos = read.pos;
+    let seenRefConsuming = false;
+    for (const op of read.cigar) {
+        const len = op.len;
+        const type = op.op;
+        switch (type) {
+            case 'M': case '=': case 'X':
+                seenRefConsuming = true;
+                for (let i = 0; i < len; i++) {
+                    const rb = (read.seq[readPos + i] || 'N').toUpperCase();
+                    const refb = (refSeq[refPos + i] || 'N').toUpperCase();
+                    const isMatch = type === '=' || (type === 'M' && rb === refb);
+                    features.bases.set(refPos + i, { base: rb, type: isMatch ? 'match' : 'mismatch' });
+                }
+                readPos += len;
+                refPos += len;
+                break;
+            case 'D':
+                seenRefConsuming = true;
+                for (let i = 0; i < len; i++) {
+                    features.deletions.add(refPos + i);
+                }
+                refPos += len;
+                break;
+            case 'N':
+                seenRefConsuming = true;
+                refPos += len;
+                break;
+            case 'I':
+                features.insertions.push({ refPos: refPos - 1, length: len });
+                readPos += len;
+                break;
+            case 'S':
+                if (!seenRefConsuming) {
+                    features.softClipLeft = len;
+                } else {
+                    features.softClipRight = len;
+                }
+                readPos += len;
+                break;
+        }
+    }
+    return features;
+}
+
+/**
  * Lazily create the "Show bases" checkbox for Reads mode and insert it
  * next to the quick mode switcher. Returns the toggle label element.
  */
@@ -4032,6 +4092,39 @@ function renderReadsAlignment() {
             const rw = (read.end - read.start + 1) * cellW;
             const ry = t * TRACK_H;
             const rh = TRACK_H - 4;
+            const features = _getReadCigarFeatures(read, refSeq);
+
+            // Soft-clip extensions (lighter fill, dashed stroke)
+            if (features.softClipLeft > 0) {
+                const scW = features.softClipLeft * cellW;
+                const scLeft = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                scLeft.setAttribute('x', rx - scW);
+                scLeft.setAttribute('y', ry + 2);
+                scLeft.setAttribute('width', scW);
+                scLeft.setAttribute('height', rh);
+                scLeft.setAttribute('fill', '#e8eef5');
+                scLeft.setAttribute('stroke', '#a0b8d0');
+                scLeft.setAttribute('stroke-width', '1');
+                scLeft.setAttribute('stroke-dasharray', '3,2');
+                scLeft.setAttribute('rx', '2');
+                scLeft.setAttribute('pointer-events', 'none');
+                svg.appendChild(scLeft);
+            }
+            if (features.softClipRight > 0) {
+                const scW = features.softClipRight * cellW;
+                const scRight = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                scRight.setAttribute('x', rx + rw);
+                scRight.setAttribute('y', ry + 2);
+                scRight.setAttribute('width', scW);
+                scRight.setAttribute('height', rh);
+                scRight.setAttribute('fill', '#e8eef5');
+                scRight.setAttribute('stroke', '#a0b8d0');
+                scRight.setAttribute('stroke-width', '1');
+                scRight.setAttribute('stroke-dasharray', '3,2');
+                scRight.setAttribute('rx', '2');
+                scRight.setAttribute('pointer-events', 'none');
+                svg.appendChild(scRight);
+            }
 
             // Main bar with visible border
             const bar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
@@ -4103,14 +4196,43 @@ function renderReadsAlignment() {
             });
 
             svg.appendChild(bar);
+
+            // Deletion gaps (grey segments inside the bar)
+            features.deletions.forEach(delPos => {
+                if (delPos < read.start || delPos > read.end) return;
+                const dx = NAME_W + (delPos - refStart) * cellW;
+                const delRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                delRect.setAttribute('x', dx);
+                delRect.setAttribute('y', ry + 2);
+                delRect.setAttribute('width', cellW);
+                delRect.setAttribute('height', rh);
+                delRect.setAttribute('fill', '#b0b0b0');
+                delRect.setAttribute('pointer-events', 'none');
+                svg.appendChild(delRect);
+            });
+
+            // Insertion ticks (small vertical marks at insertion positions)
+            features.insertions.forEach(ins => {
+                if (ins.refPos < read.start - 1 || ins.refPos > read.end) return;
+                const ix = NAME_W + (ins.refPos - refStart + 1) * cellW;
+                const insLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                insLine.setAttribute('x1', ix);
+                insLine.setAttribute('y1', ry + 1);
+                insLine.setAttribute('x2', ix);
+                insLine.setAttribute('y2', ry + TRACK_H - 1);
+                insLine.setAttribute('stroke', '#e67e22');
+                insLine.setAttribute('stroke-width', '1.5');
+                insLine.setAttribute('pointer-events', 'none');
+                svg.appendChild(insLine);
+            });
+
             svg.appendChild(startCap);
             svg.appendChild(endCap);
 
             // Per-base content inside bar (diff/bases display mode)
             if (cellW >= 7) {
-                const readBases = _getReadBasesByRefPos(read, refSeq);
                 for (let p = read.start; p <= read.end; p++) {
-                    const entry = readBases.get(p);
+                    const entry = features.bases.get(p);
                     if (!entry) continue;
                     const bx = NAME_W + (p - refStart) * cellW + cellW / 2;
                     const by = ry + 2 + rh / 2;
@@ -4142,6 +4264,33 @@ function renderReadsAlignment() {
                         svg.appendChild(text);
                     }
                 }
+            } else {
+                // Low-zoom: thin-line-plus-mismatch-ticks rendering
+                const thinLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                thinLine.setAttribute('x1', rx);
+                thinLine.setAttribute('y1', ry + 2 + rh / 2);
+                thinLine.setAttribute('x2', rx + rw);
+                thinLine.setAttribute('y2', ry + 2 + rh / 2);
+                thinLine.setAttribute('stroke', '#8ab4d6');
+                thinLine.setAttribute('stroke-width', '1');
+                thinLine.setAttribute('pointer-events', 'none');
+                svg.appendChild(thinLine);
+
+                // Mismatch ticks
+                features.bases.forEach((entry, refPos) => {
+                    if (refPos < read.start || refPos > read.end) return;
+                    if (entry.type !== 'mismatch') return;
+                    const mx = NAME_W + (refPos - refStart) * cellW + cellW / 2;
+                    const tick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    tick.setAttribute('x1', mx);
+                    tick.setAttribute('y1', ry + 2);
+                    tick.setAttribute('x2', mx);
+                    tick.setAttribute('y2', ry + 2 + rh);
+                    tick.setAttribute('stroke', '#e74c3c');
+                    tick.setAttribute('stroke-width', '1');
+                    tick.setAttribute('pointer-events', 'none');
+                    svg.appendChild(tick);
+                });
             }
         }
     }
