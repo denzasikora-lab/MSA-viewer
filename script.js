@@ -3706,6 +3706,7 @@ async function handleBamFile(event) {
         if (readsRadio) readsRadio.checked = true;
 
         renderAlignment();
+        updateBamButtonVisibility();
         statusMessage.style.display = 'none';
         showMessage(`Loaded ${matchedReads.length} reads on ${matchedRef} (${minPos + 1}-${maxPos})`, 2500);
 
@@ -4374,7 +4375,67 @@ function assignReadTracks(reads) {
 
 /**
  * Show/hide the BAM button based on whether a reference sequence is loaded.
+ * Only show when exactly one reference sequence is loaded (not zero, not multiple).
  */
+function updateBamButtonVisibility() {
+    const bamBtn = document.getElementById('bamButton');
+    if (!bamBtn) return;
+    const eligible = state.seqs && state.seqs.length === 1;
+    bamBtn.style.display = eligible ? '' : 'none';
+
+    // Also update the "Clear reads" button visibility
+    const clearBtn = ensureClearReadsButton();
+    if (clearBtn) {
+        clearBtn.style.display = (eligible && bamState.reads.length > 0) ? '' : 'none';
+    }
+}
+
+/**
+ * Lazily create the "Clear reads" button next to the BAM button.
+ * Created from JS because the page markup file is not available to edit.
+ */
+function ensureClearReadsButton() {
+    let btn = document.getElementById('clearReadsButton');
+    if (btn) return btn;
+    btn = document.createElement('button');
+    btn.id = 'clearReadsButton';
+    btn.type = 'button';
+    btn.textContent = 'Clear reads';
+    btn.style.cssText = 'font-size:11px;padding:2px 8px;margin-left:4px;cursor:pointer;'
+        + 'border:1px solid #999;border-radius:3px;background:#f0f0f0;display:none;';
+    btn.addEventListener('click', clearReadsData);
+    const bamBtn = document.getElementById('bamButton');
+    if (bamBtn && bamBtn.parentNode) {
+        bamBtn.parentNode.insertBefore(btn, bamBtn.nextSibling);
+    } else {
+        const controls = document.getElementById('controls');
+        if (controls) controls.appendChild(btn);
+    }
+    return btn;
+}
+
+/**
+ * Clear loaded reads data without unloading the reference itself.
+ * Switches back to Block mode and hides the "Clear reads" button.
+ */
+function clearReadsData() {
+    bamState = {
+        reads: [],
+        refName: null,
+        refSeq: null,
+        refStart: 0,
+        columns: [],
+        readOrder: [],
+    };
+    _readsHighlightedBar = null;
+    // Switch back to Block mode
+    const blockRadio = document.getElementById('modeBlocks');
+    if (blockRadio) blockRadio.checked = true;
+    renderAlignment();
+    updateBamButtonVisibility();
+    showMessage('Reads cleared.', 2000);
+}
+
 // IGV-style compact read packing renderer
 function renderCompactAlignment(len, conservationData, shadeMode, blackThresh, darkThresh, lightThresh,
     enableBlack, enableDark, enableLight, nameLen, stickyNames, standard, ambiguous, ambiguousMap,
@@ -6479,6 +6540,21 @@ async function parseAndRender(isFromDrop = false) {
             state.currentFilePath = '';
         }
         _clearClusterTrimState();
+        // Clear any loaded reads - they belong to the previous reference
+        bamState = {
+            reads: [],
+            refName: null,
+            refSeq: null,
+            refStart: 0,
+            columns: [],
+            readOrder: [],
+        };
+        _readsHighlightedBar = null;
+        // If we were in Reads mode, switch back to Block mode
+        if (document.getElementById('modeReads')?.checked) {
+            const blockRadio = document.getElementById('modeBlocks');
+            if (blockRadio) blockRadio.checked = true;
+        }
         state.seqs = parsed;
         _userDismissedAutoCanvas = false; // fresh file: allow the Canvas suggestion again if it's large
         state.selectedRows.clear();
@@ -6512,6 +6588,7 @@ async function parseAndRender(isFromDrop = false) {
         // Update source info with comprehensive statistics
         updateSourceInfo();
         renderAlignment();
+        updateBamButtonVisibility();
         _updateCompactControlsVisibility();
         // Auto-fit block size to screen width on every load
         setBlockSizeToScreen();
@@ -13596,6 +13673,7 @@ function initializeAppUI() {
     initStatsTabs();
     initTreeBuilderControls();
     initResEnzymeSearch();
+    updateBamButtonVisibility();
 }
 
 document.addEventListener('DOMContentLoaded', initializeAppUI);
