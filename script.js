@@ -3553,6 +3553,9 @@ let bamState = {
     readOrder: [],      // sorted read indices (by pos, then name)
 };
 
+// Currently highlighted read bar in Reads mode (click-to-highlight)
+let _readsHighlightedBar = null;
+
 /**
  * Show the BAM file picker when user clicks the BAM button.
  */
@@ -3825,6 +3828,7 @@ function renderReadsAlignment() {
     }
 
     alignmentContainer.innerHTML = '';
+    _readsHighlightedBar = null;
     alignmentContainer.style.position = '';
     alignmentContainer.style.height = '';
     alignmentContainer.style.overflow = 'auto';
@@ -3907,6 +3911,14 @@ function renderReadsAlignment() {
     scaleLine.appendChild(scaleData);
     container.appendChild(scaleLine);
 
+    // -- Status line for selected read info --
+    const statusLine = document.createElement('div');
+    statusLine.id = 'readsStatusLine';
+    statusLine.style.cssText = 'padding:3px 8px;font-size:11px;font-family:monospace;'
+        + 'color:#333;background:#e8f0fe;border-bottom:1px solid #c5d8ee;min-height:20px;';
+    statusLine.textContent = `${reads.length} reads in ${nTracks} track${nTracks !== 1 ? 's' : ''}`;
+    container.appendChild(statusLine);
+
     // -- Track bands (SVG) --
     // One horizontal band per packed track (not per read). Non-overlapping
     // reads share a track, so the number of visual rows equals nTracks, not
@@ -3930,22 +3942,94 @@ function renderReadsAlignment() {
     }
 
     for (let t = 0; t < nTracks; t++) {
+        // Alternating track background shading for visual separation
+        const trackBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        trackBg.setAttribute('x', 0);
+        trackBg.setAttribute('y', t * TRACK_H);
+        trackBg.setAttribute('width', svgW);
+        trackBg.setAttribute('height', TRACK_H);
+        trackBg.setAttribute('fill', t % 2 === 0 ? '#f0f4f8' : '#ffffff');
+        trackBg.setAttribute('stroke', 'none');
+        svg.appendChild(trackBg);
+
         for (const read of trackGroups[t]) {
             const rx = NAME_W + (read.start - refStart) * cellW;
             const rw = (read.end - read.start + 1) * cellW;
             const ry = t * TRACK_H;
-            const rh = TRACK_H - 2;
+            const rh = TRACK_H - 4;
 
+            // Main bar with visible border
             const bar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
             bar.setAttribute('x', rx);
-            bar.setAttribute('y', ry);
+            bar.setAttribute('y', ry + 2);
             bar.setAttribute('width', rw);
             bar.setAttribute('height', rh);
             bar.setAttribute('fill', '#c8d8e8');
-            bar.setAttribute('stroke', '#8ab4d6');
-            bar.setAttribute('stroke-width', '0.5');
+            bar.setAttribute('stroke', '#4a7fa8');
+            bar.setAttribute('stroke-width', '1.5');
             bar.setAttribute('rx', '2');
+            bar.style.cursor = 'pointer';
+
+            // Start cap mark (vertical line at read start)
+            const startCap = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            startCap.setAttribute('x1', rx);
+            startCap.setAttribute('y1', ry);
+            startCap.setAttribute('x2', rx);
+            startCap.setAttribute('y2', ry + TRACK_H);
+            startCap.setAttribute('stroke', '#2c5d80');
+            startCap.setAttribute('stroke-width', '2');
+            startCap.setAttribute('pointer-events', 'none');
+
+            // End cap mark (vertical line at read end+1)
+            const endCap = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            endCap.setAttribute('x1', rx + rw);
+            endCap.setAttribute('y1', ry);
+            endCap.setAttribute('x2', rx + rw);
+            endCap.setAttribute('y2', ry + TRACK_H);
+            endCap.setAttribute('stroke', '#2c5d80');
+            endCap.setAttribute('stroke-width', '2');
+            endCap.setAttribute('pointer-events', 'none');
+
+            // Tooltip text (built once per read)
+            const cigarStr = read.cigar.map(c => c.len + c.op).join('');
+            const tooltipHtml = `<b>${_escapeHtml(read.name)}</b><br>`
+                + `Pos: ${read.pos + 1}<br>`
+                + `CIGAR: ${cigarStr}<br>`
+                + `MAPQ: ${read.mapq}`;
+
+            // Hover tooltip
+            bar.addEventListener('mouseover', () => {
+                showTooltipAt(tooltipHtml, bar, { html: true, className: 'reads-tooltip' });
+            });
+            bar.addEventListener('mouseout', () => {
+                hideTooltip();
+            });
+
+            // Click to highlight
+            bar.addEventListener('click', () => {
+                if (_readsHighlightedBar === bar) {
+                    // Deselect
+                    bar.setAttribute('stroke', '#4a7fa8');
+                    bar.setAttribute('stroke-width', '1.5');
+                    _readsHighlightedBar = null;
+                    statusLine.textContent = `${reads.length} reads in ${nTracks} track${nTracks !== 1 ? 's' : ''}`;
+                } else {
+                    // Reset previous highlight
+                    if (_readsHighlightedBar) {
+                        _readsHighlightedBar.setAttribute('stroke', '#4a7fa8');
+                        _readsHighlightedBar.setAttribute('stroke-width', '1.5');
+                    }
+                    // Highlight new bar
+                    bar.setAttribute('stroke', '#d9402b');
+                    bar.setAttribute('stroke-width', '3');
+                    _readsHighlightedBar = bar;
+                    statusLine.textContent = `${read.name}  |  pos: ${read.pos + 1}  |  cigar: ${cigarStr}  |  mapq: ${read.mapq}`;
+                }
+            });
+
             svg.appendChild(bar);
+            svg.appendChild(startCap);
+            svg.appendChild(endCap);
         }
     }
 
