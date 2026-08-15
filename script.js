@@ -2751,7 +2751,7 @@ function _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd) {
 // totalContentW: current alignment's full pixel width (for the persistent scrollbar's thumb sizing).
 // onOffsetChange: optional callback (registered by setupPersistentScrollbar) invoked after each
 // draw() so the scrollbar can mirror wheel-scroll/drag-pan that didn't originate from the bar itself.
-const _canvasState = { offsetX: 0, offsetY: 0, ctx: null, metrics: null, seqsLen: 0, scheduleDraw: null, totalContentW: 0, onOffsetChange: null, resizeHandler: null, mousemoveHandler: null, mouseupHandler: null, canvas: null };
+const _canvasState = { offsetX: 0, offsetY: 0, ctx: null, metrics: null, seqsLen: 0, scheduleDraw: null, totalContentW: 0, onOffsetChange: null, resizeHandler: null, mousemoveHandler: null, mouseupHandler: null, canvas: null, rowPitch: 0 };
 // Cancellation token for the Canvas mode's deferred (chunked) conservation/
 // consensus jobs; reassigned + old one cancelled on every render so a
 // superseded background job can't clobber a newer one's results.
@@ -2814,10 +2814,11 @@ function _canvasHitTest(clientX, clientY) {
     const SCALE_H = m.charH; // one ruler row, same height as a data row
     const CHAR_W = m.charW;
     const CHAR_H = m.charH;
+    const rowPitch = _canvasState.rowPitch || CHAR_H;
     // Subtract the name column and scale ruler offsets, then add back the pan
     // offset so the result is in content (not viewport) coordinates.
     const col = Math.floor((x - NAME_W + _canvasState.offsetX) / CHAR_W);
-    const row = Math.floor((y - SCALE_H + _canvasState.offsetY) / CHAR_H);
+    const row = Math.floor((y - SCALE_H + _canvasState.offsetY) / rowPitch);
     if (col < 0 || row < 0) return null;
     const nSeqs = _canvasState.seqsLen || (state.seqs ? state.seqs.length : 0);
     const len = state.seqs && state.seqs.length > 0
@@ -2859,7 +2860,7 @@ function _canvasHitTestName(clientX, clientY) {
     const y = clientY - rect.top;
     if (x < 0 || x >= m.nameW) return null;   // not in name column
     if (y < m.charH) return null;               // ruler corner
-    const row = Math.floor((y - m.charH + _canvasState.offsetY) / m.charH);
+    const row = Math.floor((y - m.charH + _canvasState.offsetY) / (_canvasState.rowPitch || m.charH));
     const nSeqs = _canvasState.seqsLen || (state.seqs ? state.seqs.length : 0);
     if (row < 0 || row >= nSeqs) return null;
     return { row };
@@ -2874,7 +2875,7 @@ function _canvasRowFromClientY(clientY) {
     if (!m || !m.nameW) return -1;
     const rect = canvas.getBoundingClientRect();
     const y = clientY - rect.top;
-    const row = Math.floor((y - m.charH + _canvasState.offsetY) / m.charH);
+    const row = Math.floor((y - m.charH + _canvasState.offsetY) / (_canvasState.rowPitch || m.charH));
     const nSeqs = _canvasState.seqsLen || (state.seqs ? state.seqs.length : 0);
     if (row < 0 || row >= nSeqs) return -1;
     return row;
@@ -2963,6 +2964,11 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     m.nameW = NAME_W;
     // Store canvas reference for hit-testing
     _canvasState.canvas = canvas;
+    // Codon analysis: AA translation rows increase the per-row pitch
+    const hasCodon = !!(state._codonData && state._codonData.aaSeq);
+    const aaRowH = hasCodon ? CHAR_H : 0;
+    const rowPitch = CHAR_H + aaRowH;
+    _canvasState.rowPitch = rowPitch;
     // Glyph cache: pre-rendered (char, bg-color, fg-color) -> off-screen canvas
     // Turns fillRect()+fillText() into a single drawImage() per cell after warm-up
     const _glyphCache = new Map();
@@ -2990,7 +2996,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     function _markDirty() { _dirty = true; }
 
     const totalContentW = NAME_W + len * CHAR_W + 4;
-    const totalContentH = SCALE_H + nSeqs * CHAR_H + 4;
+    const totalContentH = SCALE_H + nSeqs * rowPitch + 4;
     // Exposed so the persistent horizontal scrollbar (a real DOM element,
     // since Canvas mode's own content isn't natively scrollable) can size
     // its thumb and mirror pan position.
@@ -3053,8 +3059,8 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         const oy = _canvasState.offsetY;
         const firstCol = Math.max(0, Math.floor((ox - NAME_W) / CHAR_W));
         const lastCol = Math.min(len - 1, Math.ceil((ox - NAME_W + w) / CHAR_W));
-        const firstRow = Math.max(0, Math.floor((oy - SCALE_H) / CHAR_H));
-        const lastRow = Math.min(nSeqs - 1, Math.floor((oy - SCALE_H + h - 1) / CHAR_H));
+        const firstRow = Math.max(0, Math.floor((oy - SCALE_H) / rowPitch));
+        const lastRow = Math.min(nSeqs - 1, Math.floor((oy - SCALE_H + h - 1) / rowPitch));
 
         ctx.clearRect(0, 0, w, h);
         ctx.font = fontStr;
@@ -3089,7 +3095,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         }
 
         for (let i = firstRow; i <= lastRow; i++) {
-            const y = SCALE_H + i * CHAR_H - oy;
+            const y = SCALE_H + i * rowPitch - oy;
             const seq = state.seqs[i].seq;
             const consPos = conservationData;
 
@@ -3149,6 +3155,30 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                 ctx.restore();
             }
             ctx.font = fontStr;
+
+            // AA translation row (codon analysis)
+            if (hasCodon && state._codonData.aaSeq[i]) {
+                const aaY = y + CHAR_H;
+                const aaData = state._codonData.aaSeq[i];
+                if (stickyNames) {
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(0, aaY, NAME_W, aaRowH);
+                }
+                ctx.textAlign = 'center';
+                for (const entry of aaData) {
+                    if (!entry.cols || entry.cols.length === 0) continue;
+                    const colStart = entry.cols[0];
+                    const colEnd = entry.cols[entry.cols.length - 1];
+                    const xStart = NAME_W + colStart * CHAR_W - ox;
+                    const xEnd = NAME_W + (colEnd + 1) * CHAR_W - ox;
+                    if (xEnd < 0 || xStart > w) continue;
+                    const width = (colEnd - colStart + 1) * CHAR_W;
+                    const centerX = xStart + width / 2;
+                    ctx.fillStyle = entry.aa === '*' ? '#e74c3c' : '#333';
+                    ctx.fillText(entry.aa, centerX, aaY);
+                }
+                ctx.textAlign = 'start';
+            }
         }
 
         // Highlight selected columns (semi-transparent vertical strips)
@@ -3167,9 +3197,9 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         if (state.selectedRows.size > 0) {
             ctx.fillStyle = 'rgba(25, 118, 210, 0.15)';
             state.selectedRows.forEach(rowIdx => {
-                const y = SCALE_H + rowIdx * CHAR_H - oy;
-                if (y + CHAR_H < 0 || y > h) return;
-                ctx.fillRect(0, y, w, CHAR_H);
+                const y = SCALE_H + rowIdx * rowPitch - oy;
+                if (y + rowPitch < 0 || y > h) return;
+                ctx.fillRect(0, y, w, rowPitch);
             });
         }
 
@@ -3180,7 +3210,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             ctx.lineWidth = 1;
             state.selectedNucs.forEach((posSet, rowIdx) => {
                 if (rowIdx < 0 || !posSet || posSet.size === 0) return;
-                const y = SCALE_H + rowIdx * CHAR_H - oy;
+                const y = SCALE_H + rowIdx * rowPitch - oy;
                 if (y + CHAR_H < 0 || y > h) return;
                 posSet.forEach(pos => {
                     const x = NAME_W + pos * CHAR_W - ox;
@@ -3194,7 +3224,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         if (state.pendingNucStart) {
             const pr = state.pendingNucStart.row, pp = state.pendingNucStart.pos;
             if (pr >= 0) {
-                const y = SCALE_H + pr * CHAR_H - oy;
+                const y = SCALE_H + pr * rowPitch - oy;
                 const x = NAME_W + pp * CHAR_W - ox;
                 if (x + CHAR_W >= 0 && x <= w && y + CHAR_H >= 0 && y <= h) {
                     ctx.strokeStyle = '#1976D2';
@@ -3210,7 +3240,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         if (state.editModeActive && state.editTool === 'residue' && state.editCell) {
             const er = state.editCell.row, ep = state.editCell.pos;
             if (er >= 0 && er < nSeqs && ep >= 0) {
-                const y = SCALE_H + er * CHAR_H - oy;
+                const y = SCALE_H + er * rowPitch - oy;
                 const x = NAME_W + ep * CHAR_W - ox;
                 if (x + CHAR_W >= 0 && x <= w && y + CHAR_H >= 0 && y <= h) {
                     ctx.strokeStyle = '#e74c3c';
@@ -4769,6 +4799,56 @@ function renderCompactAlignment(len, conservationData, shadeMode, blackThresh, d
 // so a newly loaded large alignment still gets the initial suggestion.
 let _userDismissedAutoCanvas = false;
 
+function _updateCodonAnalysisState(len) {
+    const codonAnalysis = document.getElementById('codonAnalysis')?.checked;
+    if (codonAnalysis) {
+        try {
+            state._codonFrames = _computeMultiFrameCodonAnalysis(state.seqs, len);
+            const frameSel = document.getElementById('codonFrame')?.value || 'auto';
+            const validFrames = state._codonFrames?.frames?.filter(Boolean);
+            if (state._codonFrames && validFrames && validFrames.length > 0) {
+                let activeFrame;
+                if (frameSel === 'auto') {
+                    activeFrame = state._codonFrames.bestFrame;
+                } else if (frameSel === 'all') {
+                    activeFrame = -1;
+                } else {
+                    activeFrame = parseInt(frameSel) || 0;
+                }
+                const displayFrame = activeFrame >= 0 ? activeFrame : 0;
+                state._codonData = state._codonFrames.frames[displayFrame] || validFrames[0];
+                state._codonActiveFrame = activeFrame;
+                document.body.classList.add('codon-mode');
+                if (frameSel === 'auto') {
+                    const bf = state._codonFrames.bestFrame;
+                    if (state._lastAnnouncedCodonFrame !== bf) {
+                        state._lastAnnouncedCodonFrame = bf;
+                        showMessage(`Codon analysis: auto-selected frame ${bf} (ATG start)`, 2500);
+                    }
+                }
+            } else {
+                state._codonFrames = null;
+                state._codonData = null;
+                state._codonActiveFrame = 0;
+                document.body.classList.remove('codon-mode');
+                showMessage('Codon analysis requires a nucleotide alignment', 4000);
+            }
+        } catch (codonErr) {
+            console.error('Codon analysis failed:', codonErr);
+            state._codonFrames = null;
+            state._codonData = null;
+            state._codonActiveFrame = 0;
+            document.body.classList.remove('codon-mode');
+            showMessage('Codon analysis failed: ' + codonErr.message, 4000);
+        }
+    } else {
+        state._codonData = null;
+        state._codonFrames = null;
+        state._codonActiveFrame = 0;
+        document.body.classList.remove('codon-mode');
+    }
+}
+
 function renderAlignment(options = {}) {
     // Catch-all sync: covers every path that flips a mode radio programmatically
     // (BAM load, snapshot/session restore, the auto-switch heuristic below,
@@ -4917,10 +4997,7 @@ function renderAlignment(options = {}) {
     // Conservation shading is deferred: draw an unshaded frame immediately, then
     // compute conservation off the critical path (idle, time-sliced) and repaint shaded.
     if (useCanvas) {
-        state._codonData = null;
-        state._codonFrames = null;
-        state._codonActiveFrame = 0;
-        document.body.classList.remove('codon-mode');
+        _updateCodonAnalysisState(len);
         const cachedConservation = (state.conservationDataCache?.len === len
             && state.conservationDataCache?.shadeMode === shadeMode)
             ? state.conservationDataCache.data : null;
@@ -5131,54 +5208,7 @@ function renderAlignment(options = {}) {
         }
     }
 
-// Codon analysis
-    const codonAnalysis = document.getElementById('codonAnalysis')?.checked;
-    if (codonAnalysis) {
-        try {
-            state._codonFrames = _computeMultiFrameCodonAnalysis(state.seqs, len);
-            const frameSel = document.getElementById('codonFrame')?.value || 'auto';
-            const validFrames = state._codonFrames?.frames?.filter(Boolean);
-            if (state._codonFrames && validFrames && validFrames.length > 0) {
-                let activeFrame;
-                if (frameSel === 'auto') {
-                    activeFrame = state._codonFrames.bestFrame;
-                } else if (frameSel === 'all') {
-                    activeFrame = -1;
-                } else {
-                    activeFrame = parseInt(frameSel) || 0;
-                }
-                const displayFrame = activeFrame >= 0 ? activeFrame : 0;
-                state._codonData = state._codonFrames.frames[displayFrame] || validFrames[0];
-                state._codonActiveFrame = activeFrame;
-                document.body.classList.add('codon-mode');
-                if (frameSel === 'auto') {
-                    const bf = state._codonFrames.bestFrame;
-                    if (state._lastAnnouncedCodonFrame !== bf) {
-                        state._lastAnnouncedCodonFrame = bf;
-                        showMessage(`Codon analysis: auto-selected frame ${bf} (ATG start)`, 2500);
-                    }
-                }
-            } else {
-                state._codonFrames = null;
-                state._codonData = null;
-                state._codonActiveFrame = 0;
-                document.body.classList.remove('codon-mode');
-                showMessage('Codon analysis requires a nucleotide alignment', 4000);
-            }
-        } catch (codonErr) {
-            console.error('Codon analysis failed:', codonErr);
-            state._codonFrames = null;
-            state._codonData = null;
-            state._codonActiveFrame = 0;
-            document.body.classList.remove('codon-mode');
-            showMessage('Codon analysis failed: ' + codonErr.message, 4000);
-        }
-    } else {
-        state._codonData = null;
-        state._codonFrames = null;
-        state._codonActiveFrame = 0;
-        document.body.classList.remove('codon-mode');
-    }
+    _updateCodonAnalysisState(len);
 
     if (useBlocks) {
         // Block-virtualize on "crazy"-sized alignments only, mirroring Full
