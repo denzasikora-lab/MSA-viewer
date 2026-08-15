@@ -68,6 +68,7 @@
 
             <button id="copyAlignToolbarButton" class="edit-toggle-button" title="Copy entire alignment to clipboard (FASTA)" onclick="copyAlignment()" style="font-size:10px;padding:0 5px;margin-left:6px;font-weight:normal;">Copy</button>
             <button id="saveAlignToolbarButton" class="edit-toggle-button" title="Download alignment as FASTA file" onclick="downloadAlignment()" style="font-size:10px;padding:0 5px;margin-left:2px;font-weight:normal;margin-right:6px;">Save</button>
+            <button id="openBamToolbarButton" class="edit-toggle-button" title="Load a SAM/BAM file as a read pileup against the loaded reference" onclick="handleOpenBamClick()" style="font-size:10px;padding:0 5px;margin-right:6px;font-weight:normal;">SAM/BAM</button>
             <input type="file" id="bamFileInput" accept=".bam,.sam" style="display:none;" onchange="handleBamFile(event)">
 
             <div class="undo-redo-bar">
