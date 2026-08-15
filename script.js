@@ -3066,6 +3066,39 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             ctx.font = fontStr;
         }
 
+        // Highlight selected nucleotides (mirrors DOM .nuc-selected in Full/Block mode)
+        if (state.selectedNucs.size > 0) {
+            ctx.fillStyle = 'rgba(25, 118, 210, 0.25)';
+            ctx.strokeStyle = '#1976D2';
+            ctx.lineWidth = 1;
+            state.selectedNucs.forEach((posSet, rowIdx) => {
+                if (rowIdx < 0 || !posSet || posSet.size === 0) return;
+                const y = SCALE_H + rowIdx * CHAR_H - oy;
+                if (y + CHAR_H < 0 || y > h) return;
+                posSet.forEach(pos => {
+                    const x = NAME_W + pos * CHAR_W - ox;
+                    if (x + CHAR_W < 0 || x > w) return;
+                    ctx.fillRect(x, y, CHAR_W, CHAR_H);
+                    ctx.strokeRect(x + 0.5, y + 0.5, CHAR_W - 1, CHAR_H - 1);
+                });
+            });
+        }
+        // Draw pending nucleotide start indicator (dashed border, two-click system)
+        if (state.pendingNucStart) {
+            const pr = state.pendingNucStart.row, pp = state.pendingNucStart.pos;
+            if (pr >= 0) {
+                const y = SCALE_H + pr * CHAR_H - oy;
+                const x = NAME_W + pp * CHAR_W - ox;
+                if (x + CHAR_W >= 0 && x <= w && y + CHAR_H >= 0 && y <= h) {
+                    ctx.strokeStyle = '#1976D2';
+                    ctx.setLineDash([3, 2]);
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeRect(x + 0.5, y + 0.5, CHAR_W - 1, CHAR_H - 1);
+                    ctx.setLineDash([]);
+                }
+            }
+        }
+
         // Name column separator (fixed on-screen when sticky, scrolls with
         // content otherwise, matching the name column's own behaviour above)
         ctx.fillStyle = '#ddd';
@@ -3089,15 +3122,44 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     // Touch/drag pan
     let dragging = false, dragStartX, dragStartY, dragOx, dragOy;
     canvas.addEventListener('mousedown', (e) => {
-        if (e.button === 0) {
-            dragging = true;
-            dragStartX = e.clientX;
-            dragStartY = e.clientY;
-            dragOx = _canvasState.offsetX;
-            dragOy = _canvasState.offsetY;
-            canvas.style.cursor = 'grabbing';
-                   _markDirty();
+        if (e.button !== 0) return;
+        const hit = _canvasHitTest(e.clientX, e.clientY);
+        if (hit) {
+            // Selection: mirror handleNucleotideSelectMouseDown's state mutations
+            const idx = hit.row, pos = hit.col;
+            if (state.pendingNucStart === null) {
+                state.selectedNucs.clear();
+                state.pendingNucStart = { row: idx, pos };
+                state.isDragging = true;
+                state.dragStartRow = idx;
+                state.dragStartCol = pos;
+                state.dragMode = 'nuc';
+                state.selectedNucs.set(idx, new Set([pos]));
+            } else if (state.pendingNucStart.row === idx) {
+                state.selectedNucs.set(idx, buildNucSelectionSet(idx, state.pendingNucStart.pos, pos));
+                state.pendingNucStart = null;
+            } else {
+                state.selectedNucs.clear();
+                state.pendingNucStart = { row: idx, pos };
+                state.isDragging = true;
+                state.dragStartRow = idx;
+                state.dragStartCol = pos;
+                state.dragMode = 'nuc';
+                state.selectedNucs.set(idx, new Set([pos]));
+            }
+            hideTooltip();
+            _markDirty();
+            scheduleDraw();
+            return;
         }
+        // Pan (existing behavior)
+        dragging = true;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        dragOx = _canvasState.offsetX;
+        dragOy = _canvasState.offsetY;
+        canvas.style.cursor = 'grabbing';
+        _markDirty();
     });
     window.addEventListener('mousemove', _canvasState.mousemoveHandler);
     window.addEventListener('mouseup', _canvasState.mouseupHandler);
@@ -6609,10 +6671,7 @@ function handleNucleotideSelectMouseDown(e) {
     if (!span || span.classList.contains('seq-length')) return false;
 
     if (document.getElementById('modeCanvas')?.checked || document.getElementById('modeReads')?.checked) {
-        showMessage('Nucleotide selection requires Full or Block mode (not Canvas/Reads).', 3500);
-        e.preventDefault();
-        e.stopPropagation();
-        return true;
+        return false; // Canvas mode handles selection via its own mousedown handler
     }
 
     const row = span.closest('.seq-line');
