@@ -2964,10 +2964,13 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     m.nameW = NAME_W;
     // Store canvas reference for hit-testing
     _canvasState.canvas = canvas;
-    // Codon analysis: AA translation rows increase the per-row pitch
+    // Codon analysis: AA translation rows increase the per-row pitch.
+    // All-frames mode (state._codonActiveFrame === -1) draws 3 AA rows per
+    // sequence (frames 0, 1, 2), matching DOM mode's 3-row layout.
     const hasCodon = !!(state._codonData && state._codonData.aaSeq);
+    const aaRowCount = hasCodon ? (state._codonActiveFrame === -1 ? 3 : 1) : 0;
     const aaRowH = hasCodon ? CHAR_H : 0;
-    const rowPitch = CHAR_H + aaRowH;
+    const rowPitch = CHAR_H + aaRowCount * aaRowH;
     _canvasState.rowPitch = rowPitch;
     // Glyph cache: pre-rendered (char, bg-color, fg-color) -> off-screen canvas
     // Turns fillRect()+fillText() into a single drawImage() per cell after warm-up
@@ -3156,28 +3159,58 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             }
             ctx.font = fontStr;
 
-            // AA translation row (codon analysis)
+            // AA translation row(s) (codon analysis)
             if (hasCodon && state._codonData.aaSeq[i]) {
-                const aaY = y + CHAR_H;
-                const aaData = state._codonData.aaSeq[i];
-                if (stickyNames) {
-                    ctx.fillStyle = '#fff';
-                    ctx.fillRect(0, aaY, NAME_W, aaRowH);
+                const framesToDraw = state._codonActiveFrame === -1
+                    ? [2, 1, 0]  // all-frames: frame 2 at top, 0 at bottom (matches DOM)
+                    : [null];     // single frame: use state._codonData directly
+                const bestFrame = state._codonFrames?.bestFrame ?? 0;
+
+                for (let frIdx = 0; frIdx < framesToDraw.length; frIdx++) {
+                    const fr = framesToDraw[frIdx];
+                    const aaY = y + CHAR_H + frIdx * aaRowH;
+                    const aaData = fr !== null
+                        ? (state._codonFrames?.frames[fr]?.aaSeq[i])
+                        : state._codonData.aaSeq[i];
+                    if (!aaData) continue;
+
+                    // Name label in the name column
+                    const labelFrame = fr !== null ? fr : (state._codonActiveFrame >= 0 ? state._codonActiveFrame : bestFrame);
+                    const aaLabel = 'Pos ' + (labelFrame + 1) + ':';
+                    ctx.font = fontStr;
+                    if (stickyNames) {
+                        ctx.fillStyle = '#fff';
+                        ctx.fillRect(0, aaY, NAME_W, aaRowH);
+                        ctx.fillStyle = '#666';
+                        ctx.textAlign = 'right';
+                        ctx.fillText(aaLabel, NAME_W - 4, aaY);
+                    } else if (ox < NAME_W) {
+                        ctx.save();
+                        ctx.beginPath();
+                        ctx.rect(0, aaY, NAME_W, aaRowH);
+                        ctx.clip();
+                        ctx.fillStyle = '#666';
+                        ctx.textAlign = 'right';
+                        ctx.fillText(aaLabel, NAME_W - 4 - ox, aaY);
+                        ctx.restore();
+                    }
+
+                    // AA characters
+                    ctx.textAlign = 'center';
+                    for (const entry of aaData) {
+                        if (!entry.cols || entry.cols.length === 0) continue;
+                        const colStart = entry.cols[0];
+                        const colEnd = entry.cols[entry.cols.length - 1];
+                        const xStart = NAME_W + colStart * CHAR_W - ox;
+                        const xEnd = NAME_W + (colEnd + 1) * CHAR_W - ox;
+                        if (xEnd < 0 || xStart > w) continue;
+                        const width = (colEnd - colStart + 1) * CHAR_W;
+                        const centerX = xStart + width / 2;
+                        ctx.fillStyle = entry.aa === '*' ? '#e74c3c' : '#333';
+                        ctx.fillText(entry.aa, centerX, aaY);
+                    }
+                    ctx.textAlign = 'start';
                 }
-                ctx.textAlign = 'center';
-                for (const entry of aaData) {
-                    if (!entry.cols || entry.cols.length === 0) continue;
-                    const colStart = entry.cols[0];
-                    const colEnd = entry.cols[entry.cols.length - 1];
-                    const xStart = NAME_W + colStart * CHAR_W - ox;
-                    const xEnd = NAME_W + (colEnd + 1) * CHAR_W - ox;
-                    if (xEnd < 0 || xStart > w) continue;
-                    const width = (colEnd - colStart + 1) * CHAR_W;
-                    const centerX = xStart + width / 2;
-                    ctx.fillStyle = entry.aa === '*' ? '#e74c3c' : '#333';
-                    ctx.fillText(entry.aa, centerX, aaY);
-                }
-                ctx.textAlign = 'start';
             }
         }
 
