@@ -14940,6 +14940,10 @@ function repaintGeneDocDragRow(drag) {
         renderAlignment({ deferConservation: false });
         return;
     }
+    if (drag.isCanvas) {
+        _canvasState.scheduleDraw?.();
+        return;
+    }
     // Preferred path: paint the moved residues onto a canvas and never touch the DOM.
     if (drag.overlay === undefined) drag.overlay = createGeneDocDragOverlay(drag);
     if (drag.overlay) {
@@ -15033,7 +15037,14 @@ function handleGeneDocEditDragEnd() {
             nextAlignmentLength,
             `${toolLabel} ${columns} col ${drag.moved > 0 ? 'right' : 'left'} · ${rowName}`
         );
-        if (state.editLiveConservation || nextAlignmentLength !== drag.originalAlignmentLength) {
+        if (drag.isCanvas) {
+            if (state.editLiveConservation || nextAlignmentLength !== drag.originalAlignmentLength) {
+                renderAlignment({ deferConservation: !state.editLiveConservation });
+            } else {
+                _canvasState.scheduleDraw?.();
+                if (typeof updateSourceInfo === 'function') updateSourceInfo();
+            }
+        } else if (state.editLiveConservation || nextAlignmentLength !== drag.originalAlignmentLength) {
             renderAlignment({ deferConservation: !state.editLiveConservation });
         } else {
             // Reconcile the whole row, keeping shading on every column the drag left alone.
