@@ -4342,7 +4342,7 @@ function assignReadTracks(reads) {
  * Only show when exactly one reference sequence is loaded (not zero, not multiple).
  */
 function updateBamButtonVisibility() {
-    const bamBtn = document.getElementById('bamButton');
+    const bamBtn = document.getElementById('openBamToolbarButton');
     if (!bamBtn) return;
     const eligible = state.seqs && state.seqs.length === 1;
     bamBtn.style.display = eligible ? '' : 'none';
@@ -4368,7 +4368,7 @@ function ensureClearReadsButton() {
     btn.style.cssText = 'font-size:11px;padding:2px 8px;margin-left:4px;cursor:pointer;'
         + 'border:1px solid #999;border-radius:3px;background:#f0f0f0;display:none;';
     btn.addEventListener('click', clearReadsData);
-    const bamBtn = document.getElementById('bamButton');
+    const bamBtn = document.getElementById('openBamToolbarButton');
     if (bamBtn && bamBtn.parentNode) {
         bamBtn.parentNode.insertBefore(btn, bamBtn.nextSibling);
     } else {
