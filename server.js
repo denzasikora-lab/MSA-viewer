@@ -969,6 +969,29 @@ app.get('/api/ssh-cat', (req, res) => {
     child.on('error', (err) => res.status(500).json({ error: `SSH failed: ${err.message}` }));
 });
 
+// Read a file directly off the machine running this server (distinct from
+// /api/ssh-cat above, which reads from a configured remote server). This
+// server already reads/writes arbitrary local paths for BLAST database
+// management with no additional auth, so a read-only local file fetch is
+// the same trust boundary, not a new one - it exists so pasting a local
+// path into the main input box can be resolved without a file-picker
+// round-trip, mirroring how a URL paste is resolved via plain fetch().
+app.get('/api/local-cat', (req, res) => {
+    const filePath = req.query.file;
+    if (!filePath) return res.status(400).json({ error: 'Missing "file" query parameter' });
+    console.log(`[LOCAL-CAT] Fetching file: ${filePath}`);
+    try {
+        const stat = fs.statSync(filePath);
+        if (!stat.isFile()) return res.status(400).json({ error: 'Path is not a regular file' });
+        if (stat.size > 200 * 1024 * 1024) return res.status(413).json({ error: 'File too large (>200MB) to load this way' });
+        const content = fs.readFileSync(filePath, 'utf8');
+        res.json({ content, file: filePath });
+    } catch (err) {
+        if (err.code === 'ENOENT') return res.status(404).json({ error: 'File not found: ' + filePath });
+        res.status(500).json({ error: 'Failed to read file: ' + err.message });
+    }
+});
+
 // List remote directory
 app.get('/api/ssh-ls', (req, res) => {
     const dirPath   = req.query.dir || '~';
