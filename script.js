@@ -5696,7 +5696,10 @@ function renderAlignment(options = {}) {
         // Block-virtualize on "crazy"-sized alignments only, mirroring Full
         // mode's isCrazy gate - every other size renders exactly as before.
         if (state.alignmentIndex?.isCrazy) {
-            renderBlockModeWindowedBlocks(alignmentContainer, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
+            // Unified windowed path: ruler + consensus are built INSIDE the
+            // block by _buildUnifiedBlock, so we skip the external builds
+            // that the non-windowed path below still uses.
+            renderUnifiedWindowedDom(alignmentContainer, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
         } else {
             for (let start = 0; start < len; start += blockWidth) {
                 const end = Math.min(start + blockWidth, len);
