@@ -1935,6 +1935,13 @@ span.column-selected {
     font-size: 14px;
     z-index: 1000;
     display: none;
+    /* Purely a passive toast (no click handler anywhere), but centered and
+       sized to its text - it was intercepting wheel/click events meant for
+       whatever's underneath, most noticeably Canvas mode's wheel-to-pan,
+       for as long as a message stayed visible (e.g. the 6s auto-switch
+       notice), making vertical scroll silently do nothing during that
+       window. */
+    pointer-events: none;
 }
 #minimizeBar {
     display: none;

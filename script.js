@@ -1443,12 +1443,22 @@ function updateNameLengthSliderRange() {
         input.min = 3;
         input.max = newMax;
 
-    // Set slider to maximum display length when loading new file
-    slider.value = newMax;
-    input.value = newMax;
+    // Default the DISPLAYED value to something reasonable, not necessarily
+    // the full max - real-world headers can run past 200 characters (full
+    // BLAST-style descriptions), and auto-setting the slider to newMax made
+    // the name column wide enough to push every residue off-screen to the
+    // right by default, with nothing visibly wrong to explain why the
+    // alignment looked empty. The slider's max stays at newMax so a user
+    // who wants full names can still drag up to see them; only the
+    // automatic default is capped.
+    const AUTO_NAME_LENGTH_CAP = 30;
+    const initialValue = Math.min(newMax, AUTO_NAME_LENGTH_CAP);
+    slider.value = initialValue;
+    input.value = initialValue;
 
-        // Update the state to reflect the new value
-        state.nameLength = newMax;
+        // Update the state to reflect the new (capped) displayed value, not
+        // the slider's max - those are different things now.
+        state.nameLength = initialValue;
 
         // If current value is below new min, adjust it
         if (parseInt(slider.value) < 3) {
