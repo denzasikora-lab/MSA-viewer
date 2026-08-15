@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v174';
+const BUILD_TAG = 'v175';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -6060,6 +6060,14 @@ async function runAlignmentPreflight(inputText) {
 function _looksLikeUrl(text) {
     return /^https?:\/\/\S+$/i.test(text);
 }
+// Same idea for a pasted local filesystem path, resolved via the local
+// dev server's /api/local-cat (read-only, same trust boundary as the
+// existing BLAST database file management, which already reads/writes
+// arbitrary local paths with no additional auth).
+function _looksLikeLocalPath(text) {
+    if (text.includes('\n') || text.length > 500 || text.startsWith('>')) return false;
+    return /^[A-Za-z]:[\\/]/.test(text) || /^\//.test(text) || /^~[\\/]/.test(text) || /^\.\.?[\\/]/.test(text);
+}
 
 async function parseAndRender(isFromDrop = false) {
     showMessage("Scanning alignment...", 0);
@@ -6082,6 +6090,22 @@ async function parseAndRender(isFromDrop = false) {
         } catch (err) {
             statusMessage.style.display = 'none';
             showMessage('Could not fetch URL: ' + err.message, 4000);
+            return;
+        }
+    }
+    if (_looksLikeLocalPath(inputText)) {
+        showMessage('Reading local file...', 0);
+        try {
+            const resp = await fetch('/api/local-cat?file=' + encodeURIComponent(inputText));
+            const data = await resp.json();
+            if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
+            fastaInput.value = data.content;
+            state.currentFilename = state.currentFilename || (inputText.split(/[\\/]/).filter(Boolean).pop() || 'local_import');
+            state.currentFilePath = inputText;
+            return parseAndRender(isFromDrop);
+        } catch (err) {
+            statusMessage.style.display = 'none';
+            showMessage('Could not read local file: ' + err.message + ' (is the local server running?)', 5000);
             return;
         }
     }
