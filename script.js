@@ -2751,7 +2751,7 @@ function _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd) {
 // totalContentW: current alignment's full pixel width (for the persistent scrollbar's thumb sizing).
 // onOffsetChange: optional callback (registered by setupPersistentScrollbar) invoked after each
 // draw() so the scrollbar can mirror wheel-scroll/drag-pan that didn't originate from the bar itself.
-const _canvasState = { offsetX: 0, offsetY: 0, ctx: null, metrics: null, seqsLen: 0, scheduleDraw: null, totalContentW: 0, onOffsetChange: null, resizeHandler: null, mousemoveHandler: null, mouseupHandler: null };
+const _canvasState = { offsetX: 0, offsetY: 0, ctx: null, metrics: null, seqsLen: 0, scheduleDraw: null, totalContentW: 0, onOffsetChange: null, resizeHandler: null, mousemoveHandler: null, mouseupHandler: null, canvas: null };
 // Cancellation token for the Canvas mode's deferred (chunked) conservation/
 // consensus jobs; reassigned + old one cancelled on every render so a
 // superseded background job can't clobber a newer one's results.
@@ -2769,6 +2769,67 @@ function _initCanvasMetrics(ctx, fontSizePx) {
     _canvasState.metrics = { charW: Math.ceil(m.width), charH: Math.ceil(charH), fontSizePx };
     return _canvasState.metrics;
 }
+
+// ── Canvas hit-testing ─────────────────────────────────────────────────────
+// Converts a screen pixel coordinate (clientX/clientY) to a {row, col} index
+// in the alignment, or null if the point falls outside the data area (e.g. on
+// the name column, the scale ruler, or past the last row/column).
+//
+// The math mirrors the drawing code in _renderCanvasAlignment's draw():
+//   - The canvas is positioned at the top-left of alignmentContainer.
+//   - NAME_W pixels on the left are the sticky name column (no data there).
+//   - SCALE_H pixels at the top are the position ruler (no data there).
+//   - Each residue cell is CHAR_W × CHAR_H pixels.
+//   - offsetX/offsetY are the pan offsets (content scrolled away from origin).
+//
+// Worked examples (assuming CHAR_W=8, CHAR_H=15, NAME_W=208, SCALE_H=15,
+// offsetX=0, offsetY=0, canvas at screen position (100, 50)):
+//
+//   1. clientX=316, clientY=80  → canvas-relative (216, 30)
+//      col = floor((216 - 208 + 0) / 8) = floor(1) = 1
+//      row = floor((30 - 15 + 0) / 15) = floor(1) = 1
+//      → {row: 1, col: 1}  ✓ (second residue of second sequence)
+//
+//   2. clientX=100, clientY=50  → canvas-relative (0, 0)
+//      col = floor((0 - 208 + 0) / 8) = floor(-26) = -26  → negative, null
+//      → null  ✓ (top-left corner is the name column / ruler, not data)
+//
+//   3. clientX=312, clientY=65  → canvas-relative (212, 15)
+//      col = floor((212 - 208 + 0) / 8) = floor(0.5) = 0
+//      row = floor((15 - 15 + 0) / 15) = floor(0) = 0
+//      → {row: 0, col: 0}  ✓ (first residue of first sequence)
+//
+//   4. clientX=900, clientY=900 (past last col/row) → canvas-relative (800, 850)
+//      If alignment is 50 cols × 20 rows: col=74, row=55 → both out of range → null
+//      → null  ✓
+function _canvasHitTest(clientX, clientY) {
+    const canvas = _canvasState.canvas;
+    if (!canvas) return null;
+    const m = _canvasState.metrics;
+    if (!m || !m.nameW) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    const NAME_W = m.nameW;
+    const SCALE_H = m.charH; // one ruler row, same height as a data row
+    const CHAR_W = m.charW;
+    const CHAR_H = m.charH;
+    // Subtract the name column and scale ruler offsets, then add back the pan
+    // offset so the result is in content (not viewport) coordinates.
+    const col = Math.floor((x - NAME_W + _canvasState.offsetX) / CHAR_W);
+    const row = Math.floor((y - SCALE_H + _canvasState.offsetY) / CHAR_H);
+    if (col < 0 || row < 0) return null;
+    const nSeqs = _canvasState.seqsLen || (state.seqs ? state.seqs.length : 0);
+    const len = state.seqs && state.seqs.length > 0
+        ? Math.max(...state.seqs.map(s => s.seq.length))
+        : 0;
+    if (row >= nSeqs || col >= len) return null;
+    return { row, col };
+}
+
+// Module-level hover tracking: updated by mousemove, read by future phases
+// (tooltip, redraw-on-hover). No visual feedback yet — Phase 0 only.
+let _canvasHoverCell = null;
 
 // Reads the shading palette from the same CSS custom properties the DOM
 // renderer uses (customizable via the black/dark/light colour pickers), so
@@ -2813,6 +2874,10 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     const CHAR_W = m.charW;
     const CHAR_H = m.charH;
     const NAME_W = nameLen * CHAR_W + 8;
+    // Store nameW in metrics so _canvasHitTest can use it without re-deriving
+    m.nameW = NAME_W;
+    // Store canvas reference for hit-testing
+    _canvasState.canvas = canvas;
     // Glyph cache: pre-rendered (char, bg-color, fg-color) -> off-screen canvas
     // Turns fillRect()+fillText() into a single drawImage() per cell after warm-up
     const _glyphCache = new Map();
@@ -2834,6 +2899,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     }
 
     const nSeqs = state.seqs.length;
+    _canvasState.seqsLen = nSeqs;
     const SCALE_H = CHAR_H; // one row at top, matching Full/Block .scale-ruler-line
     let _lastOffX = -1, _lastOffY = -1, _dirty = false;
     function _markDirty() { _dirty = true; }
@@ -3035,6 +3101,11 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     });
     window.addEventListener('mousemove', _canvasState.mousemoveHandler);
     window.addEventListener('mouseup', _canvasState.mouseupHandler);
+
+    // Phase 0: hover tracking — store hit-tested cell, no visual feedback yet.
+    canvas.addEventListener('mousemove', (e) => {
+        _canvasHoverCell = _canvasHitTest(e.clientX, e.clientY);
+    });
 
     scheduleDraw();
 }
