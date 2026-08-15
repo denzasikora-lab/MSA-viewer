@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v169';
+const BUILD_TAG = 'v170';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -13618,7 +13618,25 @@ function canReshadeInPlace() {
 function reshadeChangedColumnsInPlace(cols) {
     const len = state.seqs.reduce((m, s) => Math.max(m, s.seq.length), 0);
     const shadeMode = _checkedRadioValue('shadeMode', 'all');
-    state.conservationDataCache = { len, shadeMode, data: preCalculateConservation(state.seqs, len, shadeMode) };
+    const seqCount = state.seqs.length;
+    // Recompute conservation only for the columns that actually changed,
+    // reusing the existing cache for everything else - recomputing the
+    // WHOLE alignment here (as this used to do, despite the function's own
+    // name promising to reshade only the changed columns) meant a single-
+    // residue edit paid the full alignment's conservation cost every time
+    // edit mode was exited. Measured: ~1s on a 5.97M-residue alignment for
+    // one changed column. Falls back to a full recompute if the cache is
+    // missing or stale (different length/shadeMode) - same result either
+    // way, just fast in the common case.
+    let conservationData = (state.conservationDataCache?.len === len && state.conservationDataCache?.shadeMode === shadeMode)
+        ? state.conservationDataCache.data.slice() // don't mutate a cache array another reader might still hold
+        : null;
+    if (conservationData) {
+        cols.forEach(pos => { conservationData[pos] = _computeConservationForColumn(state.seqs, seqCount, pos, shadeMode); });
+    } else {
+        conservationData = preCalculateConservation(state.seqs, len, shadeMode);
+    }
+    state.conservationDataCache = { len, shadeMode, data: conservationData };
 
     // Passing each row its own current sequence as the reference means no column counts
     // as in-flux, so every repainted column takes the freshly computed shading.
@@ -13630,7 +13648,16 @@ function reshadeChangedColumnsInPlace(cols) {
 
     const consRow = state.spanCache.get(CONSENSUS_ROW_INDEX);
     if (consRow && consRow.size && el('showConsensus')?.checked) {
-        const consensus = computeConsensusForSequences(state.seqs.map(s => s.seq)).split('');
+        // Same incremental idea for consensus: only the changed columns can
+        // possibly have a different consensus character.
+        const opts = _getConsensusOptions();
+        const seqArray = state.seqs.map(s => s.seq);
+        let consensus = (state.consensusCache?.len === len) ? state.consensusCache.values.slice() : null;
+        if (consensus) {
+            cols.forEach(pos => { consensus[pos] = _computeConsensusCharForColumn(seqArray, pos, opts); });
+        } else {
+            consensus = computeConsensusForSequences(seqArray).split('');
+        }
         state.consensusCache = { len, values: consensus.slice() };
         state.consensusSeq = consensus.join('').replace(/-/g, '');
         const threshold = clampConsensusPercent(el('consensusThreshold').value) / 100;
