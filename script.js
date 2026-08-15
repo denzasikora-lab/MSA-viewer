@@ -3980,6 +3980,66 @@ function baseColorRef(base) {
 }
 
 /**
+ * Greedy track-packing for read piles (tview/IGV-style).
+ *
+ * Sorts reads by start position, then walks the track list and assigns each
+ * read to the first track whose last-occupied end is <= this read's start.
+ * Non-overlapping reads share a track; overlapping reads get separate tracks.
+ *
+ * Sorts the input array in place and sets `.track` (0-based) on each read.
+ * Returns the total number of tracks needed.
+ *
+ * Examples (start/end are 0-based, end inclusive):
+ *
+ *   reads = [{s:0,e:9}, {s:10,e:19}, {s:5,e:14}]
+ *   sort by start: [0-9, 5-14, 10-19]
+ *   read 0-9   -> track 0 (tracks[0] = 10)
+ *   read 5-14  -> 5 < 10, new track 1 (tracks[1] = 15)
+ *   read 10-19 -> 10 >= 10, reuse track 0 (tracks[0] = 20)
+ *   result: 2 tracks
+ *
+ *   reads = [{s:0,e:4}, {s:5,e:9}, {s:10,e:14}]
+ *   all non-overlapping -> all on track 0
+ *   result: 1 track
+ *
+ *   reads = [{s:0,e:9}, {s:0,e:9}, {s:0,e:9}]
+ *   all overlap at same position -> 3 tracks
+ *   result: 3 tracks
+ *
+ *   reads = [{s:0,e:4}, {s:3,e:7}, {s:6,e:10}, {s:9,e:13}]
+ *   read 0-4  -> track 0 (tracks[0] = 5)
+ *   read 3-7  -> 3 < 5, new track 1 (tracks[1] = 8)
+ *   read 6-10 -> 6 >= 5, reuse track 0 (tracks[0] = 11)
+ *   read 9-13 -> 9 >= 8, reuse track 1 (tracks[1] = 14)
+ *   result: 2 tracks
+ *
+ * @param {Array} reads - objects with numeric `start` and `end` (0-based, inclusive)
+ * @returns {number} total number of tracks assigned
+ */
+function assignReadTracks(reads) {
+    reads.sort((a, b) => a.start - b.start);
+
+    // tracks[t] = next available start position for track t (end+1 of last read)
+    const tracks = [];
+    for (const read of reads) {
+        let assigned = false;
+        for (let t = 0; t < tracks.length; t++) {
+            if (read.start >= tracks[t]) {
+                tracks[t] = read.end + 1;
+                read.track = t;
+                assigned = true;
+                break;
+            }
+        }
+        if (!assigned) {
+            read.track = tracks.length;
+            tracks.push(read.end + 1);
+        }
+    }
+    return tracks.length;
+}
+
+/**
  * Show/hide the BAM button based on whether a reference sequence is loaded.
  */
 // IGV-style compact read packing renderer
@@ -4051,27 +4111,8 @@ function renderCompactAlignment(len, conservationData, shadeMode, blackThresh, d
         });
     }
 
-    // Sort by start position
-    reads.sort((a, b) => a.start - b.start);
-
-    // Greedy track assignment
-    const tracks = []; // tracks[trackIdx] = last-end position
-    for (const read of reads) {
-        let assigned = false;
-        for (let t = 0; t < tracks.length; t++) {
-            if (read.start >= tracks[t]) {
-                tracks[t] = read.end + 1;
-                read.track = t;
-                assigned = true;
-                break;
-            }
-        }
-        if (!assigned) {
-            read.track = tracks.length;
-            tracks.push(read.end + 1);
-        }
-    }
-    const nTracks = tracks.length;
+    // Greedy track-packing (sorts reads in place by start, assigns .track)
+    const nTracks = assignReadTracks(reads);
 
     // Compute coverage per position
     const coverage = new Uint16Array(len);
