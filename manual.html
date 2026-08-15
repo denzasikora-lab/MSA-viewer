@@ -1162,10 +1162,9 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     cells for the tools to act on, so Edit Mode is unavailable there and says so. Switch back
     to Block or Full to edit. Very large alignments switch to Canvas automatically, which is
     why editing can appear to be missing on them. Manually switching into Full mode on such an
-    alignment shows a confirmation dialog first - Full mode now windows by row count (only
-    visible rows render as DOM, so alignments with huge sequence counts stay responsive), but
-    column windowing is not yet implemented, so an extremely wide alignment can still be slow
-    and the dialog remains as a safety net.
+    alignment shows a confirmation dialog first, as a safety net - Full mode now windows both
+    rows and columns (only the currently-visible cells render as DOM), so alignments with huge
+    sequence counts and/or huge column counts both stay responsive and scroll smoothly.
   </div>
 
   <h3 id="ed-move-slide">8.4 Move &amp; Slide Tools</h3>
