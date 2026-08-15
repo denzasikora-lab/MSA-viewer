@@ -3829,10 +3829,11 @@ function renderReadsAlignment() {
     alignmentContainer.style.height = '';
     alignmentContainer.style.overflow = 'auto';
 
-    const { reads, refSeq, refStart, refEnd, columns } = bamState;
+    const { reads, refSeq, refStart, refEnd, columns, nTracks = 0 } = bamState;
     const viewLen = refEnd - refStart;
     const container = alignmentContainer;
     const cellW = 12; // px per base
+    const NAME_W = 160; // px for the name/label column (matches sticky DOM elements)
 
     // -- Reference track --
     const refLine = document.createElement('div');
@@ -3906,72 +3907,49 @@ function renderReadsAlignment() {
     scaleLine.appendChild(scaleData);
     container.appendChild(scaleLine);
 
-    // -- Read tracks --
-    for (let i = 0; i < reads.length; i++) {
-        const read = reads[i];
-        const readCols = columns[i];
-        const isReverse = (read.flag & 0x10) !== 0; // reverse strand
+    // -- Track bands (SVG) --
+    // One horizontal band per packed track (not per read). Non-overlapping
+    // reads share a track, so the number of visual rows equals nTracks, not
+    // reads.length. Reuses the SVG rect pattern from renderCompactAlignment().
+    const TRACK_H = 16;
+    const svgW = NAME_W + viewLen * cellW;
+    const svgH = nTracks * TRACK_H + 4;
 
-        const readLine = document.createElement('div');
-        readLine.className = 'seq-line read-track-line';
-        readLine.style.display = 'flex';
-        readLine.style.alignItems = 'center';
-        readLine.style.minHeight = '16px';
-        readLine.style.borderBottom = '1px solid #eee';
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', svgW);
+    svg.setAttribute('height', svgH);
+    svg.setAttribute('style', 'font-family:monospace;font-size:10px;');
+    svg.setAttribute('id', 'readsPileSvg');
 
-        // Read name label
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'seq-name';
-        nameSpan.style.cssText = 'width:160px;min-width:160px;font-size:9px;padding:0 4px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#555;';
-        nameSpan.textContent = isReverse ? '< ' + read.name : read.name + ' >';
-        nameSpan.title = `${read.name} pos=${read.pos + 1} mapq=${read.mapq} cigar=${BamParser.cigarToString(read.cigar)}`;
-        readLine.appendChild(nameSpan);
-
-        // Read data
-        const dataDiv = document.createElement('div');
-        dataDiv.className = 'seq-data';
-        dataDiv.style.display = 'flex';
-
-        for (let ci = 0; ci < readCols.length; ci++) {
-            const col = readCols[ci];
-            const span = document.createElement('span');
-            span.style.cssText = `display:inline-block;width:${cellW}px;text-align:center;font-size:10px;font-family:monospace;`;
-
-            switch (col.type) {
-                case 'match':
-                    span.textContent = '.'; // dot for match (clean IGV-like)
-                    span.style.color = '#ccc';
-                    break;
-                case 'mismatch':
-                    span.textContent = col.base;
-                    span.style.color = '#555';
-                    span.style.fontWeight = 'bold';
-                    break;
-                case 'insertion':
-                    span.textContent = col.base;
-                    span.style.color = '#4a90d9';
-                    span.style.fontSize = '9px';
-                    break;
-                case 'deletion':
-                    span.textContent = '-';
-                    span.style.color = '#999';
-                    span.style.fontSize = '11px';
-                    break;
-                case 'softclip':
-                    span.textContent = col.base;
-                    span.style.color = '#ccc';
-                    span.style.opacity = '0.5';
-                    break;
-                case 'intron':
-                    span.textContent = '.';
-                    span.style.color = '#ddd';
-                    break;
-            }
-            dataDiv.appendChild(span);
+    // Group reads by track in a single pass (O(n), not O(nTracks * n))
+    const trackGroups = Array.from({ length: nTracks }, () => []);
+    for (const read of reads) {
+        if (read.track >= 0 && read.track < nTracks) {
+            trackGroups[read.track].push(read);
         }
-        readLine.appendChild(dataDiv);
-        container.appendChild(readLine);
     }
+
+    for (let t = 0; t < nTracks; t++) {
+        for (const read of trackGroups[t]) {
+            const rx = NAME_W + (read.start - refStart) * cellW;
+            const rw = (read.end - read.start + 1) * cellW;
+            const ry = t * TRACK_H;
+            const rh = TRACK_H - 2;
+
+            const bar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            bar.setAttribute('x', rx);
+            bar.setAttribute('y', ry);
+            bar.setAttribute('width', rw);
+            bar.setAttribute('height', rh);
+            bar.setAttribute('fill', '#c8d8e8');
+            bar.setAttribute('stroke', '#8ab4d6');
+            bar.setAttribute('stroke-width', '0.5');
+            bar.setAttribute('rx', '2');
+            svg.appendChild(bar);
+        }
+    }
+
+    container.appendChild(svg);
 }
 
 /**
