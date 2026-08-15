@@ -4225,6 +4225,11 @@ let bamState = {
     readOrder: [],      // sorted read indices (by pos, then name)
 };
 
+// Currently highlighted read bar in Reads mode (click-to-highlight)
+let _readsHighlightedBar = null;
+// Reads-mode display: 'diff' (mismatches only) or 'bases' (all bases colored)
+let _readsDisplayMode = 'diff';
+
 /**
  * Show the BAM file picker when user clicks the BAM button.
  */
@@ -4357,6 +4362,15 @@ async function handleBamFile(event) {
             readOrder,
         };
 
+        // Phase 1: compute genomic start/end span and assign packed tracks.
+        // assignReadTracks sorts reads in place by start (consistent with the
+        // pos sort above) and sets read.track on each read.
+        bamState.reads.forEach(read => {
+            read.start = read.pos;
+            read.end = read.pos + computeReadSpan(read.cigar) - 1;
+        });
+        bamState.nTracks = assignReadTracks(bamState.reads);
+
         // Switch to Full display mode and Reads view
         const singleRadio = document.getElementById('modeSingle');
         if (singleRadio) singleRadio.checked = true;
@@ -4364,6 +4378,7 @@ async function handleBamFile(event) {
         if (readsRadio) readsRadio.checked = true;
 
         renderAlignment();
+        updateBamButtonVisibility();
         statusMessage.style.display = 'none';
         showMessage(`Loaded ${matchedReads.length} reads on ${matchedRef} (${minPos + 1}-${maxPos})`, 2500);
 
@@ -4478,24 +4493,123 @@ function parseSAMToBuffer(text) {
 }
 
 /**
+ * Walk a read's CIGAR and return a comprehensive set of features for
+ * Phase 5 visual treatment: match/mismatch bases,
+ * deletion positions, insertion positions, and left/right soft-clip lengths.
+ */
+function _getReadCigarFeatures(read, refSeq) {
+    const features = {
+        bases: new Map(),
+        deletions: new Set(),
+        insertions: [],
+        softClipLeft: 0,
+        softClipRight: 0
+    };
+    if (!read.seq || !read.cigar) return features;
+    let readPos = 0;
+    let refPos = read.pos;
+    let seenRefConsuming = false;
+    for (const op of read.cigar) {
+        const len = op.len;
+        const type = op.op;
+        switch (type) {
+            case 'M': case '=': case 'X':
+                seenRefConsuming = true;
+                for (let i = 0; i < len; i++) {
+                    const rb = (read.seq[readPos + i] || 'N').toUpperCase();
+                    const refb = (refSeq[refPos + i] || 'N').toUpperCase();
+                    const isMatch = type === '=' || (type === 'M' && rb === refb);
+                    features.bases.set(refPos + i, { base: rb, type: isMatch ? 'match' : 'mismatch' });
+                }
+                readPos += len;
+                refPos += len;
+                break;
+            case 'D':
+                seenRefConsuming = true;
+                for (let i = 0; i < len; i++) {
+                    features.deletions.add(refPos + i);
+                }
+                refPos += len;
+                break;
+            case 'N':
+                seenRefConsuming = true;
+                refPos += len;
+                break;
+            case 'I':
+                features.insertions.push({ refPos: refPos - 1, length: len });
+                readPos += len;
+                break;
+            case 'S':
+                if (!seenRefConsuming) {
+                    features.softClipLeft = len;
+                } else {
+                    features.softClipRight = len;
+                }
+                readPos += len;
+                break;
+        }
+    }
+    return features;
+}
+
+/**
+ * Lazily create the "Show bases" checkbox for Reads mode and insert it
+ * next to the quick mode switcher. Returns the toggle label element.
+ */
+function ensureReadsDisplayToggle() {
+    let toggle = document.getElementById('readsDisplayToggle');
+    if (toggle) {
+        const cb = document.getElementById('readsDisplayBases');
+        if (cb) cb.checked = (_readsDisplayMode === 'bases');
+        return toggle;
+    }
+    toggle = document.createElement('label');
+    toggle.id = 'readsDisplayToggle';
+    toggle.style.cssText = 'display:none;align-items:center;gap:4px;font-size:11px;margin-left:8px;cursor:pointer;user-select:none;';
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = 'readsDisplayBases';
+    cb.checked = (_readsDisplayMode === 'bases');
+    cb.style.margin = '0';
+    cb.addEventListener('change', () => {
+        _readsDisplayMode = cb.checked ? 'bases' : 'diff';
+        renderReadsAlignment();
+    });
+    const span = document.createElement('span');
+    span.textContent = 'Show bases';
+    toggle.appendChild(cb);
+    toggle.appendChild(span);
+    const quickSwitch = document.getElementById('quickModeSwitch');
+    if (quickSwitch && quickSwitch.parentNode) {
+        quickSwitch.parentNode.insertBefore(toggle, quickSwitch.nextSibling);
+    } else {
+        document.body.appendChild(toggle);
+    }
+    return toggle;
+}
+
+/**
  * Render the reads alignment view (BAM mode).
  * Shows reference track at top, reads below in pileup order.
  */
 function renderReadsAlignment() {
+    ensureReadsDisplayToggle();
     if (!bamState.reads.length || !bamState.refSeq) {
         alignmentContainer.innerHTML = '<div style="padding:20px;color:#888;">No reads loaded. Open a BAM file with the BAM button.</div>';
         return;
     }
 
     alignmentContainer.innerHTML = '';
+    _readsHighlightedBar = null;
     alignmentContainer.style.position = '';
     alignmentContainer.style.height = '';
     alignmentContainer.style.overflow = 'auto';
 
-    const { reads, refSeq, refStart, refEnd, columns } = bamState;
+    const { reads, refSeq, refStart, refEnd, columns, nTracks = 0 } = bamState;
     const viewLen = refEnd - refStart;
     const container = alignmentContainer;
     const cellW = 12; // px per base
+    const NAME_W = 160; // px for the name/label column (matches sticky DOM elements)
 
     // -- Reference track --
     const refLine = document.createElement('div');
@@ -4569,72 +4683,256 @@ function renderReadsAlignment() {
     scaleLine.appendChild(scaleData);
     container.appendChild(scaleLine);
 
-    // -- Read tracks --
-    for (let i = 0; i < reads.length; i++) {
-        const read = reads[i];
-        const readCols = columns[i];
-        const isReverse = (read.flag & 0x10) !== 0; // reverse strand
+    // -- Status line for selected read info --
+    const statusLine = document.createElement('div');
+    statusLine.id = 'readsStatusLine';
+    statusLine.style.cssText = 'padding:3px 8px;font-size:11px;font-family:monospace;'
+        + 'color:#333;background:#e8f0fe;border-bottom:1px solid #c5d8ee;min-height:20px;';
+    statusLine.textContent = `${reads.length} reads in ${nTracks} track${nTracks !== 1 ? 's' : ''}`;
+    container.appendChild(statusLine);
 
-        const readLine = document.createElement('div');
-        readLine.className = 'seq-line read-track-line';
-        readLine.style.display = 'flex';
-        readLine.style.alignItems = 'center';
-        readLine.style.minHeight = '16px';
-        readLine.style.borderBottom = '1px solid #eee';
+    // -- Track bands (SVG) --
+    // One horizontal band per packed track (not per read). Non-overlapping
+    // reads share a track, so the number of visual rows equals nTracks, not
+    // reads.length. Reuses the SVG rect pattern from renderCompactAlignment().
+    const TRACK_H = 16;
+    const svgW = NAME_W + viewLen * cellW;
+    const svgH = nTracks * TRACK_H + 4;
 
-        // Read name label
-        const nameSpan = document.createElement('span');
-        nameSpan.className = 'seq-name';
-        nameSpan.style.cssText = 'width:160px;min-width:160px;font-size:9px;padding:0 4px;text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#555;';
-        nameSpan.textContent = isReverse ? '< ' + read.name : read.name + ' >';
-        nameSpan.title = `${read.name} pos=${read.pos + 1} mapq=${read.mapq} cigar=${BamParser.cigarToString(read.cigar)}`;
-        readLine.appendChild(nameSpan);
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('width', svgW);
+    svg.setAttribute('height', svgH);
+    svg.setAttribute('style', 'font-family:monospace;font-size:10px;');
+    svg.setAttribute('id', 'readsPileSvg');
 
-        // Read data
-        const dataDiv = document.createElement('div');
-        dataDiv.className = 'seq-data';
-        dataDiv.style.display = 'flex';
-
-        for (let ci = 0; ci < readCols.length; ci++) {
-            const col = readCols[ci];
-            const span = document.createElement('span');
-            span.style.cssText = `display:inline-block;width:${cellW}px;text-align:center;font-size:10px;font-family:monospace;`;
-
-            switch (col.type) {
-                case 'match':
-                    span.textContent = '.'; // dot for match (clean IGV-like)
-                    span.style.color = '#ccc';
-                    break;
-                case 'mismatch':
-                    span.textContent = col.base;
-                    span.style.color = '#555';
-                    span.style.fontWeight = 'bold';
-                    break;
-                case 'insertion':
-                    span.textContent = col.base;
-                    span.style.color = '#4a90d9';
-                    span.style.fontSize = '9px';
-                    break;
-                case 'deletion':
-                    span.textContent = '-';
-                    span.style.color = '#999';
-                    span.style.fontSize = '11px';
-                    break;
-                case 'softclip':
-                    span.textContent = col.base;
-                    span.style.color = '#ccc';
-                    span.style.opacity = '0.5';
-                    break;
-                case 'intron':
-                    span.textContent = '.';
-                    span.style.color = '#ddd';
-                    break;
-            }
-            dataDiv.appendChild(span);
+    // Group reads by track in a single pass (O(n), not O(nTracks * n))
+    const trackGroups = Array.from({ length: nTracks }, () => []);
+    for (const read of reads) {
+        if (read.track >= 0 && read.track < nTracks) {
+            trackGroups[read.track].push(read);
         }
-        readLine.appendChild(dataDiv);
-        container.appendChild(readLine);
     }
+
+    for (let t = 0; t < nTracks; t++) {
+        // Alternating track background shading for visual separation
+        const trackBg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+        trackBg.setAttribute('x', 0);
+        trackBg.setAttribute('y', t * TRACK_H);
+        trackBg.setAttribute('width', svgW);
+        trackBg.setAttribute('height', TRACK_H);
+        trackBg.setAttribute('fill', t % 2 === 0 ? '#f0f4f8' : '#ffffff');
+        trackBg.setAttribute('stroke', 'none');
+        svg.appendChild(trackBg);
+
+        for (const read of trackGroups[t]) {
+            const rx = NAME_W + (read.start - refStart) * cellW;
+            const rw = (read.end - read.start + 1) * cellW;
+            const ry = t * TRACK_H;
+            const rh = TRACK_H - 4;
+            const features = _getReadCigarFeatures(read, refSeq);
+
+            // Soft-clip extensions (lighter fill, dashed stroke)
+            if (features.softClipLeft > 0) {
+                const scW = features.softClipLeft * cellW;
+                const scLeft = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                scLeft.setAttribute('x', rx - scW);
+                scLeft.setAttribute('y', ry + 2);
+                scLeft.setAttribute('width', scW);
+                scLeft.setAttribute('height', rh);
+                scLeft.setAttribute('fill', '#e8eef5');
+                scLeft.setAttribute('stroke', '#a0b8d0');
+                scLeft.setAttribute('stroke-width', '1');
+                scLeft.setAttribute('stroke-dasharray', '3,2');
+                scLeft.setAttribute('rx', '2');
+                scLeft.setAttribute('pointer-events', 'none');
+                svg.appendChild(scLeft);
+            }
+            if (features.softClipRight > 0) {
+                const scW = features.softClipRight * cellW;
+                const scRight = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                scRight.setAttribute('x', rx + rw);
+                scRight.setAttribute('y', ry + 2);
+                scRight.setAttribute('width', scW);
+                scRight.setAttribute('height', rh);
+                scRight.setAttribute('fill', '#e8eef5');
+                scRight.setAttribute('stroke', '#a0b8d0');
+                scRight.setAttribute('stroke-width', '1');
+                scRight.setAttribute('stroke-dasharray', '3,2');
+                scRight.setAttribute('rx', '2');
+                scRight.setAttribute('pointer-events', 'none');
+                svg.appendChild(scRight);
+            }
+
+            // Main bar with visible border
+            const bar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+            bar.setAttribute('x', rx);
+            bar.setAttribute('y', ry + 2);
+            bar.setAttribute('width', rw);
+            bar.setAttribute('height', rh);
+            bar.setAttribute('fill', '#c8d8e8');
+            bar.setAttribute('stroke', '#4a7fa8');
+            bar.setAttribute('stroke-width', '1.5');
+            bar.setAttribute('rx', '2');
+            bar.style.cursor = 'pointer';
+
+            // Start cap mark (vertical line at read start)
+            const startCap = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            startCap.setAttribute('x1', rx);
+            startCap.setAttribute('y1', ry);
+            startCap.setAttribute('x2', rx);
+            startCap.setAttribute('y2', ry + TRACK_H);
+            startCap.setAttribute('stroke', '#2c5d80');
+            startCap.setAttribute('stroke-width', '2');
+            startCap.setAttribute('pointer-events', 'none');
+
+            // End cap mark (vertical line at read end+1)
+            const endCap = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            endCap.setAttribute('x1', rx + rw);
+            endCap.setAttribute('y1', ry);
+            endCap.setAttribute('x2', rx + rw);
+            endCap.setAttribute('y2', ry + TRACK_H);
+            endCap.setAttribute('stroke', '#2c5d80');
+            endCap.setAttribute('stroke-width', '2');
+            endCap.setAttribute('pointer-events', 'none');
+
+            // Tooltip text (built once per read)
+            const cigarStr = read.cigar.map(c => c.len + c.op).join('');
+            const tooltipHtml = `<b>${_escapeHtml(read.name)}</b><br>`
+                + `Pos: ${read.pos + 1}<br>`
+                + `CIGAR: ${cigarStr}<br>`
+                + `MAPQ: ${read.mapq}`;
+
+            // Hover tooltip
+            bar.addEventListener('mouseover', () => {
+                showTooltipAt(tooltipHtml, bar, { html: true, className: 'reads-tooltip' });
+            });
+            bar.addEventListener('mouseout', () => {
+                hideTooltip();
+            });
+
+            // Click to highlight
+            bar.addEventListener('click', () => {
+                if (_readsHighlightedBar === bar) {
+                    // Deselect
+                    bar.setAttribute('stroke', '#4a7fa8');
+                    bar.setAttribute('stroke-width', '1.5');
+                    _readsHighlightedBar = null;
+                    statusLine.textContent = `${reads.length} reads in ${nTracks} track${nTracks !== 1 ? 's' : ''}`;
+                } else {
+                    // Reset previous highlight
+                    if (_readsHighlightedBar) {
+                        _readsHighlightedBar.setAttribute('stroke', '#4a7fa8');
+                        _readsHighlightedBar.setAttribute('stroke-width', '1.5');
+                    }
+                    // Highlight new bar
+                    bar.setAttribute('stroke', '#d9402b');
+                    bar.setAttribute('stroke-width', '3');
+                    _readsHighlightedBar = bar;
+                    statusLine.textContent = `${read.name}  |  pos: ${read.pos + 1}  |  cigar: ${cigarStr}  |  mapq: ${read.mapq}`;
+                }
+            });
+
+            svg.appendChild(bar);
+
+            // Deletion gaps (grey segments inside the bar)
+            features.deletions.forEach(delPos => {
+                if (delPos < read.start || delPos > read.end) return;
+                const dx = NAME_W + (delPos - refStart) * cellW;
+                const delRect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+                delRect.setAttribute('x', dx);
+                delRect.setAttribute('y', ry + 2);
+                delRect.setAttribute('width', cellW);
+                delRect.setAttribute('height', rh);
+                delRect.setAttribute('fill', '#b0b0b0');
+                delRect.setAttribute('pointer-events', 'none');
+                svg.appendChild(delRect);
+            });
+
+            // Insertion ticks (small vertical marks at insertion positions)
+            features.insertions.forEach(ins => {
+                if (ins.refPos < read.start - 1 || ins.refPos > read.end) return;
+                const ix = NAME_W + (ins.refPos - refStart + 1) * cellW;
+                const insLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                insLine.setAttribute('x1', ix);
+                insLine.setAttribute('y1', ry + 1);
+                insLine.setAttribute('x2', ix);
+                insLine.setAttribute('y2', ry + TRACK_H - 1);
+                insLine.setAttribute('stroke', '#e67e22');
+                insLine.setAttribute('stroke-width', '1.5');
+                insLine.setAttribute('pointer-events', 'none');
+                svg.appendChild(insLine);
+            });
+
+            svg.appendChild(startCap);
+            svg.appendChild(endCap);
+
+            // Per-base content inside bar (diff/bases display mode)
+            if (cellW >= 7) {
+                for (let p = read.start; p <= read.end; p++) {
+                    const entry = features.bases.get(p);
+                    if (!entry) continue;
+                    const bx = NAME_W + (p - refStart) * cellW + cellW / 2;
+                    const by = ry + 2 + rh / 2;
+                    if (_readsDisplayMode === 'diff') {
+                        if (entry.type === 'mismatch') {
+                            const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                            text.setAttribute('x', bx);
+                            text.setAttribute('y', by);
+                            text.setAttribute('text-anchor', 'middle');
+                            text.setAttribute('dominant-baseline', 'middle');
+                            text.setAttribute('font-size', '9');
+                            text.setAttribute('font-family', 'monospace');
+                            text.setAttribute('fill', '#e74c3c');
+                            text.setAttribute('pointer-events', 'none');
+                            text.textContent = entry.base;
+                            svg.appendChild(text);
+                        }
+                    } else {
+                        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                        text.setAttribute('x', bx);
+                        text.setAttribute('y', by);
+                        text.setAttribute('text-anchor', 'middle');
+                        text.setAttribute('dominant-baseline', 'middle');
+                        text.setAttribute('font-size', '9');
+                        text.setAttribute('font-family', 'monospace');
+                        text.setAttribute('fill', baseColorRef(entry.base));
+                        text.setAttribute('pointer-events', 'none');
+                        text.textContent = entry.base;
+                        svg.appendChild(text);
+                    }
+                }
+            } else {
+                // Low-zoom: thin-line-plus-mismatch-ticks rendering
+                const thinLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                thinLine.setAttribute('x1', rx);
+                thinLine.setAttribute('y1', ry + 2 + rh / 2);
+                thinLine.setAttribute('x2', rx + rw);
+                thinLine.setAttribute('y2', ry + 2 + rh / 2);
+                thinLine.setAttribute('stroke', '#8ab4d6');
+                thinLine.setAttribute('stroke-width', '1');
+                thinLine.setAttribute('pointer-events', 'none');
+                svg.appendChild(thinLine);
+
+                // Mismatch ticks
+                features.bases.forEach((entry, refPos) => {
+                    if (refPos < read.start || refPos > read.end) return;
+                    if (entry.type !== 'mismatch') return;
+                    const mx = NAME_W + (refPos - refStart) * cellW + cellW / 2;
+                    const tick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                    tick.setAttribute('x1', mx);
+                    tick.setAttribute('y1', ry + 2);
+                    tick.setAttribute('x2', mx);
+                    tick.setAttribute('y2', ry + 2 + rh);
+                    tick.setAttribute('stroke', '#e74c3c');
+                    tick.setAttribute('stroke-width', '1');
+                    tick.setAttribute('pointer-events', 'none');
+                    svg.appendChild(tick);
+                });
+            }
+        }
+    }
+
+    container.appendChild(svg);
 }
 
 /**
@@ -4652,82 +4950,47 @@ function baseColorRef(base) {
 }
 
 /**
- * Show/hide the BAM button based on whether a reference sequence is loaded.
+ * Greedy track-packing for read piles (tview/IGV-style).
+ *
+ * Sorts reads by start position, then walks the track list and assigns each
+ * read to the first track whose last-occupied end is <= this read's start.
+ * Non-overlapping reads share a track; overlapping reads get separate tracks.
+ *
+ * Sorts the input array in place and sets `.track` (0-based) on each read.
+ * Returns the total number of tracks needed.
+ *
+ * Examples (start/end are 0-based, end inclusive):
+ *
+ *   reads = [{s:0,e:9}, {s:10,e:19}, {s:5,e:14}]
+ *   sort by start: [0-9, 5-14, 10-19]
+ *   read 0-9   -> track 0 (tracks[0] = 10)
+ *   read 5-14  -> 5 < 10, new track 1 (tracks[1] = 15)
+ *   read 10-19 -> 10 >= 10, reuse track 0 (tracks[0] = 20)
+ *   result: 2 tracks
+ *
+ *   reads = [{s:0,e:4}, {s:5,e:9}, {s:10,e:14}]
+ *   all non-overlapping -> all on track 0
+ *   result: 1 track
+ *
+ *   reads = [{s:0,e:9}, {s:0,e:9}, {s:0,e:9}]
+ *   all overlap at same position -> 3 tracks
+ *   result: 3 tracks
+ *
+ *   reads = [{s:0,e:4}, {s:3,e:7}, {s:6,e:10}, {s:9,e:13}]
+ *   read 0-4  -> track 0 (tracks[0] = 5)
+ *   read 3-7  -> 3 < 5, new track 1 (tracks[1] = 8)
+ *   read 6-10 -> 6 >= 5, reuse track 0 (tracks[0] = 11)
+ *   read 9-13 -> 9 >= 8, reuse track 1 (tracks[1] = 14)
+ *   result: 2 tracks
+ *
+ * @param {Array} reads - objects with numeric `start` and `end` (0-based, inclusive)
+ * @returns {number} total number of tracks assigned
  */
-// IGV-style compact read packing renderer
-function renderCompactAlignment(len, conservationData, shadeMode, blackThresh, darkThresh, lightThresh,
-    enableBlack, enableDark, enableLight, nameLen, stickyNames, standard, ambiguous, ambiguousMap,
-    showConsensus, consType, threshold, fallbackMode, coverageMin) {
-
-    alignmentContainer.innerHTML = '';
-    // Reset styles from other modes (Canvas sets position/height/overflow)
-    alignmentContainer.style.position = '';
-    alignmentContainer.style.height = '';
-    alignmentContainer.style.overflow = 'auto';
-    state.spanCache = new Map();
-    state.domSelectedNucs = new Map();
-    state.domSelectedColumns = new Map();
-
-    const seqs = state.seqs;
-    const nSeqs = seqs.length;
-    if (nSeqs === 0) return;
-
-    // Find reference sequence (longest or first non-gappy)
-    let refIdx = 0;
-    let refLen = 0;
-    let refGappiness = 999;
-    for (let i = 0; i < nSeqs; i++) {
-        const s = seqs[i].seq;
-        const gapCount = (s.match(/[-.]/g) || []).length;
-        const gappiness = gapCount / Math.max(1, s.length);
-        if (s.length > refLen || (s.length === refLen && gappiness < refGappiness)) {
-            refIdx = i;
-            refLen = s.length;
-            refGappiness = gappiness;
-        }
-    }
-
-    // Parse read positions from reference-aligned sequences
-    // Each read: {seqIdx, start, end, seq, name, mismatches[]}
-    const reads = [];
-    for (let i = 0; i < nSeqs; i++) {
-        if (i === refIdx && nSeqs > 1) continue; // skip reference
-        const s = seqs[i].seq;
-        // Find first and last non-gap position
-        let start = -1, end = -1;
-        for (let p = 0; p < len; p++) {
-            const ch = s[p] || '-';
-            if (ch !== '-' && ch !== '.') {
-                if (start < 0) start = p;
-                end = p;
-            }
-        }
-        if (start < 0) continue;
-        const seq = s.substring(start, end + 1);
-        const mismatches = [];
-        const refSeq = seqs[refIdx].seq;
-        for (let p = start; p <= end; p++) {
-            const rb = (s[p] || '-').toUpperCase();
-            const refb = (refSeq[p] || '-').toUpperCase();
-            if (rb !== '-' && rb !== '.' && refb !== '-' && refb !== '.' && rb !== refb) {
-                mismatches.push(p);
-            }
-        }
-        reads.push({
-            seqIdx: i,
-            start, end, seq,
-            name: seqs[i].header || ('Read' + (i + 1)),
-            mismatches: new Set(mismatches),
-            gaplessLen: seq.replace(/[-.]/g, '').length,
-            _pairInfo: seqs[i]._samPair || null
-        });
-    }
-
-    // Sort by start position
+function assignReadTracks(reads) {
     reads.sort((a, b) => a.start - b.start);
 
-    // Greedy track assignment
-    const tracks = []; // tracks[trackIdx] = last-end position
+    // tracks[t] = next available start position for track t (end+1 of last read)
+    const tracks = [];
     for (const read of reads) {
         let assigned = false;
         for (let t = 0; t < tracks.length; t++) {
@@ -4743,263 +5006,70 @@ function renderCompactAlignment(len, conservationData, shadeMode, blackThresh, d
             tracks.push(read.end + 1);
         }
     }
-    const nTracks = tracks.length;
+    return tracks.length;
+}
 
-    // Compute coverage per position
-    const coverage = new Uint16Array(len);
-    for (const read of reads) {
-        for (let p = read.start; p <= read.end; p++) {
-            const ch = seqs[read.seqIdx].seq[p] || '-';
-            if (ch !== '-' && ch !== '.') coverage[p]++;
-        }
+/**
+ * Show/hide the BAM button based on whether a reference sequence is loaded.
+ * Only show when exactly one reference sequence is loaded (not zero, not multiple).
+ */
+function updateBamButtonVisibility() {
+    const bamBtn = document.getElementById('openBamToolbarButton');
+    if (!bamBtn) return;
+    const eligible = state.seqs && state.seqs.length === 1;
+    bamBtn.style.display = eligible ? '' : 'none';
+
+    // Also update the "Clear reads" button visibility
+    const clearBtn = ensureClearReadsButton();
+    if (clearBtn) {
+        clearBtn.style.display = (eligible && bamState.reads.length > 0) ? '' : 'none';
     }
-    const maxCov = Math.max(1, ...coverage);
+}
 
-    // Color helpers
-    const bgColorPicker = document.getElementById('blackColorPicker');
-    const dkColorPicker = document.getElementById('darkColorPicker');
-    const ltColorPicker = document.getElementById('lightColorPicker');
-    const defBlack = bgColorPicker?.value || '#000000';
-    const defDark = dkColorPicker?.value || '#555555';
-    const defLight = ltColorPicker?.value || '#cccccc';
+/**
+ * Lazily create the "Clear reads" button next to the BAM button.
+ * Created from JS because the page markup file is not available to edit.
+ */
+function ensureClearReadsButton() {
+    let btn = document.getElementById('clearReadsButton');
+    if (btn) return btn;
+    btn = document.createElement('button');
+    btn.id = 'clearReadsButton';
+    btn.type = 'button';
+    btn.textContent = 'Clear reads';
+    btn.style.cssText = 'font-size:11px;padding:2px 8px;margin-left:4px;cursor:pointer;'
+        + 'border:1px solid #999;border-radius:3px;background:#f0f0f0;display:none;';
+    btn.addEventListener('click', clearReadsData);
+    const bamBtn = document.getElementById('openBamToolbarButton');
+    if (bamBtn && bamBtn.parentNode) {
+        bamBtn.parentNode.insertBefore(btn, bamBtn.nextSibling);
+    } else {
+        const controls = document.getElementById('controls');
+        if (controls) controls.appendChild(btn);
+    }
+    return btn;
+}
 
-    const getShade = (p, base) => {
-        const cons = conservationData[p];
-        if (!cons || cons.count === 0) return null;
-        const count = (cons.baseCounts || {})[base.toUpperCase()] || 0;
-        const pct = count / cons.count;
-        if (enableBlack && pct >= blackThresh) return defBlack;
-        if (enableDark && pct >= darkThresh) return defDark;
-        if (enableLight && pct >= lightThresh) return defLight;
-        return null;
+/**
+ * Clear loaded reads data without unloading the reference itself.
+ * Switches back to Block mode and hides the "Clear reads" button.
+ */
+function clearReadsData() {
+    bamState = {
+        reads: [],
+        refName: null,
+        refSeq: null,
+        refStart: 0,
+        columns: [],
+        readOrder: [],
     };
-
-    const refSeq = seqs[refIdx].seq;
-    const CHAR_W = 10;
-    const ROW_H = 14;
-    const COV_H = 50;
-    const REF_H = 16;
-    const TRACK_H = 12;
-    const SCALE_H = 20;
-    const NAME_W = Math.min(nameLen * 7, 200);
-    const totalW = NAME_W + len * CHAR_W + 20;
-    const totalH = COV_H + nTracks * TRACK_H + REF_H + SCALE_H + 20;
-
-    // Build SVG
-    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    svg.setAttribute('width', totalW);
-    svg.setAttribute('height', totalH);
-    svg.setAttribute('style', 'font-family:monospace;font-size:11px;');
-    svg.setAttribute('id', 'compactSvg');
-
-    let y = 10;
-
-    // Coverage histogram
-    const covGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
-    for (let p = 0; p < len; p++) {
-        const h = Math.max(1, (coverage[p] / maxCov) * COV_H);
-        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-        rect.setAttribute('x', NAME_W + p * CHAR_W);
-        rect.setAttribute('y', y + COV_H - h);
-        rect.setAttribute('width', CHAR_W - 1);
-        rect.setAttribute('height', h);
-        rect.setAttribute('fill', coverage[p] > 0 ? '#4682b4' : '#eee');
-        covGroup.appendChild(rect);
-    }
-    // Coverage label
-    const covLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    covLabel.setAttribute('x', 4);
-    covLabel.setAttribute('y', y + COV_H / 2 + 4);
-    covLabel.setAttribute('fill', '#333');
-    covLabel.setAttribute('font-size', '10');
-    covLabel.textContent = 'Coverage';
-    covGroup.appendChild(covLabel);
-    svg.appendChild(covGroup);
-    y += COV_H + 4;
-
-    // Read tracks
-    const diffOnly = document.getElementById('compactDiffOnly')?.checked;
-    const showPairs = document.getElementById('compactPairs')?.checked;
-    const pairLines = []; // collect pair connections to draw after all tracks
-
-    // Build pair map: qname -> [read1, read2]
-    const pairMap = new Map();
-    if (showPairs) {
-        for (const read of reads) {
-            if (!read._pairInfo) continue;
-            const key = read.name;
-            if (!pairMap.has(key)) pairMap.set(key, []);
-            pairMap.get(key).push(read);
-        }
-    }
-
-    for (let t = 0; t < nTracks; t++) {
-        const trackReads = reads.filter(r => r.track === t);
-        for (const read of trackReads) {
-            const rx = NAME_W + read.start * CHAR_W;
-            const rw = (read.end - read.start + 1) * CHAR_W;
-            const ry = y;
-            const rh = diffOnly ? 4 : TRACK_H - 2;
-
-            if (diffOnly) {
-                // Thin line mode - just a hairline with mismatch ticks
-                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-                line.setAttribute('x1', rx);
-                line.setAttribute('y1', ry + 2);
-                line.setAttribute('x2', rx + rw);
-                line.setAttribute('y2', ry + 2);
-                line.setAttribute('stroke', '#b0c4de');
-                line.setAttribute('stroke-width', '1');
-                svg.appendChild(line);
-            } else {
-                // Full bar mode
-                const bar = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                bar.setAttribute('x', rx);
-                bar.setAttribute('y', ry);
-                bar.setAttribute('width', rw);
-                bar.setAttribute('height', rh);
-                bar.setAttribute('fill', '#c8d8e8');
-                bar.setAttribute('stroke', '#8ab4d6');
-                bar.setAttribute('stroke-width', '0.5');
-                bar.setAttribute('rx', '2');
-                svg.appendChild(bar);
-            }
-
-            // Mismatch marks (always shown)
-            for (const mp of read.mismatches) {
-                const mx = NAME_W + mp * CHAR_W + CHAR_W / 2;
-                const mark = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-                mark.setAttribute('x', mx - 1);
-                mark.setAttribute('y', ry);
-                mark.setAttribute('width', 2);
-                mark.setAttribute('height', diffOnly ? 4 : rh);
-                mark.setAttribute('fill', '#e74c3c');
-                svg.appendChild(mark);
-            }
-
-            // Read name label (only when enough space - not in diffOnly thin-line mode)
-            if (!diffOnly && NAME_W > 30) {
-                const name = read.name;
-                const maxChars = Math.max(3, Math.floor(rw / 6));
-                if (maxChars > 2) {
-                    const label = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-                    label.setAttribute('x', rx + 2);
-                    label.setAttribute('y', ry + rh - 3);
-                    label.setAttribute('fill', '#555');
-                    label.setAttribute('font-size', '7');
-                    label.setAttribute('font-family', 'monospace');
-                    label.setAttribute('clip-path', `inset(0 ${rw - NAME_W + rx}px 0 0)`);
-                    label.textContent = name.substring(0, maxChars);
-                    svg.appendChild(label);
-                }
-            }
-
-            // Collect pair info for connecting lines
-            if (showPairs && read._pairInfo) {
-                const mates = pairMap.get(read.name);
-                if (mates && mates.length === 2) {
-                    const other = mates[0] === read ? mates[1] : mates[0];
-                    // Store: {track, read} for connection drawing
-                    pairLines.push({
-                        t1: t, t2: other.track,
-                        x1: NAME_W + read.start * CHAR_W + rw / 2,
-                        x2: NAME_W + other.start * CHAR_W + (other.end - other.start + 1) * CHAR_W / 2,
-                        y1: y + rh / 2,
-                        y2: -1 // filled after all tracks rendered
-                    });
-                }
-            }
-        }
-        y += diffOnly ? 6 : TRACK_H;
-    }
-
-    // Draw pair connecting lines
-    if (showPairs && pairLines.length > 0) {
-        for (const pl of pairLines) {
-            if (pl.y2 < 0) {
-                // Find y2 from the mate's track
-                const mateTrack = pl.t2;
-                const trackY = COV_H + 4 + mateTrack * (diffOnly ? 6 : TRACK_H) + (diffOnly ? 2 : TRACK_H / 2);
-                pl.y2 = trackY;
-            }
-            const conn = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-            conn.setAttribute('x1', pl.x1);
-            conn.setAttribute('y1', pl.y1);
-            conn.setAttribute('x2', pl.x2);
-            conn.setAttribute('y2', pl.y2);
-            conn.setAttribute('stroke', '#999');
-            conn.setAttribute('stroke-width', '0.5');
-            conn.setAttribute('stroke-dasharray', '3,2');
-            conn.setAttribute('opacity', '0.5');
-            svg.appendChild(conn);
-        }
-    }
-
-    y += 4;
-
-    // Reference sequence
-    const refLabel = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-    refLabel.setAttribute('x', 4);
-    refLabel.setAttribute('y', y + 12);
-    refLabel.setAttribute('fill', '#333');
-    refLabel.setAttribute('font-weight', 'bold');
-    refLabel.setAttribute('font-size', '10');
-    refLabel.textContent = seqs[refIdx].header || 'Reference';
-    svg.appendChild(refLabel);
-
-    for (let p = 0; p < len; p++) {
-        const base = refSeq[p] || '-';
-        const shade = getShade(p, base);
-        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-        text.setAttribute('x', NAME_W + p * CHAR_W + CHAR_W / 2);
-        text.setAttribute('y', y + 12);
-        text.setAttribute('text-anchor', 'middle');
-        text.setAttribute('fill', shade || '#333');
-        text.setAttribute('font-weight', shade ? 'bold' : 'normal');
-        text.setAttribute('font-size', '10');
-        text.textContent = base;
-        svg.appendChild(text);
-
-        // Background rect for shaded positions
-        if (shade) {
-            const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-            bg.setAttribute('x', NAME_W + p * CHAR_W);
-            bg.setAttribute('y', y + 1);
-            bg.setAttribute('width', CHAR_W - 1);
-            bg.setAttribute('height', REF_H - 2);
-            bg.setAttribute('fill', shade);
-            bg.setAttribute('opacity', '0.3');
-            svg.insertBefore(bg, text);
-        }
-    }
-
-    // Scale ruler
-    y += REF_H + 4;
-    for (let p = 0; p < len; p += 5) {
-        const tick = document.createElementNS('http://www.w3.org/2000/svg', 'line');
-        tick.setAttribute('x1', NAME_W + p * CHAR_W);
-        tick.setAttribute('y1', y);
-        tick.setAttribute('x2', NAME_W + p * CHAR_W);
-        tick.setAttribute('y2', y + (p % 10 === 0 ? 8 : 4));
-        tick.setAttribute('stroke', '#999');
-        svg.appendChild(tick);
-        if (p % 10 === 0) {
-            const t = document.createElementNS('http://www.w3.org/2000/svg', 'text');
-            t.setAttribute('x', NAME_W + p * CHAR_W);
-            t.setAttribute('y', y + 16);
-            t.setAttribute('fill', '#666');
-            t.setAttribute('font-size', '8');
-            t.setAttribute('text-anchor', 'start');
-            t.textContent = String(p + 1);
-            svg.appendChild(t);
-        }
-    }
-
-    alignmentContainer.appendChild(svg);
-    alignmentContainer.style.overflow = 'auto';
-
-    // Update info
-    if (typeof updateSourceInfo === 'function') updateSourceInfo();
+    _readsHighlightedBar = null;
+    // Switch back to Block mode
+    const blockRadio = document.getElementById('modeBlocks');
+    if (blockRadio) blockRadio.checked = true;
+    renderAlignment();
+    updateBamButtonVisibility();
+    showMessage('Reads cleared.', 2000);
 }
 
 // Set whenever the user explicitly picks a display mode (see onModeChange),
@@ -5285,7 +5355,6 @@ function renderAlignment(options = {}) {
     // (len is declared above, before TOTAL_RESIDUES calculation)
 
     const shadeMode = _checkedRadioValue('shadeMode', 'all');
-    const useCompact = document.getElementById('modeCompact')?.checked;
     const useCanvas = document.getElementById('modeCanvas')?.checked;
 
     // Var-sites / highlight-diffs computation must run before the Canvas path
@@ -5384,19 +5453,6 @@ function renderAlignment(options = {}) {
         || preCalculateConservation(state.seqs, len, shadeMode);
     if (!options.deferConservation) {
         state.conservationDataCache = { len, shadeMode, data: conservationData };
-    }
-
-    if (useCompact) {
-        state._codonData = null;
-        state._codonFrames = null;
-        state._codonActiveFrame = 0;
-        document.body.classList.remove('codon-mode');
-        renderCompactAlignment(len, conservationData, shadeMode, blackThresh, darkThresh, lightThresh,
-            enableBlack, enableDark, enableLight, nameLen, stickyNames, standard, ambiguous, ambiguousMap,
-            showConsensus, consType, threshold, fallbackMode, coverageMin);
-        _syncSelectionDomFromState();
-        syncCodonModePanel();
-        return;
     }
 
     // Var-sites / highlight-diffs already computed above (before Canvas path)
@@ -6804,6 +6860,21 @@ async function parseAndRender(isFromDrop = false) {
             state.currentFilePath = '';
         }
         _clearClusterTrimState();
+        // Clear any loaded reads - they belong to the previous reference
+        bamState = {
+            reads: [],
+            refName: null,
+            refSeq: null,
+            refStart: 0,
+            columns: [],
+            readOrder: [],
+        };
+        _readsHighlightedBar = null;
+        // If we were in Reads mode, switch back to Block mode
+        if (document.getElementById('modeReads')?.checked) {
+            const blockRadio = document.getElementById('modeBlocks');
+            if (blockRadio) blockRadio.checked = true;
+        }
         state.seqs = parsed;
         _userDismissedAutoCanvas = false; // fresh file: allow the Canvas suggestion again if it's large
         state.selectedRows.clear();
@@ -6837,7 +6908,7 @@ async function parseAndRender(isFromDrop = false) {
         // Update source info with comprehensive statistics
         updateSourceInfo();
         renderAlignment();
-        _updateCompactControlsVisibility();
+        updateBamButtonVisibility();
         // Auto-fit block size to screen width on every load
         setBlockSizeToScreen();
         setupHoverMenuReveal();
@@ -6921,6 +6992,8 @@ function syncQuickModeSwitch() {
 
     const canvasNotice = ensureCanvasModeNotice();
     setCanvasNoticeVisible(!!isCanvasMode);
+    const readsToggle = ensureReadsDisplayToggle();
+    if (readsToggle) readsToggle.style.display = isReadsMode ? 'flex' : 'none';
     syncSearchControlsAvailability();
 }
 
@@ -6982,23 +7055,12 @@ async function onModeChange() {
         container.style.opacity = isBlocks ? '1' : '0.4';
         container.style.pointerEvents = isBlocks ? 'auto' : 'none';
     }
-    _updateCompactControlsVisibility();
     // Switching to a view without residue spans: drop edit mode rather than leave a tool
     // panel open over a display its tools cannot touch. Renders below, so no re-render here.
     exitEditModeForUnsupportedView({ rerender: false });
     renderAlignment();
     setupHoverMenuReveal();
     _lastModeRadioId = document.querySelector('input[name="mode"]:checked')?.id || _lastModeRadioId;
-}
-
-function _updateCompactControlsVisibility() {
-    const isCompact = el('modeCompact')?.checked;
-    const hasPairs = state.seqs.some(s => s._pairInfo || s._samPair);
-    // The compact-only row is a div with class compact-only
-    const compactRow = document.querySelector('.mode-container .compact-only');
-    if (compactRow) compactRow.style.display = isCompact ? 'flex' : 'none';
-    const pairsEl = document.querySelector('.mode-container .compact-pairs-only');
-    if (pairsEl) pairsEl.style.display = (isCompact && hasPairs) ? '' : 'none';
 }
 
 function setBlockSizeToScreen() {
@@ -13949,6 +14011,7 @@ function initializeAppUI() {
     initStatsTabs();
     initTreeBuilderControls();
     initResEnzymeSearch();
+    updateBamButtonVisibility();
 }
 
 document.addEventListener('DOMContentLoaded', initializeAppUI);
@@ -14100,7 +14163,7 @@ function attachUIListeners() {
 
     // Set up checkbox listeners
     const checkboxes = ['enableBlack', 'enableDark', 'enableLight', 'showConsensus',
-                        'compactDiffOnly', 'compactPairs', 'highlightDiffs', 'varSitesOnly',
+                        'highlightDiffs', 'varSitesOnly',
                         'codonAnalysis'];
     checkboxes.forEach(id => {
         const elRef = el(id);
@@ -14413,7 +14476,7 @@ function _recalcConservation() {
 // Block/Full are the only modes that build per-residue spans, so they are the only
 // ones with a span cache to keep warm.
 function isSpanRenderMode() {
-    return !el('modeCanvas')?.checked && !el('modeCompact')?.checked && !el('modeReads')?.checked;
+    return !el('modeCanvas')?.checked && !el('modeReads')?.checked;
 }
 
 function isCanvasMode() {
