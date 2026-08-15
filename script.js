@@ -2827,6 +2827,77 @@ function _canvasHitTest(clientX, clientY) {
     return { row, col };
 }
 
+// Hit-test the scale ruler area (top row, y < SCALE_H in canvas coords).
+// Returns { col } or null if outside the ruler's column range.
+function _canvasHitTestRuler(clientX, clientY) {
+    const canvas = _canvasState.canvas;
+    if (!canvas) return null;
+    const m = _canvasState.metrics;
+    if (!m || !m.nameW) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (y < 0 || y >= m.charH) return null;  // not in ruler row
+    if (x < m.nameW) return null;             // name column corner
+    const col = Math.floor((x - m.nameW + _canvasState.offsetX) / m.charW);
+    const len = state.seqs && state.seqs.length > 0
+        ? Math.max(...state.seqs.map(s => s.seq.length))
+        : 0;
+    if (col < 0 || col >= len) return null;
+    return { col };
+}
+
+// Hit-test the name column area (left side, x < NAME_W in canvas coords).
+// Returns { row } or null if outside the name column's row range.
+function _canvasHitTestName(clientX, clientY) {
+    const canvas = _canvasState.canvas;
+    if (!canvas) return null;
+    const m = _canvasState.metrics;
+    if (!m || !m.nameW) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top;
+    if (x < 0 || x >= m.nameW) return null;   // not in name column
+    if (y < m.charH) return null;               // ruler corner
+    const row = Math.floor((y - m.charH + _canvasState.offsetY) / m.charH);
+    const nSeqs = _canvasState.seqsLen || (state.seqs ? state.seqs.length : 0);
+    if (row < 0 || row >= nSeqs) return null;
+    return { row };
+}
+
+// Get the row index from a y coordinate in canvas viewport space.
+// Unlike _canvasHitTestName, this works for any x (used during drag).
+function _canvasRowFromClientY(clientY) {
+    const canvas = _canvasState.canvas;
+    if (!canvas) return -1;
+    const m = _canvasState.metrics;
+    if (!m || !m.nameW) return -1;
+    const rect = canvas.getBoundingClientRect();
+    const y = clientY - rect.top;
+    const row = Math.floor((y - m.charH + _canvasState.offsetY) / m.charH);
+    const nSeqs = _canvasState.seqsLen || (state.seqs ? state.seqs.length : 0);
+    if (row < 0 || row >= nSeqs) return -1;
+    return row;
+}
+
+// Get the column index from an x coordinate in canvas viewport space.
+// Unlike _canvasHitTestRuler, this works for any y (used during drag).
+function _canvasColFromClientX(clientX) {
+    const canvas = _canvasState.canvas;
+    if (!canvas) return -1;
+    const m = _canvasState.metrics;
+    if (!m || !m.nameW) return -1;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    if (x < m.nameW) return -1;
+    const col = Math.floor((x - m.nameW + _canvasState.offsetX) / m.charW);
+    const len = state.seqs && state.seqs.length > 0
+        ? Math.max(...state.seqs.map(s => s.seq.length))
+        : 0;
+    if (col < 0 || col >= len) return -1;
+    return col;
+}
+
 // Module-level hover tracking: updated by mousemove, read by future phases
 // (tooltip, redraw-on-hover). No visual feedback yet — Phase 0 only.
 let _canvasHoverCell = null;
@@ -3066,6 +3137,28 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             ctx.font = fontStr;
         }
 
+        // Highlight selected columns (semi-transparent vertical strips)
+        if (state.selectedColumns.size > 0) {
+            ctx.fillStyle = 'rgba(25, 118, 210, 0.15)';
+            state.selectedColumns.forEach(pos => {
+                const x = NAME_W + pos * CHAR_W - ox;
+                if (x + CHAR_W < 0 || x > w) return;
+                const dataTop = Math.max(0, SCALE_H - oy);
+                const dataBottom = Math.min(h, SCALE_H + nSeqs * CHAR_H - oy);
+                ctx.fillRect(x, dataTop, CHAR_W, dataBottom - dataTop);
+            });
+        }
+
+        // Highlight selected rows (semi-transparent horizontal strips)
+        if (state.selectedRows.size > 0) {
+            ctx.fillStyle = 'rgba(25, 118, 210, 0.15)';
+            state.selectedRows.forEach(rowIdx => {
+                const y = SCALE_H + rowIdx * CHAR_H - oy;
+                if (y + CHAR_H < 0 || y > h) return;
+                ctx.fillRect(0, y, w, CHAR_H);
+            });
+        }
+
         // Highlight selected nucleotides (mirrors DOM .nuc-selected in Full/Block mode)
         if (state.selectedNucs.size > 0) {
             ctx.fillStyle = 'rgba(25, 118, 210, 0.25)';
@@ -3123,6 +3216,74 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     let dragging = false, dragStartX, dragStartY, dragOx, dragOy;
     canvas.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
+
+        // Column selection: Ctrl+Alt+click (mirrors handleColumnSelectMouseDown)
+        if (isCtrlModifier(e) && isAltModifier(e)) {
+            let col = -1;
+            const rulerHit = _canvasHitTestRuler(e.clientX, e.clientY);
+            if (rulerHit) {
+                col = rulerHit.col;
+            } else {
+                const dataHit = _canvasHitTest(e.clientX, e.clientY);
+                if (dataHit) col = dataHit.col;
+            }
+            if (col >= 0) {
+                state.isDragging = true;
+                state.dragStartCol = col;
+                state.dragMode = 'col';
+                if (e.shiftKey && state.lastSelectedColumn !== null) {
+                    const s = Math.min(state.lastSelectedColumn, col);
+                    const en = Math.max(state.lastSelectedColumn, col);
+                    for (let p = s; p <= en; p++) state.selectedColumns.add(p);
+                } else if (state.selectedColumns.has(col)) {
+                    state.selectedColumns.delete(col);
+                } else {
+                    state.selectedColumns.add(col);
+                }
+                state.lastSelectedColumn = col;
+                hideTooltip();
+                _markDirty();
+                scheduleDraw();
+                return;
+            }
+        }
+
+        // Row selection: Ctrl+click on name column (mirrors handleRowSelectMouseDown)
+        if (isCtrlModifier(e) && !isAltModifier(e)) {
+            const nameHit = _canvasHitTestName(e.clientX, e.clientY);
+            if (nameHit) {
+                const index = nameHit.row;
+                state.isDragging = true;
+                state.dragStartRow = index;
+                state.dragMode = 'row';
+                state.selectedNucs.clear();
+                state.pendingNucStart = null;
+                scheduleNucSelectionRefresh();
+                toggleRowSelection(index);
+                hideTooltip();
+                _markDirty();
+                scheduleDraw();
+                return;
+            }
+        }
+
+        // Row range selection: Shift+click on name column
+        if (e.shiftKey && state.lastSelectedIndex !== null) {
+            const nameHit = _canvasHitTestName(e.clientX, e.clientY);
+            if (nameHit) {
+                const index = nameHit.row;
+                const start = Math.min(state.lastSelectedIndex, index);
+                const end = Math.max(state.lastSelectedIndex, index);
+                for (let i = start; i <= end; i++) state.selectedRows.add(i);
+                state.lastSelectedIndex = index;
+                updateRowSelections();
+                hideTooltip();
+                _markDirty();
+                scheduleDraw();
+                return;
+            }
+        }
+
         const hit = _canvasHitTest(e.clientX, e.clientY);
         if (hit) {
             // Selection: mirror handleNucleotideSelectMouseDown's state mutations
@@ -6762,30 +6923,52 @@ function toggleRowSelection(index) {
 function handleMouseMove(e) {
     if (!state.isDragging) return;
     if (state.dragMode === 'row') {
-        const row = closestFromEvent(e, '.seq-line');
-        if (row) {
-            const index = parseInt(row.dataset.seqIndex);
-            if (index !== undefined) {
+        if (document.getElementById('modeCanvas')?.checked) {
+            const index = _canvasRowFromClientY(e.clientY);
+            if (index >= 0) {
                 const start = Math.min(state.dragStartRow, index);
                 const end = Math.max(state.dragStartRow, index);
-                for (let i = start; i <= end; i++) {
-                    state.selectedRows.add(i);
-                }
+                for (let i = start; i <= end; i++) state.selectedRows.add(i);
                 updateRowSelections();
+                _canvasState.scheduleDraw?.();
+            }
+        } else {
+            const row = closestFromEvent(e, '.seq-line');
+            if (row) {
+                const index = parseInt(row.dataset.seqIndex);
+                if (index !== undefined) {
+                    const start = Math.min(state.dragStartRow, index);
+                    const end = Math.max(state.dragStartRow, index);
+                    for (let i = start; i <= end; i++) {
+                        state.selectedRows.add(i);
+                    }
+                    updateRowSelections();
+                }
             }
         }
     } else if (state.dragMode === 'col') {
         hideTooltip();
-        const span = closestFromEvent(e, '.seq-data span[data-pos]');
-        if (span) {
-            const pos = parseInt(span.dataset.pos);
-            if (isNaN(pos)) return;
-            const start = Math.min(state.dragStartCol, pos);
-            const end = Math.max(state.dragStartCol, pos);
-            for (let p = start; p <= end; p++) {
-                state.selectedColumns.add(p);
+        if (document.getElementById('modeCanvas')?.checked) {
+            const pos = _canvasColFromClientX(e.clientX);
+            if (pos >= 0) {
+                const start = Math.min(state.dragStartCol, pos);
+                const end = Math.max(state.dragStartCol, pos);
+                for (let p = start; p <= end; p++) state.selectedColumns.add(p);
+                updateColumnSelections();
+                _canvasState.scheduleDraw?.();
             }
-            updateColumnSelections();
+        } else {
+            const span = closestFromEvent(e, '.seq-data span[data-pos]');
+            if (span) {
+                const pos = parseInt(span.dataset.pos);
+                if (isNaN(pos)) return;
+                const start = Math.min(state.dragStartCol, pos);
+                const end = Math.max(state.dragStartCol, pos);
+                for (let p = start; p <= end; p++) {
+                    state.selectedColumns.add(p);
+                }
+                updateColumnSelections();
+            }
         }
     } else if (state.dragMode === 'nuc') {
         if (document.getElementById('modeCanvas')?.checked) {
