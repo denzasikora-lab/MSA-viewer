@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v170';
+const BUILD_TAG = 'v171';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -4282,6 +4282,7 @@ function renderAlignment(options = {}) {
     if (!userWantsCanvas && !_userDismissedAutoCanvas && TOTAL_RESIDUES > CANVAS_AUTO_THRESHOLD) {
         const canvasRadio = document.getElementById('modeCanvas');
         if (canvasRadio) canvasRadio.checked = true;
+        _lastModeRadioId = 'modeCanvas'; // bypasses onModeChange, so sync explicitly
         syncQuickModeSwitch();
         syncCodonModePanel(); // this bypasses onModeChange, so sync explicitly
         showMessage(
@@ -5805,10 +5806,12 @@ function showLargeAlignmentDialog(stats, classification, context = 'load') {
         dialog.className = 'blast-dialog';
         dialog.style.maxWidth = '460px';
 
-        const isModeSwitch = context === 'full-mode-switch';
+        const isModeSwitch = context === 'full-mode-switch' || context === 'block-mode-switch';
         const title = document.createElement('div');
         title.className = 'blast-dialog-title';
-        title.textContent = isModeSwitch ? 'Full mode on a large alignment' : 'Large alignment';
+        title.textContent = context === 'full-mode-switch' ? 'Full mode on a large alignment'
+            : context === 'block-mode-switch' ? 'Block mode on a large alignment'
+            : 'Large alignment';
 
         const content = document.createElement('div');
         content.className = 'blast-dialog-content';
@@ -5821,10 +5824,21 @@ function showLargeAlignmentDialog(stats, classification, context = 'load') {
         if (stats.totalResidues > ALIGN_CRAZY_VOLUME) reasons.push(`over ${_formatResidueCount(ALIGN_CRAZY_VOLUME)} total residues`);
         const reasonText = reasons.length ? reasons.join(' and ') : 'this alignment is very large';
 
-        const bodyText = isModeSwitch
-            ? `Full mode renders the entire alignment as one continuous block with no windowing, unlike
-               Block (chunked) or Canvas (viewport-only). On alignments this size it can fully freeze the
-               browser tab for a long time, not just run slowly - Canvas mode is strongly recommended instead.`
+        // Full mode windows both rows and columns (v167-v169) - it no longer
+        // freezes at this size, but the very first paint still has to
+        // compute conservation shading for the whole alignment once, which
+        // measured ~9s on a 40M-residue synthetic file. Block mode has no
+        // windowing at all yet and genuinely hangs well past a minute at
+        // that same size (measured directly) - the two warnings are
+        // deliberately different in severity, not copy-pasted.
+        const bodyText = context === 'full-mode-switch'
+            ? `Full mode windows both rows and columns, so it won't freeze - but the very first paint
+               still computes shading for the whole alignment once, which can take several seconds on
+               an alignment this size. Canvas mode stays instant if you're only viewing, not editing.`
+            : context === 'block-mode-switch'
+            ? `Block mode has no windowing yet - unlike Full mode, it renders every row for every
+               column chunk up front, and can fully freeze the browser tab for a long time on an
+               alignment this size, not just run slowly. Canvas mode is strongly recommended instead.`
             : `Loading may be slow or briefly freeze the browser because ${reasonText}.
                Canvas mode is recommended for viewing; switch to Block/Full only for editing.`;
 
@@ -6094,25 +6108,29 @@ function syncQuickModeSwitch() {
 let _lastModeRadioId = 'modeBlocks';
 
 async function onModeChange() {
-    // Full mode renders every column of every row as children of a single,
-    // unblocked container (Block mode splits each row into ~20 smaller
-    // containers instead; Canvas culls to the viewport and never builds the
-    // rest at all) - measured directly against a real 3408-sequence x
-    // 1753-column alignment, Block mode took ~12s and Full mode blocked the
-    // main thread past 45s with no sign of finishing. The existing
-    // load-time "Large alignment" dialog already warns about this class of
-    // alignment, but only once, before any mode is chosen - a user landing
-    // in Block or Canvas from that dialog and later clicking Full manually
-    // gets no further warning, which is exactly what happened here. Gate
-    // entry into Full mode specifically, using the same size classification,
+    // Full mode (v167-v169) now windows both rows and columns, so it no
+    // longer freezes - only the first paint's one-time conservation
+    // calculation can still take several seconds on a very large alignment
+    // (measured ~9s at 40M residues). Block mode has NO windowing at all:
+    // it renders every row for every column chunk up front, and measured
+    // directly, genuinely hangs past 60s at that same 40M-residue size (the
+    // per-row chunking that makes it noticeably better than old, unwindowed
+    // Full mode at moderate sizes - ~12s at 5.97M residues - doesn't save it
+    // at scale). The existing load-time "Large alignment" dialog already
+    // warns about this class of alignment, but only once, before any mode
+    // is chosen - a user landing in Canvas from that dialog and later
+    // clicking Full or Block manually gets no further warning, which is
+    // exactly what happened for Full mode originally. Gate entry into
+    // both Full and Block specifically, using the same size classification,
     // regardless of whether the load-time dialog was already dismissed once.
     const enteringFull = document.getElementById('modeSingle')?.checked;
-    if (enteringFull) {
+    const enteringBlocks = document.getElementById('modeBlocks')?.checked;
+    if (enteringFull || enteringBlocks) {
         const idx = state.alignmentIndex;
         if (idx && (idx.isCrazy || idx.isTall || idx.isLong)) {
-            const choice = await showLargeAlignmentDialog(idx, idx, 'full-mode-switch');
+            const choice = await showLargeAlignmentDialog(idx, idx, enteringFull ? 'full-mode-switch' : 'block-mode-switch');
             if (choice === 'cancel') {
-                const prev = document.getElementById(_lastModeRadioId) || document.getElementById('modeBlocks');
+                const prev = document.getElementById(_lastModeRadioId) || document.getElementById('modeCanvas');
                 if (prev) prev.checked = true;
                 syncQuickModeSwitch();
                 return;
