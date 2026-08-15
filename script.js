@@ -3685,6 +3685,15 @@ async function handleBamFile(event) {
             readOrder,
         };
 
+        // Phase 1: compute genomic start/end span and assign packed tracks.
+        // assignReadTracks sorts reads in place by start (consistent with the
+        // pos sort above) and sets read.track on each read.
+        bamState.reads.forEach(read => {
+            read.start = read.pos;
+            read.end = read.pos + computeReadSpan(read.cigar) - 1;
+        });
+        bamState.nTracks = assignReadTracks(bamState.reads);
+
         // Switch to Full display mode and Reads view
         const singleRadio = document.getElementById('modeSingle');
         if (singleRadio) singleRadio.checked = true;
