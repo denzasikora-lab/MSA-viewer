@@ -2902,6 +2902,20 @@ function _canvasColFromClientX(clientX) {
 // (tooltip, redraw-on-hover). No visual feedback yet — Phase 0 only.
 let _canvasHoverCell = null;
 
+// Phase 4: reusable 1×1 px element positioned at a canvas cell, used as the
+// positioning anchor for showTooltipAt (which calls getBoundingClientRect on
+// its target).  Created lazily so it only exists when Canvas mode is active.
+let _canvasTooltipTarget = null;
+
+function _getCanvasTooltipTarget() {
+    if (!_canvasTooltipTarget || !_canvasTooltipTarget.isConnected) {
+        _canvasTooltipTarget = document.createElement('div');
+        _canvasTooltipTarget.style.cssText = 'position:fixed;width:1px;height:1px;pointer-events:none;z-index:-1;';
+        document.body.appendChild(_canvasTooltipTarget);
+    }
+    return _canvasTooltipTarget;
+}
+
 // Reads the shading palette from the same CSS custom properties the DOM
 // renderer uses (customizable via the black/dark/light colour pickers), so
 // Canvas mode's conservation colours stay in sync with Normal mode instead
@@ -3325,9 +3339,57 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     window.addEventListener('mousemove', _canvasState.mousemoveHandler);
     window.addEventListener('mouseup', _canvasState.mouseupHandler);
 
-    // Phase 0: hover tracking — store hit-tested cell, no visual feedback yet.
+    // Phase 0/4: hover tracking + tooltip display.
+    // Mirrors DOM mode's alignmentContainer mouseover handler: show
+    // "header: gaplessPos" for non-gap residues, hide on gaps or when
+    // a modifier-drag (column select) is in progress.
+    let _lastTooltipCell = null;
     canvas.addEventListener('mousemove', (e) => {
         _canvasHoverCell = _canvasHitTest(e.clientX, e.clientY);
+
+        // Suppress tooltip during pan-drag, selection drag, or column-select mode
+        if (canvas.style.cursor === 'grabbing' || state.isDragging) {
+            if (_lastTooltipCell) { _lastTooltipCell = null; hideTooltip(); }
+            return;
+        }
+        if (isCtrlModifier(e) && isAltModifier(e)) {
+            if (_lastTooltipCell) { _lastTooltipCell = null; hideTooltip(); }
+            return;
+        }
+
+        if (_canvasHoverCell) {
+            const { row, col } = _canvasHoverCell;
+            // Only update tooltip when the cell changes (like DOM mouseover
+            // fires once per element, not per pixel).
+            if (_lastTooltipCell && _lastTooltipCell.row === row && _lastTooltipCell.col === col) return;
+            _lastTooltipCell = { row, col };
+
+            const seqObj = state.seqs[row];
+            if (seqObj) {
+                const base = seqObj.seq[col] || '-';
+                if (base !== '-' && base !== '.') {
+                    const gaplessPos = seqObj.gaplessPositions[col];
+                    // Position the 1×1 target at the cell's top-centre so
+                    // showTooltipAt places the tooltip directly above the
+                    // cell, matching DOM mode's span-anchored positioning.
+                    const m = _canvasState.metrics;
+                    const rect = canvas.getBoundingClientRect();
+                    const target = _getCanvasTooltipTarget();
+                    target.style.left = (rect.left + m.nameW + col * m.charW - _canvasState.offsetX + m.charW / 2) + 'px';
+                    target.style.top = (rect.top + m.charH + row * m.charH - _canvasState.offsetY) + 'px';
+                    showTooltipAt(`${seqObj.header}: ${gaplessPos}`, target);
+                    return;
+                }
+            }
+        }
+        _lastTooltipCell = null;
+        hideTooltip();
+    });
+
+    // Phase 4: hide tooltip when the mouse leaves the canvas
+    canvas.addEventListener('mouseleave', () => {
+        _lastTooltipCell = null;
+        hideTooltip();
     });
 
     scheduleDraw();
