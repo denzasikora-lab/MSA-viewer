@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v173';
+const BUILD_TAG = 'v174';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1825,7 +1825,18 @@ function _refreshFullModeWindowOnScroll(container) {
     }
     topSpacer.style.height = (rowStart * rowHeightPx) + 'px';
     bottomSpacer.style.height = (Math.max(0, nSeq - 1 - rowEnd) * rowHeightPx) + 'px';
-    _measureFullModeColumnMetrics(firstRealRow);
+    // Deliberately NOT re-measuring column metrics from firstRealRow here.
+    // charWidthPx/nameColWidthPx were already read (cached) at the top of
+    // this function and don't change between scroll events - the only
+    // things that can actually change them (zoom, font, name-length) go
+    // through a full renderAlignment() -> renderFullModeWindowedRows() call,
+    // which already re-measures once there. Calling _measureFullModeColumnMetrics
+    // here forced a synchronous getBoundingClientRect() read immediately
+    // after inserting ~15,000 fresh DOM nodes on a large alignment - the
+    // browser has to lay all of it out synchronously to answer, which
+    // measured at ~450ms of a ~500ms total refresh (confirmed via direct
+    // profiling: skipping this call dropped a 500ms scroll-refresh to ~50ms,
+    // a real, felt "why is scrolling laggy" complaint, not a micro-optimization).
     // Selection/edit-mode DOM bindings only exist for rows currently in the
     // DOM - re-sync so newly-scrolled-in rows pick up any active selection.
     _syncSelectionDomFromState();
@@ -1978,7 +1989,10 @@ function _refreshBlockModeWindowOnScroll(container) {
     }
     topSpacer.style.height = (blockStart * blockHeightPx) + 'px';
     bottomSpacer.style.height = (Math.max(0, numBlocks - 1 - blockEnd) * blockHeightPx) + 'px';
-    _measureBlockModeBlockHeight(firstRealBlock);
+    // Same fix as _refreshFullModeWindowOnScroll: blockHeightPx was already
+    // read (cached) above and doesn't change between scroll events; a
+    // getBoundingClientRect() re-measure here forces a synchronous layout
+    // of everything just inserted, for no benefit on the hot scroll path.
     _syncSelectionDomFromState();
 }
 
@@ -2761,7 +2775,7 @@ function _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd) {
 // totalContentW: current alignment's full pixel width (for the persistent scrollbar's thumb sizing).
 // onOffsetChange: optional callback (registered by setupPersistentScrollbar) invoked after each
 // draw() so the scrollbar can mirror wheel-scroll/drag-pan that didn't originate from the bar itself.
-const _canvasState = { offsetX: 0, offsetY: 0, ctx: null, metrics: null, seqsLen: 0, scheduleDraw: null, totalContentW: 0, onOffsetChange: null, resizeHandler: null, mousemoveHandler: null, mouseupHandler: null };
+const _canvasState = { offsetX: 0, offsetY: 0, ctx: null, metrics: null, seqsLen: 0, scheduleDraw: null, totalContentW: 0, totalContentH: 0, onOffsetChange: null, resizeHandler: null, mousemoveHandler: null, mouseupHandler: null };
 // Cancellation token for the Canvas mode's deferred (chunked) conservation/
 // consensus jobs; reassigned + old one cancelled on every render so a
 // superseded background job can't clobber a newer one's results.
@@ -2850,10 +2864,11 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
 
     const totalContentW = NAME_W + len * CHAR_W + 4;
     const totalContentH = SCALE_H + nSeqs * CHAR_H + 4;
-    // Exposed so the persistent horizontal scrollbar (a real DOM element,
-    // since Canvas mode's own content isn't natively scrollable) can size
-    // its thumb and mirror pan position.
+    // Exposed so the persistent horizontal/vertical scrollbars (real DOM
+    // elements, since Canvas mode's own content isn't natively scrollable)
+    // can size their thumbs and mirror pan position.
     _canvasState.totalContentW = totalContentW;
+    _canvasState.totalContentH = totalContentH;
 
     // Resize canvas to viewport
     function resize() {
@@ -6038,6 +6053,14 @@ async function runAlignmentPreflight(inputText) {
 }
 
 // CORE FUNCTIONS
+// A pasted URL isn't sequence content itself - recognized here so
+// parseAndRender can fetch it and continue, instead of falling through
+// every format parser and reporting a generic "no valid sequences found"
+// for what was actually a location, not data.
+function _looksLikeUrl(text) {
+    return /^https?:\/\/\S+$/i.test(text);
+}
+
 async function parseAndRender(isFromDrop = false) {
     showMessage("Scanning alignment...", 0);
     _proteinSchemeRemapWarned = false;
@@ -6046,6 +6069,21 @@ async function parseAndRender(isFromDrop = false) {
         alignmentContainer.innerHTML = '<div>Paste MSF or FASTA into the box and click Load, or drop a file.</div>';
         statusMessage.style.display = 'none';
         return;
+    }
+
+    if (_looksLikeUrl(inputText)) {
+        showMessage('Fetching from URL...', 0);
+        try {
+            const resp = await fetch(inputText);
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            fastaInput.value = await resp.text();
+            state.currentFilename = state.currentFilename || (inputText.split('/').filter(Boolean).pop() || 'url_import');
+            return parseAndRender(isFromDrop);
+        } catch (err) {
+            statusMessage.style.display = 'none';
+            showMessage('Could not fetch URL: ' + err.message, 4000);
+            return;
+        }
     }
 
     const proceed = await runAlignmentPreflight(inputText);
@@ -15667,6 +15705,111 @@ function initColourSeqs() {
             e.preventDefault();
         }
     }, { passive: false });
+})();
+
+// ============================================================================
+// Persistent vertical scrollbar for Canvas mode
+// ============================================================================
+// Full/Block mode get a real vertical scrollbar for free (alignmentContainer
+// uses native overflow:auto there). Canvas mode draws to a single <canvas>
+// panned via _canvasState.offsetY with overflow:hidden on the container, so
+// it had wheel/drag panning but nothing on screen showing a scrollbar at
+// all - no visible thumb, no click-to-jump, no sense of position within a
+// tall alignment. Mirrors setupPersistentScrollbar's horizontal logic on
+// the Y axis, shown only while Canvas mode is active.
+(function setupPersistentVerticalScrollbar() {
+    const alignment = document.getElementById('alignmentContainer');
+    const bar = document.querySelector('.vertical-scrollbar');
+    const thumb = document.querySelector('.vertical-scrollbar-thumb');
+    if (!alignment || !bar || !thumb) return;
+
+    const isCanvasMode = () => document.getElementById('modeCanvas')?.checked;
+    let syncing = false;
+
+    function syncVisibilityAndSize() {
+        if (!isCanvasMode()) {
+            bar.style.display = 'none';
+            return;
+        }
+        bar.style.display = 'block';
+        const rect = alignment.getBoundingClientRect();
+        bar.style.top = alignment.offsetTop + 'px';
+        bar.style.height = rect.height + 'px';
+        syncing = true;
+        const h = _canvasState.totalContentH || alignment.clientHeight;
+        thumb.style.height = Math.max(h, alignment.clientHeight + 1) + 'px';
+        bar.scrollTop = _canvasState.offsetY || 0;
+        syncing = false;
+    }
+
+    function onBarScroll() {
+        if (syncing || !isCanvasMode()) return;
+        syncing = true;
+        _canvasState.offsetY = bar.scrollTop;
+        _canvasState.scheduleDraw?.();
+        syncing = false;
+    }
+
+    // Registered alongside the horizontal bar's onOffsetChange; Canvas's
+    // draw() calls both after every repaint so wheel-scroll/drag-pan inside
+    // the canvas keeps this thumb's position in sync too.
+    const prevOnOffsetChange = _canvasState.onOffsetChange;
+    _canvasState.onOffsetChange = () => {
+        prevOnOffsetChange?.();
+        if (syncing || !isCanvasMode()) return;
+        syncing = true;
+        bar.scrollTop = _canvasState.offsetY || 0;
+        syncing = false;
+    };
+
+    syncVisibilityAndSize();
+    bar.addEventListener('scroll', onBarScroll, { passive: true });
+    window.addEventListener('resize', () => window.requestAnimationFrame(syncVisibilityAndSize));
+    const mo = new MutationObserver(() => window.requestAnimationFrame(syncVisibilityAndSize));
+    mo.observe(alignment, { childList: true, subtree: true, characterData: false, attributes: false });
+    // Mode radios don't fire a DOM mutation on alignmentContainer by
+    // themselves - listen directly so switching into/out of Canvas mode
+    // shows/hides this bar immediately, not just on the next resize/render.
+    document.querySelectorAll('input[name="mode"]').forEach((r) => {
+        r.addEventListener('change', () => window.requestAnimationFrame(syncVisibilityAndSize));
+    });
+
+    let isDown = false, startY = 0, startScroll = 0;
+    let dragRaf = null, lastDy = 0;
+    bar.addEventListener('pointerdown', (e) => {
+        isDown = true;
+        try { bar.setPointerCapture(e.pointerId); } catch {}
+        bar.classList.add('grabbing');
+        document.body.classList.add('no-select');
+        startY = e.clientY;
+        startScroll = bar.scrollTop;
+        e.preventDefault();
+    });
+    bar.addEventListener('pointermove', (e) => {
+        if (!isDown) return;
+        lastDy = e.clientY - startY;
+        if (dragRaf) { e.preventDefault(); return; }
+        dragRaf = window.requestAnimationFrame(() => {
+            const newScroll = startScroll - lastDy;
+            syncing = true;
+            _canvasState.offsetY = newScroll;
+            _canvasState.scheduleDraw?.();
+            bar.scrollTop = newScroll;
+            syncing = false;
+            dragRaf = null;
+        });
+        e.preventDefault();
+    }, { passive: false });
+    const endDrag = () => {
+        if (!isDown) return;
+        isDown = false;
+        bar.classList.remove('grabbing');
+        document.body.classList.remove('no-select');
+        if (dragRaf) { cancelAnimationFrame(dragRaf); dragRaf = null; }
+    };
+    bar.addEventListener('pointerup', endDrag);
+    bar.addEventListener('pointercancel', endDrag);
+    window.addEventListener('mouseup', endDrag);
 })();
 
 // ============ BLAST SEARCH FUNCTIONS ============
