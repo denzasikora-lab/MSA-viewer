@@ -3152,6 +3152,26 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                 ctx.drawImage(_makeGlyph(base, bgFill, textFill), x, y, CHAR_W, CHAR_H);
             }
 
+            // Breakpoint markers (var-sites mode) — drawn on top of residues at
+            // the breakpoint position. In DOM mode these replace hidden columns;
+            // Canvas mode doesn't hide columns yet, so the marker overlays the
+            // residue at that position with the breakpoint colour + symbol.
+            if (state._brkBeforePos && state._brkBeforePos.size > 0) {
+                ctx.font = fontStr;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+                state._brkBeforePos.forEach(brkPos => {
+                    if (brkPos < firstCol || brkPos > lastCol) return;
+                    const bx = NAME_W + brkPos * CHAR_W - ox;
+                    if (bx + CHAR_W < 0 || bx > w) return;
+                    ctx.fillStyle = brkStyle.color || '#d0d0d0';
+                    ctx.fillRect(bx, y, CHAR_W, CHAR_H);
+                    ctx.fillStyle = '#333';
+                    ctx.fillText(brkStyle.symbol || '\u22EE', bx + CHAR_W / 2, y);
+                });
+                ctx.textAlign = 'start';
+            }
+
             // Sequence name - drawn last so it sits on top of any residues that
             // scrolled underneath it. Sticky mode pins it at a fixed screen x=0
             // with an opaque backing (matching Normal mode's sticky name column,
@@ -3500,6 +3520,21 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             // fires once per element, not per pixel).
             if (_lastTooltipCell && _lastTooltipCell.row === row && _lastTooltipCell.col === col) return;
             _lastTooltipCell = { row, col };
+
+            // Breakpoint marker hover tooltip (mirrors DOM .col-breakpoint title)
+            if (state._brkBeforePos && state._brkBeforePos.has(col)) {
+                const brkInfo = state._brkInfo[col];
+                if (brkInfo) {
+                    const tipText = `${brkInfo.count} column${brkInfo.count > 1 ? 's' : ''} hidden (positions ${brkInfo.start + 1}\u2013${brkInfo.end + 1})`;
+                    const m = _canvasState.metrics;
+                    const rect = canvas.getBoundingClientRect();
+                    const target = _getCanvasTooltipTarget();
+                    target.style.left = (rect.left + m.nameW + col * m.charW - _canvasState.offsetX + m.charW / 2) + 'px';
+                    target.style.top = (rect.top + m.charH + row * (_canvasState.rowPitch || m.charH) - _canvasState.offsetY) + 'px';
+                    showTooltipAt(tipText, target);
+                    return;
+                }
+            }
 
             const seqObj = state.seqs[row];
             if (seqObj) {
@@ -4899,6 +4934,93 @@ function _updateCodonAnalysisState(len) {
     }
 }
 
+function _computeVarSites(len) {
+    const highlightDiffs = document.getElementById('highlightDiffs')?.checked;
+    const varSites = document.getElementById('varSitesOnly')?.checked;
+    updateVarThresholdBounds();
+    const varThresholdMode = document.getElementById('varThresholdMode')?.value || 'pct';
+    const varThresholdRaw = parseInt(document.getElementById('varSitesThreshold')?.value) || 0;
+    const nSeq = state.seqs.length;
+    const varThreshold = varThresholdMode === 'count'
+        ? varThresholdRaw
+        : (varThresholdRaw === 0 ? 0 : Math.ceil((varThresholdRaw / 100) * nSeq));
+    const showBreakpoints = document.getElementById('varSitesBreakpoints')?.checked !== false;
+    if ((highlightDiffs || varSites) && state.seqs.length > 1) {
+        const diffCols = new Set();
+        const spans = state.seqs.map(s => {
+            const seq = s.seq;
+            let first = -1, last = -1;
+            for (let i = 0; i < seq.length; i++) {
+                const c = seq[i];
+                if (c !== '-' && c !== '.') { if (first === -1) first = i; last = i; }
+            }
+            return { first, last };
+        });
+        for (let pos = 0; pos < len; pos++) {
+            const counts = {};
+            let covered = 0;
+            for (let i = 0; i < state.seqs.length; i++) {
+                const { first, last } = spans[i];
+                if (first === -1 || pos < first || pos > last) continue;
+                const base = (state.seqs[i].seq[pos] || '-').toUpperCase();
+                const ch = (base === '-' || base === '.') ? '-' : base;
+                counts[ch] = (counts[ch] || 0) + 1;
+                covered++;
+            }
+            const diffCount = covered > 0 ? covered - Math.max(...Object.values(counts)) : 0;
+            if (varThreshold === 0 || diffCount >= varThreshold) diffCols.add(pos);
+        }
+        state._diffColumns = diffCols;
+        if (varSites) {
+            const hiddenRanges = [];
+            let hiddenStart = -1;
+            for (let pos = 0; pos < len; pos++) {
+                if (!diffCols.has(pos)) {
+                    if (hiddenStart === -1) hiddenStart = pos;
+                } else {
+                    if (hiddenStart !== -1) {
+                        hiddenRanges.push({ start: hiddenStart, end: pos - 1, count: pos - hiddenStart });
+                        hiddenStart = -1;
+                    }
+                }
+            }
+            if (hiddenStart !== -1) hiddenRanges.push({ start: hiddenStart, end: len - 1, count: len - hiddenStart });
+            state._varSiteHiddenRanges = hiddenRanges;
+            document.body.classList.toggle('hide-breakpoints', !showBreakpoints);
+        } else {
+            state._varSiteHiddenRanges = null;
+        }
+        if (highlightDiffs) {
+            document.body.classList.add('highlight-diffs');
+            document.body.classList.remove('var-sites-only');
+        }
+        if (varSites) {
+            document.body.classList.add('var-sites-only');
+            document.body.classList.remove('highlight-diffs');
+        }
+    } else {
+        state._diffColumns = null;
+        state._varSiteHiddenRanges = null;
+        document.body.classList.remove('highlight-diffs');
+        document.body.classList.remove('var-sites-only');
+        document.body.classList.remove('hide-breakpoints');
+    }
+
+    const _varSitesActive = document.body.classList.contains('var-sites-only');
+    const _showBrk = _varSitesActive && !document.body.classList.contains('hide-breakpoints');
+    state._brkBeforePos = new Set();
+    state._brkInfo = {};
+    if (_showBrk && state._varSiteHiddenRanges && state._diffColumns) {
+        for (const r of state._varSiteHiddenRanges) {
+            const afterPos = r.end + 1;
+            if (state._diffColumns.has(afterPos)) {
+                state._brkBeforePos.add(afterPos);
+                state._brkInfo[afterPos] = r;
+            }
+        }
+    }
+}
+
 function renderAlignment(options = {}) {
     // Catch-all sync: covers every path that flips a mode radio programmatically
     // (BAM load, snapshot/session restore, the auto-switch heuristic below,
@@ -5042,6 +5164,11 @@ function renderAlignment(options = {}) {
     const useCompact = document.getElementById('modeCompact')?.checked;
     const useCanvas = document.getElementById('modeCanvas')?.checked;
 
+    // Var-sites / highlight-diffs computation must run before the Canvas path
+    // (which returns early) so Canvas mode has access to _diffColumns,
+    // _brkBeforePos and _brkInfo for breakpoint marker rendering.
+    _computeVarSites(len);
+
     // -- Canvas fast path (UGENE-style: first paint costs only the visible region) --
     // Canvas shows no consensus row, so consensus is skipped entirely here.
     // Conservation shading is deferred: draw an unshaded frame immediately, then
@@ -5148,116 +5275,8 @@ function renderAlignment(options = {}) {
         return;
     }
 
-    // Highlight-diffs + Var-sites: mark columns that differ from consensus
-    const highlightDiffs = document.getElementById('highlightDiffs')?.checked;
-    const varSites = document.getElementById('varSitesOnly')?.checked;
-    // Keeps count-mode's upper bound in step with the current alignment's
-    // sequence count even when the mode/checkboxes weren't touched (e.g. a
-    // new file was just loaded).
-    updateVarThresholdBounds();
-    const varThresholdMode = document.getElementById('varThresholdMode')?.value || 'pct';
-    const varThresholdRaw = parseInt(document.getElementById('varSitesThreshold')?.value) || 0;
-    const nSeq = state.seqs.length;
-    // Percentage mode rounds up to a whole sequence count (Math.ceil), which
-    // on small alignments can jump by more than 1 sequence between adjacent
-    // percentages - e.g. at nSeq=10, 10% and 11% both round to requiring a
-    // different count, so a column with exactly 1 differing sequence can
-    // flip from shown to hidden across a single percentage point. Count mode
-    // takes the same number as an exact sequence count with no rounding, so
-    // every value from 1 up to nSeq is individually reachable.
-    const varThreshold = varThresholdMode === 'count'
-        ? varThresholdRaw
-        : (varThresholdRaw === 0 ? 0 : Math.ceil((varThresholdRaw / 100) * nSeq));
-    const showBreakpoints = document.getElementById('varSitesBreakpoints')?.checked !== false;
-    if ((highlightDiffs || varSites) && state.seqs.length > 1) {
-        const diffCols = new Set();
-        // A gap outside a sequence's own first/last real-base span is missing
-        // data (the sequence just doesn't reach here) and carries no
-        // evidence either way, so it's excluded from both the majority count
-        // and the diff count below. A gap inside that span is a real
-        // deletion and is counted like any other character - on equal
-        // footing with A/C/G/T, not special-cased - so indel polymorphism
-        // (a gap-majority column with a minority of real insertions, or vice
-        // versa) is detected the same way a substitution would be.
-        const spans = state.seqs.map(s => {
-            const seq = s.seq;
-            let first = -1, last = -1;
-            for (let i = 0; i < seq.length; i++) {
-                const c = seq[i];
-                if (c !== '-' && c !== '.') { if (first === -1) first = i; last = i; }
-            }
-            return { first, last };
-        });
-        for (let pos = 0; pos < len; pos++) {
-            const counts = {};
-            let covered = 0;
-            for (let i = 0; i < state.seqs.length; i++) {
-                const { first, last } = spans[i];
-                if (first === -1 || pos < first || pos > last) continue; // flanking gap: no data
-                const base = (state.seqs[i].seq[pos] || '-').toUpperCase();
-                const ch = (base === '-' || base === '.') ? '-' : base;
-                counts[ch] = (counts[ch] || 0) + 1;
-                covered++;
-            }
-            // The column's dominant state is simply whichever character (base
-            // or internal-gap) the most covered sequences share; every other
-            // covered sequence "differs" from it. Ties don't matter here -
-            // only the size of the largest group affects the count.
-            const diffCount = covered > 0 ? covered - Math.max(...Object.values(counts)) : 0;
-            if (varThreshold === 0 || diffCount >= varThreshold) diffCols.add(pos);
-        }
-        state._diffColumns = diffCols;
-        // Build hidden ranges for breakpoint markers (only in var-sites mode)
-        if (varSites) {
-            const hiddenRanges = [];
-            let hiddenStart = -1;
-            for (let pos = 0; pos < len; pos++) {
-                if (!diffCols.has(pos)) {
-                    if (hiddenStart === -1) hiddenStart = pos;
-                } else {
-                    if (hiddenStart !== -1) {
-                        hiddenRanges.push({ start: hiddenStart, end: pos - 1, count: pos - hiddenStart });
-                        hiddenStart = -1;
-                    }
-                }
-            }
-            if (hiddenStart !== -1) hiddenRanges.push({ start: hiddenStart, end: len - 1, count: len - hiddenStart });
-            state._varSiteHiddenRanges = hiddenRanges;
-            document.body.classList.toggle('hide-breakpoints', !showBreakpoints);
-        } else {
-            state._varSiteHiddenRanges = null;
-        }
-        if (highlightDiffs) {
-            document.body.classList.add('highlight-diffs');
-            document.body.classList.remove('var-sites-only');
-        }
-        if (varSites) {
-            document.body.classList.add('var-sites-only');
-            document.body.classList.remove('highlight-diffs');
-        }
-    } else {
-        state._diffColumns = null;
-        state._varSiteHiddenRanges = null;
-        document.body.classList.remove('highlight-diffs');
-        document.body.classList.remove('var-sites-only');
-        document.body.classList.remove('hide-breakpoints');
-    }
-
-    // Build breakpoint lookup for rendering (used by createSequenceLine and addConsensusLine)
-    const _varSitesActive = document.body.classList.contains('var-sites-only');
-    const _showBrk = _varSitesActive && !document.body.classList.contains('hide-breakpoints');
-    state._brkBeforePos = new Set();
-    state._brkInfo = {};
-    if (_showBrk && state._varSiteHiddenRanges && state._diffColumns) {
-        for (const r of state._varSiteHiddenRanges) {
-            const afterPos = r.end + 1;
-            if (state._diffColumns.has(afterPos)) {
-                state._brkBeforePos.add(afterPos);
-                state._brkInfo[afterPos] = r;
-            }
-        }
-    }
-
+    // Var-sites / highlight-diffs already computed above (before Canvas path)
+    // so Canvas mode has access to breakpoint data. No need to recompute here.
     _updateCodonAnalysisState(len);
 
     if (useBlocks) {
