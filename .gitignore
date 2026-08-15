@@ -50,3 +50,4 @@ Desktop.ini
 # BLAST database registry and storage (server-generated, contains paths)
 blast_dbs.json
 blast_dbs/
+.aider*

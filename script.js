@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v168';
+const BUILD_TAG = 'v169';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1611,12 +1611,14 @@ function getVisibleRowColumnRange(container, rowHeightPx, charWidthPx, nameColWi
 // editing/selection keep working unchanged on whatever rows are in the DOM
 // (same classes, same handlers, just fewer elements alive at once). Rows
 // scrolled out of view simply aren't in the DOM until scrolled back in - the
-// same limitation every virtualized list/editor has. Column windowing is not
-// implemented yet (each visible row still renders its full width); this
-// specifically targets the "many sequences" dimension that caused the
-// reported freeze. Gated strictly to isCrazy alignments in Full mode - every
-// other mode/size combination is completely unaffected.
+// same limitation every virtualized list/editor has. Also windows columns
+// (each row renders only the visible column range, not its full width),
+// covering the "very wide alignment" dimension too. Gated strictly to
+// isCrazy alignments in Full mode - every other mode/size combination is
+// completely unaffected.
 let _fullModeRowHeightPx = null;
+let _fullModeCharWidthPx = null;
+let _fullModeNameColWidthPx = null;
 
 function _measureFullModeRowHeight(sampleRowEl) {
     if (sampleRowEl) {
@@ -1624,6 +1626,40 @@ function _measureFullModeRowHeight(sampleRowEl) {
         if (h > 0) _fullModeRowHeightPx = h;
     }
     return _fullModeRowHeightPx || 16; // fallback before any row has ever been measured
+}
+
+// Measured from an actual rendered row so column windowing's pixel math
+// matches whatever font/zoom is currently active, the same pattern already
+// used for row height (and the same pattern setBlockSizeToScreen/
+// _scrollToColumn already use elsewhere for the same measurement).
+function _measureFullModeColumnMetrics(sampleRowEl) {
+    if (sampleRowEl) {
+        const dataSpan = sampleRowEl.querySelector('.seq-data span[data-pos]');
+        if (dataSpan) {
+            const w = dataSpan.getBoundingClientRect().width;
+            if (w > 0) _fullModeCharWidthPx = w;
+        }
+        const nameEl = sampleRowEl.querySelector('.seq-name');
+        if (nameEl) {
+            const w = nameEl.getBoundingClientRect().width;
+            if (w > 0) _fullModeNameColWidthPx = w;
+        }
+    }
+    return { charWidthPx: _fullModeCharWidthPx || 7.8, nameColWidthPx: _fullModeNameColWidthPx || 0 };
+}
+
+// Column windowing needs the row's rendered content to sit at the correct
+// horizontal offset (colStart columns' worth of blank space before it) while
+// the row's TOTAL declared width still equals what a fully-rendered row
+// would occupy (len * charWidthPx) - otherwise the container's native
+// scrollWidth would only reflect the tiny rendered slice, breaking
+// horizontal scrolling entirely (the same problem the two vertical spacer
+// divs solve for rows, just expressed per-row via padding instead of two
+// extra sibling elements, since each row needs its own independent offset).
+function _applyColumnWindowStyle(dataEl, len, colStart, charWidthPx) {
+    dataEl.style.boxSizing = 'border-box';
+    dataEl.style.width = (len * charWidthPx) + 'px';
+    dataEl.style.paddingLeft = (colStart * charWidthPx) + 'px';
 }
 
 // Cached so scroll-triggered updates can rebuild just the row window
@@ -1643,15 +1679,15 @@ function renderFullModeWindowedRows(container, len, nameLen, stickyNames, standa
     // the pre-clear value, which is what we must use to compute the window,
     // not container.scrollTop (already 0 by now).
     const effectiveScrollTop = preservedScrollTop != null ? preservedScrollTop : container.scrollTop;
-    // charWidthPx/nameColWidthPx/overscanCols are irrelevant here (rows only,
-    // full column width per row) - pass placeholders so colStart/colEnd (unused)
-    // don't throw on a zero-width divisor.
+    const { charWidthPx, nameColWidthPx } = _measureFullModeColumnMetrics(null); // use last-known metrics for this pass; refined after render below
     const range = getVisibleRowColumnRange({
         scrollTop: effectiveScrollTop, scrollLeft: container.scrollLeft,
         clientHeight: container.clientHeight, clientWidth: container.clientWidth,
-    }, rowHeightPx, 1, 0, 15, 0);
+    }, rowHeightPx, charWidthPx, nameColWidthPx, 15, 20);
     const rowStart = Math.min(range.rowStart, Math.max(0, nSeq - 1));
     const rowEnd = Math.min(range.rowEnd, Math.max(0, nSeq - 1));
+    const colStart = Math.min(range.colStart, Math.max(0, len - 1));
+    const colEnd = Math.min(range.colEnd, Math.max(0, len - 1));
 
     const topSpacer = document.createElement('div');
     topSpacer.className = 'full-mode-row-spacer';
@@ -1660,7 +1696,9 @@ function renderFullModeWindowedRows(container, len, nameLen, stickyNames, standa
 
     let firstRealRow = null;
     for (let i = rowStart; i <= rowEnd; i++) {
-        const lineDiv = createSequenceLine(i, 0, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, conservationData);
+        const lineDiv = createSequenceLine(i, colStart, colEnd + 1, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, conservationData);
+        const dataEl = lineDiv.querySelector('.seq-data');
+        if (dataEl) _applyColumnWindowStyle(dataEl, len, colStart, charWidthPx);
         container.appendChild(lineDiv);
         if (!firstRealRow) firstRealRow = lineDiv;
     }
@@ -1671,6 +1709,7 @@ function renderFullModeWindowedRows(container, len, nameLen, stickyNames, standa
     container.appendChild(bottomSpacer);
 
     _measureFullModeRowHeight(firstRealRow);
+    _measureFullModeColumnMetrics(firstRealRow);
     // The DOM's real scrollTop was reset to 0 by the innerHTML clear before
     // this ran (see the caller); the spacers now give the container the
     // correct total scrollable height again, so restore the actual scroll
@@ -1702,9 +1741,12 @@ function _refreshFullModeWindowOnScroll(container) {
 
     const nSeq = state.seqs.length;
     const rowHeightPx = _fullModeRowHeightPx || 16;
-    const range = getVisibleRowColumnRange(container, rowHeightPx, 1, 0, 15, 0);
+    const { charWidthPx, nameColWidthPx } = _measureFullModeColumnMetrics(null);
+    const range = getVisibleRowColumnRange(container, rowHeightPx, charWidthPx, nameColWidthPx, 15, 20);
     const rowStart = Math.min(range.rowStart, Math.max(0, nSeq - 1));
     const rowEnd = Math.min(range.rowEnd, Math.max(0, nSeq - 1));
+    const colStart = Math.min(range.colStart, Math.max(0, p.len - 1));
+    const colEnd = Math.min(range.colEnd, Math.max(0, p.len - 1));
 
     let node = topSpacer.nextSibling;
     while (node && node !== bottomSpacer) {
@@ -1712,12 +1754,17 @@ function _refreshFullModeWindowOnScroll(container) {
         node.remove();
         node = next;
     }
+    let firstRealRow = null;
     for (let i = rowStart; i <= rowEnd; i++) {
-        const lineDiv = createSequenceLine(i, 0, p.len, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, true, p.conservationData);
+        const lineDiv = createSequenceLine(i, colStart, colEnd + 1, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, true, p.conservationData);
+        const dataEl = lineDiv.querySelector('.seq-data');
+        if (dataEl) _applyColumnWindowStyle(dataEl, p.len, colStart, charWidthPx);
         container.insertBefore(lineDiv, bottomSpacer);
+        if (!firstRealRow) firstRealRow = lineDiv;
     }
     topSpacer.style.height = (rowStart * rowHeightPx) + 'px';
     bottomSpacer.style.height = (Math.max(0, nSeq - 1 - rowEnd) * rowHeightPx) + 'px';
+    _measureFullModeColumnMetrics(firstRealRow);
     // Selection/edit-mode DOM bindings only exist for rows currently in the
     // DOM - re-sync so newly-scrolled-in rows pick up any active selection.
     _syncSelectionDomFromState();
