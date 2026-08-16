@@ -5526,7 +5526,11 @@ function renderAlignment(options = {}) {
         }
         console.log('[HANGTRACE] renderAlignment: after block loop at ' + performance.now().toFixed(0) + 'ms');
     }
-    setTimeout(() => { toggleStickyNames(); }, 0);
+    setTimeout(() => {
+        console.log('[HANGTRACE] setTimeout(toggleStickyNames) firing at ' + performance.now().toFixed(0) + 'ms');
+        toggleStickyNames();
+        console.log('[HANGTRACE] setTimeout(toggleStickyNames) done at ' + performance.now().toFixed(0) + 'ms');
+    }, 0);
     ['blackSlider', 'darkSlider', 'lightSlider', 'nameLengthSlider', 'zoomSlider', 'blockSizeSlider', 'consensusThreshold'].forEach(id => {
         updateSliderBackground(el(id));
     });
@@ -6963,6 +6967,7 @@ async function parseAndRender(isFromDrop = false) {
         console.log('[HANGTRACE] parseAndRender: after _historyManager.add at ' + performance.now().toFixed(0) + 'ms');
         // Ensure menus don't have inline styles that interfere with hover
         setTimeout(() => {
+            console.log('[HANGTRACE] parseAndRender setTimeout(100) firing at ' + performance.now().toFixed(0) + 'ms');
             try {
                 document.querySelectorAll('.control-group').forEach(group => {
                     group.style.maxHeight = '';
@@ -6971,6 +6976,7 @@ async function parseAndRender(isFromDrop = false) {
             } catch (err) {
                 console.warn('Failed to clear menu inline styles after load', err);
             }
+            console.log('[HANGTRACE] parseAndRender setTimeout(100) done at ' + performance.now().toFixed(0) + 'ms');
         }, 100);
         console.log('[HANGTRACE] parseAndRender: END of try block at ' + performance.now().toFixed(0) + 'ms');
     } catch (e) {
@@ -6983,6 +6989,7 @@ async function parseAndRender(isFromDrop = false) {
         el('sourceInfo').innerHTML = 'No file loaded';
     }
     console.log('[HANGTRACE] parseAndRender: FUNCTION END at ' + performance.now().toFixed(0) + 'ms');
+    Promise.resolve().then(() => console.log('[HANGTRACE] parseAndRender: MICROTASK ran at ' + performance.now().toFixed(0) + 'ms'));
 }
 // Mirrors the canonical mode radios' checked state onto the always-visible
 // top-bar quick switcher. Called after any change to the real radios,
@@ -13568,8 +13575,10 @@ function scheduleNucSelectionRefresh() {
         ? window.requestAnimationFrame.bind(window)
         : (cb) => setTimeout(cb, 16);
     raf(() => {
+        console.log('[HANGTRACE] scheduleNucSelectionRefresh raf firing at ' + performance.now().toFixed(0) + 'ms');
         pendingNucDomUpdate = false;
         refreshNucleotideSelectionsImmediate();
+        console.log('[HANGTRACE] scheduleNucSelectionRefresh raf done at ' + performance.now().toFixed(0) + 'ms');
     });
 }
 // EVENT LISTENERS
@@ -16472,17 +16481,21 @@ function initColourSeqs() {
     const isCanvasMode = () => document.getElementById('modeCanvas')?.checked;
 
     function syncSizes() {
+        console.log('[HANGTRACE] syncSizes: entry at ' + performance.now().toFixed(0) + 'ms');
         syncing = true;
         if (isCanvasMode()) {
             const w = _canvasState.totalContentW || alignment.clientWidth;
             thumb.style.width = Math.max(w, alignment.clientWidth + 1) + 'px';
             bar.scrollLeft = _canvasState.offsetX || 0;
         } else {
+            console.log('[HANGTRACE] syncSizes: reading scrollWidth at ' + performance.now().toFixed(0) + 'ms');
             const w = alignment.scrollWidth || alignment.clientWidth;
+            console.log('[HANGTRACE] syncSizes: after scrollWidth at ' + performance.now().toFixed(0) + 'ms');
             thumb.style.width = Math.max(w, alignment.clientWidth + 1) + 'px';
             bar.scrollLeft = alignment.scrollLeft;
         }
         syncing = false;
+        console.log('[HANGTRACE] syncSizes: exit at ' + performance.now().toFixed(0) + 'ms');
     }
 
     function onBarScroll() {
@@ -16592,6 +16605,7 @@ function initColourSeqs() {
     let syncing = false;
 
     function syncVisibilityAndSize() {
+        console.log('[HANGTRACE] syncVisibilityAndSize: entry at ' + performance.now().toFixed(0) + 'ms');
         if (!isCanvasMode()) {
             bar.style.display = 'none';
             return;
