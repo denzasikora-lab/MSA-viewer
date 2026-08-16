@@ -407,30 +407,22 @@ const _historyManager = {
     items: [],
 
     load() {
-        console.log('[HANGTRACE] _historyManager.load START', performance.now());
         try {
             const raw = localStorage.getItem('msaviewer_history');
-            console.log('[HANGTRACE] _historyManager.load rawLen=', raw?.length, performance.now());
             if (raw) { this.items = JSON.parse(raw); this.maxItems = this.items._max || 10; }
         } catch(e) { this.items = []; }
         if (!Array.isArray(this.items)) this.items = [];
-        console.log('[HANGTRACE] _historyManager.load END items.length=', this.items?.length, performance.now());
     },
 
     save() {
-        console.log('[HANGTRACE] _historyManager.save START', performance.now());
         const store = this.items.slice(0, this.maxItems);
         store._max = this.maxItems;
         const jsonStr = JSON.stringify(store);
-        console.log('[HANGTRACE] _historyManager.save jsonLen=', jsonStr.length, performance.now());
-        try { localStorage.setItem('msaviewer_history', jsonStr); } catch(e) { console.log('[HANGTRACE] _historyManager.save ERROR', e.message, performance.now()); }
-        console.log('[HANGTRACE] _historyManager.save END', performance.now());
+        try { localStorage.setItem('msaviewer_history', jsonStr); } catch(e) {}
     },
 
     add(type, data) {
-        console.log('[HANGTRACE] _historyManager.add START', performance.now());
         this.load();
-        console.log('[HANGTRACE] _historyManager.add after load', performance.now());
         const entry = {
             type, // 'file' or 'clipboard'
             name: data.name || 'Untitled',
@@ -445,9 +437,7 @@ const _historyManager = {
         this.items = this.items.filter(e => !(e.name === entry.name && e.source === entry.source));
         this.items.unshift(entry);
         if (this.items.length > this.maxItems + 20) this.items.length = this.maxItems + 20;
-        console.log('[HANGTRACE] _historyManager.add before save, items.length=', this.items.length, 'textLen=', entry.text?.length, performance.now());
         this.save();
-        console.log('[HANGTRACE] _historyManager.add END', performance.now());
     },
 
     setMax(n) {
@@ -1568,29 +1558,28 @@ function setConsensusThresholdDefault(value, options = {}) {
 window.setConsensusThresholdDefault = setConsensusThresholdDefault;
 
 function toggleStickyNames() {
-    console.log('[HANGTRACE] toggleStickyNames START', performance.now());
     const sticky = el('stickyNames').checked;
     document.querySelectorAll('.seq-name').forEach(name => {
         name.classList.toggle('static', !sticky);
     });
-    console.log('[HANGTRACE] toggleStickyNames after querySelectorAll', performance.now());
     // Forcing a reflow here makes the .static class change take effect
     // immediately rather than on the next natural paint. Cost scales with
     // total DOM size, and this runs via setTimeout(0) after EVERY render
-    // (see the call site in renderAlignment) - meaning on a "crazy"-sized
-    // alignment (millions of residue spans) it's a genuine multi-second
-    // main-thread block that isn't captured by anything awaiting the render
-    // call itself. Skip the forced-immediate part above that size; the
-    // class toggle above still applies on the next natural paint either way.
-    if (!(state.alignmentIndex?.isCrazy)) {
+    // (see the call site in renderAlignment) - meaning on a large alignment
+    // (millions of residue spans) it's a genuine multi-second main-thread
+    // block that isn't captured by anything awaiting the render call itself.
+    // Skip the forced-immediate part above that size; the class toggle above
+    // still applies on the next natural paint either way.
+    const _totalRes = state.alignmentIndex?.totalResidues || (state.seqs.length > 0
+        ? state.seqs.length * Math.max(...state.seqs.map(s => s.seq.length))
+        : 0);
+    if (!(state.alignmentIndex?.isCrazy) && _totalRes <= 80000) {
         alignmentContainer.offsetHeight; // Force reflow
     }
-    console.log('[HANGTRACE] toggleStickyNames after reflow', performance.now());
     // DOM mode picks this up via the CSS class toggle above (no .seq-name
     // elements exist in Canvas mode); Canvas bakes stickyNames into its
     // render closure instead, so it needs an explicit re-render to take effect.
     if (document.getElementById('modeCanvas')?.checked) debounceRender();
-    console.log('[HANGTRACE] toggleStickyNames END', performance.now());
 }
 function calculateGaplessPositions(sequence) {
     const positions = [];
@@ -5518,7 +5507,7 @@ function renderAlignment(options = {}) {
             alignmentContainer.appendChild(blockDiv);
         }
     }
-    setTimeout(() => { console.log('[HANGTRACE] toggleStickyNames setTimeout fired', performance.now()); toggleStickyNames(); }, 0);
+    setTimeout(() => { toggleStickyNames(); }, 0);
     ['blackSlider', 'darkSlider', 'lightSlider', 'nameLengthSlider', 'zoomSlider', 'blockSizeSlider', 'consensusThreshold'].forEach(id => {
         updateSliderBackground(el(id));
     });
@@ -5536,15 +5525,11 @@ function renderAlignment(options = {}) {
     const _renderMs = performance.now() - _renderStartTime;
     if (_renderMs > 50 && TOTAL_RESIDUES > 10000) console.warn('[PERF] render: '+_renderMs.toFixed(0)+'ms | '+TOTAL_RESIDUES.toLocaleString()+' residues');
 
-    console.log('[HANGTRACE] renderAlignment after perf log', performance.now());
     if (typeof applyColourToSeqNames === 'function' && colourState && colourState.mappings.size > 0) {
         applyColourToSeqNames(colourState.mappings);
     }
-    console.log('[HANGTRACE] renderAlignment after applyColourToSeqNames', performance.now());
     reapplySearchHighlights();
-    console.log('[HANGTRACE] renderAlignment after reapplySearchHighlights', performance.now());
     applyClusterVisualsFromState();
-    console.log('[HANGTRACE] renderAlignment after applyClusterVisualsFromState', performance.now());
 
     // Post-process: AA translation rows (phase/stops now built inline)
     if (state._codonData) {
@@ -5601,9 +5586,7 @@ function renderAlignment(options = {}) {
             }
         });
     }
-    console.log('[HANGTRACE] renderAlignment before final syncCodonModePanel', performance.now());
     syncCodonModePanel();
-    console.log('[HANGTRACE] renderAlignment DONE', performance.now());
 }
 
 // Unified source info updater so counts stay accurate after deletions/insertions
@@ -6767,7 +6750,6 @@ function _looksLikeLocalPath(text) {
 }
 
 async function parseAndRender(isFromDrop = false) {
-    console.log('[HANGTRACE] parseAndRender START', performance.now());
     showMessage("Scanning alignment...", 0);
     _proteinSchemeRemapWarned = false;
     const inputText = fastaInput.value.trim();
@@ -6809,7 +6791,6 @@ async function parseAndRender(isFromDrop = false) {
     }
 
     const proceed = await runAlignmentPreflight(inputText);
-    console.log('[HANGTRACE] after runAlignmentPreflight, proceed=', proceed, performance.now());
     if (!proceed) {
         statusMessage.style.display = 'none';
         showMessage('Load cancelled.', 2500);
@@ -6871,7 +6852,6 @@ async function parseAndRender(isFromDrop = false) {
             parsed = parseFasta(inputText);
         }
         if (!parsed) throw new Error("No valid sequences found");
-        console.log('[HANGTRACE] parsing done, parsed.length=', parsed.length, performance.now());
         if (!isFromDrop && !state.currentFilename) {
             state.currentFilename = 'Clipboard';
             state.currentFilePath = '';
@@ -6918,31 +6898,18 @@ async function parseAndRender(isFromDrop = false) {
         state._columnConservationScores = null;
         state._columnConservationCache = null;
 
-        console.log('[HANGTRACE] before updateNameLengthSliderRange', performance.now());
         updateNameLengthSliderRange();
-        console.log('[HANGTRACE] after updateNameLengthSliderRange', performance.now());
 
         // Update source info with comprehensive statistics
-        console.log('[HANGTRACE] before updateSourceInfo', performance.now());
         updateSourceInfo();
-        console.log('[HANGTRACE] after updateSourceInfo', performance.now());
-        console.log('[HANGTRACE] before renderAlignment #1', performance.now());
         renderAlignment();
-        console.log('[HANGTRACE] after renderAlignment #1', performance.now());
         updateBamButtonVisibility();
         // Auto-fit block size to screen width on every load
-        console.log('[HANGTRACE] before setBlockSizeToScreen', performance.now());
         setBlockSizeToScreen();
-        console.log('[HANGTRACE] after setBlockSizeToScreen', performance.now());
-        console.log('[HANGTRACE] before setupHoverMenuReveal', performance.now());
         setupHoverMenuReveal();
-        console.log('[HANGTRACE] after setupHoverMenuReveal', performance.now());
-        console.log('[HANGTRACE] before showMessage', performance.now());
         showMessage("File loaded successfully!", 2000);
-        console.log('[HANGTRACE] after showMessage', performance.now());
 
         // Record in history
-        console.log('[HANGTRACE] before _historyManager.add', performance.now());
         const isClipboard = !isFromDrop && state.currentFilename === 'Clipboard';
         const previewNames = parsed.slice(0, 3).map(s => s.header).join(', ');
         const previewSeq = (parsed[0]?.seq?.substring(0, 50) || '').replace(/-/g, '');
@@ -6957,10 +6924,7 @@ async function parseAndRender(isFromDrop = false) {
                 text: inputText.substring(0, 100000) // store text for all items (100KB cap)
             }
         );
-        console.log('[HANGTRACE] after _historyManager.add', performance.now());
-
         // Ensure menus don't have inline styles that interfere with hover
-        console.log('[HANGTRACE] before setTimeout', performance.now());
         setTimeout(() => {
             try {
                 document.querySelectorAll('.control-group').forEach(group => {
@@ -6971,9 +6935,7 @@ async function parseAndRender(isFromDrop = false) {
                 console.warn('Failed to clear menu inline styles after load', err);
             }
         }, 100);
-        console.log('[HANGTRACE] parseAndRender try block complete', performance.now());
     } catch (e) {
-        console.log('[HANGTRACE] parseAndRender CAUGHT exception', performance.now(), e.message);
         console.error("Error in parseAndRender:", e);
     alignmentContainer.innerHTML = `<div class="error-message">Error: ${e.message}</div>`;
         showMessage(`Error: ${e.message}`, 5000);
@@ -6982,7 +6944,6 @@ async function parseAndRender(isFromDrop = false) {
         state.currentFilePath = '';
         el('sourceInfo').innerHTML = 'No file loaded';
     }
-    console.log('[HANGTRACE] parseAndRender FUNCTION END', performance.now());
 }
 // Mirrors the canonical mode radios' checked state onto the always-visible
 // top-bar quick switcher. Called after any change to the real radios,
@@ -7102,6 +7063,26 @@ function setBlockSizeToScreen() {
     // from the container width minus the name column width.
     const container = document.getElementById('alignmentContainer');
     if (!container) return;
+
+    // For large alignments, getBoundingClientRect() forces a synchronous reflow
+    // over millions of DOM spans, which can take tens of seconds. Use a
+    // zoom-based estimate instead and skip the re-render — the initial render
+    // already used a reasonable block size from the slider's current value.
+    const _aliLen = state.seqs.length > 0 ? Math.max(...state.seqs.map(s => s.seq.length)) : 0;
+    const _totalResidues = state.seqs.length * _aliLen;
+    if (_totalResidues > 80000) {
+        const zoom = _sliderToZoom(parseInt(el('zoomSlider')?.value || 50)) / 100;
+        const charPx = 10 * zoom;
+        const namePx = (parseInt(el('nameLengthSlider')?.value || 25) * charPx) + 8;
+        const available = container.clientWidth - namePx - 20;
+        const chars = Math.max(40, Math.min(300, Math.floor(available / charPx)));
+        const slider = el('blockSizeSlider');
+        const input = el('blockSizeInput');
+        if (slider) slider.value = chars;
+        if (input) input.value = chars;
+        return; // Skip re-render for large alignments
+    }
+
     // Try to measure an existing nucleotide span
     let charPx = 0;
     const sampleSpan = container.querySelector('.seq-data span[data-pos]');
