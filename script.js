@@ -2032,7 +2032,7 @@ function _refreshUnifiedWindowOnScroll(container) {
 
 const _unifiedScrollController = _createWindowedScrollController(
     (container) => _refreshUnifiedWindowOnScroll(container),
-    () => (document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && !!state.alignmentIndex?.isCrazy
+    () => (document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && !!state.alignmentIndex?.needsWindowedDom
 );
 function _setupUnifiedScrollListener(container) {
     _unifiedScrollController.bind(container);
@@ -5281,7 +5281,7 @@ function renderAlignment(options = {}) {
     // 0 instead of where the user actually scrolled to). Save and restore
     // around the rebuild, scoped to when windowing might apply so this doesn't
     // change scroll behavior anywhere else.
-    const _preserveScrollTop = ((document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && state.alignmentIndex?.isCrazy)
+    const _preserveScrollTop = ((document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && state.alignmentIndex?.needsWindowedDom)
         ? alignmentContainer.scrollTop : null;
     alignmentContainer.innerHTML = '';
     // Ensure Full/Block modes have correct scroll/layout behaviour
@@ -5515,9 +5515,11 @@ function renderAlignment(options = {}) {
     // consensus + all rows). Both windowed and non-windowed paths use the same
     // blockWidth parameter, so the only difference is its value.
     const effectiveBlockWidth = useBlocks ? blockWidth : len;
-    if (state.alignmentIndex?.isCrazy) {
+    if (state.alignmentIndex?.needsWindowedDom) {
+        console.log('[HANGTRACE] renderAlignment: using windowed DOM path, totalResidues=' + TOTAL_RESIDUES + ' at ' + performance.now().toFixed(0) + 'ms');
         renderUnifiedWindowedDom(alignmentContainer, len, effectiveBlockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
     } else {
+        console.log('[HANGTRACE] renderAlignment: using classic DOM path, totalResidues=' + TOTAL_RESIDUES + ' at ' + performance.now().toFixed(0) + 'ms');
         console.log('[HANGTRACE] renderAlignment: before block loop at ' + performance.now().toFixed(0) + 'ms, len=' + len + ', blockWidth=' + effectiveBlockWidth);
         for (let start = 0; start < len; start += effectiveBlockWidth) {
             const end = Math.min(start + effectiveBlockWidth, len);
@@ -6555,6 +6557,14 @@ const debounceRender = debounce(renderAlignment, 50);
 const ALIGN_TALL_SEQ_THRESHOLD = 500;
 const ALIGN_LONG_COL_THRESHOLD = 3000;
 const ALIGN_CRAZY_VOLUME = 5_000_000;
+// Below ALIGN_CRAZY_VOLUME but large enough that building the full DOM
+// (one <span> per residue) causes the browser engine itself to spend tens
+// of seconds on style recalc / layout / paint, even though no single JS
+// statement is slow.  Alignments at or above this count use the existing
+// windowed DOM renderer (renderUnifiedWindowedDom) instead of the classic
+// full-build path, without affecting the crazy-alignment dialog or the
+// Canvas auto-switch (both still gated by ALIGN_CRAZY_VOLUME).
+const ALIGN_WINDOWED_DOM_THRESHOLD = 500_000;
 
 /** Single-pass FASTA scan: counts sequences and lengths without building seq objects. */
 function scanFastaIndex(text) {
@@ -6631,11 +6641,15 @@ function classifyAlignmentSize(stats) {
     const isTall = stats.nSeqs > ALIGN_TALL_SEQ_THRESHOLD;
     const isLong = stats.maxLen > ALIGN_LONG_COL_THRESHOLD;
     const isCrazy = (isTall && isLong) || stats.totalResidues > ALIGN_CRAZY_VOLUME;
+    // Windowed DOM rendering kicks in below the crazy threshold too: the
+    // browser engine's own style/layout/paint cost on a multi-million-span
+    // DOM tree is the real bottleneck, not any single JS call.
+    const needsWindowedDom = isCrazy || stats.totalResidues > ALIGN_WINDOWED_DOM_THRESHOLD;
     let mode = 'normal';
     if (isCrazy) mode = 'crazy';
     else if (isTall) mode = 'tall';
     else if (isLong) mode = 'long';
-    return { mode, isTall, isLong, isCrazy };
+    return { mode, isTall, isLong, isCrazy, needsWindowedDom };
 }
 
 function _formatResidueCount(n) {
