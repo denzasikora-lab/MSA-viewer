@@ -1590,39 +1590,17 @@ function calculateGaplessPositions(sequence) {
     return positions;
 }
 
-// Computes which row/column indices are currently visible in the scrollable
-// alignment viewport, expanded by overscan. Used by renderFullModeWindowedRows
-// below (row range only, for now - column windowing isn't wired in yet).
-function getVisibleRowColumnRange(container, rowHeightPx, charWidthPx, nameColWidthPx, overscanRows = 5, overscanCols = 20) {
-    const { scrollTop, scrollLeft, clientHeight, clientWidth } = container;
-
-    // Visible row range (0-based, inclusive end)
-    const rowStart = Math.max(0, Math.floor(scrollTop / rowHeightPx) - overscanRows);
-    const rowEnd = Math.max(0, Math.ceil((scrollTop + clientHeight) / rowHeightPx) - 1 + overscanRows);
-
-    // Visible column range (0-based, inclusive end). The name column is sticky
-    // and does not scroll horizontally, so data column 0 starts at scrollLeft.
-    // The name column occupies nameColWidthPx of the viewport, leaving the
-    // remainder for visible data.
-    const visibleDataWidth = Math.max(0, clientWidth - nameColWidthPx);
-    const colStart = Math.max(0, Math.floor(scrollLeft / charWidthPx) - overscanCols);
-    const colEnd = Math.max(0, Math.ceil((scrollLeft + visibleDataWidth) / charWidthPx) - 1 + overscanCols);
-
-    return { rowStart, rowEnd, colStart, colEnd };
-}
-
 // -- Shared windowed-list scroll/render machinery ----------------------------
-// Full-mode row windowing and Block-mode block windowing each need the same
-// three things: (a) suppress the one scroll event a programmatic scrollTop
-// restore fires, so it doesn't re-trigger the render cycle into an infinite
-// loop (confirmed possible under rapid-scroll stress testing); (b) coalesce
-// scroll events into one render per animation frame, keeping "a render is in
-// progress" true for the render's FULL duration rather than just until the
-// rAF fires (confirmed: clearing the flag too early let events pile up
-// faster than renders could complete and hung the tab); (c) remove/rebuild
-// only the DOM between two spacer sentinels rather than the whole container.
-// Factored out here so the two modes share one implementation instead of
-// two copies that can silently drift out of sync.
+// The unified windowed DOM renderer (used by both Full and Block modes on
+// large alignments) needs three things: (a) suppress the one scroll event a
+// programmatic scrollTop restore fires, so it doesn't re-trigger the render
+// cycle into an infinite loop (confirmed possible under rapid-scroll stress
+// testing); (b) coalesce scroll events into one render per animation frame,
+// keeping "a render is in progress" true for the render's FULL duration rather
+// than just until the rAF fires (confirmed: clearing the flag too early let
+// events pile up faster than renders could complete and hung the tab);
+// (c) remove/rebuild only the DOM between two spacer sentinels rather than
+// the whole container.
 function _removeNodesBetweenSpacers(topSpacer, bottomSpacer) {
     let node = topSpacer.nextSibling;
     while (node && node !== bottomSpacer) {
@@ -1667,53 +1645,6 @@ function _createWindowedScrollController(refreshFn, isActiveFn) {
     };
 }
 
-// -- Full-mode row virtualization (large alignments only) -------------------
-// Full mode's DOM-per-residue rendering scales with rows x columns and has no
-// windowing, unlike Block mode (chunked into smaller containers) or Canvas
-// (viewport-culled entirely). Measured directly: on a 3408x1753 alignment,
-// unwindowed Full mode blocked the main thread past 45s. This renders only
-// the currently-visible rows (+ overscan) as real DOM, backed by top/bottom
-// spacer divs so native scrolling still reflects the true full height -
-// editing/selection keep working unchanged on whatever rows are in the DOM
-// (same classes, same handlers, just fewer elements alive at once). Rows
-// scrolled out of view simply aren't in the DOM until scrolled back in - the
-// same limitation every virtualized list/editor has. Also windows columns
-// (each row renders only the visible column range, not its full width),
-// covering the "very wide alignment" dimension too. Gated strictly to
-// isCrazy alignments in Full mode - every other mode/size combination is
-// completely unaffected.
-let _fullModeRowHeightPx = null;
-let _fullModeCharWidthPx = null;
-let _fullModeNameColWidthPx = null;
-
-function _measureFullModeRowHeight(sampleRowEl) {
-    if (sampleRowEl) {
-        const h = sampleRowEl.getBoundingClientRect().height;
-        if (h > 0) _fullModeRowHeightPx = h;
-    }
-    return _fullModeRowHeightPx || 16; // fallback before any row has ever been measured
-}
-
-// Measured from an actual rendered row so column windowing's pixel math
-// matches whatever font/zoom is currently active, the same pattern already
-// used for row height (and the same pattern setBlockSizeToScreen/
-// _scrollToColumn already use elsewhere for the same measurement).
-function _measureFullModeColumnMetrics(sampleRowEl) {
-    if (sampleRowEl) {
-        const dataSpan = sampleRowEl.querySelector('.seq-data span[data-pos]');
-        if (dataSpan) {
-            const w = dataSpan.getBoundingClientRect().width;
-            if (w > 0) _fullModeCharWidthPx = w;
-        }
-        const nameEl = sampleRowEl.querySelector('.seq-name');
-        if (nameEl) {
-            const w = nameEl.getBoundingClientRect().width;
-            if (w > 0) _fullModeNameColWidthPx = w;
-        }
-    }
-    return { charWidthPx: _fullModeCharWidthPx || 7.8, nameColWidthPx: _fullModeNameColWidthPx || 0 };
-}
-
 // Column windowing needs the row's rendered content to sit at the correct
 // horizontal offset (colStart columns' worth of blank space before it) while
 // the row's TOTAL declared width still equals what a fully-rendered row
@@ -1728,165 +1659,10 @@ function _applyColumnWindowStyle(dataEl, len, colStart, charWidthPx) {
     dataEl.style.paddingLeft = (colStart * charWidthPx) + 'px';
 }
 
-// Cached so scroll-triggered updates can rebuild just the row window
-// (see _refreshFullModeWindowOnScroll) without re-running the full,
-// expensive renderAlignment() pipeline on every scroll tick - a real
-// alignment on this file's DOM cost was measured to make that path take
-// ~1-2s per call, more than one scroll event's worth of wall-clock time,
-// which read as sluggish stepping rather than smooth scrolling.
-let _fullModeWindowRenderParams = null;
-
-function renderFullModeWindowedRows(container, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, preservedScrollTop) {
-    _fullModeWindowRenderParams = { len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData };
-    const nSeq = state.seqs.length;
-    const rowHeightPx = _fullModeRowHeightPx || 16;
-    // Clearing the container's innerHTML (just before this function runs)
-    // resets its real scrollTop to 0 in every browser - the caller captured
-    // the pre-clear value, which is what we must use to compute the window,
-    // not container.scrollTop (already 0 by now).
-    const effectiveScrollTop = preservedScrollTop != null ? preservedScrollTop : container.scrollTop;
-    const { charWidthPx, nameColWidthPx } = _measureFullModeColumnMetrics(null); // use last-known metrics for this pass; refined after render below
-    const range = getVisibleRowColumnRange({
-        scrollTop: effectiveScrollTop, scrollLeft: container.scrollLeft,
-        clientHeight: container.clientHeight, clientWidth: container.clientWidth,
-    }, rowHeightPx, charWidthPx, nameColWidthPx, 15, 20);
-    const rowStart = Math.min(range.rowStart, Math.max(0, nSeq - 1));
-    const rowEnd = Math.min(range.rowEnd, Math.max(0, nSeq - 1));
-    const colStart = Math.min(range.colStart, Math.max(0, len - 1));
-    const colEnd = Math.min(range.colEnd, Math.max(0, len - 1));
-
-    const topSpacer = document.createElement('div');
-    topSpacer.className = 'full-mode-row-spacer';
-    topSpacer.style.height = (rowStart * rowHeightPx) + 'px';
-    container.appendChild(topSpacer);
-
-    let firstRealRow = null;
-    for (let i = rowStart; i <= rowEnd; i++) {
-        const lineDiv = createSequenceLine(i, colStart, colEnd + 1, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, conservationData);
-        const dataEl = lineDiv.querySelector('.seq-data');
-        if (dataEl) _applyColumnWindowStyle(dataEl, len, colStart, charWidthPx);
-        container.appendChild(lineDiv);
-        if (!firstRealRow) firstRealRow = lineDiv;
-    }
-
-    const bottomSpacer = document.createElement('div');
-    bottomSpacer.className = 'full-mode-row-spacer';
-    bottomSpacer.style.height = (Math.max(0, nSeq - 1 - rowEnd) * rowHeightPx) + 'px';
-    container.appendChild(bottomSpacer);
-
-    _measureFullModeRowHeight(firstRealRow);
-    _measureFullModeColumnMetrics(firstRealRow);
-    // The DOM's real scrollTop was reset to 0 by the innerHTML clear before
-    // this ran (see the caller); the spacers now give the container the
-    // correct total scrollable height again, so restore the actual scroll
-    // position for both the browser's own scrollbar and the next scroll
-    // event's baseline. This assignment itself fires a 'scroll' event -
-    // suppress exactly that one so it doesn't re-trigger the render cycle
-    // that's already in progress.
-    if (preservedScrollTop != null && container.scrollTop !== preservedScrollTop) {
-        _fullModeScrollController.suppressNextEvent();
-        container.scrollTop = preservedScrollTop;
-    }
-    _setupFullModeScrollListener(container);
-}
-
-// Lightweight scroll-driven update: swaps only the rendered row window in
-// place (removes rows between the two spacers, rebuilds the new range,
-// resizes both spacers), without clearing/rebuilding the ruler, consensus
-// row, or anything else, and without any of renderAlignment()'s unrelated
-// side effects (updateSourceInfo, search-highlight reapplication, etc).
-// Falls back to a full renderAlignment() if the DOM doesn't look like what
-// this function expects (e.g. an in-between mode switch) rather than risk
-// operating on a stale/mismatched structure.
-function _refreshFullModeWindowOnScroll(container) {
-    const p = _fullModeWindowRenderParams;
-    if (!p) { renderAlignment({ deferConservation: true }); return; }
-    const spacers = [...container.querySelectorAll(':scope > .full-mode-row-spacer')];
-    if (spacers.length !== 2) { renderAlignment({ deferConservation: true }); return; }
-    const [topSpacer, bottomSpacer] = spacers;
-
-    const nSeq = state.seqs.length;
-    const rowHeightPx = _fullModeRowHeightPx || 16;
-    const { charWidthPx, nameColWidthPx } = _measureFullModeColumnMetrics(null);
-    const range = getVisibleRowColumnRange(container, rowHeightPx, charWidthPx, nameColWidthPx, 15, 20);
-    const rowStart = Math.min(range.rowStart, Math.max(0, nSeq - 1));
-    const rowEnd = Math.min(range.rowEnd, Math.max(0, nSeq - 1));
-    const colStart = Math.min(range.colStart, Math.max(0, p.len - 1));
-    const colEnd = Math.min(range.colEnd, Math.max(0, p.len - 1));
-
-    _removeNodesBetweenSpacers(topSpacer, bottomSpacer);
-    let firstRealRow = null;
-    for (let i = rowStart; i <= rowEnd; i++) {
-        const lineDiv = createSequenceLine(i, colStart, colEnd + 1, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, true, p.conservationData);
-        const dataEl = lineDiv.querySelector('.seq-data');
-        if (dataEl) _applyColumnWindowStyle(dataEl, p.len, colStart, charWidthPx);
-        container.insertBefore(lineDiv, bottomSpacer);
-        if (!firstRealRow) firstRealRow = lineDiv;
-    }
-    topSpacer.style.height = (rowStart * rowHeightPx) + 'px';
-    bottomSpacer.style.height = (Math.max(0, nSeq - 1 - rowEnd) * rowHeightPx) + 'px';
-    // Deliberately NOT re-measuring column metrics from firstRealRow here.
-    // charWidthPx/nameColWidthPx were already read (cached) at the top of
-    // this function and don't change between scroll events - the only
-    // things that can actually change them (zoom, font, name-length) go
-    // through a full renderAlignment() -> renderFullModeWindowedRows() call,
-    // which already re-measures once there. Calling _measureFullModeColumnMetrics
-    // here forced a synchronous getBoundingClientRect() read immediately
-    // after inserting ~15,000 fresh DOM nodes on a large alignment - the
-    // browser has to lay all of it out synchronously to answer, which
-    // measured at ~450ms of a ~500ms total refresh (confirmed via direct
-    // profiling: skipping this call dropped a 500ms scroll-refresh to ~50ms,
-    // a real, felt "why is scrolling laggy" complaint, not a micro-optimization).
-    // Selection/edit-mode DOM bindings only exist for rows currently in the
-    // DOM - re-sync so newly-scrolled-in rows pick up any active selection.
-    _syncSelectionDomFromState();
-}
-
-const _fullModeScrollController = _createWindowedScrollController(
-    (container) => _refreshFullModeWindowOnScroll(container),
-    () => !!document.getElementById('modeSingle')?.checked && !!state.alignmentIndex?.isCrazy
-);
-function _setupFullModeScrollListener(container) {
-    _fullModeScrollController.bind(container);
-}
-
-// -- Block-mode virtualization (large alignments only) ----------------------
-// Block mode chunks columns into fixed-width blocks, but until now built
-// every block for every column chunk up front - each block itself contains
-// ALL rows, so total DOM cost is (numBlocks * nSeq), the same order as
-// unwindowed Full mode. Measured directly: on a 2000x20000 (40M-residue)
-// synthetic alignment, Block mode hung the tab past 60s. Because blocks
-// stack vertically and each one is uniformly tall (nSeq rows regardless of
-// blockLen), windowing by block - only building the currently-visible block
-// (+ overscan) - is single-axis, unlike Full mode's row+column split, and
-// collapses the same (numBlocks * nSeq) cost down to (visibleBlocks * nSeq).
-let _blockModeBlockHeightPx = null;
-
-// A block contains ALL rows (unlike Full mode's row-height fallback of
-// 16px, which is right-order-of-magnitude for a single row), so a naive
-// 16px fallback before the first block is ever measured drastically
-// undercounts how tall one block really is - it made the very first
-// windowed render think dozens of blocks fit in the viewport instead of
-// ~1, each with thousands of rows, and built all of them (confirmed:
-// hung the tab on first switch into Block mode on a 40M-residue file even
-// after windowing was added). Estimate from row count instead until a
-// real block has been measured.
-function _blockModeFallbackHeightPx() {
-    const rowHeightPx = _fullModeRowHeightPx || 16;
-    return Math.max(rowHeightPx, (state.seqs?.length || 1) * rowHeightPx + 40);
-}
-
-function _measureBlockModeBlockHeight(sampleBlockEl) {
-    if (sampleBlockEl) {
-        const h = sampleBlockEl.getBoundingClientRect().height;
-        if (h > 0) _blockModeBlockHeightPx = h;
-    }
-    return _blockModeBlockHeightPx || _blockModeFallbackHeightPx();
-}
-
-// Builds one block's DOM exactly as the non-windowed Block-mode loop in
-// renderAlignment() used to inline - factored out so both the windowed and
-// (small-alignment) non-windowed paths share one implementation.
+// Builds one block's DOM for the non-windowed (small-alignment) render path.
+// Factored out so the windowed and non-windowed paths share one implementation.
+// Used by both Full mode (blockWidth = len, one block) and Block mode
+// (blockWidth from slider, multiple blocks).
 function _buildBlockElement(start, end, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options) {
     const blockLen = end - start;
     const blockDiv = document.createElement('div');
@@ -1922,22 +1698,198 @@ function _buildBlockElement(start, end, len, nameLen, stickyNames, standard, amb
     return blockDiv;
 }
 
-// Cached so scroll-triggered updates can rebuild just the block window
-// without re-running the full renderAlignment() pipeline, mirroring
-// _fullModeWindowRenderParams.
-let _blockModeWindowRenderParams = null;
+// -- Unified windowed DOM rendering (Full + Block modes) -------------------
+// Full mode = special case with blockWidth = len (1 block, row+column windowed).
+// Block mode = multi-block case (block-level windowing, row windowing within
+// each block, column windowing only when a block is wider than the viewport).
 
-function renderBlockModeWindowedBlocks(container, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, preservedScrollTop) {
-    _blockModeWindowRenderParams = { len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options };
+let _unifiedRowHeightPx = null;
+let _unifiedBlockHeightPx = null;
+let _unifiedHeaderHeightPx = null;
+let _unifiedCharWidthPx = null;
+let _unifiedNameColWidthPx = null;
+let _unifiedWindowRenderParams = null;
+
+function _measureUnifiedRowHeight(sampleRowEl) {
+    if (sampleRowEl) {
+        const h = sampleRowEl.getBoundingClientRect().height;
+        if (h > 0) _unifiedRowHeightPx = h;
+    }
+    return _unifiedRowHeightPx || 16;
+}
+
+function _measureUnifiedColumnMetrics(sampleRowEl) {
+    if (sampleRowEl) {
+        const dataSpan = sampleRowEl.querySelector('.seq-data span[data-pos]');
+        if (dataSpan) {
+            const w = dataSpan.getBoundingClientRect().width;
+            if (w > 0) _unifiedCharWidthPx = w;
+        }
+        const nameEl = sampleRowEl.querySelector('.seq-name');
+        if (nameEl) {
+            const w = nameEl.getBoundingClientRect().width;
+            if (w > 0) _unifiedNameColWidthPx = w;
+        }
+    }
+    return { charWidthPx: _unifiedCharWidthPx || 7.8, nameColWidthPx: _unifiedNameColWidthPx || 0 };
+}
+
+function _unifiedFallbackBlockHeightPx() {
+    const rowHeightPx = _unifiedRowHeightPx || 16;
+    return Math.max(rowHeightPx, (state.seqs?.length || 1) * rowHeightPx + 40);
+}
+
+function _measureUnifiedBlockHeight(sampleBlockEl) {
+    if (sampleBlockEl) {
+        const h = sampleBlockEl.getBoundingClientRect().height;
+        if (h > 0) _unifiedBlockHeightPx = h;
+    }
+    return _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx();
+}
+
+// Measures the header (ruler + optional top consensus) directly from a real,
+// attached block's own child elements, rather than deriving it as
+// `blockHeightPx - nSeq * rowHeightPx`. That subtraction looked exact on
+// paper but isn't: rowHeightPx is a getBoundingClientRect() measurement that
+// can carry a fraction-of-a-pixel rounding difference from how blockHeightPx
+// was itself measured, and multiplied across thousands of rows that tiny
+// per-row difference compounds into a "header" of several thousand pixels
+// instead of the real ~30px ruler+consensus - confirmed directly: measured
+// headerHeight via subtraction came out to 6651px on a real 3408-row
+// alignment, versus visible rows never rendering at all because the row
+// range collapsed to negative. Must be called AFTER the block element is
+// attached to the document (getBoundingClientRect on a detached element
+// returns a zero rect), same requirement as _measureUnifiedBlockHeight.
+function _measureUnifiedHeaderHeight(sampleBlockEl) {
+    if (sampleBlockEl) {
+        const ruler = sampleBlockEl.querySelector('.scale-ruler-line');
+        const topConsensus = sampleBlockEl.querySelector('.consensus-line');
+        let h = 0;
+        if (ruler) h += ruler.getBoundingClientRect().height;
+        if (topConsensus) {
+            const r = topConsensus.getBoundingClientRect();
+            // Only count it if it's actually positioned above the first data
+            // row (top consensus), not below (bottom consensus belongs to
+            // the block's trailing content, not its header).
+            const firstDataRow = sampleBlockEl.querySelector('.seq-line[data-seq-index]');
+            if (!firstDataRow || r.top <= firstDataRow.getBoundingClientRect().top) h += r.height;
+        }
+        if (h > 0) _unifiedHeaderHeightPx = h;
+    }
+    return _unifiedHeaderHeightPx != null ? _unifiedHeaderHeightPx : (_unifiedRowHeightPx || 16);
+}
+
+// Builds one block's DOM with row windowing inside (unlike _buildBlockElement
+// which renders ALL rows). Each block contains: ruler, optional top consensus,
+// top row spacer, visible rows, bottom row spacer, optional bottom consensus.
+// Column windowing is applied when the block is wider than the viewport.
+function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeightPx, effectiveScrollTop, clientHeight, scrollLeft, clientWidth, charWidthPx, nameColWidthPx, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, headerHeightPxIn) {
+    const blockLen = end - start;
+    const blockDiv = document.createElement('div');
+    blockDiv.className = 'block-block';
+
+    // Ruler — identical to _buildBlockElement's ruler code
+    const scaleDiv = document.createElement('div');
+    scaleDiv.className = 'seq-line scale-ruler-line';
+    const scaleNameDiv = document.createElement('div');
+    scaleNameDiv.className = 'seq-name';
+    scaleNameDiv.textContent = '';
+    const scaleDataDiv = document.createElement('div');
+    scaleDataDiv.className = 'seq-data';
+    if (state._diffColumns) {
+        scaleDataDiv.innerHTML = generateScaleHTML(blockLen, 10, start);
+    } else {
+        scaleDataDiv.textContent = generateScale(blockLen, 10, start);
+    }
+    scaleDiv.appendChild(scaleNameDiv);
+    scaleDiv.appendChild(scaleDataDiv);
+    blockDiv.appendChild(scaleDiv);
+    const isLastBlock = (start + (end - start) >= len) || end >= len;
+
+    if (shouldRenderConsensus && consensusPosition === 'top') {
+        addConsensusLine(blockDiv, consensus, start, end, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, 'top', options);
+    }
+
+    // Row windowing within this block.
+    // The block's vertical position in the container is blockIndex * blockHeightPx.
+    // The header (ruler + optional top consensus) occupies the space between the
+    // block's top and the row area. Uses the directly-measured header height
+    // (see _measureUnifiedHeaderHeight) rather than deriving it as
+    // `blockHeightPx - nSeq * rowHeightPx` - that subtraction looked exact but
+    // compounds rowHeightPx's own sub-pixel measurement error across every row
+    // in the block, which on a real 3408-row alignment produced a phantom
+    // ~6651px "header" (versus the real ~30px ruler+consensus) and made the
+    // row range collapse to negative, rendering zero rows.
+    const nSeq = state.seqs.length;
+    const blockTop = blockIndex * blockHeightPx;
+    const headerHeight = headerHeightPxIn != null ? headerHeightPxIn : _measureUnifiedHeaderHeight(null);
+    const rowAreaTop = blockTop + headerHeight;
+    const overscanRows = 15;
+    const visTop = Math.max(effectiveScrollTop, rowAreaTop);
+    const visBottom = Math.min(effectiveScrollTop + clientHeight, blockTop + blockHeightPx);
+    const rowStart = Math.max(0, Math.floor((visTop - rowAreaTop) / rowHeightPx) - overscanRows);
+    const rowEnd = Math.min(Math.max(0, nSeq - 1), Math.floor((visBottom - rowAreaTop) / rowHeightPx) + overscanRows);
+
+    // Column windowing within this block.
+    // When the block is narrower than the viewport (typical Block mode), all
+    // columns fit and no windowing is applied — same as Block mode.
+    // When the block is wider than the viewport (Full mode with 1 giant block),
+    // only visible columns are rendered with padding-left for the offset.
+    const visibleDataWidth = Math.max(0, clientWidth - nameColWidthPx);
+    let colStart = Math.max(start, Math.floor(scrollLeft / charWidthPx) - 20);
+    let colEnd = Math.min(end - 1, Math.ceil((scrollLeft + visibleDataWidth) / charWidthPx) - 1 + 20);
+    if (colStart > colEnd) { colStart = start; colEnd = end - 1; }
+    const needsColWindow = colStart > start || colEnd < end - 1;
+
+    // Top row spacer (fills the space of rows above the visible window)
+    const topRowSpacer = document.createElement('div');
+    topRowSpacer.className = 'unified-row-spacer';
+    topRowSpacer.style.height = (rowStart * rowHeightPx) + 'px';
+    blockDiv.appendChild(topRowSpacer);
+
+    // Visible rows
+    for (let i = rowStart; i <= rowEnd; i++) {
+        const lineDiv = createSequenceLine(i, colStart, colEnd + 1, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, conservationData);
+        if (needsColWindow) {
+            const dataEl = lineDiv.querySelector('.seq-data');
+            if (dataEl) _applyColumnWindowStyle(dataEl, blockLen, colStart - start, charWidthPx);
+        }
+        blockDiv.appendChild(lineDiv);
+    }
+
+    // Bottom row spacer (fills the space of rows below the visible window)
+    const bottomRowSpacer = document.createElement('div');
+    bottomRowSpacer.className = 'unified-row-spacer';
+    bottomRowSpacer.style.height = (Math.max(0, nSeq - 1 - rowEnd) * rowHeightPx) + 'px';
+    blockDiv.appendChild(bottomRowSpacer);
+
+    if (shouldRenderConsensus && consensusPosition === 'bottom') {
+        addConsensusLine(blockDiv, consensus, start, end, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, 'bottom', options);
+    }
+
+    return blockDiv;
+}
+
+// Unified windowed render entry point for large ("crazy") alignments.
+// Full mode = blockWidth set to len (1 block); Block mode = blockWidth from
+// the slider (multiple blocks). Windows at three granularities: block-level
+// (which blocks are visible), row-level (which rows within each block), and
+// column-level (only when a block is wider than the viewport).
+function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, preservedScrollTop) {
+    _unifiedWindowRenderParams = { len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options };
     const numBlocks = Math.max(1, Math.ceil(len / blockWidth));
-    const blockHeightPx = _blockModeBlockHeightPx || _blockModeFallbackHeightPx();
+    const rowHeightPx = _unifiedRowHeightPx || 16;
+    const blockHeightPx = _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx();
     const effectiveScrollTop = preservedScrollTop != null ? preservedScrollTop : container.scrollTop;
+    const { charWidthPx, nameColWidthPx } = _measureUnifiedColumnMetrics(null);
     const overscan = 1;
     const blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
     const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + container.clientHeight) / blockHeightPx) + overscan);
 
+    const headerHeightPx = _unifiedHeaderHeightPx != null ? _unifiedHeaderHeightPx : _measureUnifiedHeaderHeight(null);
+
     const topSpacer = document.createElement('div');
-    topSpacer.className = 'block-mode-spacer';
+    topSpacer.className = 'unified-mode-spacer';
     topSpacer.style.height = (blockStart * blockHeightPx) + 'px';
     container.appendChild(topSpacer);
 
@@ -1945,63 +1897,97 @@ function renderBlockModeWindowedBlocks(container, len, blockWidth, nameLen, stic
     for (let b = blockStart; b <= blockEnd; b++) {
         const start = b * blockWidth;
         const end = Math.min(start + blockWidth, len);
-        const blockDiv = _buildBlockElement(start, end, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options);
+        const blockDiv = _buildUnifiedBlock(b, start, end, len, blockHeightPx, rowHeightPx, effectiveScrollTop, container.clientHeight, container.scrollLeft, container.clientWidth, charWidthPx, nameColWidthPx, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, headerHeightPx);
         container.appendChild(blockDiv);
         if (!firstRealBlock) firstRealBlock = blockDiv;
     }
 
     const bottomSpacer = document.createElement('div');
-    bottomSpacer.className = 'block-mode-spacer';
+    bottomSpacer.className = 'unified-mode-spacer';
     bottomSpacer.style.height = (Math.max(0, numBlocks - 1 - blockEnd) * blockHeightPx) + 'px';
     container.appendChild(bottomSpacer);
 
-    _measureBlockModeBlockHeight(firstRealBlock);
-    // Same scrollTop-restore/suppress dance as renderFullModeWindowedRows -
-    // clearing innerHTML reset scrollTop to 0 before this ran.
+    // Measure from the first real block and its first real row
+    if (firstRealBlock) {
+        _measureUnifiedBlockHeight(firstRealBlock);
+        _measureUnifiedHeaderHeight(firstRealBlock);
+        const firstRow = firstRealBlock.querySelector('.seq-line[data-seq-index]');
+        if (firstRow) {
+            _measureUnifiedRowHeight(firstRow);
+            _measureUnifiedColumnMetrics(firstRow);
+        }
+    }
+
+    // Restore scroll position (same suppress dance as the existing functions)
     if (preservedScrollTop != null && container.scrollTop !== preservedScrollTop) {
-        _blockModeScrollController.suppressNextEvent();
+        _unifiedScrollController.suppressNextEvent();
         container.scrollTop = preservedScrollTop;
     }
-    _setupBlockModeScrollListener(container);
+    _setupUnifiedScrollListener(container);
 }
 
-function _refreshBlockModeWindowOnScroll(container) {
-    const p = _blockModeWindowRenderParams;
+// Lightweight scroll-driven update: rebuilds only visible blocks (each with
+// row windowing inside), without clearing/rebuilding anything outside the
+// spacers and without renderAlignment()'s side effects. Falls back to a
+// full renderAlignment() if the DOM doesn't look like what this function
+// expects (e.g. an in-between mode switch).
+function _refreshUnifiedWindowOnScroll(container) {
+    const p = _unifiedWindowRenderParams;
     if (!p) { renderAlignment({ deferConservation: true }); return; }
-    const spacers = [...container.querySelectorAll(':scope > .block-mode-spacer')];
+    const spacers = [...container.querySelectorAll(':scope > .unified-mode-spacer')];
     if (spacers.length !== 2) { renderAlignment({ deferConservation: true }); return; }
     const [topSpacer, bottomSpacer] = spacers;
 
     const numBlocks = Math.max(1, Math.ceil(p.len / p.blockWidth));
-    const blockHeightPx = _blockModeBlockHeightPx || _blockModeFallbackHeightPx();
+    const rowHeightPx = _unifiedRowHeightPx || 16;
+    const blockHeightPx = _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx();
+    const { charWidthPx, nameColWidthPx } = _measureUnifiedColumnMetrics(null);
     const overscan = 1;
-    const blockStart = Math.max(0, Math.floor(container.scrollTop / blockHeightPx) - overscan);
-    const blockEnd = Math.min(numBlocks - 1, Math.floor((container.scrollTop + container.clientHeight) / blockHeightPx) + overscan);
+    // Captured once, before any DOM mutation below. _removeNodesBetweenSpacers
+    // removes the old (potentially huge - up to the full alignment height in
+    // Full mode's single-block case) block content before the spacers are
+    // resized to match; during that gap the container's scrollable content
+    // momentarily collapses, and the browser synchronously clamps scrollTop
+    // to fit - so re-reading container.scrollTop live AFTER the removal (as
+    // this used to do, inside the loop below) could read back 0 regardless
+    // of where the user actually scrolled to, producing a negative/garbage
+    // row range and silently rendering zero rows. Confirmed by direct trace:
+    // scrollTop read 20000 immediately after being set, but 0 by the time
+    // _buildUnifiedBlock read it post-removal.
+    const effectiveScrollTop = container.scrollTop;
+    const effectiveClientHeight = container.clientHeight;
+    const effectiveScrollLeft = container.scrollLeft;
+    const effectiveClientWidth = container.clientWidth;
+    const blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
+    const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + effectiveClientHeight) / blockHeightPx) + overscan);
+
+    // Use the cached header height as-is (no re-measure here, same reasoning
+    // as skipping the row/block re-measure below) - it was already measured
+    // from a real attached block during the initial render.
+    const headerHeightPx = _unifiedHeaderHeightPx != null ? _unifiedHeaderHeightPx : _measureUnifiedHeaderHeight(null);
 
     _removeNodesBetweenSpacers(topSpacer, bottomSpacer);
     let firstRealBlock = null;
     for (let b = blockStart; b <= blockEnd; b++) {
         const start = b * p.blockWidth;
         const end = Math.min(start + p.blockWidth, p.len);
-        const blockDiv = _buildBlockElement(start, end, p.len, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, p.shouldRenderConsensus, p.consensusPosition, p.consensus, p.options);
+        const blockDiv = _buildUnifiedBlock(b, start, end, p.len, blockHeightPx, rowHeightPx, effectiveScrollTop, effectiveClientHeight, effectiveScrollLeft, effectiveClientWidth, charWidthPx, nameColWidthPx, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, p.shouldRenderConsensus, p.consensusPosition, p.consensus, p.options, headerHeightPx);
         container.insertBefore(blockDiv, bottomSpacer);
         if (!firstRealBlock) firstRealBlock = blockDiv;
     }
     topSpacer.style.height = (blockStart * blockHeightPx) + 'px';
     bottomSpacer.style.height = (Math.max(0, numBlocks - 1 - blockEnd) * blockHeightPx) + 'px';
-    // Same fix as _refreshFullModeWindowOnScroll: blockHeightPx was already
-    // read (cached) above and doesn't change between scroll events; a
-    // getBoundingClientRect() re-measure here forces a synchronous layout
-    // of everything just inserted, for no benefit on the hot scroll path.
+    // Don't re-measure here — it forces a synchronous layout of everything just
+    // inserted, for no benefit on the hot scroll path.
     _syncSelectionDomFromState();
 }
 
-const _blockModeScrollController = _createWindowedScrollController(
-    (container) => _refreshBlockModeWindowOnScroll(container),
-    () => !!document.getElementById('modeBlocks')?.checked && !!state.alignmentIndex?.isCrazy
+const _unifiedScrollController = _createWindowedScrollController(
+    (container) => _refreshUnifiedWindowOnScroll(container),
+    () => (document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && !!state.alignmentIndex?.isCrazy
 );
-function _setupBlockModeScrollListener(container) {
-    _blockModeScrollController.bind(container);
+function _setupUnifiedScrollListener(container) {
+    _unifiedScrollController.bind(container);
 }
 
 function reverseComplement(seq) {
@@ -5242,13 +5228,11 @@ function renderAlignment(options = {}) {
     }
     const coverageMin = clampMinCoverage(el('consensusMinCoverage')?.value) / 100;
     // Clearing innerHTML resets scrollTop to 0 in every browser, which would
-    // silently defeat Full-mode row windowing below (its scroll listener
-    // triggers exactly this re-render, then getVisibleRowColumnRange would
-    // always read the just-reset 0 instead of where the user actually
-    // scrolled to). Save and restore around the rebuild, scoped to when
-    // windowing might apply so this doesn't change scroll behavior anywhere
-    // else - renderFullModeWindowedRows's row-only case is the only path
-    // that currently needs it.
+    // silently defeat the unified windowed renderer's scroll listener (it
+    // triggers exactly this re-render, then would always read the just-reset
+    // 0 instead of where the user actually scrolled to). Save and restore
+    // around the rebuild, scoped to when windowing might apply so this doesn't
+    // change scroll behavior anywhere else.
     const _preserveScrollTop = ((document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && state.alignmentIndex?.isCrazy)
         ? alignmentContainer.scrollTop : null;
     alignmentContainer.innerHTML = '';
@@ -5256,10 +5240,10 @@ function renderAlignment(options = {}) {
     // (any leftover Canvas/Compact inline styles are overwritten)
     alignmentContainer.style.position = 'static';
     if (_preserveScrollTop !== null) {
-        // Windowed Full mode needs alignmentContainer itself to be the real
+        // Windowed mode needs alignmentContainer itself to be the real
         // scrolling viewport (fixed height, native overflow scroll) so its
         // own scrollTop/clientHeight are meaningful - height:auto (the
-        // normal Full/Block behaviour, which scrolls via the page instead)
+        // normal non-windowed behaviour, which scrolls via the page instead)
         // would make scrollHeight always equal clientHeight and defeat
         // windowing entirely. Same formula Canvas mode already uses for its
         // own fixed-height viewport.
@@ -5304,7 +5288,6 @@ function renderAlignment(options = {}) {
     const enableLight = el('enableLight').checked;
     const stickyNames = el('stickyNames').checked;
     const useBlocks = el('modeBlocks').checked;
-    const useSingle = el('modeSingle').checked;
 
     // Calculate sequence length for consensus and scale (must be before any use of len)
     const len = Math.max(...state.seqs.map(s => s.seq.length));
@@ -5459,55 +5442,17 @@ function renderAlignment(options = {}) {
     // so Canvas mode has access to breakpoint data. No need to recompute here.
     _updateCodonAnalysisState(len);
 
-    if (useBlocks) {
-        // Block-virtualize on "crazy"-sized alignments only, mirroring Full
-        // mode's isCrazy gate - every other size renders exactly as before.
-        if (state.alignmentIndex?.isCrazy) {
-            renderBlockModeWindowedBlocks(alignmentContainer, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
-        } else {
-            for (let start = 0; start < len; start += blockWidth) {
-                const end = Math.min(start + blockWidth, len);
-                const blockDiv = _buildBlockElement(start, end, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options);
-                alignmentContainer.appendChild(blockDiv);
-            }
-        }
+    // Full mode = Block mode with blockWidth = len (one block = one ruler + one
+    // consensus + all rows). Both windowed and non-windowed paths use the same
+    // blockWidth parameter, so the only difference is its value.
+    const effectiveBlockWidth = useBlocks ? blockWidth : len;
+    if (state.alignmentIndex?.isCrazy) {
+        renderUnifiedWindowedDom(alignmentContainer, len, effectiveBlockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
     } else {
-        // Add scale/ruler at the top for full mode
-        const scaleDiv = document.createElement('div');
-        scaleDiv.className = 'seq-line scale-ruler-line';
-        const scaleNameDiv = document.createElement('div');
-        scaleNameDiv.className = 'seq-name';
-        scaleNameDiv.textContent = '';
-        const scaleDataDiv = document.createElement('div');
-        scaleDataDiv.className = 'seq-data';
-        // See the matching comment in the Block-mode branch above: gate on
-        // whether an overlay is active at all (state._diffColumns), not on
-        // whether there happen to be breakpoints to draw.
-        if (state._diffColumns) {
-            scaleDataDiv.innerHTML = generateScaleHTML(len, 10, 0);
-        } else {
-            scaleDataDiv.textContent = generateScale(len);
-        }
-        scaleDiv.appendChild(scaleNameDiv);
-        scaleDiv.appendChild(scaleDataDiv);
-        alignmentContainer.appendChild(scaleDiv);
-
-        if (shouldRenderConsensus && consensusPosition === 'top') {
-            addConsensusLine(alignmentContainer, consensus, 0, len, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, 'top', options);
-        }
-        // Row-virtualize Full mode on "crazy"-sized alignments only - every
-        // other size/mode combination renders exactly as before.
-        if (state.alignmentIndex?.isCrazy) {
-            renderFullModeWindowedRows(alignmentContainer, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, _preserveScrollTop);
-        } else {
-            for (let i = 0; i < state.seqs.length; i++) {
-                // *** PASS conservationData to createSequenceLine ***
-                const lineDiv = createSequenceLine(i, 0, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, conservationData);
-                alignmentContainer.appendChild(lineDiv);
-            }
-        }
-        if (shouldRenderConsensus && consensusPosition === 'bottom') {
-            addConsensusLine(alignmentContainer, consensus, 0, len, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, 'bottom', options);
+        for (let start = 0; start < len; start += effectiveBlockWidth) {
+            const end = Math.min(start + effectiveBlockWidth, len);
+            const blockDiv = _buildBlockElement(start, end, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options);
+            alignmentContainer.appendChild(blockDiv);
         }
     }
     setTimeout(() => toggleStickyNames(), 0);
