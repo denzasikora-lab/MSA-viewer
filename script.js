@@ -1591,17 +1591,16 @@ function calculateGaplessPositions(sequence) {
 }
 
 // -- Shared windowed-list scroll/render machinery ----------------------------
-// Full-mode row windowing and Block-mode block windowing each need the same
-// three things: (a) suppress the one scroll event a programmatic scrollTop
-// restore fires, so it doesn't re-trigger the render cycle into an infinite
-// loop (confirmed possible under rapid-scroll stress testing); (b) coalesce
-// scroll events into one render per animation frame, keeping "a render is in
-// progress" true for the render's FULL duration rather than just until the
-// rAF fires (confirmed: clearing the flag too early let events pile up
-// faster than renders could complete and hung the tab); (c) remove/rebuild
-// only the DOM between two spacer sentinels rather than the whole container.
-// Factored out here so the two modes share one implementation instead of
-// two copies that can silently drift out of sync.
+// The unified windowed DOM renderer (used by both Full and Block modes on
+// large alignments) needs three things: (a) suppress the one scroll event a
+// programmatic scrollTop restore fires, so it doesn't re-trigger the render
+// cycle into an infinite loop (confirmed possible under rapid-scroll stress
+// testing); (b) coalesce scroll events into one render per animation frame,
+// keeping "a render is in progress" true for the render's FULL duration rather
+// than just until the rAF fires (confirmed: clearing the flag too early let
+// events pile up faster than renders could complete and hung the tab);
+// (c) remove/rebuild only the DOM between two spacer sentinels rather than
+// the whole container.
 function _removeNodesBetweenSpacers(topSpacer, bottomSpacer) {
     let node = topSpacer.nextSibling;
     while (node && node !== bottomSpacer) {
@@ -1660,9 +1659,10 @@ function _applyColumnWindowStyle(dataEl, len, colStart, charWidthPx) {
     dataEl.style.paddingLeft = (colStart * charWidthPx) + 'px';
 }
 
-// Builds one block's DOM exactly as the non-windowed Block-mode loop in
-// renderAlignment() used to inline - factored out so both the windowed and
-// (small-alignment) non-windowed paths share one implementation.
+// Builds one block's DOM for the non-windowed (small-alignment) render path.
+// Factored out so the windowed and non-windowed paths share one implementation.
+// Used by both Full mode (blockWidth = len, one block) and Block mode
+// (blockWidth from slider, multiple blocks).
 function _buildBlockElement(start, end, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options) {
     const blockLen = end - start;
     const blockDiv = document.createElement('div');
@@ -1699,8 +1699,6 @@ function _buildBlockElement(start, end, len, nameLen, stickyNames, standard, amb
 }
 
 // -- Unified windowed DOM rendering (Full + Block modes) -------------------
-// Phase 1: additive only — not yet called from any live code path.
-// See UNIFY_PROGRESS.md Phase 0 design note for the full plan.
 // Full mode = special case with blockWidth = len (1 block, row+column windowed).
 // Block mode = multi-block case (block-level windowing, row windowing within
 // each block, column windowing only when a block is wider than the viewport).
@@ -1834,7 +1832,7 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
 
     // Column windowing within this block.
     // When the block is narrower than the viewport (typical Block mode), all
-    // columns fit and no windowing is applied — same as current Block mode.
+    // columns fit and no windowing is applied — same as Block mode.
     // When the block is wider than the viewport (Full mode with 1 giant block),
     // only visible columns are rendered with padding-left for the offset.
     const visibleDataWidth = Math.max(0, clientWidth - nameColWidthPx);
@@ -1872,9 +1870,11 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     return blockDiv;
 }
 
-// Unified windowed render entry point. Superset of both renderFullModeWindowedRows
-// and renderBlockModeWindowedBlocks. Full mode = blockWidth set to len (1 block);
-// Block mode = blockWidth from the slider (multiple blocks).
+// Unified windowed render entry point for large ("crazy") alignments.
+// Full mode = blockWidth set to len (1 block); Block mode = blockWidth from
+// the slider (multiple blocks). Windows at three granularities: block-level
+// (which blocks are visible), row-level (which rows within each block), and
+// column-level (only when a block is wider than the viewport).
 function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, preservedScrollTop) {
     _unifiedWindowRenderParams = { len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options };
     const numBlocks = Math.max(1, Math.ceil(len / blockWidth));
@@ -1977,8 +1977,7 @@ function _refreshUnifiedWindowOnScroll(container) {
     }
     topSpacer.style.height = (blockStart * blockHeightPx) + 'px';
     bottomSpacer.style.height = (Math.max(0, numBlocks - 1 - blockEnd) * blockHeightPx) + 'px';
-    // Same fix as _refreshFullModeWindowOnScroll / _refreshBlockModeWindowOnScroll:
-    // don't re-measure here — it forces a synchronous layout of everything just
+    // Don't re-measure here — it forces a synchronous layout of everything just
     // inserted, for no benefit on the hot scroll path.
     _syncSelectionDomFromState();
 }
@@ -5229,13 +5228,11 @@ function renderAlignment(options = {}) {
     }
     const coverageMin = clampMinCoverage(el('consensusMinCoverage')?.value) / 100;
     // Clearing innerHTML resets scrollTop to 0 in every browser, which would
-    // silently defeat Full-mode row windowing below (its scroll listener
-    // triggers exactly this re-render, then getVisibleRowColumnRange would
-    // always read the just-reset 0 instead of where the user actually
-    // scrolled to). Save and restore around the rebuild, scoped to when
-    // windowing might apply so this doesn't change scroll behavior anywhere
-    // else - renderFullModeWindowedRows's row-only case is the only path
-    // that currently needs it.
+    // silently defeat the unified windowed renderer's scroll listener (it
+    // triggers exactly this re-render, then would always read the just-reset
+    // 0 instead of where the user actually scrolled to). Save and restore
+    // around the rebuild, scoped to when windowing might apply so this doesn't
+    // change scroll behavior anywhere else.
     const _preserveScrollTop = ((document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && state.alignmentIndex?.isCrazy)
         ? alignmentContainer.scrollTop : null;
     alignmentContainer.innerHTML = '';
@@ -5243,10 +5240,10 @@ function renderAlignment(options = {}) {
     // (any leftover Canvas/Compact inline styles are overwritten)
     alignmentContainer.style.position = 'static';
     if (_preserveScrollTop !== null) {
-        // Windowed Full mode needs alignmentContainer itself to be the real
+        // Windowed mode needs alignmentContainer itself to be the real
         // scrolling viewport (fixed height, native overflow scroll) so its
         // own scrollTop/clientHeight are meaningful - height:auto (the
-        // normal Full/Block behaviour, which scrolls via the page instead)
+        // normal non-windowed behaviour, which scrolls via the page instead)
         // would make scrollHeight always equal clientHeight and defeat
         // windowing entirely. Same formula Canvas mode already uses for its
         // own fixed-height viewport.
@@ -5291,7 +5288,6 @@ function renderAlignment(options = {}) {
     const enableLight = el('enableLight').checked;
     const stickyNames = el('stickyNames').checked;
     const useBlocks = el('modeBlocks').checked;
-    const useSingle = el('modeSingle').checked;
 
     // Calculate sequence length for consensus and scale (must be before any use of len)
     const len = Math.max(...state.seqs.map(s => s.seq.length));
