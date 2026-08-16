@@ -5521,11 +5521,15 @@ function renderAlignment(options = {}) {
     const _renderMs = performance.now() - _renderStartTime;
     if (_renderMs > 50 && TOTAL_RESIDUES > 10000) console.warn('[PERF] render: '+_renderMs.toFixed(0)+'ms | '+TOTAL_RESIDUES.toLocaleString()+' residues');
 
+    console.log('[HANGTRACE] renderAlignment after perf log', performance.now());
     if (typeof applyColourToSeqNames === 'function' && colourState && colourState.mappings.size > 0) {
         applyColourToSeqNames(colourState.mappings);
     }
+    console.log('[HANGTRACE] renderAlignment after applyColourToSeqNames', performance.now());
     reapplySearchHighlights();
+    console.log('[HANGTRACE] renderAlignment after reapplySearchHighlights', performance.now());
     applyClusterVisualsFromState();
+    console.log('[HANGTRACE] renderAlignment after applyClusterVisualsFromState', performance.now());
 
     // Post-process: AA translation rows (phase/stops now built inline)
     if (state._codonData) {
@@ -5582,7 +5586,9 @@ function renderAlignment(options = {}) {
             }
         });
     }
+    console.log('[HANGTRACE] renderAlignment before final syncCodonModePanel', performance.now());
     syncCodonModePanel();
+    console.log('[HANGTRACE] renderAlignment DONE', performance.now());
 }
 
 // Unified source info updater so counts stay accurate after deletions/insertions
@@ -6746,6 +6752,7 @@ function _looksLikeLocalPath(text) {
 }
 
 async function parseAndRender(isFromDrop = false) {
+    console.log('[HANGTRACE] parseAndRender START', performance.now());
     showMessage("Scanning alignment...", 0);
     _proteinSchemeRemapWarned = false;
     const inputText = fastaInput.value.trim();
@@ -6787,6 +6794,7 @@ async function parseAndRender(isFromDrop = false) {
     }
 
     const proceed = await runAlignmentPreflight(inputText);
+    console.log('[HANGTRACE] after runAlignmentPreflight, proceed=', proceed, performance.now());
     if (!proceed) {
         statusMessage.style.display = 'none';
         showMessage('Load cancelled.', 2500);
@@ -6848,6 +6856,7 @@ async function parseAndRender(isFromDrop = false) {
             parsed = parseFasta(inputText);
         }
         if (!parsed) throw new Error("No valid sequences found");
+        console.log('[HANGTRACE] parsing done, parsed.length=', parsed.length, performance.now());
         if (!isFromDrop && !state.currentFilename) {
             state.currentFilename = 'Clipboard';
             state.currentFilePath = '';
@@ -6894,20 +6903,31 @@ async function parseAndRender(isFromDrop = false) {
         state._columnConservationScores = null;
         state._columnConservationCache = null;
 
-        // Update name length slider range based on loaded sequences
-        // This will set the slider to maximum actual name length
+        console.log('[HANGTRACE] before updateNameLengthSliderRange', performance.now());
         updateNameLengthSliderRange();
+        console.log('[HANGTRACE] after updateNameLengthSliderRange', performance.now());
 
         // Update source info with comprehensive statistics
+        console.log('[HANGTRACE] before updateSourceInfo', performance.now());
         updateSourceInfo();
+        console.log('[HANGTRACE] after updateSourceInfo', performance.now());
+        console.log('[HANGTRACE] before renderAlignment #1', performance.now());
         renderAlignment();
+        console.log('[HANGTRACE] after renderAlignment #1', performance.now());
         updateBamButtonVisibility();
         // Auto-fit block size to screen width on every load
+        console.log('[HANGTRACE] before setBlockSizeToScreen', performance.now());
         setBlockSizeToScreen();
+        console.log('[HANGTRACE] after setBlockSizeToScreen', performance.now());
+        console.log('[HANGTRACE] before setupHoverMenuReveal', performance.now());
         setupHoverMenuReveal();
+        console.log('[HANGTRACE] after setupHoverMenuReveal', performance.now());
+        console.log('[HANGTRACE] before showMessage', performance.now());
         showMessage("File loaded successfully!", 2000);
+        console.log('[HANGTRACE] after showMessage', performance.now());
 
         // Record in history
+        console.log('[HANGTRACE] before _historyManager.add', performance.now());
         const isClipboard = !isFromDrop && state.currentFilename === 'Clipboard';
         const previewNames = parsed.slice(0, 3).map(s => s.header).join(', ');
         const previewSeq = (parsed[0]?.seq?.substring(0, 50) || '').replace(/-/g, '');
@@ -6934,7 +6954,9 @@ async function parseAndRender(isFromDrop = false) {
                 console.warn('Failed to clear menu inline styles after load', err);
             }
         }, 100);
+        console.log('[HANGTRACE] parseAndRender try block complete', performance.now());
     } catch (e) {
+        console.log('[HANGTRACE] parseAndRender CAUGHT exception', performance.now(), e.message);
         console.error("Error in parseAndRender:", e);
     alignmentContainer.innerHTML = `<div class="error-message">Error: ${e.message}</div>`;
         showMessage(`Error: ${e.message}`, 5000);
