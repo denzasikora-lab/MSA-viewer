@@ -6942,8 +6942,10 @@ async function parseAndRender(isFromDrop = false) {
                 text: inputText.substring(0, 100000) // store text for all items (100KB cap)
             }
         );
+        console.log('[HANGTRACE] after _historyManager.add', performance.now());
 
         // Ensure menus don't have inline styles that interfere with hover
+        console.log('[HANGTRACE] before setTimeout', performance.now());
         setTimeout(() => {
             try {
                 document.querySelectorAll('.control-group').forEach(group => {
