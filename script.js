@@ -417,17 +417,12 @@ const _historyManager = {
     save() {
         const store = this.items.slice(0, this.maxItems);
         store._max = this.maxItems;
-        console.log('[HANGTRACE] _historyManager.save: before stringify at ' + performance.now().toFixed(0) + 'ms');
         const jsonStr = JSON.stringify(store);
-        console.log('[HANGTRACE] _historyManager.save: after stringify at ' + performance.now().toFixed(0) + 'ms, len=' + jsonStr.length);
         try { localStorage.setItem('msaviewer_history', jsonStr); } catch(e) {}
-        console.log('[HANGTRACE] _historyManager.save: after setItem at ' + performance.now().toFixed(0) + 'ms');
     },
 
     add(type, data) {
-        console.log('[HANGTRACE] _historyManager.add: entry at ' + performance.now().toFixed(0) + 'ms');
         this.load();
-        console.log('[HANGTRACE] _historyManager.add: after load at ' + performance.now().toFixed(0) + 'ms');
         const entry = {
             type, // 'file' or 'clipboard'
             name: data.name || 'Untitled',
@@ -442,9 +437,7 @@ const _historyManager = {
         this.items = this.items.filter(e => !(e.name === entry.name && e.source === entry.source));
         this.items.unshift(entry);
         if (this.items.length > this.maxItems + 20) this.items.length = this.maxItems + 20;
-        console.log('[HANGTRACE] _historyManager.add: before save at ' + performance.now().toFixed(0) + 'ms');
         this.save();
-        console.log('[HANGTRACE] _historyManager.add: after save at ' + performance.now().toFixed(0) + 'ms');
     },
 
     setMax(n) {
@@ -1565,7 +1558,6 @@ function setConsensusThresholdDefault(value, options = {}) {
 window.setConsensusThresholdDefault = setConsensusThresholdDefault;
 
 function toggleStickyNames() {
-    console.log('[HANGTRACE] toggleStickyNames: entry at ' + performance.now().toFixed(0) + 'ms');
     const sticky = el('stickyNames').checked;
     document.querySelectorAll('.seq-name').forEach(name => {
         name.classList.toggle('static', !sticky);
@@ -1588,7 +1580,6 @@ function toggleStickyNames() {
     // elements exist in Canvas mode); Canvas bakes stickyNames into its
     // render closure instead, so it needs an explicit re-render to take effect.
     if (document.getElementById('modeCanvas')?.checked) debounceRender();
-    console.log('[HANGTRACE] toggleStickyNames: exit at ' + performance.now().toFixed(0) + 'ms');
 }
 function calculateGaplessPositions(sequence) {
     const positions = [];
@@ -5404,9 +5395,7 @@ function renderAlignment(options = {}) {
     // Var-sites / highlight-diffs computation must run before the Canvas path
     // (which returns early) so Canvas mode has access to _diffColumns,
     // _brkBeforePos and _brkInfo for breakpoint marker rendering.
-    console.log('[HANGTRACE] renderAlignment: before _computeVarSites at ' + performance.now().toFixed(0) + 'ms');
     _computeVarSites(len);
-    console.log('[HANGTRACE] renderAlignment: after _computeVarSites at ' + performance.now().toFixed(0) + 'ms');
 
     // -- Canvas fast path (UGENE-style: first paint costs only the visible region) --
     // Canvas shows no consensus row, so consensus is skipped entirely here.
@@ -5477,7 +5466,6 @@ function renderAlignment(options = {}) {
     state._codonActiveFrame = 0;
     document.body.classList.remove('codon-mode');
     if (showConsensus) {
-        console.log('[HANGTRACE] renderAlignment: before consensus at ' + performance.now().toFixed(0) + 'ms');
         const deferredConsensus = options.deferConservation ? getDeferredConsensus(len) : null;
         if (deferredConsensus) {
             consensus = deferredConsensus;
@@ -5486,7 +5474,6 @@ function renderAlignment(options = {}) {
             consensus = computeConsensusForSequences(state.seqs.map(s => s.seq)).split('');
             state.consensusCache = { len, values: consensus.slice() };
         }
-        console.log('[HANGTRACE] renderAlignment: after consensus at ' + performance.now().toFixed(0) + 'ms');
     }
     state.consensusSeq = consensus.join('').replace(/-/g, '');
     const shouldRenderConsensus = showConsensus;
@@ -5497,41 +5484,31 @@ function renderAlignment(options = {}) {
     }
 
     // *** Pre-calculate conservation for ALL columns ONCE (DOM / Compact paths) ***
-    console.log('[HANGTRACE] renderAlignment: before preCalculateConservation at ' + performance.now().toFixed(0) + 'ms');
     const conservationData = (options.deferConservation && getDeferredConservationData(len, shadeMode))
         || preCalculateConservation(state.seqs, len, shadeMode);
-    console.log('[HANGTRACE] renderAlignment: after preCalculateConservation at ' + performance.now().toFixed(0) + 'ms');
     if (!options.deferConservation) {
         state.conservationDataCache = { len, shadeMode, data: conservationData };
     }
 
     // Var-sites / highlight-diffs already computed above (before Canvas path)
     // so Canvas mode has access to breakpoint data. No need to recompute here.
-    console.log('[HANGTRACE] renderAlignment: before _updateCodonAnalysisState at ' + performance.now().toFixed(0) + 'ms');
     _updateCodonAnalysisState(len);
-    console.log('[HANGTRACE] renderAlignment: after _updateCodonAnalysisState at ' + performance.now().toFixed(0) + 'ms');
 
     // Full mode = Block mode with blockWidth = len (one block = one ruler + one
     // consensus + all rows). Both windowed and non-windowed paths use the same
     // blockWidth parameter, so the only difference is its value.
     const effectiveBlockWidth = useBlocks ? blockWidth : len;
     if (state.alignmentIndex?.needsWindowedDom) {
-        console.log('[HANGTRACE] renderAlignment: using windowed DOM path, totalResidues=' + TOTAL_RESIDUES + ' at ' + performance.now().toFixed(0) + 'ms');
         renderUnifiedWindowedDom(alignmentContainer, len, effectiveBlockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
     } else {
-        console.log('[HANGTRACE] renderAlignment: using classic DOM path, totalResidues=' + TOTAL_RESIDUES + ' at ' + performance.now().toFixed(0) + 'ms');
-        console.log('[HANGTRACE] renderAlignment: before block loop at ' + performance.now().toFixed(0) + 'ms, len=' + len + ', blockWidth=' + effectiveBlockWidth);
         for (let start = 0; start < len; start += effectiveBlockWidth) {
             const end = Math.min(start + effectiveBlockWidth, len);
             const blockDiv = _buildBlockElement(start, end, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options);
             alignmentContainer.appendChild(blockDiv);
         }
-        console.log('[HANGTRACE] renderAlignment: after block loop at ' + performance.now().toFixed(0) + 'ms');
     }
     setTimeout(() => {
-        console.log('[HANGTRACE] setTimeout(toggleStickyNames) firing at ' + performance.now().toFixed(0) + 'ms');
         toggleStickyNames();
-        console.log('[HANGTRACE] setTimeout(toggleStickyNames) done at ' + performance.now().toFixed(0) + 'ms');
     }, 0);
     ['blackSlider', 'darkSlider', 'lightSlider', 'nameLengthSlider', 'zoomSlider', 'blockSizeSlider', 'consensusThreshold'].forEach(id => {
         updateSliderBackground(el(id));
@@ -5541,24 +5518,20 @@ function renderAlignment(options = {}) {
     scheduleNucSelectionRefresh();
     updateEditActiveCell();
     recalculateCollapsibleHeights();
-    console.log('[HANGTRACE] renderAlignment: after post-loop updates at ' + performance.now().toFixed(0) + 'ms');
     // GeneDoc edit dragging is handled by delegated alignmentContainer events.
     // Update sequence/source statistics after any rendering change
     if (typeof updateSourceInfo === 'function') {
         updateSourceInfo();
     }
-    console.log('[HANGTRACE] renderAlignment: after updateSourceInfo at ' + performance.now().toFixed(0) + 'ms');
     // Re-apply sequence name colours if any mappings exist
     const _renderMs = performance.now() - _renderStartTime;
     if (_renderMs > 50 && TOTAL_RESIDUES > 10000) console.warn('[PERF] render: '+_renderMs.toFixed(0)+'ms | '+TOTAL_RESIDUES.toLocaleString()+' residues');
-    console.log('[HANGTRACE] renderAlignment: after [PERF] log at ' + performance.now().toFixed(0) + 'ms');
 
     if (typeof applyColourToSeqNames === 'function' && colourState && colourState.mappings.size > 0) {
         applyColourToSeqNames(colourState.mappings);
     }
     reapplySearchHighlights();
     applyClusterVisualsFromState();
-    console.log('[HANGTRACE] renderAlignment: after reapply/applyCluster at ' + performance.now().toFixed(0) + 'ms');
 
     // Post-process: AA translation rows (phase/stops now built inline)
     if (state._codonData) {
@@ -5616,7 +5589,6 @@ function renderAlignment(options = {}) {
         });
     }
     syncCodonModePanel();
-    console.log('[HANGTRACE] renderAlignment: END at ' + performance.now().toFixed(0) + 'ms');
 }
 
 // Unified source info updater so counts stay accurate after deletions/insertions
@@ -6792,7 +6764,6 @@ function _looksLikeLocalPath(text) {
 }
 
 async function parseAndRender(isFromDrop = false) {
-    console.log('[HANGTRACE] parseAndRender: START at ' + performance.now().toFixed(0) + 'ms');
     showMessage("Scanning alignment...", 0);
     _proteinSchemeRemapWarned = false;
     const inputText = fastaInput.value.trim();
@@ -6834,7 +6805,6 @@ async function parseAndRender(isFromDrop = false) {
     }
 
     const proceed = await runAlignmentPreflight(inputText);
-    console.log('[HANGTRACE] parseAndRender: preflight done at ' + performance.now().toFixed(0) + 'ms, proceed=' + proceed);
     if (!proceed) {
         statusMessage.style.display = 'none';
         showMessage('Load cancelled.', 2500);
@@ -6942,31 +6912,21 @@ async function parseAndRender(isFromDrop = false) {
         state._columnConservationScores = null;
         state._columnConservationCache = null;
 
-        console.log('[HANGTRACE] parseAndRender: state reset done at ' + performance.now().toFixed(0) + 'ms');
         updateNameLengthSliderRange();
-        console.log('[HANGTRACE] parseAndRender: after updateNameLengthSliderRange at ' + performance.now().toFixed(0) + 'ms');
 
         // Update source info with comprehensive statistics
         updateSourceInfo();
-        console.log('[HANGTRACE] parseAndRender: after updateSourceInfo at ' + performance.now().toFixed(0) + 'ms');
-        console.log('[HANGTRACE] parseAndRender: before renderAlignment at ' + performance.now().toFixed(0) + 'ms');
         renderAlignment();
-        console.log('[HANGTRACE] parseAndRender: after renderAlignment at ' + performance.now().toFixed(0) + 'ms');
         updateBamButtonVisibility();
-        console.log('[HANGTRACE] parseAndRender: after updateBamButtonVisibility at ' + performance.now().toFixed(0) + 'ms');
         // Auto-fit block size to screen width on every load
         setBlockSizeToScreen();
-        console.log('[HANGTRACE] parseAndRender: after setBlockSizeToScreen at ' + performance.now().toFixed(0) + 'ms');
         setupHoverMenuReveal();
-        console.log('[HANGTRACE] parseAndRender: after setupHoverMenuReveal at ' + performance.now().toFixed(0) + 'ms');
         showMessage("File loaded successfully!", 2000);
-        console.log('[HANGTRACE] parseAndRender: after showMessage at ' + performance.now().toFixed(0) + 'ms');
 
         // Record in history
         const isClipboard = !isFromDrop && state.currentFilename === 'Clipboard';
         const previewNames = parsed.slice(0, 3).map(s => s.header).join(', ');
         const previewSeq = (parsed[0]?.seq?.substring(0, 50) || '').replace(/-/g, '');
-        console.log('[HANGTRACE] parseAndRender: before _historyManager.add at ' + performance.now().toFixed(0) + 'ms');
         _historyManager.add(
             isClipboard ? 'clipboard' : 'file',
             {
@@ -6978,10 +6938,8 @@ async function parseAndRender(isFromDrop = false) {
                 text: inputText.substring(0, 100000) // store text for all items (100KB cap)
             }
         );
-        console.log('[HANGTRACE] parseAndRender: after _historyManager.add at ' + performance.now().toFixed(0) + 'ms');
         // Ensure menus don't have inline styles that interfere with hover
         setTimeout(() => {
-            console.log('[HANGTRACE] parseAndRender setTimeout(100) firing at ' + performance.now().toFixed(0) + 'ms');
             try {
                 document.querySelectorAll('.control-group').forEach(group => {
                     group.style.maxHeight = '';
@@ -6990,9 +6948,7 @@ async function parseAndRender(isFromDrop = false) {
             } catch (err) {
                 console.warn('Failed to clear menu inline styles after load', err);
             }
-            console.log('[HANGTRACE] parseAndRender setTimeout(100) done at ' + performance.now().toFixed(0) + 'ms');
         }, 100);
-        console.log('[HANGTRACE] parseAndRender: END of try block at ' + performance.now().toFixed(0) + 'ms');
     } catch (e) {
         console.error("Error in parseAndRender:", e);
     alignmentContainer.innerHTML = `<div class="error-message">Error: ${e.message}</div>`;
@@ -7002,8 +6958,6 @@ async function parseAndRender(isFromDrop = false) {
         state.currentFilePath = '';
         el('sourceInfo').innerHTML = 'No file loaded';
     }
-    console.log('[HANGTRACE] parseAndRender: FUNCTION END at ' + performance.now().toFixed(0) + 'ms');
-    Promise.resolve().then(() => console.log('[HANGTRACE] parseAndRender: MICROTASK ran at ' + performance.now().toFixed(0) + 'ms'));
 }
 // Mirrors the canonical mode radios' checked state onto the always-visible
 // top-bar quick switcher. Called after any change to the real radios,
@@ -7118,7 +7072,6 @@ async function onModeChange() {
 }
 
 function setBlockSizeToScreen() {
-    console.log('[HANGTRACE] setBlockSizeToScreen: entry at ' + performance.now().toFixed(0) + 'ms');
     // Estimate how many chars fit in the visible alignment area.
     // Measure a single nucleotide span if one exists; otherwise approximate
     // from the container width minus the name column width.
@@ -7146,7 +7099,6 @@ function setBlockSizeToScreen() {
         const input = el('blockSizeInput');
         if (slider) slider.value = chars;
         if (input) input.value = chars;
-        console.log('[HANGTRACE] setBlockSizeToScreen: >80K skip at ' + performance.now().toFixed(0) + 'ms');
         return; // Skip re-render for large alignments
     }
 
@@ -7184,7 +7136,6 @@ function setBlockSizeToScreen() {
     if (inBlockMode && chars !== prev) {
         renderAlignment();
     }
-    console.log('[HANGTRACE] setBlockSizeToScreen: exit at ' + performance.now().toFixed(0) + 'ms');
 }
 function onShadeModeChange() {
     validateThresholds();
@@ -13589,10 +13540,8 @@ function scheduleNucSelectionRefresh() {
         ? window.requestAnimationFrame.bind(window)
         : (cb) => setTimeout(cb, 16);
     raf(() => {
-        console.log('[HANGTRACE] scheduleNucSelectionRefresh raf firing at ' + performance.now().toFixed(0) + 'ms');
         pendingNucDomUpdate = false;
         refreshNucleotideSelectionsImmediate();
-        console.log('[HANGTRACE] scheduleNucSelectionRefresh raf done at ' + performance.now().toFixed(0) + 'ms');
     });
 }
 // EVENT LISTENERS
@@ -16495,21 +16444,17 @@ function initColourSeqs() {
     const isCanvasMode = () => document.getElementById('modeCanvas')?.checked;
 
     function syncSizes() {
-        console.log('[HANGTRACE] syncSizes: entry at ' + performance.now().toFixed(0) + 'ms');
         syncing = true;
         if (isCanvasMode()) {
             const w = _canvasState.totalContentW || alignment.clientWidth;
             thumb.style.width = Math.max(w, alignment.clientWidth + 1) + 'px';
             bar.scrollLeft = _canvasState.offsetX || 0;
         } else {
-            console.log('[HANGTRACE] syncSizes: reading scrollWidth at ' + performance.now().toFixed(0) + 'ms');
             const w = alignment.scrollWidth || alignment.clientWidth;
-            console.log('[HANGTRACE] syncSizes: after scrollWidth at ' + performance.now().toFixed(0) + 'ms');
             thumb.style.width = Math.max(w, alignment.clientWidth + 1) + 'px';
             bar.scrollLeft = alignment.scrollLeft;
         }
         syncing = false;
-        console.log('[HANGTRACE] syncSizes: exit at ' + performance.now().toFixed(0) + 'ms');
     }
 
     function onBarScroll() {
@@ -16619,7 +16564,6 @@ function initColourSeqs() {
     let syncing = false;
 
     function syncVisibilityAndSize() {
-        console.log('[HANGTRACE] syncVisibilityAndSize: entry at ' + performance.now().toFixed(0) + 'ms');
         if (!isCanvasMode()) {
             bar.style.display = 'none';
             return;
