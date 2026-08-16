@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v178';
+const BUILD_TAG = 'v179';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1787,8 +1787,24 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     const blockLen = end - start;
     const blockDiv = document.createElement('div');
     blockDiv.className = 'block-block';
+    const isLastBlock = (start + (end - start) >= len) || end >= len;
 
-    // Ruler — identical to _buildBlockElement's ruler code
+    // Column windowing within this block - computed up front so the ruler and
+    // both consensus lines can use it too, not just data rows. When the block
+    // is narrower than the viewport (typical Block mode), all columns fit and
+    // no windowing is applied - same as Block mode. When the block is wider
+    // than the viewport (Full mode with 1 giant block), only visible columns
+    // are rendered with padding-left for the offset.
+    const visibleDataWidth = Math.max(0, clientWidth - nameColWidthPx);
+    let colStart = Math.max(start, Math.floor(scrollLeft / charWidthPx) - 20);
+    let colEnd = Math.min(end - 1, Math.ceil((scrollLeft + visibleDataWidth) / charWidthPx) - 1 + 20);
+    if (colStart > colEnd) { colStart = start; colEnd = end - 1; }
+    const needsColWindow = colStart > start || colEnd < end - 1;
+
+    // Ruler — was previously generated for the block's FULL width (blockLen,
+    // up to the whole alignment in Full mode's single-block case) on every
+    // call, including every scroll-triggered refresh. Windowed the same as
+    // data rows now.
     const scaleDiv = document.createElement('div');
     scaleDiv.className = 'seq-line scale-ruler-line';
     const scaleNameDiv = document.createElement('div');
@@ -1796,18 +1812,35 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     scaleNameDiv.textContent = '';
     const scaleDataDiv = document.createElement('div');
     scaleDataDiv.className = 'seq-data';
+    const rulerLen = colEnd - colStart + 1;
     if (state._diffColumns) {
-        scaleDataDiv.innerHTML = generateScaleHTML(blockLen, 10, start);
+        scaleDataDiv.innerHTML = generateScaleHTML(rulerLen, 10, colStart);
     } else {
-        scaleDataDiv.textContent = generateScale(blockLen, 10, start);
+        scaleDataDiv.textContent = generateScale(rulerLen, 10, colStart);
     }
+    if (needsColWindow) _applyColumnWindowStyle(scaleDataDiv, blockLen, colStart - start, charWidthPx);
     scaleDiv.appendChild(scaleNameDiv);
     scaleDiv.appendChild(scaleDataDiv);
     blockDiv.appendChild(scaleDiv);
-    const isLastBlock = (start + (end - start) >= len) || end >= len;
 
     if (shouldRenderConsensus && consensusPosition === 'top') {
-        addConsensusLine(blockDiv, consensus, start, end, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, 'top', options);
+        // addConsensusLine used to be called with the block's full start/end
+        // (up to the whole alignment width in Full mode) - it builds one
+        // span PER COLUMN with its own hover listener, so on a wide
+        // alignment this alone measured 290ms of a ~350ms total scroll-
+        // refresh (83%), building ~12,000 consensus spans every scroll when
+        // only ~180 were ever visible. Windowed the same as data rows now.
+        // The trailing "sequence length" badge (showLength) is appended right
+        // after the last rendered span, not pinned to the container's true
+        // right edge - only pass it through when this windowed view actually
+        // reaches the block's real final column, or a scrolled-away view
+        // would show the badge floating after an arbitrary mid-alignment
+        // column instead of at the end.
+        addConsensusLine(blockDiv, consensus, colStart, colEnd + 1, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock && colEnd >= end - 1, 'top', options);
+        if (needsColWindow) {
+            const consDataEl = blockDiv.lastElementChild?.querySelector('.seq-data');
+            if (consDataEl) _applyColumnWindowStyle(consDataEl, blockLen, colStart - start, charWidthPx);
+        }
     }
 
     // Row windowing within this block.
@@ -1829,17 +1862,6 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     const visBottom = Math.min(effectiveScrollTop + clientHeight, blockTop + blockHeightPx);
     const rowStart = Math.max(0, Math.floor((visTop - rowAreaTop) / rowHeightPx) - overscanRows);
     const rowEnd = Math.min(Math.max(0, nSeq - 1), Math.floor((visBottom - rowAreaTop) / rowHeightPx) + overscanRows);
-
-    // Column windowing within this block.
-    // When the block is narrower than the viewport (typical Block mode), all
-    // columns fit and no windowing is applied — same as Block mode.
-    // When the block is wider than the viewport (Full mode with 1 giant block),
-    // only visible columns are rendered with padding-left for the offset.
-    const visibleDataWidth = Math.max(0, clientWidth - nameColWidthPx);
-    let colStart = Math.max(start, Math.floor(scrollLeft / charWidthPx) - 20);
-    let colEnd = Math.min(end - 1, Math.ceil((scrollLeft + visibleDataWidth) / charWidthPx) - 1 + 20);
-    if (colStart > colEnd) { colStart = start; colEnd = end - 1; }
-    const needsColWindow = colStart > start || colEnd < end - 1;
 
     // Top row spacer (fills the space of rows above the visible window)
     const topRowSpacer = document.createElement('div');
@@ -1864,7 +1886,11 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     blockDiv.appendChild(bottomRowSpacer);
 
     if (shouldRenderConsensus && consensusPosition === 'bottom') {
-        addConsensusLine(blockDiv, consensus, start, end, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, 'bottom', options);
+        addConsensusLine(blockDiv, consensus, colStart, colEnd + 1, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock && colEnd >= end - 1, 'bottom', options);
+        if (needsColWindow) {
+            const consDataEl = blockDiv.lastElementChild?.querySelector('.seq-data');
+            if (consDataEl) _applyColumnWindowStyle(consDataEl, blockLen, colStart - start, charWidthPx);
+        }
     }
 
     return blockDiv;
@@ -5298,7 +5324,20 @@ function renderAlignment(options = {}) {
     // Edit mode keeps it at any size: the cache is what lets a GeneDoc drag repaint one row
     // instead of re-rendering the whole alignment on every column step.
     state._enableSpanCache = (TOTAL_RESIDUES <= 80000) || !!state.editModeActive;
-    const CANVAS_AUTO_THRESHOLD = 150000; // ~100 seq x 1500 col
+    // Was 150,000 (~100 seq x 1500 col) - a holdover from before DOM mode had
+    // windowing at all, when unwindowed DOM genuinely froze well below that
+    // size. Measured directly after the windowing fixes: DOM mode's windowed
+    // scroll-refresh cost is now flat and comparable to Canvas mode's own
+    // frame cost across the entire tested range (6M to 100M residues, ~50-65ms
+    // either way - see the fix that made addConsensusLine respect column
+    // windowing instead of building a span per column across the whole
+    // alignment width on every scroll). Aligned to ALIGN_CRAZY_VOLUME - the
+    // same threshold that already gates windowing and the "Large alignment"
+    // warning dialog - so alignments below it keep using plain DOM mode
+    // exactly as before, and at/above it the user gets an informed choice via
+    // that dialog instead of being silently switched to read-only Canvas mode
+    // at a size where DOM editing was already going to work fine.
+    const CANVAS_AUTO_THRESHOLD = ALIGN_CRAZY_VOLUME;
     let _renderStartTime = performance.now();
     const userWantsCanvas = document.getElementById('modeCanvas')?.checked;
 
