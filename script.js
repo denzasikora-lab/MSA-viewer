@@ -2013,6 +2013,7 @@ function _setupBlockModeScrollListener(container) {
 
 let _unifiedRowHeightPx = null;
 let _unifiedBlockHeightPx = null;
+let _unifiedHeaderHeightPx = null;
 let _unifiedCharWidthPx = null;
 let _unifiedNameColWidthPx = null;
 let _unifiedWindowRenderParams = null;
@@ -2054,11 +2055,43 @@ function _measureUnifiedBlockHeight(sampleBlockEl) {
     return _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx();
 }
 
+// Measures the header (ruler + optional top consensus) directly from a real,
+// attached block's own child elements, rather than deriving it as
+// `blockHeightPx - nSeq * rowHeightPx`. That subtraction looked exact on
+// paper but isn't: rowHeightPx is a getBoundingClientRect() measurement that
+// can carry a fraction-of-a-pixel rounding difference from how blockHeightPx
+// was itself measured, and multiplied across thousands of rows that tiny
+// per-row difference compounds into a "header" of several thousand pixels
+// instead of the real ~30px ruler+consensus - confirmed directly: measured
+// headerHeight via subtraction came out to 6651px on a real 3408-row
+// alignment, versus visible rows never rendering at all because the row
+// range collapsed to negative. Must be called AFTER the block element is
+// attached to the document (getBoundingClientRect on a detached element
+// returns a zero rect), same requirement as _measureUnifiedBlockHeight.
+function _measureUnifiedHeaderHeight(sampleBlockEl) {
+    if (sampleBlockEl) {
+        const ruler = sampleBlockEl.querySelector('.scale-ruler-line');
+        const topConsensus = sampleBlockEl.querySelector('.consensus-line');
+        let h = 0;
+        if (ruler) h += ruler.getBoundingClientRect().height;
+        if (topConsensus) {
+            const r = topConsensus.getBoundingClientRect();
+            // Only count it if it's actually positioned above the first data
+            // row (top consensus), not below (bottom consensus belongs to
+            // the block's trailing content, not its header).
+            const firstDataRow = sampleBlockEl.querySelector('.seq-line[data-seq-index]');
+            if (!firstDataRow || r.top <= firstDataRow.getBoundingClientRect().top) h += r.height;
+        }
+        if (h > 0) _unifiedHeaderHeightPx = h;
+    }
+    return _unifiedHeaderHeightPx != null ? _unifiedHeaderHeightPx : (_unifiedRowHeightPx || 16);
+}
+
 // Builds one block's DOM with row windowing inside (unlike _buildBlockElement
 // which renders ALL rows). Each block contains: ruler, optional top consensus,
 // top row spacer, visible rows, bottom row spacer, optional bottom consensus.
 // Column windowing is applied when the block is wider than the viewport.
-function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeightPx, effectiveScrollTop, clientHeight, scrollLeft, clientWidth, charWidthPx, nameColWidthPx, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options) {
+function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeightPx, effectiveScrollTop, clientHeight, scrollLeft, clientWidth, charWidthPx, nameColWidthPx, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, headerHeightPxIn) {
     const blockLen = end - start;
     const blockDiv = document.createElement('div');
     blockDiv.className = 'block-block';
@@ -2088,12 +2121,16 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     // Row windowing within this block.
     // The block's vertical position in the container is blockIndex * blockHeightPx.
     // The header (ruler + optional top consensus) occupies the space between the
-    // block's top and the row area. We estimate it as blockHeightPx - nSeq * rowHeightPx
-    // (clamped to >= 0), which is exact once blockHeightPx has been measured from a
-    // real block and rowHeightPx from a real row.
+    // block's top and the row area. Uses the directly-measured header height
+    // (see _measureUnifiedHeaderHeight) rather than deriving it as
+    // `blockHeightPx - nSeq * rowHeightPx` - that subtraction looked exact but
+    // compounds rowHeightPx's own sub-pixel measurement error across every row
+    // in the block, which on a real 3408-row alignment produced a phantom
+    // ~6651px "header" (versus the real ~30px ruler+consensus) and made the
+    // row range collapse to negative, rendering zero rows.
     const nSeq = state.seqs.length;
     const blockTop = blockIndex * blockHeightPx;
-    const headerHeight = Math.max(0, blockHeightPx - nSeq * rowHeightPx);
+    const headerHeight = headerHeightPxIn != null ? headerHeightPxIn : _measureUnifiedHeaderHeight(null);
     const rowAreaTop = blockTop + headerHeight;
     const overscanRows = 15;
     const visTop = Math.max(effectiveScrollTop, rowAreaTop);
@@ -2155,6 +2192,8 @@ function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNam
     const blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
     const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + container.clientHeight) / blockHeightPx) + overscan);
 
+    const headerHeightPx = _unifiedHeaderHeightPx != null ? _unifiedHeaderHeightPx : _measureUnifiedHeaderHeight(null);
+
     const topSpacer = document.createElement('div');
     topSpacer.className = 'unified-mode-spacer';
     topSpacer.style.height = (blockStart * blockHeightPx) + 'px';
@@ -2164,7 +2203,7 @@ function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNam
     for (let b = blockStart; b <= blockEnd; b++) {
         const start = b * blockWidth;
         const end = Math.min(start + blockWidth, len);
-        const blockDiv = _buildUnifiedBlock(b, start, end, len, blockHeightPx, rowHeightPx, effectiveScrollTop, container.clientHeight, container.scrollLeft, container.clientWidth, charWidthPx, nameColWidthPx, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options);
+        const blockDiv = _buildUnifiedBlock(b, start, end, len, blockHeightPx, rowHeightPx, effectiveScrollTop, container.clientHeight, container.scrollLeft, container.clientWidth, charWidthPx, nameColWidthPx, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, headerHeightPx);
         container.appendChild(blockDiv);
         if (!firstRealBlock) firstRealBlock = blockDiv;
     }
@@ -2177,6 +2216,7 @@ function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNam
     // Measure from the first real block and its first real row
     if (firstRealBlock) {
         _measureUnifiedBlockHeight(firstRealBlock);
+        _measureUnifiedHeaderHeight(firstRealBlock);
         const firstRow = firstRealBlock.querySelector('.seq-line[data-seq-index]');
         if (firstRow) {
             _measureUnifiedRowHeight(firstRow);
@@ -2227,12 +2267,17 @@ function _refreshUnifiedWindowOnScroll(container) {
     const blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
     const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + effectiveClientHeight) / blockHeightPx) + overscan);
 
+    // Use the cached header height as-is (no re-measure here, same reasoning
+    // as skipping the row/block re-measure below) - it was already measured
+    // from a real attached block during the initial render.
+    const headerHeightPx = _unifiedHeaderHeightPx != null ? _unifiedHeaderHeightPx : _measureUnifiedHeaderHeight(null);
+
     _removeNodesBetweenSpacers(topSpacer, bottomSpacer);
     let firstRealBlock = null;
     for (let b = blockStart; b <= blockEnd; b++) {
         const start = b * p.blockWidth;
         const end = Math.min(start + p.blockWidth, p.len);
-        const blockDiv = _buildUnifiedBlock(b, start, end, p.len, blockHeightPx, rowHeightPx, effectiveScrollTop, effectiveClientHeight, effectiveScrollLeft, effectiveClientWidth, charWidthPx, nameColWidthPx, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, p.shouldRenderConsensus, p.consensusPosition, p.consensus, p.options);
+        const blockDiv = _buildUnifiedBlock(b, start, end, p.len, blockHeightPx, rowHeightPx, effectiveScrollTop, effectiveClientHeight, effectiveScrollLeft, effectiveClientWidth, charWidthPx, nameColWidthPx, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, p.shouldRenderConsensus, p.consensusPosition, p.consensus, p.options, headerHeightPx);
         container.insertBefore(blockDiv, bottomSpacer);
         if (!firstRealBlock) firstRealBlock = blockDiv;
     }
