@@ -5707,55 +5707,17 @@ function renderAlignment(options = {}) {
     // so Canvas mode has access to breakpoint data. No need to recompute here.
     _updateCodonAnalysisState(len);
 
-    if (useBlocks) {
-        // Block-virtualize on "crazy"-sized alignments only, mirroring Full
-        // mode's isCrazy gate - every other size renders exactly as before.
-        if (state.alignmentIndex?.isCrazy) {
-            // Unified windowed path: ruler + consensus are built INSIDE the
-            // block by _buildUnifiedBlock, so we skip the external builds
-            // that the non-windowed path below still uses.
-            renderUnifiedWindowedDom(alignmentContainer, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
-        } else {
-            for (let start = 0; start < len; start += blockWidth) {
-                const end = Math.min(start + blockWidth, len);
-                const blockDiv = _buildBlockElement(start, end, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options);
-                alignmentContainer.appendChild(blockDiv);
-            }
-        }
+    // Full mode = Block mode with blockWidth = len (one block = one ruler + one
+    // consensus + all rows). Both windowed and non-windowed paths use the same
+    // blockWidth parameter, so the only difference is its value.
+    const effectiveBlockWidth = useBlocks ? blockWidth : len;
+    if (state.alignmentIndex?.isCrazy) {
+        renderUnifiedWindowedDom(alignmentContainer, len, effectiveBlockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
     } else {
-        if (state.alignmentIndex?.isCrazy) {
-            // Unified windowed path: ruler + consensus are built INSIDE the
-            // block by _buildUnifiedBlock, so we skip the external builds
-            // that the non-windowed path below still uses.
-            renderUnifiedWindowedDom(alignmentContainer, len, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
-        } else {
-            // Add scale/ruler at the top for full mode
-            const scaleDiv = document.createElement('div');
-            scaleDiv.className = 'seq-line scale-ruler-line';
-            const scaleNameDiv = document.createElement('div');
-            scaleNameDiv.className = 'seq-name';
-            scaleNameDiv.textContent = '';
-            const scaleDataDiv = document.createElement('div');
-            scaleDataDiv.className = 'seq-data';
-            if (state._diffColumns) {
-                scaleDataDiv.innerHTML = generateScaleHTML(len, 10, 0);
-            } else {
-                scaleDataDiv.textContent = generateScale(len);
-            }
-            scaleDiv.appendChild(scaleNameDiv);
-            scaleDiv.appendChild(scaleDataDiv);
-            alignmentContainer.appendChild(scaleDiv);
-
-            if (shouldRenderConsensus && consensusPosition === 'top') {
-                addConsensusLine(alignmentContainer, consensus, 0, len, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, 'top', options);
-            }
-            for (let i = 0; i < state.seqs.length; i++) {
-                const lineDiv = createSequenceLine(i, 0, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, conservationData);
-                alignmentContainer.appendChild(lineDiv);
-            }
-            if (shouldRenderConsensus && consensusPosition === 'bottom') {
-                addConsensusLine(alignmentContainer, consensus, 0, len, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, true, 'bottom', options);
-            }
+        for (let start = 0; start < len; start += effectiveBlockWidth) {
+            const end = Math.min(start + effectiveBlockWidth, len);
+            const blockDiv = _buildBlockElement(start, end, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options);
+            alignmentContainer.appendChild(blockDiv);
         }
     }
     setTimeout(() => toggleStickyNames(), 0);
