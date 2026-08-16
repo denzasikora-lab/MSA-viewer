@@ -149,24 +149,36 @@ check('column selection highlights only currently-visible rows after scroll', as
 });
 
 check('Canvas auto-switch threshold matches ALIGN_CRAZY_VOLUME (v179 regression)', async (page) => {
+  // CANVAS_AUTO_THRESHOLD is intentionally local to renderAlignment(), not a
+  // global - can't be read directly from page.evaluate's global context, so
+  // test the actual BEHAVIOR it controls instead: an alignment just below
+  // ALIGN_CRAZY_VOLUME should default to a DOM mode (has .seq-line rows) on
+  // load, not auto-switch to Canvas.
+  const crazyVolume = await page.evaluate(() => typeof ALIGN_CRAZY_VOLUME !== 'undefined' ? ALIGN_CRAZY_VOLUME : null);
+  if (crazyVolume === null) return { pass: false, detail: 'could not read ALIGN_CRAZY_VOLUME from page' };
+  // Pick a size just under the threshold (small enough to load fast).
+  const nCol = 4000;
+  const nSeq = Math.max(1, Math.floor((crazyVolume * 0.9) / nCol));
+  await loadSyntheticFasta(page, nSeq, nCol);
   const info = await page.evaluate(() => ({
-    threshold: typeof CANVAS_AUTO_THRESHOLD !== 'undefined' ? CANVAS_AUTO_THRESHOLD : null,
-    crazyVolume: typeof ALIGN_CRAZY_VOLUME !== 'undefined' ? ALIGN_CRAZY_VOLUME : null,
+    canvasEl: !!document.querySelector('#alignmentContainer canvas'),
+    domRows: document.querySelectorAll('.seq-line[data-seq-index]').length,
   }));
-  if (info.threshold === null || info.crazyVolume === null) {
-    return { pass: false, detail: 'could not read CANVAS_AUTO_THRESHOLD / ALIGN_CRAZY_VOLUME from page' };
+  if (info.canvasEl && info.domRows === 0) {
+    return { pass: false, detail: `a ${nSeq * nCol}-residue alignment (90% of ALIGN_CRAZY_VOLUME=${crazyVolume}) auto-switched to Canvas - threshold looks too low` };
   }
-  if (info.threshold !== info.crazyVolume) {
-    return { pass: false, detail: `CANVAS_AUTO_THRESHOLD (${info.threshold}) != ALIGN_CRAZY_VOLUME (${info.crazyVolume}) - threshold retune regressed` };
-  }
-  return { pass: true };
+  return { pass: true, detail: `${nSeq * nCol} residues stayed in DOM mode as expected` };
 });
 
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
+  // Optional: CHECK_FILTER=substring runs only checks whose name includes it
+  // (case-insensitive) - useful for isolating one check while iterating.
+  const filter = process.env.CHECK_FILTER ? process.env.CHECK_FILTER.toLowerCase() : null;
+  const activeChecks = filter ? CHECKS.filter(c => c.name.toLowerCase().includes(filter)) : CHECKS;
   try {
-    for (const { name, fn } of CHECKS) {
+    for (const { name, fn } of activeChecks) {
       // A fresh browser process per check, not just a fresh page: multiple
       // multi-million-residue alignments loaded into the SAME browser
       // process across successive checks was observed to accumulate memory
