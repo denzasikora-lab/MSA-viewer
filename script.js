@@ -1992,6 +1992,15 @@ function _refreshUnifiedWindowOnScroll(container) {
     // from a real attached block during the initial render.
     const headerHeightPx = _unifiedHeaderHeightPx != null ? _unifiedHeaderHeightPx : _measureUnifiedHeaderHeight(null);
 
+    // Clear the span cache before rebuilding: _refreshUnifiedWindowOnScroll removes old
+    // DOM nodes and builds new ones (registering fresh spans via registerSpanInCache),
+    // but never removed stale entries for no-longer-visible rows. After scrolling
+    // through the entire alignment, the cache could contain entries for ALL rows
+    // with references to detached spans, making forEachColumnSpan (called from
+    // updateColumnSelections below) iterate over all rows instead of just visible
+    // ones — O(selectedColumns × totalRows) instead of O(selectedColumns × visibleRows).
+    state.spanCache = new Map();
+
     _removeNodesBetweenSpacers(topSpacer, bottomSpacer);
     let firstRealBlock = null;
     for (let b = blockStart; b <= blockEnd; b++) {
