@@ -7114,7 +7114,12 @@ function setBlockSizeToScreen() {
         const zoom = _sliderToZoom(parseInt(el('zoomSlider')?.value || 50)) / 100;
         const charPx = 10 * zoom;
         const namePx = (parseInt(el('nameLengthSlider')?.value || 25) * charPx) + 8;
-        const available = container.clientWidth - namePx - 20;
+        // Use window.innerWidth instead of container.clientWidth to avoid
+        // forcing a synchronous reflow over the just-rendered DOM (millions
+        // of spans). Reading clientWidth on a container with 3.6M child
+        // spans forces the browser to compute layout for all of them,
+        // taking 30+ seconds and hanging parseAndRender.
+        const available = window.innerWidth - namePx - 40;
         const chars = Math.max(40, Math.min(300, Math.floor(available / charPx)));
         const slider = el('blockSizeSlider');
         const input = el('blockSizeInput');
