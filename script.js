@@ -2209,15 +2209,30 @@ function _refreshUnifiedWindowOnScroll(container) {
     const blockHeightPx = _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx();
     const { charWidthPx, nameColWidthPx } = _measureUnifiedColumnMetrics(null);
     const overscan = 1;
-    const blockStart = Math.max(0, Math.floor(container.scrollTop / blockHeightPx) - overscan);
-    const blockEnd = Math.min(numBlocks - 1, Math.floor((container.scrollTop + container.clientHeight) / blockHeightPx) + overscan);
+    // Captured once, before any DOM mutation below. _removeNodesBetweenSpacers
+    // removes the old (potentially huge - up to the full alignment height in
+    // Full mode's single-block case) block content before the spacers are
+    // resized to match; during that gap the container's scrollable content
+    // momentarily collapses, and the browser synchronously clamps scrollTop
+    // to fit - so re-reading container.scrollTop live AFTER the removal (as
+    // this used to do, inside the loop below) could read back 0 regardless
+    // of where the user actually scrolled to, producing a negative/garbage
+    // row range and silently rendering zero rows. Confirmed by direct trace:
+    // scrollTop read 20000 immediately after being set, but 0 by the time
+    // _buildUnifiedBlock read it post-removal.
+    const effectiveScrollTop = container.scrollTop;
+    const effectiveClientHeight = container.clientHeight;
+    const effectiveScrollLeft = container.scrollLeft;
+    const effectiveClientWidth = container.clientWidth;
+    const blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
+    const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + effectiveClientHeight) / blockHeightPx) + overscan);
 
     _removeNodesBetweenSpacers(topSpacer, bottomSpacer);
     let firstRealBlock = null;
     for (let b = blockStart; b <= blockEnd; b++) {
         const start = b * p.blockWidth;
         const end = Math.min(start + p.blockWidth, p.len);
-        const blockDiv = _buildUnifiedBlock(b, start, end, p.len, blockHeightPx, rowHeightPx, container.scrollTop, container.clientHeight, container.scrollLeft, container.clientWidth, charWidthPx, nameColWidthPx, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, p.shouldRenderConsensus, p.consensusPosition, p.consensus, p.options);
+        const blockDiv = _buildUnifiedBlock(b, start, end, p.len, blockHeightPx, rowHeightPx, effectiveScrollTop, effectiveClientHeight, effectiveScrollLeft, effectiveClientWidth, charWidthPx, nameColWidthPx, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, p.shouldRenderConsensus, p.consensusPosition, p.consensus, p.options);
         container.insertBefore(blockDiv, bottomSpacer);
         if (!firstRealBlock) firstRealBlock = blockDiv;
     }
