@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v177';
+const BUILD_TAG = 'v178';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -15397,10 +15397,18 @@ function handleGeneDocResidueKey(e) {
     if (e.key === 'Backspace') {
         e.preventDefault();
         if (pos > 0) {
-            pushUndo('geneDocResidueEdit');
-            const chars = state.seqs[row].seq.split('');
+            const beforeSeq = state.seqs[row].seq;
+            const width = beforeSeq.length;
+            const chars = beforeSeq.split('');
             chars[pos - 1] = GENEDOC_FILLER;
             state.seqs[row].seq = chars.join('');
+            // Row-scoped patch, not pushUndo()'s full-alignment JSON clone -
+            // typing calls this on every keystroke, and JSON.stringify-ing
+            // the whole alignment per character is exactly the kind of
+            // live-recalculation-while-typing cost that made large-file
+            // editing feel laggy. Same pattern already used by the GeneDoc
+            // Move/Slide drag tools (see handleGeneDocEditDragEnd).
+            pushUndoRowPatch('geneDocResidueEdit', row, beforeSeq, state.seqs[row].seq, width, width, 'TypeResidue');
             state.editCell = { row, pos: pos - 1 };
             fastUpdateEditCell();
         }
@@ -15410,11 +15418,13 @@ function handleGeneDocResidueKey(e) {
     // Handle Delete: delete current character
     if (e.key === 'Delete') {
         e.preventDefault();
-        const chars = state.seqs[row].seq.split('');
+        const beforeSeq = state.seqs[row].seq;
+        const width = beforeSeq.length;
+        const chars = beforeSeq.split('');
         if (pos < chars.length) {
-            pushUndo('geneDocResidueEdit');
             chars[pos] = GENEDOC_FILLER;
             state.seqs[row].seq = chars.join('');
+            pushUndoRowPatch('geneDocResidueEdit', row, beforeSeq, state.seqs[row].seq, width, width, 'TypeResidue');
             fastUpdateEditCell();
         }
         return true;
@@ -15442,12 +15452,21 @@ function handleGeneDocResidueKey(e) {
     // Only single printable characters
     if (e.key.length !== 1 || !/^[A-Za-z.-]$/.test(e.key)) return false;
 
-    pushUndo('geneDocResidueEdit');
+    // Normalize first (matches the GeneDoc Move/Slide convention: "recorded
+    // after normalising, so both widths describe a settled alignment") -
+    // then capture beforeSeq from that settled state, not before it, so the
+    // row-scoped patch below stays correct even in the rare case where
+    // normalizeAlignmentLengths actually padded something.
     normalizeAlignmentLengths();
-    const chars = state.seqs[row].seq.split('');
+    const beforeSeq = state.seqs[row].seq;
+    const width = beforeSeq.length;
+    const chars = beforeSeq.split('');
     if (pos < 0 || pos >= chars.length) return false;
     chars[pos] = (e.key === '.' || e.key === '-') ? GENEDOC_FILLER : e.key.toUpperCase();
     state.seqs[row].seq = chars.join('');
+    // Row-scoped patch, not pushUndo()'s full-alignment JSON clone - see the
+    // Backspace/Delete handlers above for why this matters while typing.
+    pushUndoRowPatch('geneDocResidueEdit', row, beforeSeq, state.seqs[row].seq, width, width, 'TypeResidue');
 
     // Update the span at the OLD position (where we just typed)
     fastUpdateEditCellAt(row, pos);
