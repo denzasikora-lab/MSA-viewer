@@ -417,7 +417,8 @@ const _historyManager = {
     save() {
         const store = this.items.slice(0, this.maxItems);
         store._max = this.maxItems;
-        try { localStorage.setItem('msaviewer_history', JSON.stringify(store)); } catch(e) {}
+        const jsonStr = JSON.stringify(store);
+        try { localStorage.setItem('msaviewer_history', jsonStr); } catch(e) {}
     },
 
     add(type, data) {
@@ -1564,12 +1565,15 @@ function toggleStickyNames() {
     // Forcing a reflow here makes the .static class change take effect
     // immediately rather than on the next natural paint. Cost scales with
     // total DOM size, and this runs via setTimeout(0) after EVERY render
-    // (see the call site in renderAlignment) - meaning on a "crazy"-sized
-    // alignment (millions of residue spans) it's a genuine multi-second
-    // main-thread block that isn't captured by anything awaiting the render
-    // call itself. Skip the forced-immediate part above that size; the
-    // class toggle above still applies on the next natural paint either way.
-    if (!(state.alignmentIndex?.isCrazy)) {
+    // (see the call site in renderAlignment) - meaning on a large alignment
+    // (millions of residue spans) it's a genuine multi-second main-thread
+    // block that isn't captured by anything awaiting the render call itself.
+    // Skip the forced-immediate part above that size; the class toggle above
+    // still applies on the next natural paint either way.
+    const _totalRes = state.alignmentIndex?.totalResidues || (state.seqs.length > 0
+        ? state.seqs.length * Math.max(...state.seqs.map(s => s.seq.length))
+        : 0);
+    if (!(state.alignmentIndex?.isCrazy) && _totalRes <= 80000) {
         alignmentContainer.offsetHeight; // Force reflow
     }
     // DOM mode picks this up via the CSS class toggle above (no .seq-name
@@ -2019,7 +2023,7 @@ function _refreshUnifiedWindowOnScroll(container) {
 
 const _unifiedScrollController = _createWindowedScrollController(
     (container) => _refreshUnifiedWindowOnScroll(container),
-    () => (document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && !!state.alignmentIndex?.isCrazy
+    () => (document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && !!state.alignmentIndex?.needsWindowedDom
 );
 function _setupUnifiedScrollListener(container) {
     _unifiedScrollController.bind(container);
@@ -5268,7 +5272,7 @@ function renderAlignment(options = {}) {
     // 0 instead of where the user actually scrolled to). Save and restore
     // around the rebuild, scoped to when windowing might apply so this doesn't
     // change scroll behavior anywhere else.
-    const _preserveScrollTop = ((document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && state.alignmentIndex?.isCrazy)
+    const _preserveScrollTop = ((document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && state.alignmentIndex?.needsWindowedDom)
         ? alignmentContainer.scrollTop : null;
     alignmentContainer.innerHTML = '';
     // Ensure Full/Block modes have correct scroll/layout behaviour
@@ -5494,7 +5498,7 @@ function renderAlignment(options = {}) {
     // consensus + all rows). Both windowed and non-windowed paths use the same
     // blockWidth parameter, so the only difference is its value.
     const effectiveBlockWidth = useBlocks ? blockWidth : len;
-    if (state.alignmentIndex?.isCrazy) {
+    if (state.alignmentIndex?.needsWindowedDom) {
         renderUnifiedWindowedDom(alignmentContainer, len, effectiveBlockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
     } else {
         for (let start = 0; start < len; start += effectiveBlockWidth) {
@@ -5503,7 +5507,9 @@ function renderAlignment(options = {}) {
             alignmentContainer.appendChild(blockDiv);
         }
     }
-    setTimeout(() => toggleStickyNames(), 0);
+    setTimeout(() => {
+        toggleStickyNames();
+    }, 0);
     ['blackSlider', 'darkSlider', 'lightSlider', 'nameLengthSlider', 'zoomSlider', 'blockSizeSlider', 'consensusThreshold'].forEach(id => {
         updateSliderBackground(el(id));
     });
@@ -6523,6 +6529,14 @@ const debounceRender = debounce(renderAlignment, 50);
 const ALIGN_TALL_SEQ_THRESHOLD = 500;
 const ALIGN_LONG_COL_THRESHOLD = 3000;
 const ALIGN_CRAZY_VOLUME = 5_000_000;
+// Below ALIGN_CRAZY_VOLUME but large enough that building the full DOM
+// (one <span> per residue) causes the browser engine itself to spend tens
+// of seconds on style recalc / layout / paint, even though no single JS
+// statement is slow.  Alignments at or above this count use the existing
+// windowed DOM renderer (renderUnifiedWindowedDom) instead of the classic
+// full-build path, without affecting the crazy-alignment dialog or the
+// Canvas auto-switch (both still gated by ALIGN_CRAZY_VOLUME).
+const ALIGN_WINDOWED_DOM_THRESHOLD = 500_000;
 
 /** Single-pass FASTA scan: counts sequences and lengths without building seq objects. */
 function scanFastaIndex(text) {
@@ -6599,11 +6613,15 @@ function classifyAlignmentSize(stats) {
     const isTall = stats.nSeqs > ALIGN_TALL_SEQ_THRESHOLD;
     const isLong = stats.maxLen > ALIGN_LONG_COL_THRESHOLD;
     const isCrazy = (isTall && isLong) || stats.totalResidues > ALIGN_CRAZY_VOLUME;
+    // Windowed DOM rendering kicks in below the crazy threshold too: the
+    // browser engine's own style/layout/paint cost on a multi-million-span
+    // DOM tree is the real bottleneck, not any single JS call.
+    const needsWindowedDom = isCrazy || stats.totalResidues > ALIGN_WINDOWED_DOM_THRESHOLD;
     let mode = 'normal';
     if (isCrazy) mode = 'crazy';
     else if (isTall) mode = 'tall';
     else if (isLong) mode = 'long';
-    return { mode, isTall, isLong, isCrazy };
+    return { mode, isTall, isLong, isCrazy, needsWindowedDom };
 }
 
 function _formatResidueCount(n) {
@@ -6894,8 +6912,6 @@ async function parseAndRender(isFromDrop = false) {
         state._columnConservationScores = null;
         state._columnConservationCache = null;
 
-        // Update name length slider range based on loaded sequences
-        // This will set the slider to maximum actual name length
         updateNameLengthSliderRange();
 
         // Update source info with comprehensive statistics
@@ -6922,7 +6938,6 @@ async function parseAndRender(isFromDrop = false) {
                 text: inputText.substring(0, 100000) // store text for all items (100KB cap)
             }
         );
-
         // Ensure menus don't have inline styles that interfere with hover
         setTimeout(() => {
             try {
@@ -7062,6 +7077,31 @@ function setBlockSizeToScreen() {
     // from the container width minus the name column width.
     const container = document.getElementById('alignmentContainer');
     if (!container) return;
+
+    // For large alignments, getBoundingClientRect() forces a synchronous reflow
+    // over millions of DOM spans, which can take tens of seconds. Use a
+    // zoom-based estimate instead and skip the re-render — the initial render
+    // already used a reasonable block size from the slider's current value.
+    const _aliLen = state.seqs.length > 0 ? Math.max(...state.seqs.map(s => s.seq.length)) : 0;
+    const _totalResidues = state.seqs.length * _aliLen;
+    if (_totalResidues > 80000) {
+        const zoom = _sliderToZoom(parseInt(el('zoomSlider')?.value || 50)) / 100;
+        const charPx = 10 * zoom;
+        const namePx = (parseInt(el('nameLengthSlider')?.value || 25) * charPx) + 8;
+        // Use window.innerWidth instead of container.clientWidth to avoid
+        // forcing a synchronous reflow over the just-rendered DOM (millions
+        // of spans). Reading clientWidth on a container with 3.6M child
+        // spans forces the browser to compute layout for all of them,
+        // taking 30+ seconds and hanging parseAndRender.
+        const available = window.innerWidth - namePx - 40;
+        const chars = Math.max(40, Math.min(300, Math.floor(available / charPx)));
+        const slider = el('blockSizeSlider');
+        const input = el('blockSizeInput');
+        if (slider) slider.value = chars;
+        if (input) input.value = chars;
+        return; // Skip re-render for large alignments
+    }
+
     // Try to measure an existing nucleotide span
     let charPx = 0;
     const sampleSpan = container.querySelector('.seq-data span[data-pos]');
