@@ -90,6 +90,95 @@ check('Reads mode: SAM loads 3 mapped reads with correct track packing', async (
     return { pass: true, detail: `3 reads, 2 tracks, 3 bars rendered` };
 });
 
+check('Clustering: 10 sequences in 2 clear groups cluster correctly', async (page) => {
+    // 1. Load 10 sequences: 5 identical 'A' sequences and 5 identical 'T' sequences.
+    //    Every position is a diagnostic position (A vs T), giving 20 perfect features.
+    //    With 5 seqs per group, default minOccurrences=5 is met.
+    const fasta = [
+        '>seqA1', 'AAAAAAAAAAAAAAAAAAAA',
+        '>seqA2', 'AAAAAAAAAAAAAAAAAAAA',
+        '>seqA3', 'AAAAAAAAAAAAAAAAAAAA',
+        '>seqA4', 'AAAAAAAAAAAAAAAAAAAA',
+        '>seqA5', 'AAAAAAAAAAAAAAAAAAAA',
+        '>seqB1', 'TTTTTTTTTTTTTTTTTTTT',
+        '>seqB2', 'TTTTTTTTTTTTTTTTTTTT',
+        '>seqB3', 'TTTTTTTTTTTTTTTTTTTT',
+        '>seqB4', 'TTTTTTTTTTTTTTTTTTTT',
+        '>seqB5', 'TTTTTTTTTTTTTTTTTTTT',
+    ].join('\n');
+    await loadFasta(page, fasta);
+
+    // 2. Set clustering parameters (lower thresholds for small test alignment)
+    await page.evaluate(() => {
+        const setVal = (id, val) => {
+            const el = document.getElementById(id);
+            if (el) el.value = val;
+        };
+        setVal('clusterMinSizeInput', '2');
+        setVal('clusterMinPerfectInput', '1');
+        setVal('clusterMaxIterationsInput', '10');
+        setVal('minOccurrencesInput', '2');
+        setVal('qualitySmallInput', '50');
+        setVal('qualityMediumInput', '50');
+        setVal('qualityLargeInput', '50');
+    });
+
+    // 3. Run clustering through the real entry point
+    try {
+        await page.evaluate(async () => {
+            if (typeof SINEClusterer === 'undefined') {
+                throw new Error('SINEClusterer class not loaded in page');
+            }
+            await clusterSequences();
+        });
+    } catch (e) {
+        return { pass: false, detail: `clustering threw: ${e.message}` };
+    }
+
+    // 4. Assert specific, correct output
+    const result = await page.evaluate(() => {
+        const cr = state.clusterResults;
+        if (!cr) return { error: 'state.clusterResults is null' };
+        return {
+            nClusters: cr.summary?.nClusters,
+            nAssigned: cr.summary?.nAssigned,
+            nTotal: cr.summary?.nTotal,
+            nUnassigned: cr.summary?.nUnassigned,
+            clusterMap: state.clusterMap,
+        };
+    });
+
+    if (result.error) {
+        return { pass: false, detail: result.error };
+    }
+    if (result.nClusters !== 2) {
+        return { pass: false, detail: `expected 2 clusters, got ${result.nClusters} (assigned=${result.nAssigned}, unassigned=${result.nUnassigned})` };
+    }
+    if (result.nAssigned !== 10) {
+        return { pass: false, detail: `expected 10 assigned, got ${result.nAssigned}` };
+    }
+    // Check that seqA1-5 are in the same cluster and seqB1-5 are in the same cluster
+    const clustersA = [0,1,2,3,4].map(i => result.clusterMap[i]?.cluster);
+    const clustersB = [5,6,7,8,9].map(i => result.clusterMap[i]?.cluster);
+
+    if (clustersA.some(c => c === undefined)) {
+        return { pass: false, detail: `some group A sequences unassigned: ${JSON.stringify(clustersA)}` };
+    }
+    if (clustersB.some(c => c === undefined)) {
+        return { pass: false, detail: `some group B sequences unassigned: ${JSON.stringify(clustersB)}` };
+    }
+    if (!clustersA.every(c => c === clustersA[0])) {
+        return { pass: false, detail: `group A not in same cluster: ${JSON.stringify(clustersA)}` };
+    }
+    if (!clustersB.every(c => c === clustersB[0])) {
+        return { pass: false, detail: `group B not in same cluster: ${JSON.stringify(clustersB)}` };
+    }
+    if (clustersA[0] === clustersB[0]) {
+        return { pass: false, detail: `group A and group B in same cluster: ${clustersA[0]}` };
+    }
+    return { pass: true, detail: `2 clusters: A=${clustersA[0]}, B=${clustersB[0]}, 10 assigned` };
+});
+
 async function main() {
     const { server, baseUrl } = await start();
     const results = [];
