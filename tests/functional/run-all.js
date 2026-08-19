@@ -340,6 +340,84 @@ check('Search: exact and fuzzy motif matching with correct match counts', async 
     return { pass: true, detail: `exact: 1 match/1 seq, 1-mismatch: 2 matches/2 seqs, 2-mismatch seq correctly excluded` };
 });
 
+check('Dot plot: self-comparison produces points along the main diagonal', async (page) => {
+    // 1. Load a single 20bp sequence with a repeating ACGT pattern.
+    //    Self-comparison (seq vs itself) should produce matches along the
+    //    main diagonal because every position i trivially matches itself.
+    const fasta = '>seq1\nACGTACGTACGTACGTACGT\n';
+    await loadFasta(page, fasta);
+
+    // 2. Call openDotPlot with the sequence against itself (self-comparison).
+    //    SPIN mode (default) uses k-mer exact matching via web worker.
+    await page.evaluate(async () => {
+        const seq = state.seqs[0].seq.replace(/[-.\s]/g, '');
+        await openDotPlot(seq, seq, 'seq1', 'seq1', null);
+    });
+
+    // 3. Wait for the web worker computation to complete
+    await page.waitForFunction(() => !_dotPlotState.computing, { timeout: 10000 });
+
+    // 4. Assert specific, correct output
+    const result = await page.evaluate(() => {
+        const S = _dotPlotState;
+        const canvas = document.getElementById('dotPlotCanvas');
+        return {
+            hasMatchMap: !!S.matchMap,
+            rows: S.rows,
+            cols: S.cols,
+            spinMode: S.spinMode,
+            canvasExists: !!canvas,
+            canvasWidth: canvas ? canvas.width : 0,
+            canvasHeight: canvas ? canvas.height : 0,
+            // Count matches on the main diagonal: matchMap[i * cols + i]
+            diagonalMatchCount: (() => {
+                if (!S.matchMap || S.rows !== S.cols || S.rows === 0) return -1;
+                let count = 0;
+                for (let i = 0; i < S.rows; i++) {
+                    if (S.matchMap[i * S.cols + i]) count++;
+                }
+                return count;
+            })(),
+            // Sample first 5 diagonal values for debugging
+            diagonalSample: (() => {
+                if (!S.matchMap || S.rows === 0) return null;
+                const sample = [];
+                for (let i = 0; i < Math.min(5, S.rows); i++) {
+                    sample.push(S.matchMap[i * S.cols + i]);
+                }
+                return sample;
+            })(),
+        };
+    });
+
+    if (!result.hasMatchMap) {
+        return { pass: false, detail: 'matchMap is null - SPIN word-match computation did not produce results' };
+    }
+    if (result.rows !== result.cols) {
+        return { pass: false, detail: `self-comparison should have rows === cols, got ${result.rows} x ${result.cols}` };
+    }
+    if (result.rows === 0) {
+        return { pass: false, detail: 'rows is 0 - no computation results' };
+    }
+    if (!result.canvasExists) {
+        return { pass: false, detail: 'dot plot canvas element not found after openDotPlot' };
+    }
+    if (result.diagonalMatchCount === -1) {
+        return { pass: false, detail: 'could not count diagonal matches (rows/cols mismatch or empty)' };
+    }
+    // For a self-comparison, positions on the main diagonal should match
+    // (seq[i] === seq[i] trivially). With word size 6 (from #dotPlotWindow
+    // default in HTML) and a 20bp sequence, every word at position i matches
+    // itself, and each match marks 6 cells (i,i)..(i+5,i+5). The union of
+    // all word matches covers the entire diagonal (0..19). Require at least
+    // 50% as a robust threshold.
+    const expectedMin = Math.floor(result.rows * 0.5);
+    if (result.diagonalMatchCount < expectedMin) {
+        return { pass: false, detail: `only ${result.diagonalMatchCount}/${result.rows} diagonal matches (expected at least ${expectedMin}); sample: ${JSON.stringify(result.diagonalSample)}` };
+    }
+    return { pass: true, detail: `${result.rows}x${result.cols} self-comparison, ${result.diagonalMatchCount} diagonal matches, canvas ${result.canvasWidth}x${result.canvasHeight}` };
+});
+
 async function main() {
     const { server, baseUrl } = await start();
     const results = [];
