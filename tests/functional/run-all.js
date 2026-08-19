@@ -271,6 +271,75 @@ check('Colouring: clusterByName groups identically-prefixed names, applyPatternC
     return { pass: true, detail: `2 clusters (Human x3, Mouse x3), 3 names coloured by pattern` };
 });
 
+check('Search: exact and fuzzy motif matching with correct match counts', async (page) => {
+    // 1. Load 3 sequences with known differences at the end:
+    //    seq1: ACGTACGTAC (reference)
+    //    seq2: ACGTACGTAG (1 mismatch at pos 9: G vs C)
+    //    seq3: ACGTACGTGG (2 mismatches at pos 8,9: G,G vs A,C)
+    const fasta = [
+        '>seq1', 'ACGTACGTAC',
+        '>seq2', 'ACGTACGTAG',
+        '>seq3', 'ACGTACGTGG',
+    ].join('\n');
+    await loadFasta(page, fasta);
+
+    // 2. Search for "ACGTACGTAC" with 0 mismatches (exact match only)
+    await page.evaluate(() => {
+        document.getElementById('searchInput').value = 'ACGTACGTAC';
+        document.getElementById('maxMismatches').value = '0';
+        state.searchHistory = [];
+        searchMotif();
+    });
+
+    let result = await page.evaluate(() => {
+        const h = state.searchHistory;
+        return {
+            historyLen: h.length,
+            matchCount: h[0]?.matchCount,
+            seqsWithMatches: h[0]?.sequencesWithMatches,
+        };
+    });
+
+    // Exact: only seq1 matches (1 match in 1 sequence)
+    if (result.historyLen !== 1) {
+        return { pass: false, detail: `expected 1 search history entry, got ${result.historyLen}` };
+    }
+    if (result.matchCount !== 1) {
+        return { pass: false, detail: `exact search: expected 1 match, got ${result.matchCount}` };
+    }
+    if (result.seqsWithMatches !== 1) {
+        return { pass: false, detail: `exact search: expected 1 sequence with matches, got ${result.seqsWithMatches}` };
+    }
+
+    // 3. Search for "ACGTACGTAC" with 1 mismatch allowed
+    await page.evaluate(() => {
+        document.getElementById('searchInput').value = 'ACGTACGTAC';
+        document.getElementById('maxMismatches').value = '1';
+        state.searchHistory = [];
+        searchMotif();
+    });
+
+    result = await page.evaluate(() => {
+        const h = state.searchHistory;
+        return {
+            historyLen: h.length,
+            matchCount: h[0]?.matchCount,
+            seqsWithMatches: h[0]?.sequencesWithMatches,
+        };
+    });
+
+    // 1 mismatch: seq1 (exact, 0mm) + seq2 (1mm) = 2 matches in 2 sequences
+    // seq3 has 2 mismatches, should NOT match with maxMismatches=1
+    if (result.matchCount !== 2) {
+        return { pass: false, detail: `1-mismatch search: expected 2 matches (seq1 exact + seq2 1mm), got ${result.matchCount}` };
+    }
+    if (result.seqsWithMatches !== 2) {
+        return { pass: false, detail: `1-mismatch search: expected 2 sequences with matches, got ${result.seqsWithMatches}` };
+    }
+
+    return { pass: true, detail: `exact: 1 match/1 seq, 1-mismatch: 2 matches/2 seqs, 2-mismatch seq correctly excluded` };
+});
+
 async function main() {
     const { server, baseUrl } = await start();
     const results = [];
