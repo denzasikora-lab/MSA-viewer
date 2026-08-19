@@ -168,7 +168,7 @@ Two options for adding new sequences: **Just Add** appends sequences padded with
 ### Codon analysis (MACSE-inspired)
 Activates on nucleotide alignments of any length ≥ 3 (gapped CDS alignments are often not multiples of 3). N nucleotides colour-coded by codon position: blue=1st, green=2nd, orange=3rd. In-frame stop codons: red background, white bold text. Frameshift-inducing indels: wavy red underline. Substitutions classified relative to a reference sequence: synonymous (green underline) vs. non-synonymous (double red underline). Translated amino acid track displayed below each sequence.
 
-**Why novel:** First browser-based MACSE-style codon viewer. 17 genetic codes (NCBI tables 1–6, 9–14, 16, 21, 22) — vertebrate/invertebrate/yeast/ascidian mitochondrial, ciliate/euplotid nuclear, and 10 others. Only differences from Standard stored; full table built by merge. Dynamic switching recalculates stop codons, syn/non-syn labels, and AA translations.
+**Why novel:** First browser-based MACSE-style codon viewer. 15 genetic codes (NCBI tables 1–6, 9–14, 16, 21, 22) — vertebrate/invertebrate/yeast/ascidian mitochondrial, ciliate/euplotid nuclear, and 9 others. Only differences from Standard stored; full table built by merge. Dynamic switching recalculates stop codons, syn/non-syn labels, and AA translations.
 
 ### Position-pattern clustering (SINEClusterer)
 400-line algorithm for subfamily detection. At each alignment column, groups sequences by shared nucleotide. Collects candidate groups meeting size and quality thresholds. Fuzzy-merges near-identical groups (Jaccard ≥ 90%, size difference ≤ 5). Scores by feature quality: perfect-unique (all members share the base, zero outside) = 3, near-perfect (≥80% match) = 2, majority = 1.5, imperfect (passes quality threshold) = 1. Prunes outliers matching <30% of cluster features (or <2 matches for groups with ≤5 features). Iterates with progressive threshold relaxation (minimum perfect features decay from 5 to 1 over 10 iterations at UI defaults). Gap characters and monomorphic columns (>80% one base) filtered at the pattern collection stage. Bounding region trimming via sliding-window gap analysis excludes ragged ends. Configurable quality tiers (small <11 seqs at 80%, medium 11–19 at 70%, large ≥20 at 60%) with adjustable breakpoints. Upper bound prevents degenerate mega-clusters (cap at 50% of available sequences).
@@ -242,21 +242,21 @@ Save complete viewer state as JSON: alignment data, colour assignments, search h
 
 ## 🆕 What's New to Bioinformatics (Novelty Spotlight)
 
-1. **First browser-based MACSE-inspired codon viewer with 17 genetic codes** — syn/non-syn classification, frameshift detection, and stop codon highlighting respond to genetic code switching in real time.
+1. **First browser-based MACSE-inspired codon viewer with 15 genetic codes** — syn/non-syn classification, frameshift detection, and stop codon highlighting respond to genetic code switching in real time.
 
-2. **First browser-based SAM/BAM/CRAM reader with full CIGAR expansion** — all 11 CIGAR operations, pileup consensus reference, compact paired-end read visualization. Bridges the NGS–MSA gap.
+2. **First browser-based SAM/BAM reader with full CIGAR expansion** — all 9 CIGAR operations, pileup consensus reference, IGV-style read track visualization. Bridges the NGS–MSA gap.
 
 3. **First position-pattern subfamily clustering in any viewer** — SINEClusterer provides TE annotation in a visual environment. Gap filtering, monomorphic-column skipping, fuzzy merging, outlier pruning, progressive relaxation, and configurable quality tiers. No command line, no separate tool.
 
 4. **Select→compress→insert consensus pipeline** — select N sequences → replace with their consensus in one click. Directly supports the clustering→consensus workflow for subfamily annotation. Reversible (undo). No other viewer offers this.
 
-5. **Auto-colour by name similarity with Levenshtein clustering** — guaranteed same-colour assignment for identical-prefix sequences. Configurable sensitivity for fuzzy taxonomic grouping. Two rendering modes (discrete + gradient). Colour history inspector tracks every assignment's provenance.
+5. **Auto-colour by name similarity with n-gram Jaccard clustering** — guaranteed same-colour assignment for identical-prefix sequences. Configurable sensitivity for fuzzy taxonomic grouping. Two rendering modes (discrete + gradient). Colour history inspector tracks every assignment's provenance.
 
 6. **Colour-as-selection-metadata** — copy by colour, group by colour, sort by colour. Colour assignments become a data organization and export pipeline, not just decoration.
 
 7. **Canvas renderer with automatic threshold activation** — handles alignments 10× larger than DOM-based viewers. User doesn't configure performance — the tool detects and adapts.
 
-8. **IGV-style compact read packing in a general MSA tool** — paired-end connection lines, diffs-only mode, coverage histogram. NGS visualization without leaving the alignment viewer.
+8. **IGV-style read packing in a general MSA tool** — diffs-only mode with "Show bases" toggle, soft-clip display, deletion gaps, insertion ticks. NGS visualization without leaving the alignment viewer.
 
 9. **Block realignment with in-place splicing** — fix a locally misaligned region without touching the rest. Block degapping with automatic column cleanup. Both tracked in undo.
 
@@ -266,7 +266,7 @@ Save complete viewer state as JSON: alignment data, colour assignments, search h
 
 12. **Snapshot system with search + colour state** — URL-loadable saved states include colour assignments and search highlights, not just alignment data. Shareable links to exact viewer configurations.
 
-13. **8-format automatic content detection** — FASTA, MSF, Clustal, PHYLIP, NEXUS, Stockholm, SAM, BAM/CRAM. No file extension guessing. More formats than any browser viewer.
+13. **9-format automatic content detection** — FASTA, MSF, Clustal, PHYLIP, NEXUS, Stockholm, SAM, BAM, GenBank. No file extension guessing. More formats than any browser viewer.
 
 14. **Save/load sequence order as portable JSON** — export current order to a file, reimport after reloading data. Decouples ordering from alignment content. Matches by header name, handles missing/extra entries gracefully.
 
