@@ -8065,7 +8065,7 @@ function downloadAlignment() {
         showMessage("No alignment loaded to save.", 3000);
         return;
     }
-    const fasta = state.seqs.map(s => `>${s.fullHeader || s.header}\n${s.seq}`).join('\n');
+    const fasta = state.seqs.map(s => `>${s.fullHeader != null ? s.fullHeader : s.header}\n${s.seq}`).join('\n');
     const filename = (state.currentFilename || 'alignment').replace(/\.[^.]+$/, '') + '.fasta';
     const blob = new Blob([fasta], { type: 'text/plain;charset=utf-8' });
     const a = document.createElement('a');
@@ -8588,7 +8588,7 @@ function _fromBase64Utf8(base64) {
 }
 
 function _buildSnapshotPayload() {
-    const fasta = state.seqs.map(s => `>${s.fullHeader || s.header}\n${s.seq}`).join('\n');
+    const fasta = state.seqs.map(s => `>${s.fullHeader != null ? s.fullHeader : s.header}\n${s.seq}`).join('\n');
     const consensusTypeEl = document.querySelector('input[name="consensusType"]:checked');
     const shadeModeEl = document.querySelector('input[name="shadeMode"]:checked');
     const consensusPosEl = document.querySelector('input[name="consensusPosition"]:checked');
