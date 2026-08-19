@@ -3897,7 +3897,7 @@ function parseFasta(text) {
                 }
                 header = line;
             } else {
-                seq += line.replace(/_/g, '-').replace(/[^A-Za-z*.\-]/g, '');
+                seq += line.replace(/[_?~]/g, '-').replace(/[^A-Za-z*.\-]/g, '');
             }
         }
         if (header) {
