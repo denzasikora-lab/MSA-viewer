@@ -6,7 +6,7 @@
 // straight into a manuscript's performance section. Not a pass/fail gate
 // (see tests/regression for that) - this is a numbers report.
 const { start } = require('../lib/static-server');
-const { launch, makeFasta, loadFasta, setMode } = require('../lib/browser');
+const { launch, loadSyntheticFasta, setMode } = require('../lib/browser');
 
 // Only sizes that clear ALIGN_CRAZY_VOLUME (5M) so the windowed DOM path is
 // actually exercised - a smaller alignment doesn't call
@@ -23,7 +23,7 @@ async function benchScroll(browser, baseUrl, nSeq, nCol) {
   page.setDefaultTimeout(90000);
   await page.goto(baseUrl + '/index.html', { waitUntil: 'networkidle' });
   const t0 = Date.now();
-  await loadFasta(page, makeFasta(nSeq, nCol));
+  await loadSyntheticFasta(page, nSeq, nCol);
   const loadMs = Date.now() - t0;
 
   await setMode(page, 'canvas');
@@ -66,7 +66,7 @@ async function benchTyping(browser, baseUrl) {
   const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
   page.setDefaultTimeout(30000);
   await page.goto(baseUrl + '/index.html', { waitUntil: 'networkidle' });
-  await loadFasta(page, makeFasta(200, 20000)); // 4M residues, realistic editing target size
+  await loadSyntheticFasta(page, 200, 20000); // 4M residues, realistic editing target size
   await setMode(page, 'full');
   const timings = await page.evaluate(async () => {
     setGeneDocEditTool('residue');
