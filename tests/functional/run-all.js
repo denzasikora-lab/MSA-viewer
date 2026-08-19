@@ -179,6 +179,98 @@ check('Clustering: 10 sequences in 2 clear groups cluster correctly', async (pag
     return { pass: true, detail: `2 clusters: A=${clustersA[0]}, B=${clustersB[0]}, 10 assigned` };
 });
 
+check('Colouring: clusterByName groups identically-prefixed names, applyPatternColour colours by regex', async (page) => {
+    // 1. Load 6 sequences: 3 with "Human_" prefix, 3 with "Mouse_" prefix.
+    //    Names share a common suffix pattern (_seqN) but have distinct prefixes,
+    //    so clusterByName should separate them by prefix similarity.
+    const fasta = [
+        '>Human_seq1', 'ACGTACGTAC',
+        '>Human_seq2', 'ACGTACGTAC',
+        '>Human_seq3', 'ACGTACGTAC',
+        '>Mouse_seq1', 'TTTTTTTTTT',
+        '>Mouse_seq2', 'TTTTTTTTTT',
+        '>Mouse_seq3', 'TTTTTTTTTT',
+    ].join('\n');
+    await loadFasta(page, fasta);
+
+    // 2. Test clusterByName directly: should produce 2 clusters
+    const clusterResult = await page.evaluate(() => {
+        const names = state.seqs.map(s => s.header);
+        const clusters = clusterByName(names, 10, 3);
+        return {
+            nClusters: clusters.length,
+            clusters: clusters,
+        };
+    });
+
+    if (clusterResult.nClusters !== 2) {
+        return { pass: false, detail: `expected 2 clusters, got ${clusterResult.nClusters}: ${JSON.stringify(clusterResult.clusters)}` };
+    }
+
+    const humanCluster = clusterResult.clusters.find(c => c.includes('Human_seq1'));
+    const mouseCluster = clusterResult.clusters.find(c => c.includes('Mouse_seq1'));
+
+    if (!humanCluster || !mouseCluster) {
+        return { pass: false, detail: `missing Human or Mouse cluster: ${JSON.stringify(clusterResult.clusters)}` };
+    }
+    if (humanCluster.length !== 3 || !humanCluster.every(n => n.startsWith('Human_'))) {
+        return { pass: false, detail: `Human cluster wrong: ${JSON.stringify(humanCluster)}` };
+    }
+    if (mouseCluster.length !== 3 || !mouseCluster.every(n => n.startsWith('Mouse_'))) {
+        return { pass: false, detail: `Mouse cluster wrong: ${JSON.stringify(mouseCluster)}` };
+    }
+
+    // 3. Test applyPatternColour through the real UI entry point.
+    //    Set the pattern input to "Human" and a specific colour, then call
+    //    applyPatternColour() - the same function the Pattern button triggers.
+    const patternResult = await page.evaluate(() => {
+        // Ensure UI elements exist (they should be in the HTML, but create if missing)
+        let patternInput = document.getElementById('colourPatternInput');
+        if (!patternInput) {
+            patternInput = document.createElement('input');
+            patternInput.id = 'colourPatternInput';
+            patternInput.type = 'text';
+            document.body.appendChild(patternInput);
+        }
+        let colourInput = document.getElementById('colourPatternColor');
+        if (!colourInput) {
+            colourInput = document.createElement('input');
+            colourInput.id = 'colourPatternColor';
+            colourInput.type = 'color';
+            document.body.appendChild(colourInput);
+        }
+
+        patternInput.value = 'Human';
+        colourInput.value = '#ff0000';
+
+        // Clear any existing mappings
+        colourState.mappings.clear();
+
+        // Call the real function (same as clicking the Pattern button)
+        applyPatternColour();
+
+        // Collect results
+        const mappings = {};
+        colourState.mappings.forEach((color, name) => {
+            mappings[name] = color;
+        });
+        return { mappings };
+    });
+
+    const mappedNames = Object.keys(patternResult.mappings);
+    if (mappedNames.length !== 3) {
+        return { pass: false, detail: `expected 3 mapped names, got ${mappedNames.length}: ${JSON.stringify(mappedNames)}` };
+    }
+    if (!mappedNames.every(n => n.startsWith('Human_'))) {
+        return { pass: false, detail: `only Human_ names should be mapped: ${JSON.stringify(mappedNames)}` };
+    }
+    if (!mappedNames.every(n => patternResult.mappings[n] === '#ff0000')) {
+        return { pass: false, detail: `all should be #ff0000: ${JSON.stringify(patternResult.mappings)}` };
+    }
+
+    return { pass: true, detail: `2 clusters (Human x3, Mouse x3), 3 names coloured by pattern` };
+});
+
 async function main() {
     const { server, baseUrl } = await start();
     const results = [];
