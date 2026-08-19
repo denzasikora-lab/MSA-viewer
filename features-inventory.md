@@ -55,7 +55,7 @@ SVG-based greedy track assignment. Each read is a horizontal bar. Mismatch posit
 **Why novel:** NGS read visualization inside a general MSA tool — not a separate application. Paired-end connection lines have no equivalent in any other ViewAlign.
 
 ### Cross-mode Highlight Diffs + Variable Sites Only
-Conserved-column set computed once from the alignment. Highlight Diffs dims fully-conserved columns to 25% opacity across all view modes. Variable Sites Only hides them entirely. Both consume the same computation.
+Conserved-column set computed once from the alignment. Highlight Diffs dims fully-conserved columns to 40% opacity across all view modes. Variable Sites Only hides them entirely. Both consume the same computation.
 
 **Why novel:** Two cross-mode overlays sharing one conserved-set computation. Most viewers either lack this or implement it independently per mode.
 
