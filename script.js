@@ -8050,7 +8050,7 @@ function copyAlignment() {
         showMessage("No alignment loaded to copy.", 3000);
         return;
     }
-    const fasta = state.seqs.map(s => `>${s.fullHeader || s.header}\n${s.seq}`).join('\n');
+    const fasta = state.seqs.map(s => `>${s.fullHeader != null ? s.fullHeader : s.header}\n${s.seq}`).join('\n');
     navigator.clipboard.writeText(fasta).then(() => {
         const seqCount = state.seqs.length;
         const seqLen = state.seqs[0]?.seq.length || 0;
