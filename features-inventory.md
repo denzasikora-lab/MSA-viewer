@@ -37,22 +37,20 @@ localStorage-backed panel. Stores metadata + full alignment text (100 KB cap per
 
 ## 🖥️ Visualization & Rendering
 
-### 5 interchangeable view modes
-**Full** (continuous scroll), **Block** (configurable-width wrapped blocks with repeating labels), **Canvas** (GPU-composited 2D with viewport culling), **Compact** (IGV-style read packing), **Variable Sites Only** (conserved columns hidden). Switch modes without reloading or reformatting.
+### 4 interchangeable view modes
+**Full** (continuous scroll), **Block** (configurable-width wrapped blocks with repeating labels), **Canvas** (viewport-culled 2D canvas), **Reads** (IGV-style read tracks for mapped SAM/BAM data). Switch modes without reloading or reformatting. Variable Sites Only is a cross-mode overlay (checkbox), not a separate mode.
 
-**Why novel:** Most viewers offer 1–2 modes. Five modes serve distinct workflows — editing (Full), publication inspection (Block), NGS reads (Compact), large alignments (Canvas), and variant scanning (Variable Sites).
+**Why novel:** Most viewers offer 1–2 modes. Four modes serve distinct workflows — editing (Full), publication inspection (Block), large alignments (Canvas), and NGS reads (Reads). Variable Sites Only adds variant scanning to any mode.
 
 ### Canvas renderer with automatic activation
-GPU-composited Canvas 2D context. Draws only rows and columns visible in the viewport per frame — no per-residue DOM nodes. Activates automatically when the alignment exceeds 150,000 total residues (≈100 sequences × 1,500 columns) with a toast notification and user override option. Mouse wheel + click-drag panning.
+Canvas 2D context with viewport culling. Draws only rows and columns visible in the viewport per frame — no per-residue DOM nodes. Activates automatically when the alignment exceeds 5,000,000 total residues with a status message and user override option. Mouse wheel + click-drag panning.
 
 **Why novel:** Handles alignments that crash pure-DOM viewers. Auto-activation removes the performance decision from the user — the tool adapts.
 
-### Compact mode (IGV-style read packing) — *removed, may return*
-SVG-based greedy track assignment. Each read is a horizontal bar. Mismatch positions colored red. Coverage histogram above reads. Two optional overlays:
-- **Diffs only:** 4-pixel hairlines — only variant positions visible. Hundreds of reads collapse to a single-column-width signal.
-- **Pairs:** Dashed lines connecting paired-end reads using SAM flags 0x1/0x40/0x80 at computed mate positions.
+### Reads mode (IGV-style read packing)
+SVG-based greedy track assignment via `assignReadTracks()`. Each read is a horizontal bar with start/end cap marks. Mismatch positions colored red. Soft-clip extensions shown as dashed lighter-fill segments. Deletion gaps rendered as grey segments. Insertion positions marked with orange ticks. A "Show bases" toggle switches between diffs-only mode (mismatches only) and full base coloring. Click a read to highlight it and display its CIGAR, position, and MAPQ in the status line.
 
-**Why novel:** NGS read visualization inside a general MSA tool — not a separate application. Paired-end connection lines have no equivalent in any other ViewAlign.
+**Why novel:** NGS read visualization inside a general MSA tool — not a separate application. Track packing, soft-clip display, and per-base mismatch coloring in a browser-based alignment viewer.
 
 ### Cross-mode Highlight Diffs + Variable Sites Only
 Conserved-column set computed once from the alignment. Highlight Diffs dims fully-conserved columns to 40% opacity across all view modes. Variable Sites Only hides them entirely. Both consume the same computation.
@@ -286,14 +284,14 @@ Save complete viewer state as JSON: alignment data, colour assignments, search h
 | Feature | ViewAlign | MSAViewer (Yachdav) | JalviewJS | AliView* | IGV.js |
 |---------|-----------|---------------------|-----------|----------|--------|
 | **Formats** | 8 (auto-detect) | 1 (FASTA) | 5+ | 5+ | SAM/BAM |
-| **View modes** | 5 | 1 | 2 | 2 | 1 |
+| **View modes** | 4 | 1 | 2 | 2 | 1 |
 | **Residue editing** | ✅ GeneDoc-style | ❌ | ❌ | ✅ | ❌ |
 | **Codon analysis** | ✅ 17 codes | ❌ | ❌ | ❌ | ❌ |
 | **Sequence clustering** | ✅ SINEClusterer | ❌ | ❌ | ❌ | ❌ |
 | **Replace with consensus** | ✅ select→compress | ❌ | ❌ | ❌ | ❌ |
 | **Auto-colour by name** | ✅ Levenshtein | ❌ | ❌ | ❌ | ❌ |
 | **Copy by colour** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Compact reads** | ✅ IGV-style | ❌ | ❌ | ❌ | ✅ |
+| **Reads mode** | ✅ IGV-style | ❌ | ❌ | ❌ | ✅ |
 | **Canvas large-align** | ✅ auto threshold | ✅ fixed | ❌ | ✅ | ✅ |
 | **Block realignment** | ✅ Ctrl+Shift+R | ❌ | ❌ | ❌ | ❌ |
 | **Block degapping** | ✅ + column cleanup | ❌ | ❌ | ❌ | ❌ |
