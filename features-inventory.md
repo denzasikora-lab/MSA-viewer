@@ -101,12 +101,12 @@ After running SINEClusterer, assign persistent colours to sequences by cluster m
 ## ✂️ Editing Operations
 
 ### GeneDoc-style residue editor
-Edit mode toggles per-residue keyboard input. Click a residue, type the replacement. Typing `-` inserts a gap column — the alignment length adjusts correctly and all gapless position caches update. Conservation shading recomputes live as you type.
+Edit mode toggles per-residue keyboard input. Click a residue, type the replacement. Typing `-` or `.` replaces the current residue with a gap character at that position (does not insert a gap column). The edited span's shading updates immediately using cached conservation data; full conservation recomputation and gapless position cache updates happen on the next render. A separate "Live conservation" toggle enables real-time conservation recomputation during Move/Slide drag operations.
 
-**Why novel:** Browser-based MSA editing is rare. MSAViewer (Yachdav 2016) has no editing mode. Live conservation feedback during editing has no equivalent.
+**Why novel:** Browser-based MSA editing is rare. MSAViewer (Yachdav 2016) has no editing mode. Per-keystroke span updates with cached conservation shading, plus a live-conservation toggle for drag operations, have no equivalent in other browser-based viewers.
 
 ### Full undo/redo with visual dropdown
-Every operation — row deletion, duplication, reverse-complement, column deletion, gap insertion, residue typing, block realignment, TSD marking, degapping, replace-with-consensus — pushes to an undo stack. The dropdown shows operation names in chronological order; click any to jump to that state. Not linear — random-access undo.
+Every operation — row deletion, duplication, reverse-complement, column deletion, gap insertion, residue typing, block realignment, degapping, replace-with-consensus — pushes to an undo stack. TSD marking with lowercase style also pushes to the main stack; colour and bold TSD marking use a separate undo mechanism. The dropdown shows operation names in reverse chronological order (most recent first); click any to jump to that state. Not linear — random-access undo.
 
 **Why novel:** Random-access undo stack with named operations. Most viewers offer Ctrl+Z only. The dropdown makes complex editing explorable.
 
@@ -132,9 +132,9 @@ Select N sequences → one click computes their majority-rule consensus → dele
 **Why novel:** Select→compress→insert in one operation. This directly supports the clustering workflow: identify a subfamily → replace its members with the subfamily consensus for cleaner downstream analysis. No other viewer offers this.
 
 ### Insert group consensus
-Same consensus computation as replace, but inserts the consensus row above or below the selected group without deleting the originals. Configure threshold and minimum coverage separately.
+Same consensus computation as replace, but inserts the consensus row below the selected group without deleting the originals. Uses the global consensus threshold and minimum coverage settings.
 
-**Why novel:** Consensus as an annotation layer over the original sequences — not a replacement. The threshold is independently adjustable per operation (separate from the global consensus threshold).
+**Why novel:** Consensus as an annotation layer over the original sequences — not a replacement. The threshold and coverage minimum are shared with the global consensus controls, ensuring consistency between the displayed consensus line and inserted group consensuses.
 
 ### Block degapping (two directions)
 Select a continuous column block → `degapSelectedBlock('left'|'right')` removes gaps from the block, aligns residues to the left or right, then **removes columns that became entirely gap**. Gap-padding direction is configurable. Tracked in undo.
@@ -151,8 +151,8 @@ Six operations on selected sequences: degap, reverse, complement, reverse-comple
 
 **Why novel:** Bulk sequence-level transformations in a viewer — otherwise you'd write a script.
 
-### Add & Align with consensus profile merging
-Append a new sequence to the alignment, then realign it against the existing alignment's consensus via MAFFT in add-keep-length mode. The alignment grows dynamically — new insertion columns are inserted at the correct positions in all existing sequences. `_mergeSequenceIntoConsensusProfile()` tracks insertion slots per consensus position and rebuilds the profile with dynamically added columns.
+### Add sequences with consensus profile merging
+Two options for adding new sequences: **Just Add** appends sequences padded with gaps; when "Align to consensus" is checked, each new sequence is pairwise-aligned against the existing alignment's consensus via MAFFT, and `_mergeSequenceIntoConsensusProfile()` tracks insertion slots per consensus position to rebuild the profile with dynamically added columns. **Add & Align** performs a full MAFFT realignment of all sequences (existing + new) together. In both cases the alignment grows dynamically — new insertion columns are inserted at the correct positions in all existing sequences.
 
 **Why novel:** Grow an alignment without rebuilding it from scratch. The slot-tracking profile merging is a non-trivial algorithm — it preserves the consensus coordinate space while accommodating new insertions.
 
