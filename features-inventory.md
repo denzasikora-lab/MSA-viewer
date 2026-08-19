@@ -216,7 +216,7 @@ Right-click a sequence → BLAST opens a dialog listing all configured databases
 ## 📤 Export & Publishing
 
 ### RTF export with per-residue conservation shading
-Word-compatible document. Courier New 9pt monospace. Each residue's background colour matches the active conservation shading scheme. Scale ruler every 10 positions. Consensus line at bottom. Sequence names left-aligned. Opens directly in Microsoft Word.
+Word-compatible document. Courier New 9pt monospace. Each residue's background colour matches the active conservation shading scheme. Scale ruler every 10 positions. Consensus line at top (after ruler, before sequences). Sequence names left-aligned. Opens directly in Microsoft Word.
 
 **Why novel:** GeneDoc-style publication-quality alignment figures from a browser. No desktop software needed for the final figure.
 
@@ -231,8 +231,8 @@ Save complete viewer state as JSON: alignment data, colour assignments, search h
 ### Copy variants
 - **Copy selected as FASTA** (gapped or ungapped)
 - **Copy selected columns as FASTA** — exports a column range across all sequences
-- **Copy alignment** — full alignment as plain text
-- **Copy consensus** — consensus sequence as plain text
+- **Copy alignment** — full alignment as FASTA
+- **Copy consensus** — consensus sequence as FASTA
 - **Copy by colour** — all sequences with a specific colour, gapped or ungapped
 - **Copy tree Newick** — UPGMA output to clipboard
 
