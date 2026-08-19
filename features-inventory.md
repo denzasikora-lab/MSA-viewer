@@ -8,20 +8,20 @@
 
 ## 📥 Input & Format Support
 
-### 8-format automatic detection
-Load any of FASTA, MSF, Clustal, PHYLIP, NEXUS, Stockholm, SAM, or BAM/CRAM. Detection inspects content — `@HD`/`@SQ` headers for SAM, `CLUSTAL`/`MUSCLE` keywords for Clustal, `# STOCKHOLM 1.0` for Stockholm, `#NEXUS` for NEXUS, `MSF:` block for MSF, `nSeqs length` first-line pattern for PHYLIP. No file extension guessing.
+### 9-format automatic detection
+Load any of FASTA, MSF, Clustal, PHYLIP, NEXUS, Stockholm, SAM, BAM, or GenBank. Detection inspects content — `@HD`/`@SQ` headers for SAM, `CLUSTAL`/`MUSCLE` keywords for Clustal, `# STOCKHOLM 1.0` for Stockholm, `#NEXUS` for NEXUS, `MSF:` block for MSF, `nSeqs length` first-line pattern for PHYLIP, `LOCUS` header for GenBank. BAM is detected by file extension. No CRAM support.
 
-**Why novel:** No other browser-based viewer accepts SAM, BAM/CRAM, Stockholm, or NEXUS. No desktop viewer auto-detects all 8 from content.
+**Why novel:** No other browser-based viewer accepts SAM, BAM, Stockholm, NEXUS, or GenBank. No desktop viewer auto-detects all 9 from content.
 
-### Full CIGAR expansion for SAM
-All 11 CIGAR operations (M, I, D, N, S, H, P, =, X, B, soft-clip) expanded to gapped nucleotide alignment. Pileup majority-rule consensus computed from mapped reads as the reference sequence. Secondary alignments (flag 0x100) and unmapped reads (flag 0x4) automatically filtered.
+### CIGAR expansion for SAM
+9 CIGAR operations (M, I, D, N, S, H, P, =, X) expanded to gapped nucleotide alignment via `_expandCigar()`. Pileup majority-rule consensus computed from mapped reads as the reference sequence. Secondary (flag 0x100), supplementary (flag 0x800), and unmapped (flag 0x4) reads automatically filtered.
 
 **Why novel:** Full SAM specification support — not just M/I/D approximation. Pileup consensus eliminates need for a separate reference file.
 
-### BAM/CRAM via server pipeline
-POST `/api/bam2sam` runs `samtools view` server-side with path-traversal guards. BAM→SAM conversion happens transparently; the viewer receives SAM text.
+### Client-side BAM parsing
+`BamParser.decompressBAM()` parses BGZF-compressed BAM files entirely in the browser — no server round-trip. `parseBAMHeader()` and `parseBAMRecords()` extract reads directly from the binary format.
 
-**Why novel:** NGS file inspection without CLI. Unique among web viewers.
+**Why novel:** NGS file inspection without a server or CLI. Unique among web viewers.
 
 ### Recent files history
 localStorage-backed panel. Stores metadata + full alignment text (100 KB cap per entry). Adjustable size 1–50. One-click reload of any past file, including clipboard pastes. Survives browser restarts.
@@ -29,33 +29,31 @@ localStorage-backed panel. Stores metadata + full alignment text (100 KB cap per
 **Why novel:** Alignments persist across sessions without a server or database. Most viewers forget everything on tab close.
 
 ### URL parameter loading
-`?file=https://...` auto-loads remote alignments. `?snapshotFile=https://...` auto-restores a full viewer state. Shareable links encode both data and display.
+`?url=https://...` auto-loads a remote alignment. `?data=...` loads inline base64-encoded alignment text. `?snapshot=...` / `?snapshotFile=https://...` auto-restore a full viewer state (inline or remote). `?title=...` sets a custom page title. Shareable links encode both data and display.
 
-**Why novel:** Direct sharing of an alignment + its exact visual configuration with one URL. No other ViewAlign supports state-serialized URL loading.
+**Why novel:** Direct sharing of an alignment + its exact visual configuration with one URL. No other MSA viewer supports state-serialized URL loading.
 
 ---
 
 ## 🖥️ Visualization & Rendering
 
-### 5 interchangeable view modes
-**Full** (continuous scroll), **Block** (configurable-width wrapped blocks with repeating labels), **Canvas** (GPU-composited 2D with viewport culling), **Compact** (IGV-style read packing), **Variable Sites Only** (conserved columns hidden). Switch modes without reloading or reformatting.
+### 4 interchangeable view modes
+**Full** (continuous scroll), **Block** (configurable-width wrapped blocks with repeating labels), **Canvas** (viewport-culled 2D canvas), **Reads** (IGV-style read tracks for mapped SAM/BAM data). Switch modes without reloading or reformatting. Variable Sites Only is a cross-mode overlay (checkbox), not a separate mode.
 
-**Why novel:** Most viewers offer 1–2 modes. Five modes serve distinct workflows — editing (Full), publication inspection (Block), NGS reads (Compact), large alignments (Canvas), and variant scanning (Variable Sites).
+**Why novel:** Most viewers offer 1–2 modes. Four modes serve distinct workflows — editing (Full), publication inspection (Block), large alignments (Canvas), and NGS reads (Reads). Variable Sites Only adds variant scanning to any mode.
 
 ### Canvas renderer with automatic activation
-GPU-composited Canvas 2D context. Draws only rows and columns visible in the viewport per frame — no per-residue DOM nodes. Activates automatically when the alignment exceeds 150,000 total residues (≈100 sequences × 1,500 columns) with a toast notification and user override option. Mouse wheel + click-drag panning.
+Canvas 2D context with viewport culling. Draws only rows and columns visible in the viewport per frame — no per-residue DOM nodes. Activates automatically when the alignment exceeds 5,000,000 total residues with a status message and user override option. Mouse wheel + click-drag panning.
 
 **Why novel:** Handles alignments that crash pure-DOM viewers. Auto-activation removes the performance decision from the user — the tool adapts.
 
-### Compact mode (IGV-style read packing) — *removed, may return*
-SVG-based greedy track assignment. Each read is a horizontal bar. Mismatch positions colored red. Coverage histogram above reads. Two optional overlays:
-- **Diffs only:** 4-pixel hairlines — only variant positions visible. Hundreds of reads collapse to a single-column-width signal.
-- **Pairs:** Dashed lines connecting paired-end reads using SAM flags 0x1/0x40/0x80 at computed mate positions.
+### Reads mode (IGV-style read packing)
+SVG-based greedy track assignment via `assignReadTracks()`. Each read is a horizontal bar with start/end cap marks. Mismatch positions colored red. Soft-clip extensions shown as dashed lighter-fill segments. Deletion gaps rendered as grey segments. Insertion positions marked with orange ticks. A "Show bases" toggle switches between diffs-only mode (mismatches only) and full base coloring. Click a read to highlight it and display its CIGAR, position, and MAPQ in the status line.
 
-**Why novel:** NGS read visualization inside a general MSA tool — not a separate application. Paired-end connection lines have no equivalent in any other ViewAlign.
+**Why novel:** NGS read visualization inside a general MSA tool — not a separate application. Track packing, soft-clip display, and per-base mismatch coloring in a browser-based alignment viewer.
 
 ### Cross-mode Highlight Diffs + Variable Sites Only
-Conserved-column set computed once from the alignment. Highlight Diffs dims fully-conserved columns to 25% opacity across all view modes. Variable Sites Only hides them entirely. Both consume the same computation.
+Conserved-column set computed once from the alignment. Highlight Diffs dims fully-conserved columns to 40% opacity across all view modes. Variable Sites Only hides them entirely. Both consume the same computation.
 
 **Why novel:** Two cross-mode overlays sharing one conserved-set computation. Most viewers either lack this or implement it independently per mode.
 
@@ -64,9 +62,6 @@ Conserved-column set computed once from the alignment. Highlight Diffs dims full
 ## 🎨 Sequence Colouring System
 
 This is not a single feature — it's a complete colour assignment infrastructure with multiple entry points, all tracked and reversible.
-
-### Manual colour assignment
-Assign custom background colours to individual sequences via colour picker. Colours apply to sequence name backgrounds and persist through all editing operations. Colour inspector panel shows live assignments.
 
 ### Auto-colour by name similarity
 `clusterByName()` normalizes sequence headers to first N configurable characters. Groups identical normalized keys into guaranteed-same-colour buckets. Optionally merges near-identical keys via Levenshtein distance with configurable sensitivity (0 = permissive, 10 = strict). Two rendering modes:
@@ -81,12 +76,12 @@ Colour sequences whose names match a regular expression. `applyPatternColour()` 
 **Why novel:** Regex-based group assignment — colour all "Homo_sapiens" green, "Mus_musculus" blue, etc. in one step. Complements the name-similarity clustering for explicit taxonomic grouping.
 
 ### Cluster-based colouring
-After running SINEClusterer, assign persistent colours to sequences by cluster membership. Hovering a cluster row in the results panel highlights all member sequences with glow effect. Colour survives all edits.
+After running SINEClusterer, assign persistent colours to sequences by cluster membership. A "Highlight in alignment" button in the results panel highlights all member sequences. Colour survives all edits.
 
 **Why novel:** Visual validation of algorithmic clustering — outliers are immediately obvious against colour-uniform groups.
 
 ### Colour history inspector
-`recordColorHistory()` logs every assignment with timestamp and method tag (Manual, Auto-Similarity, Pattern, Cluster). `showColorHistory()` renders an interactive panel showing who got what colour and how. Not a cosmetic feature — it's an audit trail for reproducible figure preparation.
+`recordColorHistory()` logs every assignment with timestamp and method tag (Pattern, Auto-Similarity). `showColorHistory()` renders an interactive panel showing who got what colour and how. Not a cosmetic feature — it's an audit trail for reproducible figure preparation.
 
 **Why novel:** Colouring decisions become traceable. No other viewer tracks the provenance of colour assignments.
 
@@ -106,12 +101,12 @@ After running SINEClusterer, assign persistent colours to sequences by cluster m
 ## ✂️ Editing Operations
 
 ### GeneDoc-style residue editor
-Edit mode toggles per-residue keyboard input. Click a residue, type the replacement. Typing `-` inserts a gap column — the alignment length adjusts correctly and all gapless position caches update. Conservation shading recomputes live as you type.
+Edit mode toggles per-residue keyboard input. Click a residue, type the replacement. Typing `-` or `.` replaces the current residue with a gap character at that position (does not insert a gap column). The edited span's shading updates immediately using cached conservation data; full conservation recomputation and gapless position cache updates happen on the next render. A separate "Live conservation" toggle enables real-time conservation recomputation during Move/Slide drag operations.
 
-**Why novel:** Browser-based MSA editing is rare. MSAViewer (Yachdav 2016) has no editing mode. Live conservation feedback during editing has no equivalent.
+**Why novel:** Browser-based MSA editing is rare. MSAViewer (Yachdav 2016) has no editing mode. Per-keystroke span updates with cached conservation shading, plus a live-conservation toggle for drag operations, have no equivalent in other browser-based viewers.
 
 ### Full undo/redo with visual dropdown
-Every operation — row deletion, duplication, reverse-complement, column deletion, gap insertion, residue typing, block realignment, TSD marking, degapping, replace-with-consensus — pushes to an undo stack. The dropdown shows operation names in chronological order; click any to jump to that state. Not linear — random-access undo.
+Every operation — row deletion, duplication, reverse-complement, column deletion, gap insertion, residue typing, block realignment, degapping, replace-with-consensus — pushes to an undo stack. TSD marking with lowercase style also pushes to the main stack; colour and bold TSD marking use a separate undo mechanism. The dropdown shows operation names in reverse chronological order (most recent first); click any to jump to that state. Not linear — random-access undo.
 
 **Why novel:** Random-access undo stack with named operations. Most viewers offer Ctrl+Z only. The dropdown makes complex editing explorable.
 
@@ -137,9 +132,9 @@ Select N sequences → one click computes their majority-rule consensus → dele
 **Why novel:** Select→compress→insert in one operation. This directly supports the clustering workflow: identify a subfamily → replace its members with the subfamily consensus for cleaner downstream analysis. No other viewer offers this.
 
 ### Insert group consensus
-Same consensus computation as replace, but inserts the consensus row above or below the selected group without deleting the originals. Configure threshold and minimum coverage separately.
+Same consensus computation as replace, but inserts the consensus row below the selected group without deleting the originals. Uses the global consensus threshold and minimum coverage settings.
 
-**Why novel:** Consensus as an annotation layer over the original sequences — not a replacement. The threshold is independently adjustable per operation (separate from the global consensus threshold).
+**Why novel:** Consensus as an annotation layer over the original sequences — not a replacement. The threshold and coverage minimum are shared with the global consensus controls, ensuring consistency between the displayed consensus line and inserted group consensuses.
 
 ### Block degapping (two directions)
 Select a continuous column block → `degapSelectedBlock('left'|'right')` removes gaps from the block, aligns residues to the left or right, then **removes columns that became entirely gap**. Gap-padding direction is configurable. Tracked in undo.
@@ -156,8 +151,8 @@ Six operations on selected sequences: degap, reverse, complement, reverse-comple
 
 **Why novel:** Bulk sequence-level transformations in a viewer — otherwise you'd write a script.
 
-### Add & Align with consensus profile merging
-Append a new sequence to the alignment, then realign it against the existing alignment's consensus via MAFFT in add-keep-length mode. The alignment grows dynamically — new insertion columns are inserted at the correct positions in all existing sequences. `_mergeSequenceIntoConsensusProfile()` tracks insertion slots per consensus position and rebuilds the profile with dynamically added columns.
+### Add sequences with consensus profile merging
+Two options for adding new sequences: **Just Add** appends sequences padded with gaps; when "Align to consensus" is checked, each new sequence is pairwise-aligned against the existing alignment's consensus via MAFFT, and `_mergeSequenceIntoConsensusProfile()` tracks insertion slots per consensus position to rebuild the profile with dynamically added columns. **Add & Align** performs a full MAFFT realignment of all sequences (existing + new) together. In both cases the alignment grows dynamically — new insertion columns are inserted at the correct positions in all existing sequences.
 
 **Why novel:** Grow an alignment without rebuilding it from scratch. The slot-tracking profile merging is a non-trivial algorithm — it preserves the consensus coordinate space while accommodating new insertions.
 
@@ -286,14 +281,14 @@ Save complete viewer state as JSON: alignment data, colour assignments, search h
 | Feature | ViewAlign | MSAViewer (Yachdav) | JalviewJS | AliView* | IGV.js |
 |---------|-----------|---------------------|-----------|----------|--------|
 | **Formats** | 8 (auto-detect) | 1 (FASTA) | 5+ | 5+ | SAM/BAM |
-| **View modes** | 5 | 1 | 2 | 2 | 1 |
+| **View modes** | 4 | 1 | 2 | 2 | 1 |
 | **Residue editing** | ✅ GeneDoc-style | ❌ | ❌ | ✅ | ❌ |
 | **Codon analysis** | ✅ 17 codes | ❌ | ❌ | ❌ | ❌ |
 | **Sequence clustering** | ✅ SINEClusterer | ❌ | ❌ | ❌ | ❌ |
 | **Replace with consensus** | ✅ select→compress | ❌ | ❌ | ❌ | ❌ |
 | **Auto-colour by name** | ✅ Levenshtein | ❌ | ❌ | ❌ | ❌ |
 | **Copy by colour** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Compact reads** | ✅ IGV-style | ❌ | ❌ | ❌ | ✅ |
+| **Reads mode** | ✅ IGV-style | ❌ | ❌ | ❌ | ✅ |
 | **Canvas large-align** | ✅ auto threshold | ✅ fixed | ❌ | ✅ | ✅ |
 | **Block realignment** | ✅ Ctrl+Shift+R | ❌ | ❌ | ❌ | ❌ |
 | **Block degapping** | ✅ + column cleanup | ❌ | ❌ | ❌ | ❌ |
