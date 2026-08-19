@@ -186,7 +186,7 @@ Self-comparison or pairwise. Adjustable window (1–61, odd), identity threshold
 **Why novel:** Region detector + sidebar navigation bridges dot plot exploration and alignment inspection. No other viewer connects these — you see a dot, you click it, you're looking at the aligned sequences. Copy Region turns exploratory browsing into data extraction.
 
 ### Repeat & TSD Finder with undo marking
-Tandem repeat detection with configurable minimum length, copy number, mismatch tolerance. TSD detection with flanking window, minimum length, maximum mismatches. Found TSD pairs can be **marked** in the alignment using colour, bold, or lowercase residue styles. Marking is tracked in undo — inspect, mark, revert if wrong. Separate from the repeat search results.
+Tandem repeat detection with configurable minimum length and mismatch tolerance (minimum copy number fixed at ≥2). TSD detection with flanking window, minimum length, maximum mismatches. Found TSD pairs can be **marked** in the alignment using colour, bold, or lowercase residue styles. Marking is tracked in a dedicated undo (separate from the main stack for colour/bold; lowercase uses the main undo stack) — inspect, mark, revert if wrong. Separate from the repeat search results.
 
 **Why novel:** Non-destructive TSD annotation with undo. Mark→inspect→undo workflow lets you try different parameter settings without polluting the alignment.
 
@@ -199,7 +199,7 @@ Two modes: **Plurity** (strict nucleotide — normal bases only, A/C/G/T priorit
 **Why novel:** Independent threshold + coverage minimum is not standard. Most tools have a single "consensus threshold." The coverage minimum prevents calling a consensus base from 2 sequences out of 100. The IUPAC ambiguous mode preserves positional uncertainty information that plurality mode discards.
 
 ### Regex motif search
-Search bar accepts exact motifs (with configurable 0–10 mismatches) or JavaScript regular expressions via `.*` checkbox toggle. Regex matches evaluated against degapped sequences. Match-length-aware highlighting (longer matches get wider highlights). Ctrl+Click any residue to instantly search for that base.
+Search bar accepts exact motifs (with configurable 0–10 mismatches) or JavaScript regular expressions via `.*` checkbox toggle. Regex matches evaluated against degapped sequences. Match-length-aware highlighting (longer matches get wider highlights).
 
 **Why novel:** Regex mode with the `.*` toggle is a single-checkbox conversion from exact to pattern search. Match-length-aware highlighting is rare.
 
