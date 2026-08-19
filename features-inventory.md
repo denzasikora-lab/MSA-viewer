@@ -63,9 +63,6 @@ Conserved-column set computed once from the alignment. Highlight Diffs dims full
 
 This is not a single feature — it's a complete colour assignment infrastructure with multiple entry points, all tracked and reversible.
 
-### Manual colour assignment
-Assign custom background colours to individual sequences via colour picker. Colours apply to sequence name backgrounds and persist through all editing operations. Colour inspector panel shows live assignments.
-
 ### Auto-colour by name similarity
 `clusterByName()` normalizes sequence headers to first N configurable characters. Groups identical normalized keys into guaranteed-same-colour buckets. Optionally merges near-identical keys via Levenshtein distance with configurable sensitivity (0 = permissive, 10 = strict). Two rendering modes:
 - **Discrete:** maximally-separated ColorBrewer/Tablaeu palette with golden-ratio hue distribution for >12 clusters. Every cluster gets a distinct colour.
@@ -79,12 +76,12 @@ Colour sequences whose names match a regular expression. `applyPatternColour()` 
 **Why novel:** Regex-based group assignment — colour all "Homo_sapiens" green, "Mus_musculus" blue, etc. in one step. Complements the name-similarity clustering for explicit taxonomic grouping.
 
 ### Cluster-based colouring
-After running SINEClusterer, assign persistent colours to sequences by cluster membership. Hovering a cluster row in the results panel highlights all member sequences with glow effect. Colour survives all edits.
+After running SINEClusterer, assign persistent colours to sequences by cluster membership. A "Highlight in alignment" button in the results panel highlights all member sequences. Colour survives all edits.
 
 **Why novel:** Visual validation of algorithmic clustering — outliers are immediately obvious against colour-uniform groups.
 
 ### Colour history inspector
-`recordColorHistory()` logs every assignment with timestamp and method tag (Manual, Auto-Similarity, Pattern, Cluster). `showColorHistory()` renders an interactive panel showing who got what colour and how. Not a cosmetic feature — it's an audit trail for reproducible figure preparation.
+`recordColorHistory()` logs every assignment with timestamp and method tag (Pattern, Auto-Similarity). `showColorHistory()` renders an interactive panel showing who got what colour and how. Not a cosmetic feature — it's an audit trail for reproducible figure preparation.
 
 **Why novel:** Colouring decisions become traceable. No other viewer tracks the provenance of colour assignments.
 
