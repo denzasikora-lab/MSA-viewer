@@ -4,6 +4,7 @@ class SINEClusterer {
         this.nSeqs = sequences.length;
         this.alnLen = sequences[0].seq.length;
         this.matrix = sequences.map(s => s.seq.split(''));
+        this._allSeqIndices = Array.from({length: this.nSeqs}, (_, i) => i);
     }
 
     getPositionPatterns(pos, availableSeqs) {
@@ -49,10 +50,15 @@ class SINEClusterer {
         for (let pos = startPos; pos < endPos; pos++) {
             const patterns = this.getPositionPatterns(pos, availableSeqs);
 
-            // Skip positions where any single nucleotide dominates (>80% of avail seqs)
-            const availLen = availableSeqs.length;
-            const maxSize = Math.max(...Object.values(patterns).map(s => s.size));
-            if (maxSize / availLen > 0.8) continue;
+            // Skip positions where a single nucleotide dominates the WHOLE alignment
+            // (>80% of all sequences, not just the remaining pool) - a conserved,
+            // non-diagnostic column. Checking against availableSeqs alone made a
+            // perfectly clean remaining cluster look "non-diagnostic" once an earlier
+            // cluster was removed and the pool became internally homogeneous, even
+            // though it was 100% distinct from the removed cluster.
+            const globalPatterns = this.getPositionPatterns(pos, this._allSeqIndices);
+            const maxGlobalSize = Math.max(...Object.values(globalPatterns).map(s => s.size));
+            if (maxGlobalSize / this.nSeqs > 0.8) continue;
 
             for (const [ch, set] of Object.entries(patterns)) {
                 const size = set.size;
