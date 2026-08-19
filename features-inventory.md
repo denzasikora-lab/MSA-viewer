@@ -166,7 +166,7 @@ Two options for adding new sequences: **Just Add** appends sequences padded with
 ## 🔬 Analysis Tools
 
 ### Codon analysis (MACSE-inspired)
-Activates on nucleotide alignments with length divisible by 3. N nucleotides colour-coded by codon position: blue=1st, green=2nd, orange=3rd. In-frame stop codons: red background, white bold text. Frameshift-inducing indels: wavy red underline. Substitutions classified relative to a reference sequence: synonymous (green underline) vs. non-synonymous (double red underline). Translated amino acid track displayed below each sequence.
+Activates on nucleotide alignments of any length ≥ 3 (gapped CDS alignments are often not multiples of 3). N nucleotides colour-coded by codon position: blue=1st, green=2nd, orange=3rd. In-frame stop codons: red background, white bold text. Frameshift-inducing indels: wavy red underline. Substitutions classified relative to a reference sequence: synonymous (green underline) vs. non-synonymous (double red underline). Translated amino acid track displayed below each sequence.
 
 **Why novel:** First browser-based MACSE-style codon viewer. 17 genetic codes (NCBI tables 1–6, 9–14, 16, 21, 22) — vertebrate/invertebrate/yeast/ascidian mitochondrial, ciliate/euplotid nuclear, and 10 others. Only differences from Standard stored; full table built by merge. Dynamic switching recalculates stop codons, syn/non-syn labels, and AA translations.
 
