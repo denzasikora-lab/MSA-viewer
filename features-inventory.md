@@ -280,13 +280,13 @@ Save complete viewer state as JSON: alignment data, colour assignments, search h
 
 | Feature | ViewAlign | MSAViewer (Yachdav) | JalviewJS | AliView* | IGV.js |
 |---------|-----------|---------------------|-----------|----------|--------|
-| **Formats** | 8 (auto-detect) | 1 (FASTA) | 5+ | 5+ | SAM/BAM |
+| **Formats** | 9 (auto-detect) | 1 (FASTA) | 5+ | 5+ | SAM/BAM |
 | **View modes** | 4 | 1 | 2 | 2 | 1 |
 | **Residue editing** | ✅ GeneDoc-style | ❌ | ❌ | ✅ | ❌ |
-| **Codon analysis** | ✅ 17 codes | ❌ | ❌ | ❌ | ❌ |
+| **Codon analysis** | ✅ 15 codes | ❌ | ❌ | ❌ | ❌ |
 | **Sequence clustering** | ✅ SINEClusterer | ❌ | ❌ | ❌ | ❌ |
 | **Replace with consensus** | ✅ select→compress | ❌ | ❌ | ❌ | ❌ |
-| **Auto-colour by name** | ✅ Levenshtein | ❌ | ❌ | ❌ | ❌ |
+| **Auto-colour by name** | ✅ n-gram Jaccard | ❌ | ❌ | ❌ | ❌ |
 | **Copy by colour** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **Reads mode** | ✅ IGV-style | ❌ | ❌ | ❌ | ✅ |
 | **Canvas large-align** | ✅ auto threshold | ✅ fixed | ❌ | ✅ | ✅ |
@@ -297,7 +297,7 @@ Save complete viewer state as JSON: alignment data, colour assignments, search h
 | **RTF export** | ✅ GeneDoc-style | ❌ | ❌ | ❌ | ❌ |
 | **Snapshot state** | ✅ colours + search | ❌ | ❌ | ❌ | ❌ |
 | **Regex search** | ✅ | ❌ | ❌ | ❌ | ❌ |
-| **Server** | MAFFT+BLAST+BAM | ❌ | ❌ | ❌ | ❌ |
+| **Server** | BLAST+SSH+snapshots | ❌ | ❌ | ❌ | ❌ |
 | **Dependencies** | None (vanilla JS) | BioJS | BioJS | Java app | JS module |
 
 *\*AliView is a desktop Java application; its JS version is limited.*
