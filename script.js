@@ -409,16 +409,26 @@ const _historyManager = {
     load() {
         try {
             const raw = localStorage.getItem('msaviewer_history');
-            if (raw) { this.items = JSON.parse(raw); this.maxItems = this.items._max || 10; }
+            if (raw) {
+                const parsed = JSON.parse(raw);
+                if (Array.isArray(parsed)) {
+                    // Legacy format from before this fix: JSON.stringify on an
+                    // array silently drops non-index properties, so a tacked-on
+                    // "_max" was never actually persisted - only the items
+                    // array itself survived. Treat it as items with the default max.
+                    this.items = parsed;
+                } else if (parsed && Array.isArray(parsed.items)) {
+                    this.items = parsed.items;
+                    this.maxItems = parsed.max || 10;
+                }
+            }
         } catch(e) { this.items = []; }
         if (!Array.isArray(this.items)) this.items = [];
     },
 
     save() {
         const store = this.items.slice(0, this.maxItems);
-        store._max = this.maxItems;
-        const jsonStr = JSON.stringify(store);
-        try { localStorage.setItem('msaviewer_history', jsonStr); } catch(e) {}
+        try { localStorage.setItem('msaviewer_history', JSON.stringify({ max: this.maxItems, items: store })); } catch(e) {}
     },
 
     add(type, data) {
@@ -6936,7 +6946,13 @@ async function parseAndRender(isFromDrop = false) {
                 length: (parsed[0]?.seq?.length || 0),
                 preview: previewNames + (previewSeq ? '  [' + previewSeq + '...]' : ''),
                 source: state.currentFilePath || '',
-                text: inputText.substring(0, 100000) // store text for all items (100KB cap)
+                // Files are re-opened from disk (the "re-open the file" message
+                // handles this), so only clipboard pastes - which have no other
+                // source once cleared - need their text cached here. Caching file
+                // text too (as this used to do, capped at 100KB) silently
+                // truncated any file above that cap on reopen, with no warning:
+                // a 3,408-sequence / 6.28MB FASTA reopened as just 55 sequences.
+                text: isClipboard ? inputText.substring(0, 100000) : null
             }
         );
         // Ensure menus don't have inline styles that interfere with hover

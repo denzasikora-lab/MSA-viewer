@@ -170,6 +170,58 @@ check('Canvas auto-switch threshold matches ALIGN_CRAZY_VOLUME (v179 regression)
   return { pass: true, detail: `${nSeq * nCol} residues stayed in DOM mode as expected` };
 });
 
+check('recent-files history: max-count setting survives a real page reload', async (page) => {
+  // Regresses a bug where _historyManager.save() tried to persist maxItems
+  // by tacking a "_max" property onto a plain Array before JSON.stringify -
+  // which silently drops non-index array properties, so the setting was
+  // never actually written to localStorage and reverted on every render.
+  await page.evaluate(() => {
+    localStorage.setItem('msaviewer_history', JSON.stringify({ max: 10, items: [
+      { type: 'file', name: 'a.fa', timestamp: Date.now(), nSeqs: 3, length: 10, preview: '', source: '', text: null }
+    ]}));
+  });
+  await page.click('.section-header[data-section="input"]');
+  await page.click('#recentButton');
+  await page.waitForTimeout(150);
+  await page.focus('#historyMaxInput');
+  await page.keyboard.press('ArrowUp');
+  await page.waitForTimeout(100);
+  const immediate = await page.inputValue('#historyMaxInput');
+  if (immediate !== '11') return { pass: false, detail: `expected 11 right after one ArrowUp, got ${immediate}` };
+
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.click('.section-header[data-section="input"]');
+  await page.click('#recentButton');
+  await page.waitForTimeout(150);
+  const afterReload = await page.inputValue('#historyMaxInput');
+  if (afterReload !== '11') return { pass: false, detail: `expected 11 to survive a real reload, got ${afterReload} - setting was not actually persisted` };
+  return { pass: true, detail: `max-count 11 correctly survived a real page reload` };
+});
+
+check('recent-files history: file entries do not cache truncated text', async (page) => {
+  // Regresses a bug where every load (file or clipboard) cached up to
+  // 100,000 chars of raw input text for reopen-from-history. Reopening a
+  // file larger than that silently loaded a truncated fragment with no
+  // warning (a real 3,408-sequence FASTA reopened as just 55 sequences).
+  // Files should be re-opened from disk; only clipboard pastes (which have
+  // no other source once cleared) should cache their text.
+  const bigFasta = '>seq1\n' + 'ACGT'.repeat(30000) + '\n'; // ~120KB, over the old 100KB cap
+  await page.evaluate((fasta) => {
+    document.getElementById('fastaInput').value = fasta;
+    state.currentFilename = 'big_test.fa';
+    state.currentFilePath = 'C:/fake/big_test.fa';
+  }, bigFasta);
+  await page.evaluate(() => parseAndRender(false));
+  await page.waitForTimeout(300);
+  const entry = await page.evaluate(() => {
+    const raw = JSON.parse(localStorage.getItem('msaviewer_history'));
+    return raw.items.find(e => e.name === 'big_test.fa');
+  });
+  if (!entry) return { pass: false, detail: 'no history entry was recorded for the loaded file' };
+  if (entry.text !== null) return { pass: false, detail: `expected text=null for a file-type entry, got ${entry.text === undefined ? 'undefined' : entry.text.length + ' chars'} - reopening would silently load a truncated fragment` };
+  return { pass: true, detail: `file-type history entry correctly stores text=null (forces a real re-open)` };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
