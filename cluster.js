@@ -248,6 +248,238 @@ class SINEClusterer {
         return best;
     }
 
+    // Async version of findBestGroup with yield points inside the column scan,
+    // fuzzy merge, and quality scoring loops so the browser can paint and the
+    // Stop button can take effect DURING a single round, not just between them.
+    // The sync findBestGroup is kept for the synchronous cluster() path.
+    async findBestGroupAsync(availableSeqs, options = {}) {
+        const minSize = options.minSize || 3;
+        let minOcc = options.minOccurrences || 2;
+        if (options.datasetSize > 300) minOcc = 1;
+
+        const qSmall = options.qualitySmall ?? 90;
+        const qMed   = options.qualityMedium ?? 80;
+        const qLarge = options.qualityLarge ?? 70;
+
+        const breakSM = options.sizeSmallMedium || 11;
+        const breakML = options.sizeMediumLarge || 20;
+
+        // Respect trimming boundaries to avoid ragged-end features
+        const startPos = options.trimStart || 0;
+        const endPos = options.trimEnd !== undefined ? options.trimEnd : this.alnLen;
+
+        let upperBound = availableSeqs.length;
+
+        // Upper bound: cap cluster size at 50% of available sequences.
+        // Prevent degenerate "everything" clusters while allowing large legitimate subfamilies
+        // (e.g. a dominant Alu subfamily can be 30-40% of many SINE datasets).
+        if (!options.relaxUpperBound) {
+            upperBound = Math.floor(availableSeqs.length * 0.50);
+        }
+
+        const candidates = new Map();
+        const _yield = () => new Promise(r => setTimeout(r, 0));
+        const _cancelled = () => !!(options.shouldCancel && options.shouldCancel());
+
+        // Loop only within valid trimmed region - chunked with yields
+        const COL_CHUNK = 200;
+        let colCount = 0;
+        for (let pos = startPos; pos < endPos; pos++) {
+            const patterns = this.getPositionPatterns(pos, availableSeqs);
+
+            // Skip positions where a single nucleotide dominates the WHOLE alignment
+            // (>80% of all sequences, not just the remaining pool) - a conserved,
+            // non-diagnostic column. Checking against availableSeqs alone made a
+            // perfectly clean remaining cluster look "non-diagnostic" once an earlier
+            // cluster was removed and the pool became internally homogeneous, even
+            // though it was 100% distinct from the removed cluster.
+            const globalPatterns = this.getPositionPatterns(pos, this._allSeqIndices);
+            const maxGlobalSize = Math.max(...Object.values(globalPatterns).map(s => s.size));
+            if (maxGlobalSize / this.nSeqs > 0.8) continue;
+
+            for (const [ch, set] of Object.entries(patterns)) {
+                const size = set.size;
+
+                if (size >= minSize && size <= upperBound) {
+                    const arr = Array.from(set).sort((a,b)=>a-b);
+                    const key = arr.join(',');
+                    if (!candidates.has(key)) candidates.set(key, {seq: arr, feats: []});
+                    candidates.get(key).feats.push({pos, ch});
+                }
+            }
+
+            if (++colCount >= COL_CHUNK) {
+                if (_cancelled()) return null;
+                colCount = 0;
+                await _yield();
+            }
+        }
+
+        // fuzzy merge near-identical groups
+        const merged = new Map();
+        const done = new Set();
+        let mergeCount = 0;
+        for (const [k1, d1] of candidates) {
+            if (done.has(k1)) continue;
+            let list = [d1];
+            for (const [k2, d2] of candidates) {
+                if (k1===k2 || done.has(k2)) continue;
+                const inter = d1.seq.filter(x=>d2.seq.includes(x)).length;
+                const union = new Set([...d1.seq, ...d2.seq]).size;
+                if (inter/union >= 0.90 && Math.abs(d1.seq.length - d2.seq.length) <= 5) {
+                    list.push(d2);
+                    done.add(k2);
+                }
+            }
+            const best = list.reduce((a,b)=> a.seq.length > b.seq.length ? a : b);
+            const key = best.seq.join(',');
+            if (!merged.has(key)) merged.set(key, {seq: best.seq, feats: []});
+            for (const g of list) merged.get(key).feats.push(...g.feats);
+            done.add(k1);
+
+            if (++mergeCount >= 30) {
+                if (_cancelled()) return null;
+                mergeCount = 0;
+                await _yield();
+            }
+        }
+
+        // dedup feats
+        for (const d of merged.values()) {
+            const seen = new Set();
+            d.feats = d.feats.filter(f => {
+                const sig = f.pos+':'+f.ch;
+                if (seen.has(sig)) return false;
+                seen.add(sig);
+                return true;
+            });
+        }
+
+        let best = null;
+        let bestScore = -1;
+        let scoreCount = 0;
+
+        for (const d of merged.values()) {
+            if (d.feats.length < minOcc) continue;
+            const gsize = d.seq.length;
+            const thresh = gsize < breakSM ? qSmall : gsize < breakML ? qMed : qLarge;
+
+            let good = 0;
+            let score = 0;
+            const validFeats = [];
+
+            for (const {pos, ch} of d.feats) {
+                let inside = 0;
+                for (const i of d.seq) if (this.matrix[i][pos] === ch) inside++;
+
+                let outside = 0;
+                for (let i=0; i<this.nSeqs; i++) {
+                    if (!d.seq.includes(i) && this.matrix[i][pos] === ch) outside++;
+                }
+
+                const inP = inside / gsize * 100;
+                const outP = outside / (this.nSeqs - gsize) * 100 || 0;
+                const qual = Math.max(0, inP - outP);
+
+                // Score weighting: perfect-unique (all members match, zero outside) = 3
+                // near-perfect (>=80% members match) = 2, majority match = 1.5, imperfect (qual threshold) = 1
+                if (outside === 0) {
+                    good++;
+                    score += inside === gsize ? 3 : inside >= gsize*0.8 ? 2 : 1.5;
+                    validFeats.push({pos, ch});
+                } else if (qual >= thresh) {
+                    good++;
+                    score += 1;
+                    validFeats.push({pos, ch});
+                }
+            }
+
+            if (good >= options.minPerfect && score > bestScore) {
+                bestScore = score;
+                best = {
+                    sequences: d.seq,
+                    size: gsize,
+                    nPerfect: good,
+                    nOccurrences: validFeats.length,
+                    occurrences: validFeats
+                };
+            }
+
+            if (++scoreCount >= 5) {
+                if (_cancelled()) return null;
+                scoreCount = 0;
+                await _yield();
+            }
+        }
+
+        // Prune outliers (Seq 270 edge case)
+        // Size-aware threshold: small groups (< 6 features) need >= 2 matches;
+        // larger groups need >= ceil(30% of features).
+        if (best && best.occurrences.length > 2) {
+            const originalSize = best.sequences.length;
+            const robustSequences = [];
+            const minMatches = best.occurrences.length <= 5
+                ? 2
+                : Math.ceil(best.occurrences.length * 0.30);
+
+            for (const seqIdx of best.sequences) {
+                let matchCount = 0;
+                for (const {pos, ch} of best.occurrences) {
+                    if (this.matrix[seqIdx][pos] === ch) matchCount++;
+                }
+                if (matchCount >= minMatches) {
+                    robustSequences.push(seqIdx);
+                }
+            }
+
+            if (robustSequences.length < originalSize) {
+                console.log(`[PRUNE] Removed ${originalSize - robustSequences.length} outliers (min ${minMatches}/${best.occurrences.length} matches)`);
+                best.sequences = robustSequences;
+                best.size = robustSequences.length;
+
+                // Re-verify if the group is still valid after pruning
+                if (best.size < minSize) {
+                    best = null;
+                } else {
+                    // Re-validate features after prune: recalculate nPerfect and score
+                    const gsize = best.size;
+                    const thresh = gsize < breakSM ? qSmall
+                        : gsize < breakML ? qMed : qLarge;
+                    let good = 0, score = 0;
+                    const validFeats = [];
+                    for (const {pos, ch} of best.occurrences) {
+                        let inside = 0, outside = 0;
+                        for (const i of best.sequences) if (this.matrix[i][pos] === ch) inside++;
+                        for (let i = 0; i < this.nSeqs; i++) {
+                            if (!best.sequences.includes(i) && this.matrix[i][pos] === ch) outside++;
+                        }
+                        const inP = inside / gsize * 100;
+                        const outP = outside / (this.nSeqs - gsize) * 100 || 0;
+                        const qual = Math.max(0, inP - outP);
+                        if (outside === 0) {
+                            good++;
+                            score += inside === gsize ? 3 : inside >= gsize * 0.8 ? 2 : 1.5;
+                            validFeats.push({pos, ch});
+                        } else if (qual >= thresh) {
+                            good++;
+                            score += 1;
+                            validFeats.push({pos, ch});
+                        }
+                    }
+                    best.nPerfect = good;
+                    best.nOccurrences = validFeats.length;
+                    best.occurrences = validFeats;
+                    if (good < options.minPerfect) best = null;
+                }
+            }
+        }
+
+        if (!best && merged.size > 0) {
+            // No cluster formed from available sequences
+        }
+        return best;
+    }
+
     getFeaturesByQuality(c) {
         const perfect = [], imperfect = [];
         const set = new Set(c.sequences);
