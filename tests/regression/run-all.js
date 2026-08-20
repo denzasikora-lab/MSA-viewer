@@ -297,6 +297,61 @@ check('version indicator never depends on the rate-limited GitHub API', async (p
   return { pass: true, detail: 'version indicator reads a same-origin file, no external API dependency' };
 });
 
+check('Recent Files reopen: File System Access handle logic (permission granted/denied/missing)', async (page) => {
+  // Note on what this test can and can't cover: Chromium's native
+  // showOpenFilePicker() dialog cannot be driven by headless automation the
+  // way the classic <input type=file> chooser can (a real, known
+  // limitation, not something skipped here) - so this exercises
+  // _fileHandleStore's own logic (permission gating, read, error handling)
+  // with a mock handle whose get() is substituted in directly, rather than
+  // a real end-to-end native-picker flow. IndexedDB's structured-clone
+  // requirement means a plain mock object with function properties can't
+  // round-trip through the real put()/get() (functions never survive
+  // structured clone) - real FileSystemFileHandle objects have special
+  // browser-native serialization support for exactly this, per spec, which
+  // is why production code doesn't need this same workaround.
+  const result = await page.evaluate(async () => {
+    const grantedHandle = {
+      kind: 'file', name: 'mock_test.fa', _content: '>seqX\nACGTACGT\n>seqY\nACGTACGA\n',
+      async queryPermission() { return 'granted'; },
+      async requestPermission() { return 'granted'; },
+      async getFile() { const self = this; return { name: self.name, async text() { return self._content; } }; },
+    };
+    const deniedHandle = {
+      kind: 'file', name: 'denied.fa',
+      async queryPermission() { return 'denied'; },
+      async requestPermission() { return 'denied'; },
+      async getFile() { throw new Error('should not be called if permission denied'); },
+    };
+    const origGet = _fileHandleStore.get.bind(_fileHandleStore);
+
+    document.getElementById('fastaInput').value = '';
+    state.seqs = [];
+    _fileHandleStore.get = async (id) => (id === 'mock_granted' ? grantedHandle : origGet(id));
+    const grantedHandled = await _fileHandleStore.tryReopen('mock_granted', 'mock_test.fa');
+    await new Promise(r => setTimeout(r, 300));
+    const grantedOutcome = { handled: grantedHandled, nSeqs: state.seqs?.length, filename: state.currentFilename };
+
+    _fileHandleStore.get = async (id) => (id === 'mock_denied' ? deniedHandle : origGet(id));
+    const deniedHandled = await _fileHandleStore.tryReopen('mock_denied', 'denied.fa');
+
+    _fileHandleStore.get = origGet;
+    const missingHandled = await _fileHandleStore.tryReopen('totally_nonexistent_id', 'x.fa');
+
+    return { grantedOutcome, deniedHandled, missingHandled };
+  });
+  if (!result.grantedOutcome.handled || result.grantedOutcome.nSeqs !== 2 || result.grantedOutcome.filename !== 'mock_test.fa') {
+    return { pass: false, detail: `granted-permission reopen didn't work correctly: ${JSON.stringify(result.grantedOutcome)}` };
+  }
+  if (result.deniedHandled !== true) {
+    return { pass: false, detail: `permission-denied case should be handled (show its own message), got handled=${result.deniedHandled}` };
+  }
+  if (result.missingHandled !== false) {
+    return { pass: false, detail: `a missing/unknown handle id should fall through to the generic message (handled=false), got ${result.missingHandled}` };
+  }
+  return { pass: true, detail: 'granted/denied/missing handle paths all behave correctly' };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

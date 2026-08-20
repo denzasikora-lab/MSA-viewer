@@ -363,6 +363,7 @@ const state = {
     redoHistory: [],
     currentFilename: '',
     currentFilePath: '',
+    _pendingFileHandle: null,
     searchHistory: [],
     isDragging: false,
     dragStartRow: null,
@@ -399,6 +400,77 @@ const state = {
     softTrimBoundaries: null, // { leftTrimEnd, rightTrimStart } - excluded from clustering only
     groupConsensusCount: 0,
     _statsMatrices: null
+};
+
+// -- Reusable file handles for Recent Files, via the File System Access API --
+// A dropped/picked file's real path is never exposed to JS (a deliberate
+// browser security boundary, not something any app code can work around),
+// so a File object alone can never be re-read later. Chromium browsers'
+// File System Access API instead hands back a FileSystemFileHandle that CAN
+// be stored (structured-clone-able, so it goes straight into IndexedDB) and
+// reused to re-read the file's current content on demand - no server, no
+// cached/stale copy. Firefox/Safari don't support this API; for them
+// state._pendingFileHandle simply never gets set, and Recent Files falls
+// back to the existing "re-open the file" message exactly as before.
+const _fileHandleStore = {
+    _dbPromise: null,
+    _openDb() {
+        if (this._dbPromise) return this._dbPromise;
+        this._dbPromise = new Promise((resolve, reject) => {
+            const req = indexedDB.open('msaviewer_filehandles', 1);
+            req.onupgradeneeded = () => { req.result.createObjectStore('handles'); };
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+        return this._dbPromise;
+    },
+    async put(id, handle) {
+        try {
+            const db = await this._openDb();
+            await new Promise((resolve, reject) => {
+                const tx = db.transaction('handles', 'readwrite');
+                tx.objectStore('handles').put(handle, id);
+                tx.oncomplete = resolve;
+                tx.onerror = () => reject(tx.error);
+            });
+        } catch (e) { console.warn('Could not store file handle for Recent Files reopen', e); }
+    },
+    async get(id) {
+        try {
+            const db = await this._openDb();
+            return await new Promise((resolve, reject) => {
+                const tx = db.transaction('handles', 'readonly');
+                const req = tx.objectStore('handles').get(id);
+                req.onsuccess = () => resolve(req.result || null);
+                req.onerror = () => reject(req.error);
+            });
+        } catch (e) { return null; }
+    },
+    // Returns true if this call fully handled the click (either succeeded or
+    // showed its own specific error message) - false only means "no stored
+    // handle at all," so the caller should fall back to the generic message.
+    async tryReopen(id, expectedName) {
+        const handle = await this.get(id);
+        if (!handle) return false;
+        try {
+            let perm = await handle.queryPermission({ mode: 'read' });
+            if (perm !== 'granted') perm = await handle.requestPermission({ mode: 'read' });
+            if (perm !== 'granted') {
+                showMessage('Permission to re-read this file was not granted.', 3500);
+                return true;
+            }
+            const file = await handle.getFile();
+            const text = await file.text();
+            fastaInput.value = text;
+            state.currentFilename = file.name || expectedName;
+            state.currentFilePath = '';
+            parseAndRender(true);
+            return true;
+        } catch (e) {
+            showMessage('Could not reopen the file - it may have been moved, renamed, or deleted since.', 4500);
+            return true;
+        }
+    }
 };
 
 // -- Recent Files & Clipboard History --
@@ -441,7 +513,8 @@ const _historyManager = {
             length: data.length || 0,
             preview: data.preview || '',
             source: data.source || '',
-            text: data.text || null // stored for clipboard items (small), null for files
+            text: data.text || null, // stored for clipboard items (small), null for files
+            handleId: data.handleId || null // File System Access handle in IndexedDB, if captured (Chromium only)
         };
         // Remove duplicate (same name + source)
         this.items = this.items.filter(e => !(e.name === entry.name && e.source === entry.source));
@@ -498,26 +571,30 @@ const _historyManager = {
         html += `<div style="padding:4px 10px;font-size:10px;color:#999;border-top:1px solid #eee;display:flex;justify-content:space-between;">
             <span>Showing ${Math.min(this.items.length, this.maxItems)} of ${this.items.length}</span>
             <span>Max: <input type="number" id="historyMaxInput" value="${this.maxItems}" min="1" max="50"
-                style="width:36px;font-size:10px;padding:0 2px;text-align:center;"
+                style="width:36px;height:22px;font-size:10px;padding:0 2px;text-align:center;"
                 onchange="_historyManager.setMax(parseInt(this.value)||10);_historyManager.renderDropdown();"></span>
         </div>`;
         menu.innerHTML = html;
 
         // Click + hover-preview handlers
         menu.querySelectorAll('.recent-item').forEach(el => {
-            el.addEventListener('click', () => {
+            el.addEventListener('click', async () => {
                 const idx = parseInt(el.dataset.idx);
                 const entry = this.items[idx];
                 if (!entry) return;
+                document.getElementById('recentDropdown').style.display = 'none';
                 if (entry.text) {
                     fastaInput.value = entry.text;
                     state.currentFilename = entry.name;
                     state.currentFilePath = entry.source || '';
                     parseAndRender(false);
-                } else {
-                    showMessage('Original file not available - re-open the file to load it.', 3000);
+                    return;
                 }
-                document.getElementById('recentDropdown').style.display = 'none';
+                if (entry.handleId) {
+                    const handled = await _fileHandleStore.tryReopen(entry.handleId, entry.name);
+                    if (handled) return;
+                }
+                showMessage('Original file not available - re-open the file to load it.', 3000);
             });
             el.addEventListener('mouseenter', () => {
                 const idx = parseInt(el.dataset.idx);
@@ -7013,6 +7090,15 @@ async function parseAndRender(isFromDrop = false) {
         const isClipboard = !isFromDrop && state.currentFilename === 'Clipboard';
         const previewNames = parsed.slice(0, 3).map(s => s.header).join(', ');
         const previewSeq = (parsed[0]?.seq?.substring(0, 50) || '').replace(/-/g, '');
+        // If this load came with a reusable File System Access handle
+        // (Chromium drop/pick), stash it in IndexedDB now so Recent Files can
+        // actually re-read the live file later, not just show "unavailable."
+        let handleId = null;
+        if (state._pendingFileHandle) {
+            handleId = 'fh_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+            _fileHandleStore.put(handleId, state._pendingFileHandle); // fire-and-forget
+            state._pendingFileHandle = null;
+        }
         _historyManager.add(
             isClipboard ? 'clipboard' : 'file',
             {
@@ -7021,13 +7107,15 @@ async function parseAndRender(isFromDrop = false) {
                 length: (parsed[0]?.seq?.length || 0),
                 preview: previewNames + (previewSeq ? '  [' + previewSeq + '...]' : ''),
                 source: state.currentFilePath || '',
-                // Files are re-opened from disk (the "re-open the file" message
-                // handles this), so only clipboard pastes - which have no other
-                // source once cleared - need their text cached here. Caching file
-                // text too (as this used to do, capped at 100KB) silently
-                // truncated any file above that cap on reopen, with no warning:
-                // a 3,408-sequence / 6.28MB FASTA reopened as just 55 sequences.
-                text: isClipboard ? inputText.substring(0, 100000) : null
+                // Files are re-opened from disk (via handleId when available,
+                // otherwise the "re-open the file" message), so only clipboard
+                // pastes - which have no other source once cleared - need their
+                // text cached here. Caching file text too (as this used to do,
+                // capped at 100KB) silently truncated any file above that cap
+                // on reopen, with no warning: a 3,408-sequence / 6.28MB FASTA
+                // reopened as just 55 sequences.
+                text: isClipboard ? inputText.substring(0, 100000) : null,
+                handleId
             }
         );
         // Ensure menus don't have inline styles that interfere with hover
@@ -13715,7 +13803,7 @@ function initializeAppUI() {
         dropZone.addEventListener('dragleave', () => {
             dropZone.style.borderColor = 'var(--dropzone-border)';
         });
-        dropZone.addEventListener('drop', (e) => {
+        dropZone.addEventListener('drop', async (e) => {
             e.preventDefault();
             dropZone.style.borderColor = 'var(--dropzone-border)';
             const file = e.dataTransfer.files[0];
@@ -13729,6 +13817,17 @@ function initializeAppUI() {
                 return;
             }
 
+            // Chromium-only: capture a reusable handle (must call this
+            // synchronously off the drop event, but awaiting its result is
+            // fine) so Recent Files can actually re-read this file later.
+            const item = e.dataTransfer.items && e.dataTransfer.items[0];
+            if (item && typeof item.getAsFileSystemHandle === 'function') {
+                try {
+                    const handle = await item.getAsFileSystemHandle();
+                    if (handle && handle.kind === 'file') state._pendingFileHandle = handle;
+                } catch (err) { /* unsupported or denied - fall back silently */ }
+            }
+
             const reader = new FileReader();
             reader.onload = function(e) {
                 fastaInput.value = e.target.result;
@@ -13740,8 +13839,30 @@ function initializeAppUI() {
             };
             reader.readAsText(file);
         });
-        dropZone.addEventListener('click', (e) => {
+        dropZone.addEventListener('click', async (e) => {
             if (window.getSelection().toString()) return;
+            if (typeof window.showOpenFilePicker === 'function') {
+                try {
+                    const [handle] = await window.showOpenFilePicker({ multiple: false });
+                    const file = await handle.getFile();
+                    state.currentFilename = file.name;
+                    state.currentFilePath = '';
+                    state._pendingFileHandle = handle;
+                    if (/\.(bam|sam)$/i.test(file.name) && state.seqs && state.seqs.length > 0) {
+                        handleBamFile({ target: { files: [file], value: '' } });
+                        return;
+                    }
+                    fastaInput.value = await file.text();
+                    parseAndRender(true);
+                } catch (err) {
+                    if (err && err.name === 'AbortError') return; // user cancelled the picker
+                    console.warn('showOpenFilePicker failed, falling back to classic file input', err);
+                    const fileInput = el('fileInput');
+                    fileInput.value = '';
+                    fileInput.click();
+                }
+                return;
+            }
             const fileInput = el('fileInput');
             fileInput.value = '';
             fileInput.click();
