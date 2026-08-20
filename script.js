@@ -6811,6 +6811,7 @@ function scanMsfIndex(text) {
  * scan without a full parse (SAM, GenBank, etc.).
  */
 function scanAlignmentText(text) {
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
     const t = text.trim();
     if (!t) return null;
     const isMsf = (t.includes('MSF:') && t.includes('Check:'))
@@ -7119,6 +7120,12 @@ async function parseAndRender(isFromDrop = false) {
             const blockRadio = document.getElementById('modeBlocks');
             if (blockRadio) blockRadio.checked = true;
         }
+        // Check for length mismatch before committing to state.seqs - warn but do not block
+        const _lenMismatch = _checkLengthMismatch(parsed);
+        if (_lenMismatch) {
+            _normalizeSequenceLengths(parsed);
+        }
+
         state.seqs = parsed;
 
         // If pre-parse scan failed (e.g., leading garbage before first '>'),
@@ -7130,12 +7137,6 @@ async function parseAndRender(isFromDrop = false) {
                 totalResidues: state.seqs.reduce((sum, s) => sum + s.seq.length, 0)
             };
             state.alignmentIndex = { ..._stats, ...classifyAlignmentSize(_stats) };
-        }
-
-        // Check for length mismatch before rendering - warn and normalize to prevent crashes
-        const _lenMismatch = _checkLengthMismatch(state.seqs);
-        if (_lenMismatch) {
-            _normalizeSequenceLengths(state.seqs);
         }
 
         _userDismissedAutoCanvas = false; // fresh file: allow the Canvas suggestion again if it's large
@@ -7174,10 +7175,10 @@ async function parseAndRender(isFromDrop = false) {
         setupHoverMenuReveal();
         if (_lenMismatch) {
             const _diffDetails = _lenMismatch.differing.slice(0, 5).map(d =>
-                `'${d.name}' is ${d.length} cols (${d.diff > 0 ? '+' : ''}${d.diff})`
+                `Sequence '${d.name}' is ${d.length} columns (${d.diff > 0 ? '+' : ''}${d.diff})`
             ).join(', ');
             const _diffMore = _lenMismatch.differing.length > 5 ? ` and ${_lenMismatch.differing.length - 5} more` : '';
-            showMessage(`Loaded with length mismatch: ${_diffDetails}${_diffMore}. Most are ${_lenMismatch.majorityLen} cols - check for stray text before '>' headers, or use Realign All.`, 8000);
+            showMessage(`Length mismatch: ${_diffDetails}${_diffMore}, but most of the alignment is ${_lenMismatch.majorityLen} columns - check for stray text before '>' headers, or use Realign All if this is intentionally unaligned data.`, 8000);
             console.warn('[Length mismatch]', _lenMismatch);
         } else {
             showMessage("File loaded successfully!", 2000);
