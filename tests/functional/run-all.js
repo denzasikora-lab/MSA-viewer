@@ -157,9 +157,12 @@ check('Clustering: 10 sequences in 2 clear groups cluster correctly', async (pag
     if (result.nAssigned !== 10) {
         return { pass: false, detail: `expected 10 assigned, got ${result.nAssigned}` };
     }
-    // Check that seqA1-5 are in the same cluster and seqB1-5 are in the same cluster
-    const clustersA = [0,1,2,3,4].map(i => result.clusterMap[i]?.cluster);
-    const clustersB = [5,6,7,8,9].map(i => result.clusterMap[i]?.cluster);
+    // Check that seqA1-5 are in the same cluster and seqB1-5 are in the same cluster.
+    // clusterMap is keyed by sequence identity (id/header), not row index -
+    // it must survive reordering, so a raw numeric index was never the
+    // right key here even before that was fixed.
+    const clustersA = ['seqA1','seqA2','seqA3','seqA4','seqA5'].map(id => result.clusterMap[id]?.cluster);
+    const clustersB = ['seqB1','seqB2','seqB3','seqB4','seqB5'].map(id => result.clusterMap[id]?.cluster);
 
     if (clustersA.some(c => c === undefined)) {
         return { pass: false, detail: `some group A sequences unassigned: ${JSON.stringify(clustersA)}` };
