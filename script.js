@@ -4110,7 +4110,7 @@ function parseFasta(text) {
                 }
                 seq = '';
                 header = line;
-            } else {
+            } else if (header) {
                 seq += line.replace(/[_?~]/g, '-').replace(/[^A-Za-z*.\-]/g, '');
             }
         }
@@ -6756,6 +6756,7 @@ const ALIGN_WINDOWED_DOM_THRESHOLD = 500_000;
 /** Single-pass FASTA scan: counts sequences and lengths without building seq objects. */
 function scanFastaIndex(text) {
     let nSeqs = 0, maxLen = 0, totalResidues = 0, curLen = 0;
+    let seenHeader = false;
     let i = 0;
     const len = text.length;
     while (i < len) {
@@ -6765,18 +6766,20 @@ function scanFastaIndex(text) {
         while (i < len && (text[i] === '\n' || text[i] === '\r')) i++;
         if (!line) continue;
         if (line[0] === '>') {
-            if (curLen > 0) {
+            if (seenHeader && curLen > 0) {
                 maxLen = Math.max(maxLen, curLen);
                 totalResidues += curLen;
-                curLen = 0;
             }
+            curLen = 0;
+            seenHeader = true;
             nSeqs++;
-        } else {
+        } else if (seenHeader) {
             for (let j = 0; j < line.length; j++) {
                 const c = line[j];
                 if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c === '-' || c === '.' || c === '*') curLen++;
             }
         }
+        // Lines before first '>' are discarded (leading garbage)
     }
     if (curLen > 0) {
         maxLen = Math.max(maxLen, curLen);
@@ -6814,9 +6817,13 @@ function scanAlignmentText(text) {
         || t.includes('!!AA_MULTIPLE_ALIGNMENT')
         || t.includes('!!NA_MULTIPLE_ALIGNMENT');
     if (isMsf) return scanMsfIndex(text);
-    if (t[0] === '>' || /^[A-Za-z*.\-]+$/m.test(t.split(/\r?\n/)[0] || '')) {
-        return scanFastaIndex(text);
-    }
+    if (t[0] === '>') return scanFastaIndex(text);
+    // Handle leading garbage before first '>' (e.g., MAFFT version banner):
+    // scan first 200 lines for a FASTA header
+    const firstLines = t.split(/\r?\n/).slice(0, 200);
+    if (firstLines.some(l => l.startsWith('>'))) return scanFastaIndex(text);
+    // Raw sequence (no headers)
+    if (/^[A-Za-z*.\-]+$/m.test(firstLines[0] || '')) return scanFastaIndex(text);
     return null;
 }
 
@@ -7113,6 +7120,17 @@ async function parseAndRender(isFromDrop = false) {
             if (blockRadio) blockRadio.checked = true;
         }
         state.seqs = parsed;
+
+        // If pre-parse scan failed (e.g., leading garbage before first '>'),
+        // compute alignment index from parsed sequences so windowed DOM kicks in
+        if (!state.alignmentIndex) {
+            const _stats = {
+                nSeqs: state.seqs.length,
+                maxLen: state.seqs.length > 0 ? Math.max(...state.seqs.map(s => s.seq.length)) : 0,
+                totalResidues: state.seqs.reduce((sum, s) => sum + s.seq.length, 0)
+            };
+            state.alignmentIndex = { ..._stats, ...classifyAlignmentSize(_stats) };
+        }
 
         // Check for length mismatch before rendering - warn and normalize to prevent crashes
         const _lenMismatch = _checkLengthMismatch(state.seqs);
