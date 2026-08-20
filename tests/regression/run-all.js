@@ -404,6 +404,78 @@ check('recent-files history: explicit up/down stepper buttons work (replacing th
   return { pass: true, detail: 'up/down buttons correctly change and persist the max count' };
 });
 
+check('Clustering Results modal is draggable, resizable, and minimizable', async (page) => {
+  const fasta = [
+    '>seqA1', 'AAAAAAAAAAAAAAAAAAAA',
+    '>seqA2', 'AAAAAAAAAAAAAAAAAAAA',
+    '>seqA3', 'AAAAAAAAAAAAAAAAAAAA',
+    '>seqA4', 'AAAAAAAAAAAAAAAAAAAA',
+    '>seqA5', 'AAAAAAAAAAAAAAAAAAAA',
+    '>seqB1', 'TTTTTTTTTTTTTTTTTTTT',
+    '>seqB2', 'TTTTTTTTTTTTTTTTTTTT',
+    '>seqB3', 'TTTTTTTTTTTTTTTTTTTT',
+    '>seqB4', 'TTTTTTTTTTTTTTTTTTTT',
+    '>seqB5', 'TTTTTTTTTTTTTTTTTTTT',
+  ].join('\n');
+  await page.evaluate((f) => { document.getElementById('fastaInput').value = f; }, fasta);
+  await page.evaluate(() => parseAndRender(false));
+  await page.evaluate(() => {
+    const setVal = (id, val) => { const el = document.getElementById(id); if (el) el.value = val; };
+    setVal('clusterMinSizeInput', '2');
+    setVal('clusterMinPerfectInput', '1');
+    setVal('minOccurrencesInput', '2');
+  });
+  await page.evaluate(async () => { await clusterSequences(); });
+  await page.waitForTimeout(400);
+
+  const initial = await page.evaluate(() => {
+    const r = document.getElementById('clusteringModal').getBoundingClientRect();
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+  });
+
+  // Drag
+  const header = await page.locator('#clusteringModalHeader').boundingBox();
+  await page.mouse.move(header.x + header.width / 2, header.y + header.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(header.x + header.width / 2 + 150, header.y + header.height / 2 + 80, { steps: 10 });
+  await page.mouse.up();
+  const afterDrag = await page.evaluate(() => {
+    const r = document.getElementById('clusteringModal').getBoundingClientRect();
+    return { left: r.left, top: r.top };
+  });
+  if (Math.abs(afterDrag.left - (initial.left + 150)) > 5 || Math.abs(afterDrag.top - (initial.top + 80)) > 5) {
+    return { pass: false, detail: `drag didn't move the modal as expected: ${JSON.stringify(afterDrag)} vs expected ~(${initial.left + 150}, ${initial.top + 80})` };
+  }
+
+  // Resize
+  const modalRect = await page.locator('#clusteringModal').boundingBox();
+  const hx = modalRect.x + modalRect.width - 6, hy = modalRect.y + modalRect.height - 6;
+  await page.mouse.move(hx, hy);
+  await page.mouse.down();
+  await page.mouse.move(hx + 100, hy + 60, { steps: 10 });
+  await page.mouse.up();
+  const afterResize = await page.evaluate(() => {
+    const r = document.getElementById('clusteringModal').getBoundingClientRect();
+    return { w: r.width, h: r.height };
+  });
+  if (afterResize.w < modalRect.width + 80 || afterResize.h < modalRect.height + 40) {
+    return { pass: false, detail: `resize didn't grow the modal as expected: before ${modalRect.width}x${modalRect.height}, after ${JSON.stringify(afterResize)}` };
+  }
+
+  // Minimize / restore
+  await page.click('#clusteringModalHeader button[title="Minimize"]');
+  await page.waitForTimeout(150);
+  const minimized = await page.evaluate(() => getComputedStyle(document.getElementById('clusteringContent')).display === 'none');
+  if (!minimized) return { pass: false, detail: 'clicking Minimize did not hide the content' };
+
+  await page.click('#clusteringModalHeader button[title="Restore"]');
+  await page.waitForTimeout(150);
+  const restored = await page.evaluate(() => getComputedStyle(document.getElementById('clusteringContent')).display !== 'none');
+  if (!restored) return { pass: false, detail: 'clicking Restore did not bring the content back' };
+
+  return { pass: true, detail: 'drag, resize, minimize, and restore all work correctly' };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

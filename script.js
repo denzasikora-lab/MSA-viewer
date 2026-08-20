@@ -1399,6 +1399,118 @@ const EXCLUSIVE_MODAL_IDS = [
     'statsModal'
 ];
 
+// Makes a fixed-position modal draggable (by its header), resizable (by a
+// handle in its bottom-right corner), and minimizable (collapses to just
+// the header bar). Generic and reusable - only wired up to
+// `clusteringModal` today, since that's the one whose results can run long
+// enough to want moving out of the way, resizing to see more at once, or
+// minimizing while working elsewhere without losing the results. Wiring up
+// another modal later is just another call to this function.
+function makeModalDraggableResizable(modalId, headerId, contentId) {
+    const modal = document.getElementById(modalId);
+    const header = document.getElementById(headerId);
+    if (!modal || !header) return;
+
+    // First drag/resize needs to convert from the modal's initial centered
+    // positioning (position:fixed + top/left:50% + transform) to explicit
+    // top/left/width/height, or the browser's own centering math would
+    // fight with manual dragging on every subsequent render.
+    function pinCurrentPosition() {
+        const rect = modal.getBoundingClientRect();
+        modal.style.transform = 'none';
+        modal.style.left = rect.left + 'px';
+        modal.style.top = rect.top + 'px';
+        modal.style.width = rect.width + 'px';
+        modal.style.margin = '0';
+    }
+
+    let dragging = false, dragStartX = 0, dragStartY = 0, modalStartX = 0, modalStartY = 0;
+    header.addEventListener('mousedown', (e) => {
+        if (e.target.closest('button')) return; // don't start a drag from the close/minimize buttons
+        pinCurrentPosition();
+        dragging = true;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        const rect = modal.getBoundingClientRect();
+        modalStartX = rect.left;
+        modalStartY = rect.top;
+        e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const dx = e.clientX - dragStartX;
+        const dy = e.clientY - dragStartY;
+        // Keep at least a sliver of the header on-screen so a dragged-off
+        // modal is never unreachable.
+        const newLeft = Math.min(Math.max(modalStartX + dx, -modal.offsetWidth + 60), window.innerWidth - 60);
+        const newTop = Math.min(Math.max(modalStartY + dy, 0), window.innerHeight - 30);
+        modal.style.left = newLeft + 'px';
+        modal.style.top = newTop + 'px';
+    });
+    document.addEventListener('mouseup', () => { dragging = false; });
+
+    // Resize handle, bottom-right corner
+    const handle = document.createElement('div');
+    handle.title = 'Drag to resize';
+    handle.style.cssText = 'position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize;'
+        + 'background:linear-gradient(135deg,transparent 0%,transparent 50%,#999 50%,#999 60%,transparent 60%,transparent 70%,#999 70%,#999 80%,transparent 80%);';
+    modal.style.position = 'fixed'; // already true via inline style, kept explicit for clarity
+    modal.appendChild(handle);
+
+    let resizing = false, resizeStartX = 0, resizeStartY = 0, startW = 0, startH = 0;
+    handle.addEventListener('mousedown', (e) => {
+        pinCurrentPosition();
+        const rect = modal.getBoundingClientRect();
+        modal.style.height = rect.height + 'px';
+        modal.style.maxHeight = 'none';
+        modal.style.maxWidth = 'none'; // the original inline max-width:700px would otherwise cap width growth
+        resizing = true;
+        resizeStartX = e.clientX;
+        resizeStartY = e.clientY;
+        startW = rect.width;
+        startH = rect.height;
+        e.preventDefault();
+        e.stopPropagation();
+    });
+    document.addEventListener('mousemove', (e) => {
+        if (!resizing) return;
+        const newW = Math.max(320, startW + (e.clientX - resizeStartX));
+        const newH = Math.max(120, startH + (e.clientY - resizeStartY));
+        modal.style.width = newW + 'px';
+        modal.style.height = newH + 'px';
+    });
+    document.addEventListener('mouseup', () => { resizing = false; });
+
+    // Minimize button - collapses to just the header bar
+    const minBtn = document.createElement('button');
+    minBtn.title = 'Minimize';
+    minBtn.textContent = '–'; // en dash, reads as a minimize glyph
+    minBtn.style.cssText = 'background:none;border:none;font-size:16px;cursor:pointer;padding:0 6px;font-weight:bold;';
+    const closeBtn = header.querySelector('button');
+    if (closeBtn) header.insertBefore(minBtn, closeBtn); else header.appendChild(minBtn);
+
+    let minimized = false;
+    let preMinimizeHeight = null;
+    minBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const content = document.getElementById(contentId);
+        minimized = !minimized;
+        if (minimized) {
+            pinCurrentPosition();
+            preMinimizeHeight = modal.style.height || modal.getBoundingClientRect().height + 'px';
+            if (content) content.style.display = 'none';
+            handle.style.display = 'none';
+            modal.style.height = 'auto';
+            modal.style.maxHeight = 'none';
+        } else {
+            if (content) content.style.display = '';
+            handle.style.display = '';
+            if (preMinimizeHeight) modal.style.height = preMinimizeHeight;
+        }
+        minBtn.title = minimized ? 'Restore' : 'Minimize';
+    });
+}
+
 function showExclusiveModal(id) {
     EXCLUSIVE_MODAL_IDS.forEach(modalId => {
         if (modalId === id) return;
@@ -11157,6 +11269,17 @@ function displayClusteringResults(results) {
 
     content.innerHTML = html;
     showExclusiveModal('clusteringModal');
+    // showExclusiveModal sets display:'block' uniformly for all modals, but
+    // this one needs display:'flex' for its header/scrolling-content layout.
+    modal.style.display = 'flex';
+    // A fresh clustering run should always show full results, even if the
+    // modal was left minimized from a previous run.
+    content.style.display = '';
+    modal.style.maxHeight = modal.style.maxHeight || '80vh';
+    if (!modal._draggableResizableInit) {
+        modal._draggableResizableInit = true;
+        makeModalDraggableResizable('clusteringModal', 'clusteringModalHeader', 'clusteringContent');
+    }
 }
 
 function highlightCluster(clusterIdx) {
