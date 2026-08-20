@@ -621,14 +621,20 @@ function updateVersionIndicator() {
             }
         })
         .catch(() => {});
-    // Optional GitHub commit hash for deployed builds
-    fetch('https://api.github.com/repos/Toki-bio/MSA-viewer/commits/main?per_page=1')
-        .then(r => r.json())
-        .then(data => {
-            const sha = (data.sha || '').substring(0, 7);
-            if (!sha) return;
-            const url = data.html_url || 'https://github.com/Toki-bio/MSA-viewer';
-            elVersion.innerHTML = `version ${BUILD_TAG} (<a href="${url}" target="_blank" style="color:#888;" title="Latest commit on main">${sha}</a>)`;
+    // Commit hash for deployed builds, read from a same-origin static file
+    // (version.json) rather than the GitHub REST API. The API approach was
+    // silently unreliable: unauthenticated requests are capped at 60/hour
+    // PER IP, shared across everyone behind the same NAT/proxy - trivially
+    // exhausted by unrelated traffic, and the failure was invisible (a bare
+    // .catch(() => {})), so the commit hash just never appeared with no
+    // error anywhere. A same-origin fetch has no such limit.
+    fetch('version.json?_=' + Date.now())
+        .then(r => r.ok ? r.json() : null)
+        .then(info => {
+            if (!info || !info.commit) return;
+            const sha = info.commit.substring(0, 7);
+            const url = `https://github.com/Toki-bio/MSA-viewer/commit/${info.commit}`;
+            elVersion.innerHTML = `version ${BUILD_TAG} (<a href="${url}" target="_blank" style="color:#888;" title="Commit as of the last version.json update">${sha}</a>)`;
         })
         .catch(() => {});
 }

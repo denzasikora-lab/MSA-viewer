@@ -274,6 +274,29 @@ check('local-path load: a non-JSON server response gives a clear message, not a 
   return { pass: true, detail: `clear message: ${msg}` };
 });
 
+check('version indicator never depends on the rate-limited GitHub API', async (page) => {
+  // Regresses the commit-hash display silently depending on GitHub's
+  // unauthenticated REST API (60 requests/hour PER IP, shared across
+  // everyone behind the same NAT) - confirmed exhausted (0/60 remaining)
+  // during real testing, and the failure was invisible (a bare
+  // .catch(() => {})). It must now read a same-origin version.json
+  // instead, which has no such limit.
+  const externalRequests = [];
+  page.on('request', req => {
+    if (req.url().includes('api.github.com')) externalRequests.push(req.url());
+  });
+  await page.waitForTimeout(1000);
+  if (externalRequests.length > 0) {
+    return { pass: false, detail: `version display still hits the external GitHub API: ${JSON.stringify(externalRequests)}` };
+  }
+  const usesVersionJson = await page.evaluate(() => {
+    const src = updateVersionIndicator.toString();
+    return src.includes('version.json') && !src.includes('api.github.com');
+  });
+  if (!usesVersionJson) return { pass: false, detail: 'updateVersionIndicator() no longer reads version.json as expected' };
+  return { pass: true, detail: 'version indicator reads a same-origin file, no external API dependency' };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
