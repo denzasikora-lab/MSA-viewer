@@ -10620,7 +10620,7 @@ async function analyzeClusterability() {
         _renderClusterabilityReport(rows, base, state.seqs.length, { done: i, total: grid.length });
         await new Promise(r => setTimeout(r, 0));
         try {
-            const res = new SINEClusterer(seqs).cluster(Object.assign({}, base, g.o));
+            const res = await new SINEClusterer(seqs).cluster(Object.assign({}, base, g.o));
             rows.push({
                 label: g.label,
                 clusters: res.clusters.length,

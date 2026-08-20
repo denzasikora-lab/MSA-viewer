@@ -19,7 +19,7 @@ class SINEClusterer {
         return patterns;
     }
 
-    findBestGroup(availableSeqs, options = {}) {
+    async findBestGroup(availableSeqs, options = {}) {
         const minSize = options.minSize || 3;
         let minOcc = options.minOccurrences || 2;
         if (options.datasetSize > 300) minOcc = 1;
@@ -43,6 +43,11 @@ class SINEClusterer {
         if (!options.relaxUpperBound) {
             upperBound = Math.floor(availableSeqs.length * 0.50);
         }
+
+        const _shouldCancel = options.shouldCancel || (() => false);
+        const _yieldNow = () => new Promise(r => setTimeout(r, 0));
+        let _lastYield = performance.now();
+        const _CHUNK_MS = 8;
 
         const candidates = new Map();
 
@@ -70,6 +75,12 @@ class SINEClusterer {
                     candidates.get(key).feats.push({pos, ch});
                 }
             }
+
+            if (performance.now() - _lastYield >= _CHUNK_MS) {
+                await _yieldNow();
+                if (_shouldCancel()) return null;
+                _lastYield = performance.now();
+            }
         }
 
         // fuzzy merge near-identical groups
@@ -92,6 +103,12 @@ class SINEClusterer {
             if (!merged.has(key)) merged.set(key, {seq: best.seq, feats: []});
             for (const g of list) merged.get(key).feats.push(...g.feats);
             done.add(k1);
+
+            if (performance.now() - _lastYield >= _CHUNK_MS) {
+                await _yieldNow();
+                if (_shouldCancel()) return null;
+                _lastYield = performance.now();
+            }
         }
 
         // dedup feats
@@ -112,6 +129,7 @@ class SINEClusterer {
             if (d.feats.length < minOcc) continue;
             const gsize = d.seq.length;
             const thresh = gsize < breakSM ? qSmall : gsize < breakML ? qMed : qLarge;
+            const seqSet = new Set(d.seq);
 
             let good = 0;
             let score = 0;
@@ -123,7 +141,7 @@ class SINEClusterer {
 
                 let outside = 0;
                 for (let i=0; i<this.nSeqs; i++) {
-                    if (!d.seq.includes(i) && this.matrix[i][pos] === ch) outside++;
+                    if (!seqSet.has(i) && this.matrix[i][pos] === ch) outside++;
                 }
 
                 const inP = inside / gsize * 100;
@@ -141,6 +159,12 @@ class SINEClusterer {
                     score += 1;
                     validFeats.push({pos, ch});
                 }
+            }
+
+            if (performance.now() - _lastYield >= _CHUNK_MS) {
+                await _yieldNow();
+                if (_shouldCancel()) return null;
+                _lastYield = performance.now();
             }
 
             if (good >= options.minPerfect && score > bestScore) {
@@ -190,11 +214,12 @@ class SINEClusterer {
                         : gsize < breakML ? qMed : qLarge;
                     let good = 0, score = 0;
                     const validFeats = [];
+                    const prunedSeqSet = new Set(best.sequences);
                     for (const {pos, ch} of best.occurrences) {
                         let inside = 0, outside = 0;
                         for (const i of best.sequences) if (this.matrix[i][pos] === ch) inside++;
                         for (let i = 0; i < this.nSeqs; i++) {
-                            if (!best.sequences.includes(i) && this.matrix[i][pos] === ch) outside++;
+                            if (!prunedSeqSet.has(i) && this.matrix[i][pos] === ch) outside++;
                         }
                         const inP = inside / gsize * 100;
                         const outP = outside / (this.nSeqs - gsize) * 100 || 0;
@@ -249,7 +274,7 @@ class SINEClusterer {
         };
     }
 
-    cluster(opts = {}) {
+    async cluster(opts = {}) {
         const o = this._makeOptions(opts);
 
         const clusters = [];
@@ -261,7 +286,7 @@ class SINEClusterer {
         let it = 0;
         while (avail.length >= o.minSize && it < o.maxIterations) {
             it++;
-            const step = this._clusterIteration(avail, clusters, o, it);
+            const step = await this._clusterIteration(avail, clusters, o, it);
             if (!step.group) break;
             clusters.push(step.group);
             avail = step.avail;
@@ -271,9 +296,9 @@ class SINEClusterer {
         return this._finaliseClusters(clusters, avail, o);
     }
 
-    // One round of the search, shared by the synchronous cluster() and the chunked
-    // clusterChunked() below, so the two cannot drift apart.
-    _clusterIteration(avail, clusters, o, it) {
+    // One round of the search, shared by cluster() and clusterChunked() below,
+    // so the two cannot drift apart. Now async: yields within findBestGroup.
+    async _clusterIteration(avail, clusters, o, it) {
             const prog = it / o.maxIterations;
 
             const curMinP = Math.max(1, Math.round(o.minPerfect * (1 - prog * 0.75)));
@@ -297,7 +322,8 @@ class SINEClusterer {
                 assignedSeqs: assigned,
                 relaxUpperBound: false,
                 trimStart: o.trimStart, // Pass trimming down
-                trimEnd: o.trimEnd      // Pass trimming down
+                trimEnd: o.trimEnd,      // Pass trimming down
+                shouldCancel: o.shouldCancel || (() => false)
             };
 
             if (avail.length <= 10) {
@@ -306,13 +332,13 @@ class SINEClusterer {
                 go.minOccurrences = 1;
             }
 
-            let group = this.findBestGroup(avail, go);
+            let group = await this.findBestGroup(avail, go);
 
             // Retry with relaxed upper bound if strict search fails
-            if (!group && avail.length >= o.minSize) {
+            if (!group && avail.length >= o.minSize && !(o.shouldCancel && o.shouldCancel())) {
                 console.log(`[RETRY] No group found. Retrying with relaxed upper bound...`);
                 go.relaxUpperBound = true;
-                group = this.findBestGroup(avail, go);
+                group = await this.findBestGroup(avail, go);
             }
 
             if (group) {
@@ -327,9 +353,8 @@ class SINEClusterer {
             return { group: null, avail };
     }
 
-    // Same search, yielding between rounds so the page can repaint and the run can be
-    // stopped. The grain is one round: a single findBestGroup call does not yield, so a
-    // cancel takes effect after the round in progress finishes.
+    // Same search, yielding between rounds AND within each round's findBestGroup call,
+    // so the page can repaint and the run can be stopped promptly at any point.
     async clusterChunked(opts = {}) {
         const o = this._makeOptions(opts);
         const clusters = [];
@@ -344,7 +369,7 @@ class SINEClusterer {
             onProgress(`Round ${it} of at most ${o.maxIterations} - ${clusters.length} found, ${avail.length} sequences left`);
             await yieldNow();
             if (shouldCancel()) { cancelled = true; break; }
-            const step = this._clusterIteration(avail, clusters, o, it);
+            const step = await this._clusterIteration(avail, clusters, o, it);
             if (!step.group) break;
             clusters.push(step.group);
             avail = step.avail;
