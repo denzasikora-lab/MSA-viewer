@@ -271,8 +271,10 @@ function applyClusterVisualsFromState() {
 
     document.querySelectorAll('.seq-name[data-seq-index]').forEach((nameEl) => {
         const seqIdx = parseInt(nameEl.dataset.seqIndex, 10);
-        if (!Number.isInteger(seqIdx) || state.clusterMap[seqIdx] === undefined) return;
-        const { color, name } = state.clusterMap[seqIdx];
+        if (!Number.isInteger(seqIdx) || seqIdx < 0 || seqIdx >= state.seqs.length) return;
+        const header = state.seqs[seqIdx].header;
+        if (state.clusterMap[header] === undefined) return;
+        const { color, name } = state.clusterMap[header];
         nameEl.style.setProperty('background-color', color, 'important');
         nameEl.style.setProperty('color', '#000000', 'important');
         nameEl.style.setProperty('font-weight', 'bold', 'important');
@@ -10449,7 +10451,7 @@ async function clusterByGuideTree() {
         const clusters = cut.groups.map((members, idx) => {
             const color = colors[idx % colors.length];
             members.forEach(i => {
-                state.clusterMap[i] = { cluster: idx, color, name: `Group ${idx + 1}` };
+                state.clusterMap[seqs[i].id] = { cluster: idx, color, name: `Group ${idx + 1}` };
             });
             return {
                 size: members.length,
@@ -10732,7 +10734,7 @@ async function _clusterSequencesNow(update) {
 
         cluster.sequences.forEach(seq => {
             debugLog(`  - ${seq.id} (index ${seq.index})`);
-            state.clusterMap[seq.index] = {
+            state.clusterMap[seq.id] = {
                 cluster: idx,
                 color: color,
                 name: `Cluster ${idx + 1}`
@@ -10758,7 +10760,7 @@ async function _clusterSequencesNow(update) {
         debugLog(`\n--- UNASSIGNED (${clusterResults.unassigned.length} sequences) ---`);
         clusterResults.unassigned.forEach(seq => {
             debugLog(`  - ${seq.id} (index ${seq.index})`);
-            state.clusterMap[seq.index] = {
+            state.clusterMap[seq.id] = {
                 cluster: -1,
                 color: '#cccccc',
                 name: 'Unassigned'
@@ -10827,7 +10829,7 @@ function highlightDiagnosticMutations() {
                     color,
                     char: char,
                     clusterName: `Cluster ${clusterIdx + 1}`,
-                    seqIndices: new Set(cluster.sequences.map(s => s.index)),
+                    seqHeaders: new Set(cluster.sequences.map(s => s.id)),
                     isPerfect: true, // Default to perfect; will be styled differently if unvalidated
                     isAllFound: true, // Mark that this is from allFoundFeatures
                     interClusterLeakage: {
@@ -10869,7 +10871,7 @@ function highlightDiagnosticMutations() {
                     color,
                     char: feature.char,
                     clusterName: `Cluster ${clusterIdx + 1}`,
-                    seqIndices: new Set(cluster.sequences.map(s => s.index)),
+                    seqHeaders: new Set(cluster.sequences.map(s => s.id)),
                     isPerfect: true,
                     interClusterLeakage: {
                         count: leakageCount,
@@ -10911,7 +10913,7 @@ function highlightDiagnosticMutations() {
                         char: feature.char,
                         countOutside: feature.countOutside,
                         clusterName: `Cluster ${clusterIdx + 1}`,
-                        seqIndices: new Set(cluster.sequences.map(s => s.index)),
+                        seqHeaders: new Set(cluster.sequences.map(s => s.id)),
                         isPerfect: false,
                         interClusterLeakage: {
                             count: leakageCount,
@@ -10932,7 +10934,7 @@ function highlightDiagnosticMutations() {
     seqLines.forEach(seqLine => {
         // Get the sequence index for this row
         const seqIdx = parseInt(seqLine.dataset.seqIndex);
-        if (isNaN(seqIdx)) return;
+        if (isNaN(seqIdx) || seqIdx < 0 || seqIdx >= state.seqs.length) return;
 
         const seqDataDiv = seqLine.querySelector('.seq-data');
         if (!seqDataDiv) return;
@@ -10949,7 +10951,7 @@ function highlightDiagnosticMutations() {
                 // Find diagnostics relevant to this sequence's cluster
                 // Prefer perfect features over imperfect
                 const relevantDiags = diagnosticMap[pos].filter(diag =>
-                    diag.seqIndices.has(seqIdx)
+                    diag.seqHeaders.has(state.seqs[seqIdx].header)
                 );
 
                 if (relevantDiags.length > 0) {
@@ -11294,15 +11296,19 @@ function highlightCluster(clusterIdx) {
         el.style.backgroundColor = '';
     });
 
-    let indicesToHighlight = [];
+    let headersToHighlight = [];
 
     if (clusterIdx === -1) {
         // Highlight unassigned
-        indicesToHighlight = results.unassigned.map(s => s.index);
+        headersToHighlight = results.unassigned.map(s => s.id);
     } else {
         // Highlight specific cluster
-        indicesToHighlight = results.clusters[clusterIdx].sequences.map(s => s.index);
+        headersToHighlight = results.clusters[clusterIdx].sequences.map(s => s.id);
     }
+
+    // Map headers to current row indices (sequences may have been reordered since clustering)
+    const headerToIdx = new Map(state.seqs.map((s, i) => [s.header, i]));
+    const indicesToHighlight = headersToHighlight.map(h => headerToIdx.get(h)).filter(i => i !== undefined);
 
     const color = clusterIdx === -1 ? '#999999' : colors[clusterIdx % colors.length];
 
