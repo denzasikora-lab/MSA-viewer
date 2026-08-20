@@ -4042,6 +4042,59 @@ function _pushParsedFastaSequence(seqs, header, seq) {
     seqs.push({ header: displayHeader, fullHeader: cleanHeader, seq: processedSeq, gaplessPositions: gaplessPositions });
 }
 
+/**
+ * Check if parsed sequences have mismatched lengths.
+ * Returns null if all same length, or { majorityLen, differing: [{name, length, diff}] }.
+ */
+function _checkLengthMismatch(seqs) {
+    if (!seqs || seqs.length < 2) return null;
+    const lengths = seqs.map(s => s.seq.length);
+    const maxLen = Math.max(...lengths);
+    const minLen = Math.min(...lengths);
+    if (maxLen === minLen) return null;
+
+    // Find the majority length
+    const lenCounts = {};
+    for (const l of lengths) lenCounts[l] = (lenCounts[l] || 0) + 1;
+    let majorityLen = maxLen;
+    let majorityCount = 0;
+    for (const [l, count] of Object.entries(lenCounts)) {
+        if (count > majorityCount) {
+            majorityCount = count;
+            majorityLen = parseInt(l);
+        }
+    }
+
+    // Find sequences that differ from the majority
+    const differing = [];
+    for (let i = 0; i < seqs.length; i++) {
+        if (seqs[i].seq.length !== majorityLen) {
+            differing.push({
+                name: seqs[i].header,
+                length: seqs[i].seq.length,
+                diff: seqs[i].seq.length - majorityLen
+            });
+        }
+    }
+
+    return { majorityLen, differing };
+}
+
+/**
+ * Pad short sequences with gaps to match the longest sequence's length.
+ * Prevents downstream crashes from length-mismatched rows.
+ */
+function _normalizeSequenceLengths(seqs) {
+    if (!seqs || seqs.length === 0) return;
+    const maxLen = Math.max(...seqs.map(s => s.seq.length));
+    for (const s of seqs) {
+        if (s.seq.length < maxLen) {
+            s.seq = s.seq.padEnd(maxLen, '-');
+            s.gaplessPositions = calculateGaplessPositions(s.seq);
+        }
+    }
+}
+
 function parseFasta(text) {
     if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
     const lines = text.split(/\r\n|\r|\n/);
@@ -4054,8 +4107,8 @@ function parseFasta(text) {
             if (line.startsWith('>')) {
                 if (header) {
                     _pushParsedFastaSequence(seqs, header, seq);
-                    seq = '';
                 }
+                seq = '';
                 header = line;
             } else {
                 seq += line.replace(/[_?~]/g, '-').replace(/[^A-Za-z*.\-]/g, '');
@@ -7060,6 +7113,13 @@ async function parseAndRender(isFromDrop = false) {
             if (blockRadio) blockRadio.checked = true;
         }
         state.seqs = parsed;
+
+        // Check for length mismatch before rendering - warn and normalize to prevent crashes
+        const _lenMismatch = _checkLengthMismatch(state.seqs);
+        if (_lenMismatch) {
+            _normalizeSequenceLengths(state.seqs);
+        }
+
         _userDismissedAutoCanvas = false; // fresh file: allow the Canvas suggestion again if it's large
         state.selectedRows.clear();
         state.selectedColumns.clear();
@@ -7094,7 +7154,16 @@ async function parseAndRender(isFromDrop = false) {
         // Auto-fit block size to screen width on every load
         setBlockSizeToScreen();
         setupHoverMenuReveal();
-        showMessage("File loaded successfully!", 2000);
+        if (_lenMismatch) {
+            const _diffDetails = _lenMismatch.differing.slice(0, 5).map(d =>
+                `'${d.name}' is ${d.length} cols (${d.diff > 0 ? '+' : ''}${d.diff})`
+            ).join(', ');
+            const _diffMore = _lenMismatch.differing.length > 5 ? ` and ${_lenMismatch.differing.length - 5} more` : '';
+            showMessage(`Loaded with length mismatch: ${_diffDetails}${_diffMore}. Most are ${_lenMismatch.majorityLen} cols - check for stray text before '>' headers, or use Realign All.`, 8000);
+            console.warn('[Length mismatch]', _lenMismatch);
+        } else {
+            showMessage("File loaded successfully!", 2000);
+        }
 
         // Record in history
         const isClipboard = !isFromDrop && state.currentFilename === 'Clipboard';
