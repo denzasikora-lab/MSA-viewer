@@ -481,11 +481,18 @@ const _historyManager = {
             const icon = e.type === 'file' ? ICON_FILE : ICON_CLIP;
             const label = e.name.length > 35 ? e.name.substring(0, 32) + '...' : e.name;
             const meta = e.nSeqs ? `${e.nSeqs} seq ${TIMES} ${e.length} col` : '';
+            // Full source path shown as its own line (not just in a native
+            // title tooltip, which was easy to miss) - only when it exists
+            // and isn't just a repeat of the name (clipboard entries have no
+            // source path).
+            const pathLine = (e.source && e.source !== e.name)
+                ? `<div style="color:#aaa;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;" title="${this._escapeHtml(e.source)}">${this._escapeHtml(e.source)}</div>`
+                : '';
             html += `<div class="recent-item" data-idx="${this.items.indexOf(e)}"
-                title="${this._escapeHtml(e.source || e.name)}\n${meta}\n${this._escapeHtml(e.preview)}"
-                style="padding:5px 10px;cursor:pointer;font-size:11px;border-bottom:1px solid #eee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">
-                ${icon} <b>${this._escapeHtml(label)}</b>
-                <span style="color:#999;font-size:10px;">${meta ? ` ${MIDDOT} ${meta}` : ''} ${MIDDOT} ${timeFmt(e.timestamp)}</span>
+                style="padding:5px 10px;cursor:pointer;font-size:11px;border-bottom:1px solid #eee;overflow:hidden;">
+                <div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${icon} <b>${this._escapeHtml(label)}</b>
+                <span style="color:#999;font-size:10px;">${meta ? ` ${MIDDOT} ${meta}` : ''} ${MIDDOT} ${timeFmt(e.timestamp)}</span></div>
+                ${pathLine}
             </div>`;
         }
         html += `<div style="padding:4px 10px;font-size:10px;color:#999;border-top:1px solid #eee;display:flex;justify-content:space-between;">
@@ -496,7 +503,7 @@ const _historyManager = {
         </div>`;
         menu.innerHTML = html;
 
-        // Click handlers
+        // Click + hover-preview handlers
         menu.querySelectorAll('.recent-item').forEach(el => {
             el.addEventListener('click', () => {
                 const idx = parseInt(el.dataset.idx);
@@ -512,7 +519,58 @@ const _historyManager = {
                 }
                 document.getElementById('recentDropdown').style.display = 'none';
             });
+            el.addEventListener('mouseenter', () => {
+                const idx = parseInt(el.dataset.idx);
+                const entry = this.items[idx];
+                if (entry) this._showPreview(el, entry);
+            });
+            el.addEventListener('mouseleave', () => this._hidePreview());
         });
+    },
+
+    // Custom hover-preview panel, replacing the plain OS title tooltip -
+    // shows the full path, stats, and an actual formatted sequence preview
+    // rather than a single-line plain-text browser tooltip.
+    _getPreviewEl() {
+        let el = document.getElementById('recentItemPreview');
+        if (!el) {
+            el = document.createElement('div');
+            el.id = 'recentItemPreview';
+            el.style.cssText = 'display:none;position:fixed;z-index:10004;max-width:420px;background:#2b2b2b;color:#eee;'
+                + 'border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.3);padding:8px 10px;font-size:11px;'
+                + 'pointer-events:none;white-space:normal;';
+            document.body.appendChild(el);
+        }
+        return el;
+    },
+
+    _showPreview(itemEl, entry) {
+        const el = this._getPreviewEl();
+        const TIMES = SYM.times;
+        const statsLine = entry.nSeqs ? `${entry.nSeqs} sequence${entry.nSeqs === 1 ? '' : 's'} ${TIMES} ${entry.length} columns` : '';
+        const pathLine = entry.source ? `<div style="color:#999;font-size:10px;margin-top:2px;word-break:break-all;">${this._escapeHtml(entry.source)}</div>` : '';
+        const previewBlock = entry.preview
+            ? `<div style="font-family:'Courier New',monospace;font-size:10px;color:#9cdcfe;margin-top:6px;white-space:pre-wrap;word-break:break-all;border-top:1px solid #444;padding-top:6px;">${this._escapeHtml(entry.preview)}</div>`
+            : '';
+        el.innerHTML = `<div style="font-weight:bold;">${this._escapeHtml(entry.name)}</div>`
+            + pathLine
+            + (statsLine ? `<div style="color:#bbb;margin-top:2px;">${statsLine}</div>` : '')
+            + previewBlock;
+        const rect = itemEl.getBoundingClientRect();
+        el.style.display = 'block';
+        // Position to the left of the dropdown by default (dropdown itself
+        // sits near the right edge of the screen); flip to the right if
+        // there isn't enough room on the left.
+        const previewWidth = 420;
+        let left = rect.left - previewWidth - 8;
+        if (left < 4) left = rect.right + 8;
+        el.style.left = Math.max(4, left) + 'px';
+        el.style.top = Math.max(4, rect.top) + 'px';
+    },
+
+    _hidePreview() {
+        const el = document.getElementById('recentItemPreview');
+        if (el) el.style.display = 'none';
     },
 
     _escapeHtml(s) {
@@ -6802,7 +6860,18 @@ async function parseAndRender(isFromDrop = false) {
         showMessage('Reading local file...', 0);
         try {
             const resp = await fetch('/api/local-cat?file=' + encodeURIComponent(inputText));
-            const data = await resp.json();
+            // On a static deployment (e.g. GitHub Pages) with no server.js
+            // running, /api/local-cat doesn't exist - the host serves its
+            // normal 404/index HTML instead. Reading that as JSON used to
+            // throw a raw, confusing SyntaxError ("Unexpected token '<'").
+            // Detect the non-JSON-response case explicitly and say what's
+            // actually true: this feature needs the optional local server.
+            let data;
+            try {
+                data = await resp.json();
+            } catch (parseErr) {
+                throw new Error('this feature requires the optional local server (server.js) - it is not available on the static/public deployment');
+            }
             if (!resp.ok) throw new Error(data.error || ('HTTP ' + resp.status));
             fastaInput.value = data.content;
             state.currentFilename = state.currentFilename || (inputText.split(/[\\/]/).filter(Boolean).pop() || 'local_import');
@@ -6810,7 +6879,7 @@ async function parseAndRender(isFromDrop = false) {
             return parseAndRender(isFromDrop);
         } catch (err) {
             statusMessage.style.display = 'none';
-            showMessage('Could not read local file: ' + err.message + ' (is the local server running?)', 5000);
+            showMessage('Could not read local file: ' + err.message, 6000);
             return;
         }
     }

@@ -222,6 +222,58 @@ check('recent-files history: file entries do not cache truncated text', async (p
   return { pass: true, detail: `file-type history entry correctly stores text=null (forces a real re-open)` };
 });
 
+check('recent-files history: full source path visible without hovering, and a real preview panel appears on hover', async (page) => {
+  await page.evaluate(() => {
+    localStorage.setItem('msaviewer_history', JSON.stringify({ max: 10, items: [
+      { type: 'file', name: 'scorpion_candidates.aln.fa', timestamp: Date.now(), nSeqs: 3408, length: 1842,
+        preview: 'seqA, seqB, seqC  [ACGTACGTACGTACGT...]', source: 'C:\\work\\SINEderella\\de-novo-scan\\scorpion_candidates.aln.fa', text: null }
+    ]}));
+  });
+  await page.click('.section-header[data-section="input"]');
+  await page.click('#recentButton');
+  await page.waitForTimeout(150);
+  const pathVisible = await page.evaluate(() => document.querySelector('#recentDropdown').textContent.includes('SINEderella'));
+  if (!pathVisible) return { pass: false, detail: 'full source path is not visible in the dropdown without hovering' };
+
+  await page.hover('.recent-item');
+  await page.waitForTimeout(150);
+  const preview = await page.evaluate(() => {
+    const el = document.getElementById('recentItemPreview');
+    return el ? { visible: el.style.display === 'block', text: el.textContent } : null;
+  });
+  if (!preview || !preview.visible) return { pass: false, detail: 'no custom hover-preview panel appeared' };
+  if (!preview.text.includes('seqA') || !preview.text.includes('3408')) {
+    return { pass: false, detail: `hover preview missing expected content: ${preview.text}` };
+  }
+  return { pass: true, detail: 'full path visible, hover preview shows sequence content and stats' };
+});
+
+check('local-path load: a non-JSON server response gives a clear message, not a raw parse error', async (page) => {
+  // Regresses the case where fetch('/api/local-cat') on a deployment
+  // without server.js (e.g. GitHub Pages) gets back a plain 404 body -
+  // resp.json() on that used to throw a raw SyntaxError ("Unexpected
+  // token") before the response's ok-ness was even checked, surfacing an
+  // implementation-detail error instead of an actionable one.
+  await page.evaluate(() => {
+    document.getElementById('fastaInput').value = 'C:\\work\\SINEderella\\de-novo-scan\\scorpion_candidates.aln.fa';
+  });
+  await page.evaluate(() => parseAndRender(false));
+  await page.waitForTimeout(400);
+  const msg = await page.evaluate(() => {
+    const els = document.querySelectorAll('body *');
+    for (const e of els) if (e.textContent && e.textContent.includes('Could not read local file')) return e.textContent;
+    return null;
+  });
+  if (!msg) return { pass: false, detail: 'no "Could not read local file" message appeared at all' };
+  if (msg.includes('Unexpected token') || msg.includes('SyntaxError')) {
+    return { pass: false, detail: `message leaks a raw JSON parse error instead of explaining the server is unavailable: ${msg}` };
+  }
+  if (!msg.toLowerCase().includes('server')) {
+    return { pass: false, detail: `message doesn't mention the actual cause (missing optional server): ${msg}` };
+  }
+  return { pass: true, detail: `clear message: ${msg}` };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
