@@ -1,3 +1,25 @@
+// Module-level yield helper using MessageChannel for near-zero-delay yielding.
+// setTimeout(0) has a minimum delay of ~4ms in some browsers; MessageChannel
+// fires on the next event loop turn with no artificial delay, cutting yield
+// overhead roughly in half.
+let _yieldResolver = null;
+const _yieldChannel = typeof MessageChannel !== 'undefined' ? new MessageChannel() : null;
+if (_yieldChannel) {
+    _yieldChannel.port1.onmessage = () => {
+        if (_yieldResolver) { const r = _yieldResolver; _yieldResolver = null; r(); }
+    };
+}
+function _yieldToBrowser() {
+    return new Promise(r => {
+        if (_yieldChannel) {
+            _yieldResolver = r;
+            _yieldChannel.port2.postMessage(null);
+        } else {
+            setTimeout(r, 0);
+        }
+    });
+}
+
 class SINEClusterer {
     constructor(sequences) {
         this.sequences = sequences;
@@ -5,6 +27,8 @@ class SINEClusterer {
         this.alnLen = sequences[0].seq.length;
         this.matrix = sequences.map(s => s.seq.split(''));
         this._allSeqIndices = Array.from({length: this.nSeqs}, (_, i) => i);
+        this._globalMaxSizeCache = null;
+        this._columnCharCounts = null;
     }
 
     getPositionPatterns(pos, availableSeqs) {
@@ -45,9 +69,25 @@ class SINEClusterer {
         }
 
         const _shouldCancel = options.shouldCancel || (() => false);
-        const _yieldNow = () => new Promise(r => setTimeout(r, 0));
+        const _yieldNow = _yieldToBrowser;
         let _lastYield = performance.now();
-        const _CHUNK_MS = 8;
+        const _CHUNK_MS = 16;
+
+        // Lazy precompute column character counts (total across ALL sequences).
+        // Used to compute outside counts in O(1) instead of O(nSeqs) per feature.
+        if (!this._columnCharCounts) {
+            this._columnCharCounts = new Map();
+            for (let pos = 0; pos < this.alnLen; pos++) {
+                const counts = new Map();
+                for (let i = 0; i < this.nSeqs; i++) {
+                    const ch = this.matrix[i][pos];
+                    if (ch !== '-' && ch !== '.') {
+                        counts.set(ch, (counts.get(ch) || 0) + 1);
+                    }
+                }
+                this._columnCharCounts.set(pos, counts);
+            }
+        }
 
         const candidates = new Map();
 
@@ -61,8 +101,15 @@ class SINEClusterer {
             // perfectly clean remaining cluster look "non-diagnostic" once an earlier
             // cluster was removed and the pool became internally homogeneous, even
             // though it was 100% distinct from the removed cluster.
-            const globalPatterns = this.getPositionPatterns(pos, this._allSeqIndices);
-            const maxGlobalSize = Math.max(...Object.values(globalPatterns).map(s => s.size));
+            let maxGlobalSize;
+            if (this._globalMaxSizeCache?.has(pos)) {
+                maxGlobalSize = this._globalMaxSizeCache.get(pos);
+            } else {
+                const globalPatterns = this.getPositionPatterns(pos, this._allSeqIndices);
+                maxGlobalSize = Math.max(0, ...Object.values(globalPatterns).map(s => s.size));
+                if (!this._globalMaxSizeCache) this._globalMaxSizeCache = new Map();
+                this._globalMaxSizeCache.set(pos, maxGlobalSize);
+            }
             if (maxGlobalSize / this.nSeqs > 0.8) continue;
 
             for (const [ch, set] of Object.entries(patterns)) {
@@ -84,6 +131,11 @@ class SINEClusterer {
         }
 
         // fuzzy merge near-identical groups
+        // Precompute Sets for O(1) membership tests (avoids O(n) .includes per pair)
+        const candidateSets = new Map();
+        for (const [k, d] of candidates) {
+            candidateSets.set(k, new Set(d.seq));
+        }
         const merged = new Map();
         const done = new Set();
         for (const [k1, d1] of candidates) {
@@ -91,8 +143,9 @@ class SINEClusterer {
             let list = [d1];
             for (const [k2, d2] of candidates) {
                 if (k1===k2 || done.has(k2)) continue;
-                const inter = d1.seq.filter(x=>d2.seq.includes(x)).length;
-                const union = new Set([...d1.seq, ...d2.seq]).size;
+                const d2Set = candidateSets.get(k2);
+                const inter = d1.seq.filter(x => d2Set.has(x)).length;
+                const union = d1.seq.length + d2.seq.length - inter;
                 if (inter/union >= 0.90 && Math.abs(d1.seq.length - d2.seq.length) <= 5) {
                     list.push(d2);
                     done.add(k2);
@@ -129,8 +182,6 @@ class SINEClusterer {
             if (d.feats.length < minOcc) continue;
             const gsize = d.seq.length;
             const thresh = gsize < breakSM ? qSmall : gsize < breakML ? qMed : qLarge;
-            const seqSet = new Set(d.seq);
-
             let good = 0;
             let score = 0;
             const validFeats = [];
@@ -139,10 +190,8 @@ class SINEClusterer {
                 let inside = 0;
                 for (const i of d.seq) if (this.matrix[i][pos] === ch) inside++;
 
-                let outside = 0;
-                for (let i=0; i<this.nSeqs; i++) {
-                    if (!seqSet.has(i) && this.matrix[i][pos] === ch) outside++;
-                }
+                const totalAtPos = this._columnCharCounts.get(pos)?.get(ch) || 0;
+                const outside = totalAtPos - inside;
 
                 const inP = inside / gsize * 100;
                 const outP = outside / (this.nSeqs - gsize) * 100 || 0;
@@ -214,13 +263,11 @@ class SINEClusterer {
                         : gsize < breakML ? qMed : qLarge;
                     let good = 0, score = 0;
                     const validFeats = [];
-                    const prunedSeqSet = new Set(best.sequences);
                     for (const {pos, ch} of best.occurrences) {
-                        let inside = 0, outside = 0;
+                        let inside = 0;
                         for (const i of best.sequences) if (this.matrix[i][pos] === ch) inside++;
-                        for (let i = 0; i < this.nSeqs; i++) {
-                            if (!prunedSeqSet.has(i) && this.matrix[i][pos] === ch) outside++;
-                        }
+                        const totalAtPos = this._columnCharCounts.get(pos)?.get(ch) || 0;
+                        const outside = totalAtPos - inside;
                         const inP = inside / gsize * 100;
                         const outP = outside / (this.nSeqs - gsize) * 100 || 0;
                         const qual = Math.max(0, inP - outP);
