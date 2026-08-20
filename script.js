@@ -570,9 +570,19 @@ const _historyManager = {
         }
         html += `<div style="padding:4px 10px;font-size:10px;color:#999;border-top:1px solid #eee;display:flex;justify-content:space-between;">
             <span>Showing ${Math.min(this.items.length, this.maxItems)} of ${this.items.length}</span>
-            <span>Max: <input type="number" id="historyMaxInput" value="${this.maxItems}" min="1" max="50"
-                style="width:36px;height:22px;font-size:10px;padding:0 2px;text-align:center;"
-                onchange="_historyManager.setMax(parseInt(this.value)||10);_historyManager.renderDropdown();"></span>
+            <span style="display:inline-flex;align-items:center;gap:2px;">Max:
+                <input type="number" id="historyMaxInput" value="${this.maxItems}" min="1" max="50"
+                    style="width:28px;height:20px;font-size:10px;padding:0;text-align:center;-moz-appearance:textfield;"
+                    onchange="_historyManager.setMax(parseInt(this.value)||10);_historyManager.renderDropdown();">
+                <span style="display:inline-flex;flex-direction:column;">
+                    <button type="button" title="Increase"
+                        style="width:14px;height:11px;line-height:9px;font-size:8px;padding:0;border:1px solid #ccc;background:#f5f5f5;cursor:pointer;"
+                        onclick="_historyManager.setMax(_historyManager.maxItems+1);_historyManager.renderDropdown();">&#9650;</button>
+                    <button type="button" title="Decrease"
+                        style="width:14px;height:11px;line-height:9px;font-size:8px;padding:0;border:1px solid #ccc;border-top:none;background:#f5f5f5;cursor:pointer;"
+                        onclick="_historyManager.setMax(_historyManager.maxItems-1);_historyManager.renderDropdown();">&#9660;</button>
+                </span>
+            </span>
         </div>`;
         menu.innerHTML = html;
 

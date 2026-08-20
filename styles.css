@@ -2536,3 +2536,13 @@ body.var-sites-only.hide-breakpoints .col-breakpoint { display: none !important;
     white-space: nowrap;
 }
 #hotkeysTooltip { max-width: 340px !important; }
+
+/* Recent Files "Max" count now has its own explicit up/down buttons
+   (visible, sized, and testable in headless Chrome, unlike native OS
+   spin-button chrome) - hide the native WebKit spinner so there's only
+   one set of arrows, not two overlapping ones. */
+#historyMaxInput::-webkit-inner-spin-button,
+#historyMaxInput::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+}

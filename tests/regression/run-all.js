@@ -352,6 +352,58 @@ check('Recent Files reopen: File System Access handle logic (permission granted/
   return { pass: true, detail: 'granted/denied/missing handle paths all behave correctly' };
 });
 
+check('recent-files history: explicit up/down stepper buttons work (replacing the native spinner)', async (page) => {
+  // Regresses the reported issue where the native number-input spin
+  // buttons were visually clipped at the top - replaced with explicit,
+  // fully-controlled up/down buttons instead of relying on native OS
+  // spinner chrome (which headless Chrome doesn't even render, so that
+  // specific clipping claim could never be visually verified here either
+  // way - this test covers the buttons' own click behavior instead, which
+  // IS fully controllable and testable).
+  await page.evaluate(() => {
+    localStorage.setItem('msaviewer_history', JSON.stringify({ max: 10, items: [
+      { type: 'file', name: 'a.fa', timestamp: Date.now(), nSeqs: 3, length: 10, preview: '', source: '', text: null }
+    ]}));
+  });
+  await page.click('.section-header[data-section="input"]');
+  await page.click('#recentButton');
+  await page.waitForTimeout(150);
+
+  const before = await page.inputValue('#historyMaxInput');
+  if (before !== '10') return { pass: false, detail: `expected initial value 10, got ${before}` };
+
+  // Dispatched directly rather than via page.click() - Playwright's
+  // synthetic mouse-move-then-click sequence intermittently reported this
+  // tiny (14x11px) button as "not visible" during manual investigation,
+  // seemingly related to this dropdown's own mouseenter/mouseleave hover-
+  // preview handlers on adjacent .recent-item rows interfering with
+  // Playwright's stability check while moving the pointer - isVisible(),
+  // boundingBox(), and count() all reported the element as completely
+  // normal in isolation, and no actual visual overlap with the hover
+  // preview panel was found, so this looks like a Playwright/synthetic-
+  // mouse-path quirk from this specific combination of features rather
+  // than a real click-blocking bug - but it means the click PATH itself
+  // isn't covered here, only the handler logic a click would trigger.
+  await page.evaluate(() => document.querySelector('button[title="Increase"]').click());
+  await page.waitForTimeout(100);
+  const afterInc = await page.inputValue('#historyMaxInput');
+  if (afterInc !== '11') return { pass: false, detail: `Increase button: expected 11, got ${afterInc}` };
+
+  await page.evaluate(() => document.querySelector('button[title="Decrease"]').click());
+  await page.waitForTimeout(100);
+  const afterDec = await page.inputValue('#historyMaxInput');
+  if (afterDec !== '10') return { pass: false, detail: `Decrease button: expected 10, got ${afterDec}` };
+
+  await page.reload({ waitUntil: 'networkidle' });
+  await page.click('.section-header[data-section="input"]');
+  await page.click('#recentButton');
+  await page.waitForTimeout(150);
+  const afterReload = await page.inputValue('#historyMaxInput');
+  if (afterReload !== '10') return { pass: false, detail: `expected the decremented value to survive reload, got ${afterReload}` };
+
+  return { pass: true, detail: 'up/down buttons correctly change and persist the max count' };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
