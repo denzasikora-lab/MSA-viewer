@@ -1789,11 +1789,14 @@ function _createWindowedScrollController(refreshFn, isActiveFn) {
                 if (renderInProgress) { renderPending = true; return; }
                 renderInProgress = true;
                 requestAnimationFrame(() => {
-                    refreshFn(container);
-                    renderInProgress = false;
-                    if (renderPending) {
-                        renderPending = false;
-                        triggerWindowedRender();
+                    try {
+                        refreshFn(container);
+                    } finally {
+                        renderInProgress = false;
+                        if (renderPending) {
+                            renderPending = false;
+                            triggerWindowedRender();
+                        }
                     }
                 });
             };
@@ -1879,7 +1882,7 @@ let _unifiedWindowRenderParams = null;
 function _measureUnifiedRowHeight(sampleRowEl) {
     if (sampleRowEl) {
         const h = sampleRowEl.getBoundingClientRect().height;
-        if (h > 0) _unifiedRowHeightPx = h;
+        if (h > 1) _unifiedRowHeightPx = h;
     }
     return _unifiedRowHeightPx || 16;
 }
@@ -1908,7 +1911,7 @@ function _unifiedFallbackBlockHeightPx() {
 function _measureUnifiedBlockHeight(sampleBlockEl) {
     if (sampleBlockEl) {
         const h = sampleBlockEl.getBoundingClientRect().height;
-        if (h > 0) _unifiedBlockHeightPx = h;
+        if (h > 1) _unifiedBlockHeightPx = h;
     }
     return _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx();
 }
@@ -2026,8 +2029,9 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     const overscanRows = 15;
     const visTop = Math.max(effectiveScrollTop, rowAreaTop);
     const visBottom = Math.min(effectiveScrollTop + clientHeight, blockTop + blockHeightPx);
-    const rowStart = Math.max(0, Math.floor((visTop - rowAreaTop) / rowHeightPx) - overscanRows);
-    const rowEnd = Math.min(Math.max(0, nSeq - 1), Math.floor((visBottom - rowAreaTop) / rowHeightPx) + overscanRows);
+    const safeRowHeightPx = Math.max(1, rowHeightPx);
+    const rowStart = Math.max(0, Math.floor((visTop - rowAreaTop) / safeRowHeightPx) - overscanRows);
+    const rowEnd = Math.min(Math.max(0, nSeq - 1), Math.floor((visBottom - rowAreaTop) / safeRowHeightPx) + overscanRows, rowStart + 300);
 
     // Top row spacer (fills the space of rows above the visible window)
     const topRowSpacer = document.createElement('div');
@@ -2070,13 +2074,13 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
 function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, preservedScrollTop) {
     _unifiedWindowRenderParams = { len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options };
     const numBlocks = Math.max(1, Math.ceil(len / blockWidth));
-    const rowHeightPx = _unifiedRowHeightPx || 16;
-    const blockHeightPx = _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx();
+    const rowHeightPx = Math.max(1, _unifiedRowHeightPx || 16);
+    const blockHeightPx = Math.max(1, _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx());
     const effectiveScrollTop = preservedScrollTop != null ? preservedScrollTop : container.scrollTop;
     const { charWidthPx, nameColWidthPx } = _measureUnifiedColumnMetrics(null);
     const overscan = 1;
     const blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
-    const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + container.clientHeight) / blockHeightPx) + overscan);
+    const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + container.clientHeight) / blockHeightPx) + overscan, blockStart + 20);
 
     const headerHeightPx = _unifiedHeaderHeightPx != null ? _unifiedHeaderHeightPx : _measureUnifiedHeaderHeight(null);
 
@@ -2131,8 +2135,8 @@ function _refreshUnifiedWindowOnScroll(container) {
     const [topSpacer, bottomSpacer] = spacers;
 
     const numBlocks = Math.max(1, Math.ceil(p.len / p.blockWidth));
-    const rowHeightPx = _unifiedRowHeightPx || 16;
-    const blockHeightPx = _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx();
+    const rowHeightPx = Math.max(1, _unifiedRowHeightPx || 16);
+    const blockHeightPx = Math.max(1, _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx());
     const { charWidthPx, nameColWidthPx } = _measureUnifiedColumnMetrics(null);
     const overscan = 1;
     // Captured once, before any DOM mutation below. _removeNodesBetweenSpacers
@@ -2151,7 +2155,7 @@ function _refreshUnifiedWindowOnScroll(container) {
     const effectiveScrollLeft = container.scrollLeft;
     const effectiveClientWidth = container.clientWidth;
     const blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
-    const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + effectiveClientHeight) / blockHeightPx) + overscan);
+    const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + effectiveClientHeight) / blockHeightPx) + overscan, blockStart + 20);
 
     // Use the cached header height as-is (no re-measure here, same reasoning
     // as skipping the row/block re-measure below) - it was already measured
