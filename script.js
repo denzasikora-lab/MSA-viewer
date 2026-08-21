@@ -18475,10 +18475,19 @@ function _initDotPlotEvents() {
         _dotBindPlotWheel(overlay);
         const dotModal = document.getElementById('dotPlotModal');
         const dotDialog = document.getElementById('dotPlotDialog');
+        // Bubble phase (not capture): this only needs to stop a wheel event
+        // from reaching the page body behind the modal (scroll-through), and
+        // must run AFTER the viewport/overlay's own wheel handler has already
+        // had a chance to zoom - a capture-phase listener here fires on this
+        // ANCESTOR before the event ever reaches the overlay, and
+        // stopPropagation() during capture halts the entire remaining
+        // journey (including the target/bubble phases), so the overlay's
+        // Ctrl+wheel zoom handler was being silently killed before it could
+        // ever run.
         [dotModal, dotDialog].forEach((el) => {
             if (!el || el._dotWheelBound) return;
             el._dotWheelBound = true;
-            el.addEventListener('wheel', (e) => { e.stopPropagation(); }, { passive: false, capture: true });
+            el.addEventListener('wheel', (e) => { e.stopPropagation(); }, { passive: false });
         });
     }
     if (threshSlider) { _dotOnModeChange();

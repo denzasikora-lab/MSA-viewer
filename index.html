@@ -914,11 +914,15 @@
                 <label>Threshold: <input type="range" id="dotPlotThreshold" min="0" max="100" value="55" style="width:100px;vertical-align:middle;" title="Minimum identity for a dot to be plotted (0-100%)"><span id="dotPlotThreshVal">55%</span></label>
                 <label>Context: <input type="number" id="dotPlotContextRadius" value="30" min="0" max="100" step="5" style="width:45px;" title="Extra bases to show around the hover position"> bp</label>
                 <label><input type="checkbox" id="dotPlotRevComp" title="Reverse-complement the second sequence/axis, to find inverted repeats"> RevComp B</label>
-                <button id="dotPlotRecalc" style="font-size:11px;padding:2px 8px;" title="Rerun the dot plot with the current settings">Recalculate</button>
-                <button id="dotPlotZoomOut" style="font-size:11px;padding:2px 8px;" title="Zoom out (Ctrl+wheel)">-</button>
-                <button id="dotPlotZoomIn" style="font-size:11px;padding:2px 8px;" title="Zoom in (Ctrl+wheel)">+</button>
-                <button id="dotPlotExport" style="font-size:11px;padding:2px 8px;" title="Save the plot as a PNG image">Export PNG</button>
-                <button id="dotPlotExportSvg" style="font-size:11px;padding:2px 8px;" title="Save the plot as a vector SVG image">Export SVG</button>
+                <span style="display:inline-flex;gap:8px;white-space:nowrap;">
+                    <button id="dotPlotRecalc" style="font-size:11px;padding:2px 8px;" title="Rerun the dot plot with the current settings">Recalculate</button>
+                    <button id="dotPlotZoomOut" style="font-size:11px;padding:2px 8px;" title="Zoom out (Ctrl+wheel)">-</button>
+                    <button id="dotPlotZoomIn" style="font-size:11px;padding:2px 8px;" title="Zoom in (Ctrl+wheel)">+</button>
+                </span>
+                <span style="display:inline-flex;gap:8px;white-space:nowrap;">
+                    <button id="dotPlotExport" style="font-size:11px;padding:2px 8px;" title="Save the plot as a PNG image">Export PNG</button>
+                    <button id="dotPlotExportSvg" style="font-size:11px;padding:2px 8px;" title="Save the plot as a vector SVG image">Export SVG</button>
+                </span>
             </div>
             <div style="display:flex;gap:8px;flex:1;min-height:260px;">
                 <div id="dotPlotViewport" style="overflow:auto;flex:1;min-width:300px;border:1px solid #ccc;position:relative;cursor:crosshair;">

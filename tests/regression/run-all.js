@@ -476,6 +476,49 @@ check('Clustering Results modal is draggable, resizable, and minimizable', async
   return { pass: true, detail: 'drag, resize, minimize, and restore all work correctly' };
 });
 
+check('Dot plot: toolbar buttons stay grouped (Recalculate/-/+ never split across rows)', async (page) => {
+  const fasta = '>seqA\n' + 'ACGTACGTACGTACGTACGTACGTACGTACGT'.repeat(3) + '\n>seqB\n' + 'ACGTACGTACGTACGTACGTACGTACGTACGT'.repeat(3) + '\n';
+  await page.evaluate((f) => { document.getElementById('fastaInput').value = f; }, fasta);
+  await page.evaluate(() => parseAndRender(false));
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    const s = state.seqs[0];
+    const ungapped = s.seq.replace(/[-. ]/g, '');
+    openDotPlot(ungapped, ungapped, s.header, s.header, { rowIndexA: 0, rowIndexB: 0, alignedSeqA: s.seq, alignedSeqB: s.seq });
+  });
+  await page.waitForTimeout(500);
+  const layout = await page.evaluate(() => {
+    const zi = document.getElementById('dotPlotZoomIn').getBoundingClientRect();
+    const zo = document.getElementById('dotPlotZoomOut').getBoundingClientRect();
+    const rc = document.getElementById('dotPlotRecalc').getBoundingClientRect();
+    return Math.abs(zi.top - zo.top) < 3 && Math.abs(zi.top - rc.top) < 3;
+  });
+  if (!layout) return { pass: false, detail: 'Recalculate/zoom-out/zoom-in buttons are not on the same row - the toolbar wrapped mid-group' };
+  return { pass: true, detail: 'zoom button group stays together when the toolbar wraps' };
+});
+
+check('Dot plot: Ctrl+wheel zoom works (not silently killed by an ancestor capture-phase listener)', async (page) => {
+  const fasta = '>seqA\n' + 'ACGTACGTACGTACGTACGTACGTACGTACGT'.repeat(3) + '\n>seqB\n' + 'ACGTACGTACGTACGTACGTACGTACGTACGT'.repeat(3) + '\n';
+  await page.evaluate((f) => { document.getElementById('fastaInput').value = f; }, fasta);
+  await page.evaluate(() => parseAndRender(false));
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    const s = state.seqs[0];
+    const ungapped = s.seq.replace(/[-. ]/g, '');
+    openDotPlot(ungapped, ungapped, s.header, s.header, { rowIndexA: 0, rowIndexB: 0, alignedSeqA: s.seq, alignedSeqB: s.seq });
+  });
+  await page.waitForTimeout(800);
+  const result = await page.evaluate(() => {
+    const overlay = document.getElementById('dotPlotOverlay');
+    const before = _dotPlotState.zoom;
+    const rect = overlay.getBoundingClientRect();
+    overlay.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2, ctrlKey: true, bubbles: true, cancelable: true }));
+    return { before, after: _dotPlotState.zoom };
+  });
+  if (result.before === result.after) return { pass: false, detail: `zoom did not change on Ctrl+wheel (before=${result.before}, after=${result.after}) - an ancestor's capture-phase stopPropagation is likely killing the event before the overlay's own handler runs` };
+  return { pass: true, detail: `zoom changed from ${result.before} to ${result.after} on Ctrl+wheel` };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
