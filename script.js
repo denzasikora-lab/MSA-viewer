@@ -361,6 +361,7 @@ const state = {
     consensusCache: null,
     conservationDataCache: null,
     alignmentIndex: null, // { nSeqs, maxLen, totalResidues, mode, flags } from pre-parse scan
+    _needsWindowedDom: false, // computed in renderAlignment from TOTAL_RESIDUES directly
     deletedHistory: [],
     redoHistory: [],
     currentFilename: '',
@@ -1902,11 +1903,14 @@ function _createWindowedScrollController(refreshFn, isActiveFn) {
                 if (renderInProgress) { renderPending = true; return; }
                 renderInProgress = true;
                 requestAnimationFrame(() => {
-                    refreshFn(container);
-                    renderInProgress = false;
-                    if (renderPending) {
-                        renderPending = false;
-                        triggerWindowedRender();
+                    try {
+                        refreshFn(container);
+                    } finally {
+                        renderInProgress = false;
+                        if (renderPending) {
+                            renderPending = false;
+                            triggerWindowedRender();
+                        }
                     }
                 });
             };
@@ -1992,7 +1996,7 @@ let _unifiedWindowRenderParams = null;
 function _measureUnifiedRowHeight(sampleRowEl) {
     if (sampleRowEl) {
         const h = sampleRowEl.getBoundingClientRect().height;
-        if (h > 0) _unifiedRowHeightPx = h;
+        if (h > 1) _unifiedRowHeightPx = h;
     }
     return _unifiedRowHeightPx || 16;
 }
@@ -2021,7 +2025,7 @@ function _unifiedFallbackBlockHeightPx() {
 function _measureUnifiedBlockHeight(sampleBlockEl) {
     if (sampleBlockEl) {
         const h = sampleBlockEl.getBoundingClientRect().height;
-        if (h > 0) _unifiedBlockHeightPx = h;
+        if (h > 1) _unifiedBlockHeightPx = h;
     }
     return _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx();
 }
@@ -2139,8 +2143,17 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     const overscanRows = 15;
     const visTop = Math.max(effectiveScrollTop, rowAreaTop);
     const visBottom = Math.min(effectiveScrollTop + clientHeight, blockTop + blockHeightPx);
-    const rowStart = Math.max(0, Math.floor((visTop - rowAreaTop) / rowHeightPx) - overscanRows);
-    const rowEnd = Math.min(Math.max(0, nSeq - 1), Math.floor((visBottom - rowAreaTop) / rowHeightPx) + overscanRows);
+    const safeRowHeightPx = Math.max(1, rowHeightPx);
+    let rowStart = Math.max(0, Math.floor((visTop - rowAreaTop) / safeRowHeightPx) - overscanRows);
+    let rowEnd = Math.min(Math.max(0, nSeq - 1), Math.floor((visBottom - rowAreaTop) / safeRowHeightPx) + overscanRows, rowStart + 300);
+    // Safety fallback: if the visible area is empty or inverted (e.g.,
+    // header taller than the block, or container height clamped to 0),
+    // render a small window from the top so the user sees something
+    // instead of a blank alignment.
+    if (rowEnd < rowStart) {
+        rowStart = 0;
+        rowEnd = Math.min(Math.max(0, nSeq - 1), 50);
+    }
 
     // Top row spacer (fills the space of rows above the visible window)
     const topRowSpacer = document.createElement('div');
@@ -2183,13 +2196,18 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
 function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, preservedScrollTop) {
     _unifiedWindowRenderParams = { len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options };
     const numBlocks = Math.max(1, Math.ceil(len / blockWidth));
-    const rowHeightPx = _unifiedRowHeightPx || 16;
-    const blockHeightPx = _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx();
+    const rowHeightPx = Math.max(1, _unifiedRowHeightPx || 16);
+    const blockHeightPx = Math.max(1, _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx());
     const effectiveScrollTop = preservedScrollTop != null ? preservedScrollTop : container.scrollTop;
     const { charWidthPx, nameColWidthPx } = _measureUnifiedColumnMetrics(null);
     const overscan = 1;
-    const blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
-    const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + container.clientHeight) / blockHeightPx) + overscan);
+    let blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
+    let blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + container.clientHeight) / blockHeightPx) + overscan, blockStart + 20);
+    // Safety fallback: ensure at least one block is rendered
+    if (blockEnd < blockStart) {
+        blockStart = 0;
+        blockEnd = Math.min(numBlocks - 1, 0);
+    }
 
     const headerHeightPx = _unifiedHeaderHeightPx != null ? _unifiedHeaderHeightPx : _measureUnifiedHeaderHeight(null);
 
@@ -2244,8 +2262,8 @@ function _refreshUnifiedWindowOnScroll(container) {
     const [topSpacer, bottomSpacer] = spacers;
 
     const numBlocks = Math.max(1, Math.ceil(p.len / p.blockWidth));
-    const rowHeightPx = _unifiedRowHeightPx || 16;
-    const blockHeightPx = _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx();
+    const rowHeightPx = Math.max(1, _unifiedRowHeightPx || 16);
+    const blockHeightPx = Math.max(1, _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx());
     const { charWidthPx, nameColWidthPx } = _measureUnifiedColumnMetrics(null);
     const overscan = 1;
     // Captured once, before any DOM mutation below. _removeNodesBetweenSpacers
@@ -2263,8 +2281,13 @@ function _refreshUnifiedWindowOnScroll(container) {
     const effectiveClientHeight = container.clientHeight;
     const effectiveScrollLeft = container.scrollLeft;
     const effectiveClientWidth = container.clientWidth;
-    const blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
-    const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + effectiveClientHeight) / blockHeightPx) + overscan);
+    let blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
+    let blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + effectiveClientHeight) / blockHeightPx) + overscan, blockStart + 20);
+    // Safety fallback: ensure at least one block is rendered
+    if (blockEnd < blockStart) {
+        blockStart = 0;
+        blockEnd = Math.min(numBlocks - 1, 0);
+    }
 
     // Use the cached header height as-is (no re-measure here, same reasoning
     // as skipping the row/block re-measure below) - it was already measured
@@ -2298,7 +2321,7 @@ function _refreshUnifiedWindowOnScroll(container) {
 
 const _unifiedScrollController = _createWindowedScrollController(
     (container) => _refreshUnifiedWindowOnScroll(container),
-    () => (document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && !!state.alignmentIndex?.needsWindowedDom
+    () => (document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && !!state._needsWindowedDom
 );
 function _setupUnifiedScrollListener(container) {
     _unifiedScrollController.bind(container);
@@ -4224,7 +4247,7 @@ function parseFasta(text) {
                 }
                 seq = '';
                 header = line;
-            } else {
+            } else if (header) {
                 seq += line.replace(/[_?~]/g, '-').replace(/[^A-Za-z*.\-]/g, '');
             }
         }
@@ -5595,13 +5618,21 @@ function renderAlignment(options = {}) {
         return;
     }
     const coverageMin = clampMinCoverage(el('consensusMinCoverage')?.value) / 100;
+    // Compute alignment length and windowing need early — _preserveScrollTop
+    // and the render-path dispatch both depend on these.  _needsWindowed must
+    // be declared before its first use to avoid a temporal-dead-zone
+    // ReferenceError that would throw on every call to renderAlignment.
+    const len = Math.max(...state.seqs.map(s => s.seq.length));
+    const TOTAL_RESIDUES = state.seqs.length * len;
+    const _needsWindowed = TOTAL_RESIDUES > ALIGN_WINDOWED_DOM_THRESHOLD || !!state.alignmentIndex?.needsWindowedDom;
+    state._needsWindowedDom = _needsWindowed;
     // Clearing innerHTML resets scrollTop to 0 in every browser, which would
     // silently defeat the unified windowed renderer's scroll listener (it
     // triggers exactly this re-render, then would always read the just-reset
     // 0 instead of where the user actually scrolled to). Save and restore
     // around the rebuild, scoped to when windowing might apply so this doesn't
     // change scroll behavior anywhere else.
-    const _preserveScrollTop = ((document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && state.alignmentIndex?.needsWindowedDom)
+    const _preserveScrollTop = ((document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && _needsWindowed)
         ? alignmentContainer.scrollTop : null;
     alignmentContainer.innerHTML = '';
     // Ensure Full/Block modes have correct scroll/layout behaviour
@@ -5616,7 +5647,11 @@ function renderAlignment(options = {}) {
         // windowing entirely. Same formula Canvas mode already uses for its
         // own fixed-height viewport.
         const top = alignmentContainer.getBoundingClientRect().top;
-        alignmentContainer.style.height = (window.innerHeight - top - 28) + 'px';
+        // Clamp to a minimum so the windowed renderer always has enough
+        // viewport to compute a non-empty row range. A negative or zero
+        // height (controls panel taller than the window) would make
+        // visBottom <= visTop in _buildUnifiedBlock, producing zero rows.
+        alignmentContainer.style.height = Math.max(100, window.innerHeight - top - 28) + 'px';
         alignmentContainer.style.overflow = 'auto';
     } else {
         alignmentContainer.style.height = 'auto';
@@ -5657,11 +5692,10 @@ function renderAlignment(options = {}) {
     const stickyNames = el('stickyNames').checked;
     const useBlocks = el('modeBlocks').checked;
 
-    // Calculate sequence length for consensus and scale (must be before any use of len)
-    const len = Math.max(...state.seqs.map(s => s.seq.length));
-
+    // (len, TOTAL_RESIDUES, and _needsWindowed are computed earlier in
+    //  renderAlignment, before _preserveScrollTop, to avoid a
+    //  temporal-dead-zone ReferenceError.)
     // -- Auto-detect: Canvas for large alignments --
-    const TOTAL_RESIDUES = state.seqs.length * len;
     // Disable span cache for large alignments (>80K residues) during view-only rendering.
     // Edit mode keeps it at any size: the cache is what lets a GeneDoc drag repaint one row
     // instead of re-rendering the whole alignment on every column step.
@@ -5827,8 +5861,12 @@ function renderAlignment(options = {}) {
     // consensus + all rows). Both windowed and non-windowed paths use the same
     // blockWidth parameter, so the only difference is its value.
     const effectiveBlockWidth = useBlocks ? blockWidth : len;
-    if (state.alignmentIndex?.needsWindowedDom) {
+    if (_needsWindowed) {
         renderUnifiedWindowedDom(alignmentContainer, len, effectiveBlockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
+    } else if (TOTAL_RESIDUES > ALIGN_WINDOWED_DOM_THRESHOLD) {
+        // Safety net: should have been windowed but wasn't.  Show a message
+        // instead of creating millions of DOM nodes that crash the tab.
+        alignmentContainer.innerHTML = '<div style="padding:20px;color:#666;">Alignment too large for standard rendering. Switch to Canvas mode or reduce alignment size.</div>';
     } else {
         for (let start = 0; start < len; start += effectiveBlockWidth) {
             const end = Math.min(start + effectiveBlockWidth, len);
@@ -6870,6 +6908,7 @@ const ALIGN_WINDOWED_DOM_THRESHOLD = 500_000;
 /** Single-pass FASTA scan: counts sequences and lengths without building seq objects. */
 function scanFastaIndex(text) {
     let nSeqs = 0, maxLen = 0, totalResidues = 0, curLen = 0;
+    let seenHeader = false;
     let i = 0;
     const len = text.length;
     while (i < len) {
@@ -6879,18 +6918,20 @@ function scanFastaIndex(text) {
         while (i < len && (text[i] === '\n' || text[i] === '\r')) i++;
         if (!line) continue;
         if (line[0] === '>') {
-            if (curLen > 0) {
+            if (seenHeader && curLen > 0) {
                 maxLen = Math.max(maxLen, curLen);
                 totalResidues += curLen;
-                curLen = 0;
             }
+            curLen = 0;
+            seenHeader = true;
             nSeqs++;
-        } else {
+        } else if (seenHeader) {
             for (let j = 0; j < line.length; j++) {
                 const c = line[j];
                 if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || c === '-' || c === '.' || c === '*') curLen++;
             }
         }
+        // Lines before first '>' are discarded (leading garbage)
     }
     if (curLen > 0) {
         maxLen = Math.max(maxLen, curLen);
@@ -6922,15 +6963,20 @@ function scanMsfIndex(text) {
  * scan without a full parse (SAM, GenBank, etc.).
  */
 function scanAlignmentText(text) {
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
     const t = text.trim();
     if (!t) return null;
     const isMsf = (t.includes('MSF:') && t.includes('Check:'))
         || t.includes('!!AA_MULTIPLE_ALIGNMENT')
         || t.includes('!!NA_MULTIPLE_ALIGNMENT');
     if (isMsf) return scanMsfIndex(text);
-    if (t[0] === '>' || /^[A-Za-z*.\-]+$/m.test(t.split(/\r?\n/)[0] || '')) {
-        return scanFastaIndex(text);
-    }
+    if (t[0] === '>') return scanFastaIndex(text);
+    // Handle leading garbage before first '>' (e.g., MAFFT version banner):
+    // scan first 200 lines for a FASTA header
+    const firstLines = t.split(/\r?\n/).slice(0, 200);
+    if (firstLines.some(l => l.startsWith('>'))) return scanFastaIndex(text);
+    // Raw sequence (no headers)
+    if (/^[A-Za-z*.\-]+$/m.test(firstLines[0] || '')) return scanFastaIndex(text);
     return null;
 }
 
@@ -7226,12 +7272,23 @@ async function parseAndRender(isFromDrop = false) {
             const blockRadio = document.getElementById('modeBlocks');
             if (blockRadio) blockRadio.checked = true;
         }
+        // Check for length mismatch before committing to state.seqs - warn but do not block
+        const _lenMismatch = _checkLengthMismatch(parsed);
+        if (_lenMismatch) {
+            _normalizeSequenceLengths(parsed);
+        }
+
         state.seqs = parsed;
 
-        // Check for length mismatch before rendering - warn and normalize to prevent crashes
-        const _lenMismatch = _checkLengthMismatch(state.seqs);
-        if (_lenMismatch) {
-            _normalizeSequenceLengths(state.seqs);
+        // If pre-parse scan failed (e.g., leading garbage before first '>'),
+        // compute alignment index from parsed sequences so windowed DOM kicks in
+        if (!state.alignmentIndex) {
+            const _stats = {
+                nSeqs: state.seqs.length,
+                maxLen: state.seqs.length > 0 ? Math.max(...state.seqs.map(s => s.seq.length)) : 0,
+                totalResidues: state.seqs.reduce((sum, s) => sum + s.seq.length, 0)
+            };
+            state.alignmentIndex = { ..._stats, ...classifyAlignmentSize(_stats) };
         }
 
         _userDismissedAutoCanvas = false; // fresh file: allow the Canvas suggestion again if it's large
@@ -7261,6 +7318,20 @@ async function parseAndRender(isFromDrop = false) {
 
         updateNameLengthSliderRange();
 
+        // Build length-mismatch warning message (if any) before rendering,
+        // so it can be shown even if renderAlignment throws.
+        let _lenMismatchMsg = null;
+        if (_lenMismatch) {
+            const _diffDetails = _lenMismatch.differing.slice(0, 5).map(d =>
+                `Sequence '${d.name}' is ${d.length} columns (${d.diff > 0 ? '+' : ''}${d.diff})`
+            ).join(', ');
+            const _diffMore = _lenMismatch.differing.length > 5 ? ` and ${_lenMismatch.differing.length - 5} more` : '';
+            _lenMismatchMsg = `Length mismatch: ${_diffDetails}${_diffMore}, but most of the alignment is ${_lenMismatch.majorityLen} columns - check for stray text before '>' headers, or use Realign All if this is intentionally unaligned data.`;
+            // Show warning before rendering in case renderAlignment throws
+            showMessage(_lenMismatchMsg, 0);
+            console.warn('[Length mismatch]', _lenMismatch);
+        }
+
         // Update source info with comprehensive statistics
         updateSourceInfo();
         renderAlignment();
@@ -7268,13 +7339,10 @@ async function parseAndRender(isFromDrop = false) {
         // Auto-fit block size to screen width on every load
         setBlockSizeToScreen();
         setupHoverMenuReveal();
-        if (_lenMismatch) {
-            const _diffDetails = _lenMismatch.differing.slice(0, 5).map(d =>
-                `'${d.name}' is ${d.length} cols (${d.diff > 0 ? '+' : ''}${d.diff})`
-            ).join(', ');
-            const _diffMore = _lenMismatch.differing.length > 5 ? ` and ${_lenMismatch.differing.length - 5} more` : '';
-            showMessage(`Loaded with length mismatch: ${_diffDetails}${_diffMore}. Most are ${_lenMismatch.majorityLen} cols - check for stray text before '>' headers, or use Realign All.`, 8000);
-            console.warn('[Length mismatch]', _lenMismatch);
+        // Re-show the message after rendering (renderAlignment may have
+        // overwritten statusMessage.textContent with consensus info).
+        if (_lenMismatchMsg) {
+            showMessage(_lenMismatchMsg, 0);
         } else {
             showMessage("File loaded successfully!", 2000);
         }
