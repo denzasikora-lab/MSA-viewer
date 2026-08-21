@@ -5482,6 +5482,14 @@ function renderAlignment(options = {}) {
         return;
     }
     const coverageMin = clampMinCoverage(el('consensusMinCoverage')?.value) / 100;
+    // Compute alignment length and windowing need early — _preserveScrollTop
+    // and the render-path dispatch both depend on these.  _needsWindowed must
+    // be declared before its first use to avoid a temporal-dead-zone
+    // ReferenceError that would throw on every call to renderAlignment.
+    const len = Math.max(...state.seqs.map(s => s.seq.length));
+    const TOTAL_RESIDUES = state.seqs.length * len;
+    const _needsWindowed = TOTAL_RESIDUES > ALIGN_WINDOWED_DOM_THRESHOLD || !!state.alignmentIndex?.needsWindowedDom;
+    state._needsWindowedDom = _needsWindowed;
     // Clearing innerHTML resets scrollTop to 0 in every browser, which would
     // silently defeat the unified windowed renderer's scroll listener (it
     // triggers exactly this re-render, then would always read the just-reset
@@ -5544,21 +5552,14 @@ function renderAlignment(options = {}) {
     const stickyNames = el('stickyNames').checked;
     const useBlocks = el('modeBlocks').checked;
 
-    // Calculate sequence length for consensus and scale (must be before any use of len)
-    const len = Math.max(...state.seqs.map(s => s.seq.length));
-
+    // (len, TOTAL_RESIDUES, and _needsWindowed are computed earlier in
+    //  renderAlignment, before _preserveScrollTop, to avoid a
+    //  temporal-dead-zone ReferenceError.)
     // -- Auto-detect: Canvas for large alignments --
-    const TOTAL_RESIDUES = state.seqs.length * len;
     // Disable span cache for large alignments (>80K residues) during view-only rendering.
     // Edit mode keeps it at any size: the cache is what lets a GeneDoc drag repaint one row
     // instead of re-rendering the whole alignment on every column step.
     state._enableSpanCache = (TOTAL_RESIDUES <= 80000) || !!state.editModeActive;
-    // Direct check: force windowed DOM for large alignments regardless of
-    // state.alignmentIndex, which may be null or stale if the pre-parse scan
-    // failed or returned incorrect values.  This prevents the non-windowed
-    // path from creating millions of DOM nodes for a large alignment.
-    const _needsWindowed = TOTAL_RESIDUES > ALIGN_WINDOWED_DOM_THRESHOLD || !!state.alignmentIndex?.needsWindowedDom;
-    state._needsWindowedDom = _needsWindowed;
     // Was 150,000 (~100 seq x 1500 col) - a holdover from before DOM mode had
     // windowing at all, when unwindowed DOM genuinely froze well below that
     // size. Measured directly after the windowing fixes: DOM mode's windowed
