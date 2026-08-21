@@ -2030,8 +2030,16 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     const visTop = Math.max(effectiveScrollTop, rowAreaTop);
     const visBottom = Math.min(effectiveScrollTop + clientHeight, blockTop + blockHeightPx);
     const safeRowHeightPx = Math.max(1, rowHeightPx);
-    const rowStart = Math.max(0, Math.floor((visTop - rowAreaTop) / safeRowHeightPx) - overscanRows);
-    const rowEnd = Math.min(Math.max(0, nSeq - 1), Math.floor((visBottom - rowAreaTop) / safeRowHeightPx) + overscanRows, rowStart + 300);
+    let rowStart = Math.max(0, Math.floor((visTop - rowAreaTop) / safeRowHeightPx) - overscanRows);
+    let rowEnd = Math.min(Math.max(0, nSeq - 1), Math.floor((visBottom - rowAreaTop) / safeRowHeightPx) + overscanRows, rowStart + 300);
+    // Safety fallback: if the visible area is empty or inverted (e.g.,
+    // header taller than the block, or container height clamped to 0),
+    // render a small window from the top so the user sees something
+    // instead of a blank alignment.
+    if (rowEnd < rowStart) {
+        rowStart = 0;
+        rowEnd = Math.min(Math.max(0, nSeq - 1), 50);
+    }
 
     // Top row spacer (fills the space of rows above the visible window)
     const topRowSpacer = document.createElement('div');
@@ -2079,8 +2087,13 @@ function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNam
     const effectiveScrollTop = preservedScrollTop != null ? preservedScrollTop : container.scrollTop;
     const { charWidthPx, nameColWidthPx } = _measureUnifiedColumnMetrics(null);
     const overscan = 1;
-    const blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
-    const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + container.clientHeight) / blockHeightPx) + overscan, blockStart + 20);
+    let blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
+    let blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + container.clientHeight) / blockHeightPx) + overscan, blockStart + 20);
+    // Safety fallback: ensure at least one block is rendered
+    if (blockEnd < blockStart) {
+        blockStart = 0;
+        blockEnd = Math.min(numBlocks - 1, 0);
+    }
 
     const headerHeightPx = _unifiedHeaderHeightPx != null ? _unifiedHeaderHeightPx : _measureUnifiedHeaderHeight(null);
 
@@ -2154,8 +2167,13 @@ function _refreshUnifiedWindowOnScroll(container) {
     const effectiveClientHeight = container.clientHeight;
     const effectiveScrollLeft = container.scrollLeft;
     const effectiveClientWidth = container.clientWidth;
-    const blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
-    const blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + effectiveClientHeight) / blockHeightPx) + overscan, blockStart + 20);
+    let blockStart = Math.max(0, Math.floor(effectiveScrollTop / blockHeightPx) - overscan);
+    let blockEnd = Math.min(numBlocks - 1, Math.floor((effectiveScrollTop + effectiveClientHeight) / blockHeightPx) + overscan, blockStart + 20);
+    // Safety fallback: ensure at least one block is rendered
+    if (blockEnd < blockStart) {
+        blockStart = 0;
+        blockEnd = Math.min(numBlocks - 1, 0);
+    }
 
     // Use the cached header height as-is (no re-measure here, same reasoning
     // as skipping the row/block re-measure below) - it was already measured
@@ -5515,7 +5533,11 @@ function renderAlignment(options = {}) {
         // windowing entirely. Same formula Canvas mode already uses for its
         // own fixed-height viewport.
         const top = alignmentContainer.getBoundingClientRect().top;
-        alignmentContainer.style.height = (window.innerHeight - top - 28) + 'px';
+        // Clamp to a minimum so the windowed renderer always has enough
+        // viewport to compute a non-empty row range. A negative or zero
+        // height (controls panel taller than the window) would make
+        // visBottom <= visTop in _buildUnifiedBlock, producing zero rows.
+        alignmentContainer.style.height = Math.max(100, window.innerHeight - top - 28) + 'px';
         alignmentContainer.style.overflow = 'auto';
     } else {
         alignmentContainer.style.height = 'auto';
@@ -7182,6 +7204,20 @@ async function parseAndRender(isFromDrop = false) {
 
         updateNameLengthSliderRange();
 
+        // Build length-mismatch warning message (if any) before rendering,
+        // so it can be shown even if renderAlignment throws.
+        let _lenMismatchMsg = null;
+        if (_lenMismatch) {
+            const _diffDetails = _lenMismatch.differing.slice(0, 5).map(d =>
+                `Sequence '${d.name}' is ${d.length} columns (${d.diff > 0 ? '+' : ''}${d.diff})`
+            ).join(', ');
+            const _diffMore = _lenMismatch.differing.length > 5 ? ` and ${_lenMismatch.differing.length - 5} more` : '';
+            _lenMismatchMsg = `Length mismatch: ${_diffDetails}${_diffMore}, but most of the alignment is ${_lenMismatch.majorityLen} columns - check for stray text before '>' headers, or use Realign All if this is intentionally unaligned data.`;
+            // Show warning before rendering in case renderAlignment throws
+            showMessage(_lenMismatchMsg, 0);
+            console.warn('[Length mismatch]', _lenMismatch);
+        }
+
         // Update source info with comprehensive statistics
         updateSourceInfo();
         renderAlignment();
@@ -7189,13 +7225,10 @@ async function parseAndRender(isFromDrop = false) {
         // Auto-fit block size to screen width on every load
         setBlockSizeToScreen();
         setupHoverMenuReveal();
-        if (_lenMismatch) {
-            const _diffDetails = _lenMismatch.differing.slice(0, 5).map(d =>
-                `Sequence '${d.name}' is ${d.length} columns (${d.diff > 0 ? '+' : ''}${d.diff})`
-            ).join(', ');
-            const _diffMore = _lenMismatch.differing.length > 5 ? ` and ${_lenMismatch.differing.length - 5} more` : '';
-            showMessage(`Length mismatch: ${_diffDetails}${_diffMore}, but most of the alignment is ${_lenMismatch.majorityLen} columns - check for stray text before '>' headers, or use Realign All if this is intentionally unaligned data.`, 8000);
-            console.warn('[Length mismatch]', _lenMismatch);
+        // Re-show the message after rendering (renderAlignment may have
+        // overwritten statusMessage.textContent with consensus info).
+        if (_lenMismatchMsg) {
+            showMessage(_lenMismatchMsg, 0);
         } else {
             showMessage("File loaded successfully!", 2000);
         }
