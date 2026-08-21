@@ -359,6 +359,7 @@ const state = {
     consensusCache: null,
     conservationDataCache: null,
     alignmentIndex: null, // { nSeqs, maxLen, totalResidues, mode, flags } from pre-parse scan
+    _needsWindowedDom: false, // computed in renderAlignment from TOTAL_RESIDUES directly
     deletedHistory: [],
     redoHistory: [],
     currentFilename: '',
@@ -2184,7 +2185,7 @@ function _refreshUnifiedWindowOnScroll(container) {
 
 const _unifiedScrollController = _createWindowedScrollController(
     (container) => _refreshUnifiedWindowOnScroll(container),
-    () => (document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && !!state.alignmentIndex?.needsWindowedDom
+    () => (document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && !!state._needsWindowedDom
 );
 function _setupUnifiedScrollListener(container) {
     _unifiedScrollController.bind(container);
@@ -5487,7 +5488,7 @@ function renderAlignment(options = {}) {
     // 0 instead of where the user actually scrolled to). Save and restore
     // around the rebuild, scoped to when windowing might apply so this doesn't
     // change scroll behavior anywhere else.
-    const _preserveScrollTop = ((document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && state.alignmentIndex?.needsWindowedDom)
+    const _preserveScrollTop = ((document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked) && _needsWindowed)
         ? alignmentContainer.scrollTop : null;
     alignmentContainer.innerHTML = '';
     // Ensure Full/Block modes have correct scroll/layout behaviour
@@ -5552,6 +5553,12 @@ function renderAlignment(options = {}) {
     // Edit mode keeps it at any size: the cache is what lets a GeneDoc drag repaint one row
     // instead of re-rendering the whole alignment on every column step.
     state._enableSpanCache = (TOTAL_RESIDUES <= 80000) || !!state.editModeActive;
+    // Direct check: force windowed DOM for large alignments regardless of
+    // state.alignmentIndex, which may be null or stale if the pre-parse scan
+    // failed or returned incorrect values.  This prevents the non-windowed
+    // path from creating millions of DOM nodes for a large alignment.
+    const _needsWindowed = TOTAL_RESIDUES > ALIGN_WINDOWED_DOM_THRESHOLD || !!state.alignmentIndex?.needsWindowedDom;
+    state._needsWindowedDom = _needsWindowed;
     // Was 150,000 (~100 seq x 1500 col) - a holdover from before DOM mode had
     // windowing at all, when unwindowed DOM genuinely froze well below that
     // size. Measured directly after the windowing fixes: DOM mode's windowed
@@ -5713,8 +5720,12 @@ function renderAlignment(options = {}) {
     // consensus + all rows). Both windowed and non-windowed paths use the same
     // blockWidth parameter, so the only difference is its value.
     const effectiveBlockWidth = useBlocks ? blockWidth : len;
-    if (state.alignmentIndex?.needsWindowedDom) {
+    if (_needsWindowed) {
         renderUnifiedWindowedDom(alignmentContainer, len, effectiveBlockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, _preserveScrollTop);
+    } else if (TOTAL_RESIDUES > ALIGN_WINDOWED_DOM_THRESHOLD) {
+        // Safety net: should have been windowed but wasn't.  Show a message
+        // instead of creating millions of DOM nodes that crash the tab.
+        alignmentContainer.innerHTML = '<div style="padding:20px;color:#666;">Alignment too large for standard rendering. Switch to Canvas mode or reduce alignment size.</div>';
     } else {
         for (let start = 0; start < len; start += effectiveBlockWidth) {
             const end = Math.min(start + effectiveBlockWidth, len);
