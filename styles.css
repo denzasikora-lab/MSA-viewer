@@ -2372,6 +2372,29 @@ span.diagnostic-mutation {
 .blast-summary-table .strand-plus  { color:#1a6b1a; font-weight:bold; }
 .blast-summary-table .strand-minus { color:#8b0000; font-weight:bold; }
 .blast-summary-row:hover td { background:#eef8ee; }
+.blast-row-flash td { background:#FFF3B0 !important; transition: background 1.5s ease; }
+
+/* Graphical hit-distribution diagram (NCBI-BLAST-style position bars) */
+.blast-hitdist { margin-bottom:8px; }
+.blast-hitdist-legend { font-size:10px; color:#555; margin-bottom:4px; }
+.blast-hitdist-legend .swatch { display:inline-block; width:9px; height:9px; border-radius:1px; margin-right:3px; vertical-align:middle; }
+.blast-hitdist-track { position:relative; }
+.blast-hitdist-ruler { position:relative; height:16px; font-family:'Courier New',monospace; font-size:10px; color:#555; border-bottom:1px solid #999; margin-bottom:2px; }
+.blast-hitdist-ruler .tick-left { position:absolute; left:0; top:0; }
+.blast-hitdist-ruler .tick-right { position:absolute; right:0; top:0; }
+.blast-hitdist-row { position:relative; height:16px; }
+.blast-hitdist-bar {
+    position:absolute; top:2px; height:11px; border-radius:2px; cursor:pointer;
+    opacity:0.9; outline:none;
+}
+.blast-hitdist-bar:hover, .blast-hitdist-bar:focus { opacity:1; box-shadow:0 0 0 1px #333; }
+.blast-hitdist-bar .blast-hitdist-tooltip { display:none; }
+.blast-hitdist-bar:hover .blast-hitdist-tooltip, .blast-hitdist-bar:focus .blast-hitdist-tooltip { display:block; }
+.blast-hitdist-tooltip {
+    position:absolute; bottom:16px; left:0; z-index:5; background:#222; color:#fff;
+    font-size:10px; font-family:-apple-system,'Segoe UI',sans-serif; padding:4px 7px;
+    border-radius:3px; white-space:nowrap; pointer-events:none;
+}
 
 /* Scrollable hits section */
 .blast-hits-section { flex:1; overflow-y:auto; min-height:0; }

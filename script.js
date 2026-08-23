@@ -17830,6 +17830,84 @@ function buildBlastHitElement(hit, hitIndex, dbIndex, queryLen) {
     return div;
 }
 
+// Score-tier colors follow NCBI BLAST's conventional bit-score bands
+// (>=200 red, 80-200 pink/magenta, 50-80 green, 40-50 blue, <40 black).
+// Exact hex values are a reasonable approximation tuned for contrast on a
+// white background, not pixel-verified against NCBI's own stylesheet.
+function _blastScoreTierColor(bitScore) {
+    if (bitScore >= 200) return '#E40000';
+    if (bitScore >= 80)  return '#C800C8';
+    if (bitScore >= 50)  return '#007A00';
+    if (bitScore >= 40)  return '#0050D0';
+    return '#1A1A1A';
+}
+
+// Graphical hit-distribution diagram: one thin horizontal bar per hit,
+// positioned/sized by its query span, colored by score tier, on a ruler
+// spanning the full query length — the one genuinely "graphical" element
+// real NCBI BLAST's web output is known for, that a plain summary table
+// doesn't give you (added 2026-08-24, user-requested; existing summary
+// table/alignment-block layout intentionally left untouched).
+function buildHitDistributionDiagram(hits, queryLen, onHitClick) {
+    const wrap = document.createElement('div');
+    wrap.className = 'blast-hitdist';
+
+    const legend = document.createElement('div');
+    legend.className = 'blast-hitdist-legend';
+    legend.innerHTML = [
+        ['#E40000', '≥200'], ['#C800C8', '80-200'], ['#007A00', '50-80'],
+        ['#0050D0', '40-50'], ['#1A1A1A', '<40'],
+    ].map(([c, l]) => `<span class="swatch" style="background:${c}"></span>${l}`).join('&nbsp;&nbsp;');
+    wrap.appendChild(legend);
+
+    const track = document.createElement('div');
+    track.className = 'blast-hitdist-track';
+    const W = 100; // percentage-based layout, scales with the pane's own width
+
+    const ruler = document.createElement('div');
+    ruler.className = 'blast-hitdist-ruler';
+    ruler.innerHTML = `<span class="tick-left">1</span><span class="tick-right">${queryLen} nt</span>`;
+    track.appendChild(ruler);
+
+    hits.forEach((hit, hi) => {
+        const hsp = hit.hsps[0];
+        const s0 = Math.min(hsp.queryStart, hsp.queryEnd);
+        const s1 = Math.max(hsp.queryStart, hsp.queryEnd);
+        const leftPct = ((s0 - 1) / queryLen) * W;
+        const widthPct = Math.max(0.8, ((s1 - s0 + 1) / queryLen) * W); // min width so short spans stay visible/clickable
+
+        const row = document.createElement('div');
+        row.className = 'blast-hitdist-row';
+        const bar = document.createElement('div');
+        bar.className = 'blast-hitdist-bar';
+        bar.style.left = leftPct + '%';
+        bar.style.width = widthPct + '%';
+        bar.style.background = _blastScoreTierColor(hsp.bitScore);
+        bar.tabIndex = 0;
+        bar.setAttribute('role', 'button');
+        bar.setAttribute('aria-label', `Hit ${hi + 1}: ${hit.id}, score ${hsp.bitScore} bits, e-value ${hsp.evalue}`);
+
+        const evalueStr = (typeof hsp.evalue === 'number')
+            ? (hsp.evalue < 0.001 ? hsp.evalue.toExponential(2) : hsp.evalue.toFixed(4)) : 'n/a';
+        const tip = document.createElement('div');
+        tip.className = 'blast-hitdist-tooltip';
+        tip.innerHTML = `<b>${(hit.def || hit.id).substring(0, 60)}</b><br>` +
+            `score = ${hsp.bitScore} bits &nbsp; e-value = ${evalueStr}<br>` +
+            `Q ${hsp.queryStart}..${hsp.queryEnd} (${hsp.strand === '-' ? 'Plus/Minus' : 'Plus/Plus'})`;
+        bar.appendChild(tip);
+
+        const activate = () => onHitClick(hi);
+        bar.addEventListener('click', activate);
+        bar.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
+
+        row.appendChild(bar);
+        track.appendChild(row);
+    });
+
+    wrap.appendChild(track);
+    return wrap;
+}
+
 function displayBlastResults(queryName, queryLen, results) {
     if (blastResultsModal) {
         blastResultsModal.remove();
@@ -17901,6 +17979,17 @@ function displayBlastResults(queryName, queryLen, results) {
             dbStats.textContent = `Database: ${dbName}   Sequences: ${numSeqs}   Hits: ${hits.length}   Search time: ${searchMs} ms`;
             summarySection.appendChild(dbStats);
 
+            const highlightRow = (hi) => {
+                const row = summarySection.querySelector(`tr[data-hit-index="${hi}"]`);
+                if (!row) return;
+                row.scrollIntoView({ block: 'nearest' });
+                row.classList.add('blast-row-flash');
+                setTimeout(() => row.classList.remove('blast-row-flash'), 1500);
+                const target = hitsSection.querySelector(`#blast-hit-${di}-${hi}`);
+                if (target) hitsSection.scrollTop = target.offsetTop;
+            };
+            summarySection.appendChild(buildHitDistributionDiagram(hits, queryLen, highlightRow));
+
             const table = document.createElement('table');
             table.className = 'blast-summary-table';
             table.innerHTML = `<thead><tr>
@@ -17912,6 +18001,7 @@ function displayBlastResults(queryName, queryLen, results) {
                 const hsp = hit.hsps[0];
                 const tr = document.createElement('tr');
                 tr.className = 'blast-summary-row';
+                tr.dataset.hitIndex = hi;
                 const strandCls = hsp.strand === '-' ? 'strand-minus' : 'strand-plus';
                 const strandTxt = hsp.strand === '-' ? 'Plus/Minus' : 'Plus/Plus';
                 tr.innerHTML = `
