@@ -90,15 +90,19 @@ function computeLambda(matchScore, mismatchScore) {
 //
 // - "water": EMBOSS `water`'s real EDNAFULL defaults (match+5/mismatch-4/
 //   gapopen10.0/gapextend0.5) — confirmed against EMBOSS documentation.
-// - "ssearch36": FASTA36 suite's `ssearch36`. Match/mismatch (+5/-4) is the
-//   same DNA convention as water/blastn and reasonably well corroborated.
-//   The gap penalties (open=12, extend=4) are NOT independently confirmed —
-//   web-searched FASTA36 docs/manpages describe the existence of DNA gap
-//   defaults but never state the exact numbers in any source actually
-//   readable during this research; these values are a language model's
-//   best recollection only, flagged uncertain by the model itself. Treat as
-//   an approximation, not verified fact, until checked against real
-//   `ssearch36 -h` output or FASTA36 source. Additionally, ssearch36's real
+// - "ssearch36": FASTA36 suite's `ssearch36`. Match/mismatch (+5/-4) and gap
+//   penalties (open=12, extend=4 per residue) confirmed 2026-08-23 against
+//   the real FASTA36 source repo's own documentation
+//   (github.com/wrpearson/fasta36 doc/fasta_guide.tex, describing the -f/-g
+//   options: "Gap open penalty (-10 by default for proteins, -12 for DNA)"
+//   / "Penalty per residue in a gap (-2 by default for proteins, -4 for
+//   DNA) ... A single residue gap costs f + g" — that "f + g for the first
+//   residue" convention is exactly this file's existing GAP_FIRST/GAP_EXT
+//   split). Not from running the actual binary — from reading its own
+//   documented defaults directly, which is stronger than a recalled guess
+//   but still short of confirming ssearch36's output bit-for-bit (that
+//   would also require its shuffled-sequence significance method, not
+//   replicated here — see below). Additionally, ssearch36's real
 //   significance method is shuffled-sequence Monte Carlo + extreme-value
 //   fitting, NOT a closed-form Karlin-Altschul lambda/K — impossible to
 //   replicate exactly in a stateless function without running many repeat
