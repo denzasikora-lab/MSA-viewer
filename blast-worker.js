@@ -268,6 +268,157 @@ function smithWatermanAffine(query, subject) {
              querySeq: alignQ, hitSeq: alignS, midline, strand: '+' };
 }
 
+// ── Banded affine-gap Smith-Waterman (Gotoh) with traceback ────
+// Same recurrence as smithWatermanAffine, but restricts the DP to a band of
+// half-width BAND_HALF_WIDTH around the expected alignment diagonal `bandDiag`
+// (cell coordinate j - i = subjectPos - queryPos WITHIN the windowed subject
+// substring). Out-of-band cells are -infinity, forcing the optimal path to
+// stay near the seed-implied diagonal — the BWA-MEM/minimap2 "banded
+// extension". Complexity O(m*n) -> O(m*(2*BAND+1)); ~420bp window, band 32 =
+// ~6-7x fewer cells. ORTHOGONAL to windowing (window picks the subject slice,
+// band picks which cells inside it are computed).
+//
+// RISK (re-check recall via bench/benchmark.js, do NOT assume): if the true
+// alignment drifts off `bandDiag` by more than BAND_HALF_WIDTH (cumulative
+// indel imbalance beyond the band) the optimal path is clipped and the hit can
+// be missed/under-scored — the SAME failure mode as the discarded single-
+// diagonal ungapped pre-filter. Tuned empirically (see Test D); widening
+// restores exactness. Full un-banded DP stays available via USE_BANDED_DP.
+let USE_BANDED_DP = true;
+let BAND_HALF_WIDTH = 32; // half-width bp; full band = 2*BAND_HALF_WIDTH+1 cells/row
+
+// Runtime toggle so bench/benchmark.js can A/B banded vs full DP on identical
+// data in one process. searchDatabase reads these bindings at call time.
+function setBandedDP(enabled, halfWidth) {
+    if (enabled !== undefined) USE_BANDED_DP = !!enabled;
+    if (halfWidth !== undefined && halfWidth > 0) BAND_HALF_WIDTH = halfWidth | 0;
+}
+function getDPMode() { return { banded: USE_BANDED_DP, halfWidth: BAND_HALF_WIDTH }; }
+
+function smithWatermanAffineBanded(query, subject, bandDiag, bandHalf) {
+    const m = query.length, n = subject.length;
+    if (m === 0 || n === 0) return null;
+    // Band at least as wide as the subject window => banded == full DP but with
+    // extra bounds-check overhead; fall back to the plain full DP (same result).
+    if (2 * bandHalf + 1 >= n) return smithWatermanAffine(query, subject);
+
+    const W = n + 1;
+    const M  = new Float64Array((m + 1) * W);
+    const X  = new Float64Array((m + 1) * W);
+    const Y  = new Float64Array((m + 1) * W);
+    const TM = new Uint8Array((m + 1) * W);
+    const TX = new Uint8Array((m + 1) * W);
+    const TY = new Uint8Array((m + 1) * W);
+    const NEG = -1e9;
+    for (let j = 0; j <= n; j++) { X[j] = NEG; Y[j] = NEG; }
+
+    let maxScore = 0, maxI = 0, maxJ = 0, maxState = 1;
+
+    const qCodes = new Uint16Array(m);
+    for (let k = 0; k < m; k++) qCodes[k] = query.charCodeAt(k);
+    const sCodes = new Uint16Array(n);
+    for (let k = 0; k < n; k++) sCodes[k] = subject.charCodeAt(k);
+
+    // Per-row in-band column range; band centred on j - i = bandDiag. Row 0 is
+    // the local-alignment boundary (M=0) and is NOT iterated, but the diagonal
+    // predecessor from row 0 / column 0 (M=0) must stay reachable so a match at
+    // the very first query/subject position can still START an alignment —
+    // otherwise banded silently shifts every alignment and drops the first
+    // residue. Handled by the i==1 / j==1 restart cases in the M recurrence.
+    let prevLo = 1, prevHi = 0; // row 0 has no in-band interior cells
+    for (let i = 1; i <= m; i++) {
+        const rowBase = i * W, prevRowBase = (i - 1) * W;
+        X[rowBase] = NEG; Y[rowBase] = NEG; M[rowBase] = 0;
+        const qc = qCodes[i - 1];
+        let lo = i + bandDiag - bandHalf;
+        let hi = i + bandDiag + bandHalf;
+        if (lo < 1) lo = 1;
+        if (hi > n) hi = n;
+        for (let j = lo; j <= hi; j++) {
+            const base = rowBase + j;
+
+            // X: gap in subject (consume query, move down). Predecessor (i-1, j)
+            // is in-band iff it lay in the PREVIOUS row's column range.
+            const upIn = (j >= prevLo && j <= prevHi);
+            const upBase = prevRowBase + j;
+            const xOpen = upIn ? M[upBase] + GAP_FIRST : NEG;
+            const xExt  = upIn ? X[upBase] + GAP_EXT   : NEG;
+            if (xOpen >= xExt) { X[base] = xOpen; TX[base] = 1; } else { X[base] = xExt; TX[base] = 2; }
+
+            // Y: gap in query (consume subject, move right). Predecessor (i, j-1)
+            // is in-band iff it lay in THIS row's range (already computed
+            // left-to-right), i.e. j-1 >= lo.
+            const leftIn = (j - 1 >= lo);
+            const leftBase = rowBase + (j - 1);
+            const yOpen = leftIn ? M[leftBase] + GAP_FIRST : NEG;
+            const yExt  = leftIn ? Y[leftBase] + GAP_EXT   : NEG;
+            if (yOpen >= yExt) { Y[base] = yOpen; TY[base] = 1; } else { Y[base] = yExt; TY[base] = 3; }
+
+            // M: match/mismatch from (i-1, j-1), or local restart (best=0). The
+            // diagonal predecessor is reachable from the row-0 / col-0 boundary
+            // (M=0) even though those aren't in band, so a first-position match
+            // can still seed an alignment.
+            const diagIn = (i === 1) || (j === 1) || (j - 1 >= prevLo && j - 1 <= prevHi);
+            const diagBase = prevRowBase + (j - 1);
+            const s = (qc === sCodes[j - 1]) ? MATCH : MISMATCH;
+            const diagM = diagIn ? M[diagBase] + s : NEG;
+            const diagX = diagIn ? X[diagBase] + s : NEG;
+            const diagY = diagIn ? Y[diagBase] + s : NEG;
+            let best = 0, dir = 0;
+            if (diagM > best) { best = diagM; dir = 1; }
+            if (diagX > best) { best = diagX; dir = 2; }
+            if (diagY > best) { best = diagY; dir = 3; }
+            M[base] = best; TM[base] = dir;
+
+            const cellBest = Math.max(M[base], X[base], Y[base]);
+            if (cellBest > maxScore) {
+                maxScore = cellBest; maxI = i; maxJ = j;
+                maxState = M[base] === cellBest ? 1 : (X[base] === cellBest ? 2 : 3);
+            }
+        }
+        prevLo = lo; prevHi = hi;
+    }
+    if (maxScore <= 0) return null;
+
+    // Traceback across the 3-matrix state machine — identical to the full DP:
+    // every pointer set above leads only between in-band cells, so the walk
+    // cannot leave the band.
+    let alignQ = '', alignS = '';
+    let i = maxI, j = maxJ, state = maxState;
+    while (i > 0 && j > 0) {
+        const base = i * W + j;
+        if (state === 1) {
+            const dir = TM[base];
+            if (dir === 0) break;
+            alignQ = query[i - 1] + alignQ; alignS = subject[j - 1] + alignS;
+            i--; j--; state = dir;
+        } else if (state === 2) {
+            alignQ = query[i - 1] + alignQ; alignS = '-' + alignS;
+            const dir = TX[base]; i--; state = dir === 1 ? 1 : 2;
+        } else {
+            alignQ = '-' + alignQ; alignS = subject[j - 1] + alignS;
+            const dir = TY[base]; j--; state = dir === 1 ? 1 : 3;
+        }
+    }
+    const qStart = i + 1, sStart = j + 1;
+
+    let identity = 0, gaps = 0, midline = '';
+    for (let k = 0; k < alignQ.length; k++) {
+        if (alignQ[k] !== '-' && alignQ[k] === alignS[k]) { identity++; midline += '|'; }
+        else if (alignQ[k] === '-' || alignS[k] === '-')  { gaps++;     midline += ' '; }
+        else                                               {             midline += '.'; }
+    }
+
+    const alignLen = alignQ.length;
+    const percent  = alignLen > 0 ? ((identity / alignLen) * 100).toFixed(1) : '0.0';
+    const bitScore = parseFloat(Math.max(0, (LAMBDA * maxScore - Math.log(K_APPROX)) / Math.log(2)).toFixed(1));
+
+    return { score: maxScore, bitScore, identity, gaps, alignLen, percent,
+             queryStart: qStart, queryEnd: maxI,
+             hitStart: sStart,   hitEnd: maxJ,
+             querySeq: alignQ, hitSeq: alignS, midline, strand: '+' };
+}
+
 // ── K-mer inverted index (position-aware, IUPAC-safe) ─────────
 // Stores (seqIndex, position) pairs per k-mer, over the WHOLE sequence (no
 // length cap) — position is what lets search() anchor a window around the true
@@ -391,7 +542,14 @@ function searchDatabase(querySeq, dbSeqs, index, maxHits = 10) {
             const winStart = Math.max(0, diag - WINDOW_SLACK);
             const winEnd = Math.min(subjLen, diag + querySeq.length + WINDOW_SLACK);
             if (winEnd > winStart) {
-                const hit = smithWatermanAffine(querySeq, entry.seq.substring(winStart, winEnd));
+                const window = entry.seq.substring(winStart, winEnd);
+                // bandDiag = the voted diagonal expressed in WINDOW coordinates
+                // (j - i within the substring) = diag - winStart. Banded DP is
+                // orthogonal to windowing: the window picks the subject slice,
+                // the band restricts which cells inside it get computed.
+                const hit = USE_BANDED_DP
+                    ? smithWatermanAffineBanded(querySeq, window, diag - winStart, BAND_HALF_WIDTH)
+                    : smithWatermanAffine(querySeq, window);
                 if (hit) {
                     hit.hitStart += winStart; hit.hitEnd += winStart; hit.strand = '+';
                     bestHit = hit;
@@ -406,7 +564,10 @@ function searchDatabase(querySeq, dbSeqs, index, maxHits = 10) {
             const winStart = Math.max(0, diag - WINDOW_SLACK);
             const winEnd = Math.min(subjLen, diag + querySeq.length + WINDOW_SLACK);
             if (winEnd > winStart) {
-                const hit = smithWatermanAffine(qRevComp, entry.seq.substring(winStart, winEnd));
+                const window = entry.seq.substring(winStart, winEnd);
+                const hit = USE_BANDED_DP
+                    ? smithWatermanAffineBanded(qRevComp, window, diag - winStart, BAND_HALF_WIDTH)
+                    : smithWatermanAffine(qRevComp, window);
                 if (hit && (!bestHit || hit.score > bestHit.score)) {
                     hit.hitStart += winStart; hit.hitEnd += winStart; hit.strand = '-';
                     bestHit = hit;
