@@ -7334,6 +7334,11 @@ async function parseAndRender(isFromDrop = false) {
 
         // Update source info with comprehensive statistics
         updateSourceInfo();
+        // Large alignments: fit the block size to the screen BEFORE the first
+        // render, not after — see fitBlockSizeBeforeInitialRender() for why
+        // doing this only after render left the on-screen content overflowing
+        // even though the size slider showed a "corrected" value.
+        fitBlockSizeBeforeInitialRender();
         renderAlignment();
         updateBamButtonVisibility();
         // Auto-fit block size to screen width on every load
@@ -7512,6 +7517,53 @@ async function onModeChange() {
     _lastModeRadioId = document.querySelector('input[name="mode"]:checked')?.id || _lastModeRadioId;
 }
 
+const LARGE_ALIGNMENT_RESIDUE_THRESHOLD = 80000;
+
+function _isLargeAlignmentPending() {
+    const _aliLen = state.seqs.length > 0 ? Math.max(...state.seqs.map(s => s.seq.length)) : 0;
+    return (state.seqs.length * _aliLen) > LARGE_ALIGNMENT_RESIDUE_THRESHOLD;
+}
+
+// Zoom-based estimate only — no DOM measurement, so it's safe to call BEFORE
+// the alignment has ever been rendered (see fitBlockSizeBeforeInitialRender).
+// Real name-column width isn't known yet at that point either way; the
+// nameLengthSlider-based estimate is the best available proxy pre-render.
+function _computeLargeAlignmentBlockChars() {
+    const zoom = _sliderToZoom(parseInt(el('zoomSlider')?.value || 50)) / 100;
+    const charPx = 10 * zoom;
+    const namePx = (parseInt(el('nameLengthSlider')?.value || 25) * charPx) + 8;
+    // Use window.innerWidth instead of container.clientWidth to avoid forcing
+    // a synchronous reflow over the (potentially already-rendered) DOM —
+    // millions of child spans make clientWidth reads take 30+ seconds.
+    const available = window.innerWidth - namePx - 40;
+    return Math.max(40, Math.min(300, Math.floor(available / charPx)));
+}
+
+// Called once, before the FIRST renderAlignment() of a newly loaded large
+// alignment, so that render uses a screen-fitted block size from the start.
+//
+// Bug this fixes (found via real overflow, not just review): the initial
+// load previously always rendered once with the block-size slider's stale
+// value (whatever it happened to be — its HTML default, or left over from a
+// previous file), THEN called setBlockSizeToScreen() to correct the slider's
+// displayed number — but for large alignments that function deliberately
+// skips re-rendering (getBoundingClientRect() over millions of spans can
+// hang the page for 30+ seconds). Net effect: the slider showed a "correct"
+// value the actual on-screen content never used, and the real rendered row
+// width (whatever the stale slider value produced) routinely overflowed the
+// visible screen, cutting the name column into the equation nowhere close to
+// how wide it would really end up. Fix: compute the estimate and update the
+// slider BEFORE the first render, so that render already uses the right
+// size — no second render needed, no overflow window.
+function fitBlockSizeBeforeInitialRender() {
+    if (!_isLargeAlignmentPending()) return;
+    const chars = _computeLargeAlignmentBlockChars();
+    const slider = el('blockSizeSlider');
+    const input = el('blockSizeInput');
+    if (slider) slider.value = chars;
+    if (input) input.value = chars;
+}
+
 function setBlockSizeToScreen() {
     // Estimate how many chars fit in the visible alignment area.
     // Measure a single nucleotide span if one exists; otherwise approximate
@@ -7521,21 +7573,15 @@ function setBlockSizeToScreen() {
 
     // For large alignments, getBoundingClientRect() forces a synchronous reflow
     // over millions of DOM spans, which can take tens of seconds. Use a
-    // zoom-based estimate instead and skip the re-render — the initial render
-    // already used a reasonable block size from the slider's current value.
-    const _aliLen = state.seqs.length > 0 ? Math.max(...state.seqs.map(s => s.seq.length)) : 0;
-    const _totalResidues = state.seqs.length * _aliLen;
-    if (_totalResidues > 80000) {
-        const zoom = _sliderToZoom(parseInt(el('zoomSlider')?.value || 50)) / 100;
-        const charPx = 10 * zoom;
-        const namePx = (parseInt(el('nameLengthSlider')?.value || 25) * charPx) + 8;
-        // Use window.innerWidth instead of container.clientWidth to avoid
-        // forcing a synchronous reflow over the just-rendered DOM (millions
-        // of spans). Reading clientWidth on a container with 3.6M child
-        // spans forces the browser to compute layout for all of them,
-        // taking 30+ seconds and hanging parseAndRender.
-        const available = window.innerWidth - namePx - 40;
-        const chars = Math.max(40, Math.min(300, Math.floor(available / charPx)));
+    // zoom-based estimate instead and skip the re-render. On initial load this
+    // is a harmless no-op re-computation — fitBlockSizeBeforeInitialRender()
+    // already applied the same estimate before the first render happened, so
+    // the displayed content already matches; this only matters for the
+    // manual "Screen" button click on an alignment already on screen, where
+    // skipping the reflow-heavy re-render is the right tradeoff (the user can
+    // already see whether it looks right without a forced measurement).
+    if (_isLargeAlignmentPending()) {
+        const chars = _computeLargeAlignmentBlockChars();
         const slider = el('blockSizeSlider');
         const input = el('blockSizeInput');
         if (slider) slider.value = chars;
