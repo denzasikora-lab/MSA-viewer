@@ -245,6 +245,8 @@ It is "local" only in the sense that nothing leaves your machine (browser ↔ yo
 
 **Why novel:** BLAST-quality sequence search that runs entirely client-side, with zero backend search dependency — works even with no BLAST+ installed anywhere, which is also why it can run unmodified from GitHub Pages (no server at all). Database management from the browser without touching a CLI, registry persisted in `blast_dbs.json` so it survives restarts.
 
+**Graphical hit-distribution diagram (2026-08-24):** a ruler + one colored bar per hit above the summary table, positioned/sized by query span, colored by NCBI's conventional score-tier bands (≥200 red, 80-200 pink, 50-80 green, 40-50 blue, <40 black — hex approximated, not pixel-verified against NCBI's own stylesheet). Hover for a tooltip (description/score/e-value/query range); click scrolls to and flashes the matching table row. 5 visual concepts were prototyped as real working renders using actual search data (not mockups) — inline table sparklines, a score-vs-position lollipop plot, an identity-intensity heat strip, and a coverage-depth histogram were all built and compared side by side before the user chose this one.
+
 ---
 
 ## 📤 Export & Publishing
