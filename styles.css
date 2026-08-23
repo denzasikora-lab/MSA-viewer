@@ -2364,7 +2364,6 @@ span.diagnostic-mutation {
 
 /* Summary section — fixed at top of each pane */
 .blast-summary-section { flex-shrink:0; overflow-y:auto; max-height:38%; border-bottom:2px solid #ddd; padding:6px 14px 0; }
-.blast-db-stats { font-family:'Courier New',monospace; font-size:11px; color:#555; margin-bottom:6px; }
 .blast-summary-table { width:100%; border-collapse:collapse; font-family:'Courier New',monospace; font-size:11px; white-space:nowrap; }
 .blast-summary-table thead th { background:#ececec; padding:4px 8px; text-align:left; border-bottom:2px solid #bbb; position:sticky; top:0; z-index:1; }
 .blast-summary-table td { padding:3px 8px; border-bottom:1px solid #f0f0f0; cursor:pointer; vertical-align:middle; }
@@ -2374,24 +2373,28 @@ span.diagnostic-mutation {
 .blast-summary-row:hover td { background:#eef8ee; }
 .blast-row-flash td { background:#FFF3B0 !important; transition: background 1.5s ease; }
 
-/* Graphical hit-distribution diagram (NCBI-BLAST-style position bars) */
-.blast-hitdist { margin-bottom:8px; }
-.blast-hitdist-legend { font-size:10px; color:#555; margin-bottom:4px; display:flex; align-items:center; gap:6px; }
-.blast-hitdist-legend .gradient-bar { display:inline-block; width:120px; height:8px; border-radius:2px; border:1px solid rgba(0,0,0,0.15); }
+/* Graphical hit-distribution diagram (NCBI-BLAST-style position bars) —
+   its own independently-scrollable section, separate from the summary
+   table below, so a database with many hits doesn't force the diagram and
+   the table to compete for the same bounded scroll area. Bars render as
+   near-hairline strokes (2px) but each row keeps a taller invisible hit
+   area (7px) so hovering/clicking a bar stays easy despite the thin
+   visual weight. */
+.blast-hitdist-section { flex-shrink:0; overflow-y:auto; max-height:130px; border-bottom:2px solid #ddd; padding:6px 14px; }
 .blast-hitdist-track { position:relative; }
-.blast-hitdist-ruler { position:relative; height:16px; font-family:'Courier New',monospace; font-size:10px; color:#555; border-bottom:1px solid #999; margin-bottom:2px; }
+.blast-hitdist-ruler { position:relative; height:12px; font-family:'Courier New',monospace; font-size:10px; color:#555; border-bottom:1px solid #999; margin-bottom:2px; }
 .blast-hitdist-ruler .tick-left { position:absolute; left:0; top:0; }
 .blast-hitdist-ruler .tick-right { position:absolute; right:0; top:0; }
-.blast-hitdist-row { position:relative; height:16px; }
+.blast-hitdist-row { position:relative; height:7px; }
 .blast-hitdist-bar {
-    position:absolute; top:2px; height:11px; border-radius:2px; cursor:pointer;
+    position:absolute; top:2.5px; height:2px; border-radius:1px; cursor:pointer;
     opacity:0.9; outline:none;
 }
-.blast-hitdist-bar:hover, .blast-hitdist-bar:focus { opacity:1; box-shadow:0 0 0 1px #333; }
+.blast-hitdist-bar:hover, .blast-hitdist-bar:focus { opacity:1; height:3px; top:2px; box-shadow:0 0 0 1px #333; }
 .blast-hitdist-bar .blast-hitdist-tooltip { display:none; }
 .blast-hitdist-bar:hover .blast-hitdist-tooltip, .blast-hitdist-bar:focus .blast-hitdist-tooltip { display:block; }
 .blast-hitdist-tooltip {
-    position:absolute; bottom:16px; left:0; z-index:5; background:#222; color:#fff;
+    position:absolute; bottom:8px; left:0; z-index:5; background:#222; color:#fff;
     font-size:10px; font-family:-apple-system,'Segoe UI',sans-serif; padding:4px 7px;
     border-radius:3px; white-space:nowrap; pointer-events:none;
 }

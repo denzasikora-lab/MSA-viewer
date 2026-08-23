@@ -17869,16 +17869,6 @@ function buildHitDistributionDiagram(hits, queryLen, onHitClick) {
     const wrap = document.createElement('div');
     wrap.className = 'blast-hitdist';
 
-    const legend = document.createElement('div');
-    legend.className = 'blast-hitdist-legend';
-    const gradientCss = _BLAST_SCORE_GRADIENT_STOPS
-        .map(s => `rgb(${s.rgb.join(',')}) ${(s.at / 200) * 100}%`).join(', ');
-    legend.innerHTML =
-        `<span class="gradient-bar" style="background:linear-gradient(to right, ${gradientCss})"></span>` +
-        `<span class="gradient-label-left">&lt;40 bits</span>` +
-        `<span class="gradient-label-right">&ge;200 bits</span>`;
-    wrap.appendChild(legend);
-
     const track = document.createElement('div');
     track.className = 'blast-hitdist-track';
     const W = 100; // percentage-based layout, scales with the pane's own width
@@ -17965,8 +17955,6 @@ function displayBlastResults(queryName, queryLen, results) {
         const dbName = dbNames[di];
         const dbResults = results[dbName];
         const hits = dbResults.hits || [];
-        const numSeqs = dbResults.numSeqs || 0;
-        const searchMs = dbResults.searchMs || 0;
 
         // Tab button
         const tab = document.createElement('button');
@@ -17989,17 +17977,12 @@ function displayBlastResults(queryName, queryLen, results) {
             noPre.textContent = `No significant hits found in ${dbName}.`;
             pane.appendChild(noPre);
         } else {
-            // --- Summary section ---
-            const summarySection = document.createElement('div');
-            summarySection.className = 'blast-summary-section';
-
-            const dbStats = document.createElement('div');
-            dbStats.className = 'blast-db-stats';
-            dbStats.textContent = `Database: ${dbName}   Sequences: ${numSeqs}   Hits: ${hits.length}   Search time: ${searchMs} ms`;
-            summarySection.appendChild(dbStats);
-
+            // --- Graphical hit-distribution diagram: its own independently-
+            // scrollable pane, separate from the summary table below, so a
+            // database with many hits doesn't have the diagram and the table
+            // fight each other for the same bounded scroll area.
             const highlightRow = (hi) => {
-                const row = summarySection.querySelector(`tr[data-hit-index="${hi}"]`);
+                const row = pane.querySelector(`tr[data-hit-index="${hi}"]`);
                 if (!row) return;
                 row.scrollIntoView({ block: 'nearest' });
                 row.classList.add('blast-row-flash');
@@ -18007,7 +17990,14 @@ function displayBlastResults(queryName, queryLen, results) {
                 const target = hitsSection.querySelector(`#blast-hit-${di}-${hi}`);
                 if (target) hitsSection.scrollTop = target.offsetTop;
             };
-            summarySection.appendChild(buildHitDistributionDiagram(hits, queryLen, highlightRow));
+            const diagramSection = document.createElement('div');
+            diagramSection.className = 'blast-hitdist-section';
+            diagramSection.appendChild(buildHitDistributionDiagram(hits, queryLen, highlightRow));
+            pane.appendChild(diagramSection);
+
+            // --- Summary section ---
+            const summarySection = document.createElement('div');
+            summarySection.className = 'blast-summary-section';
 
             const table = document.createElement('table');
             table.className = 'blast-summary-table';
