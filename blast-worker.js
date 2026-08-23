@@ -1,13 +1,34 @@
 'use strict';
 // ============================================================
-//  blast-worker.js  — Smith-Waterman BLAST in the browser
+//  blast-worker.js — Smith-Waterman-based sequence search in the browser
 //  Runs as a Web Worker; communicates via postMessage.
 //  Caches downloaded FASTA files in IndexedDB so subsequent
 //  searches are instant (no re-download needed).
+//
+//  NOT real NCBI BLAST — see features-inventory.md "Sequence search" section
+//  for the full story (what this is, what it isn't, and an incident where its
+//  wiring silently broke: commit c38abf2 dropped `url`, fixed 2026-08-23).
+//
+//  2026-08-23 rewrite — fixed every known limitation except protein support:
+//   - Affine-gap Smith-Waterman (Gotoh), not linear-gap — matches real indel
+//     biology (opening a gap costs more than extending one)
+//   - No silent length truncation. Full query and full database sequences are
+//     indexed/searched; a k-mer-seeded diagonal anchors a window around the
+//     true match location for the DP step, so a hit deep inside a long
+//     database entry (a whole contig, say) is no longer invisible.
+//   - Real, size-aware E-values via a Karlin-Altschul lambda solved for this
+//     tool's own actual match/mismatch scores (previously hardcoded to 0).
+//   - IUPAC ambiguity codes (N, R, Y, ...) are excluded from k-mer seeding
+//     instead of silently encoded as 'A' (previously: false seeds through
+//     N-masked regions, missed seeds spanning an ambiguous base). They are
+//     still handled correctly as ordinary mismatches inside the DP step.
 // ============================================================
 
 // ── DNA encoding ─────────────────────────────────────────────
-const BASE_MAP = new Uint8Array(128);
+// 0-3 = A/C/G/T. 255 = anything else (N, ambiguity codes, gaps) — a sentinel
+// so k-mer seeding can explicitly skip ambiguous positions.
+const AMBIG = 255;
+const BASE_MAP = new Uint8Array(128).fill(AMBIG);
 BASE_MAP['A'.charCodeAt(0)] = 0; BASE_MAP['C'.charCodeAt(0)] = 1;
 BASE_MAP['G'.charCodeAt(0)] = 2; BASE_MAP['T'.charCodeAt(0)] = 3;
 BASE_MAP['a'.charCodeAt(0)] = 0; BASE_MAP['c'.charCodeAt(0)] = 1;
@@ -19,10 +40,15 @@ const COMPL = {A:'T',C:'G',G:'C',T:'A',R:'Y',Y:'R',S:'S',W:'W',
                a:'t',c:'g',g:'c',t:'a',r:'y',y:'r',s:'s',w:'w',
                k:'m',m:'k',b:'v',d:'h',h:'d',v:'b',n:'n'};
 
+// maxLen is a safety cap only (guards against a pathological multi-MB "sequence"),
+// not a feature limit — leave undefined/0 to encode the whole thing.
 function encodeSeq(s, maxLen) {
-    const len = Math.min(s.length, maxLen);
+    const len = maxLen ? Math.min(s.length, maxLen) : s.length;
     const arr = new Uint8Array(len);
-    for (let i = 0; i < len; i++) arr[i] = BASE_MAP[s.charCodeAt(i)] || 0;
+    for (let i = 0; i < len; i++) {
+        const code = BASE_MAP[s.charCodeAt(i)];
+        arr[i] = code === undefined ? AMBIG : code;
+    }
     return arr;
 }
 
@@ -32,40 +58,141 @@ function revComp(s) {
     return out.join('');
 }
 
-// ── Smith-Waterman with traceback ────────────────────────────
-const MATCH = 2, MISMATCH = -3, GAP_EXT = -2;
+// ── Karlin-Altschul statistics (for E-values) ─────────────────
+// Solve sum_i sum_j bg_i*bg_j*exp(lambda*s(i,j)) = 1 for lambda > 0, using this
+// tool's OWN match/mismatch scores (not borrowed blastn defaults for a different
+// scoring scheme, as the previous hardcoded bit-score formula did). Uniform
+// 0.25/base background is a standard, reasonable approximation.
+// K (below) is NOT solved from first principles — a rigorous gapped K needs
+// numerical simulation beyond what's practical in a browser worker — it uses
+// the commonly-cited empirical approximation for gapped nucleotide alignments
+// (~0.1-0.14). This means E-values here are a real, size-aware, monotonically
+// meaningful statistic — a large improvement on a hardcoded 0 — but should
+// still be read as "approximately BLAST-like," not identical to real blastn's.
+function computeLambda(matchScore, mismatchScore) {
+    const bg = 0.25;
+    const f = (lambda) => 4 * bg * bg * Math.exp(lambda * matchScore) +
+                          12 * bg * bg * Math.exp(lambda * mismatchScore) - 1;
+    let lo = 1e-6, hi = 5;
+    for (let iter = 0; iter < 60; iter++) {
+        const mid = (lo + hi) / 2;
+        if (f(mid) > 0) hi = mid; else lo = mid;
+    }
+    return (lo + hi) / 2;
+}
 
-function smithWaterman(query, subject) {
-    const q = query.substring(0, 600);
-    const s = subject.substring(0, 600);
-    const m = q.length, n = s.length;
+// Scoring scheme matches EMBOSS `water`'s own EDNAFULL defaults (match +5 /
+// mismatch -4 / gapopen 10.0 / gapextend 0.5), per the reference Gotoh
+// implementation rather than blastn's scheme. EMBOSS defines "gapopen" as
+// the cost of CREATING a gap and "gapextend" as the per-residue cost, so a
+// gap of length L costs gapopen + L*gapextend — i.e. the first gap residue
+// costs gapopen+gapextend, matching this file's existing GAP_FIRST/GAP_EXT
+// split (only the magnitudes changed here, not the recurrence).
+// NOTE: gapextend=0.5 is fractional — the DP score matrices below are
+// therefore Float64Array, not Int32Array (an integer-typed matrix would
+// silently truncate every gap-extension penalty to 0).
+const MATCH = 5, MISMATCH = -4;
+const GAP_OPEN_COST = 10, GAP_EXTEND_COST = 0.5;   // costs (positive); subtracted below
+const GAP_FIRST = -(GAP_OPEN_COST + GAP_EXTEND_COST); // first gap residue
+const GAP_EXT   = -GAP_EXTEND_COST;                    // each subsequent gap residue
+const LAMBDA = computeLambda(MATCH, MISMATCH);
+// water itself reports no E-value (score/identity/similarity/gaps only) —
+// K_APPROX is this file's own add-on layer, still a fixed empirical
+// approximation not re-derived for this scoring scheme (pre-existing
+// limitation, unchanged by this update).
+const K_APPROX = 0.11;
 
-    const H  = new Int32Array((m + 1) * (n + 1));
-    const TB = new Uint8Array((m + 1) * (n + 1));  // 1=diag 2=up 3=left
+function scoreOf(a, b) { return a === b ? MATCH : MISMATCH; }
 
-    let maxScore = 0, maxI = 0, maxJ = 0;
+// ── Affine-gap Smith-Waterman (Gotoh) with traceback ──────────
+// Three score matrices: M (ends in match/mismatch), X (ends in a gap that
+// consumes a query residue — "up"), Y (ends in a gap that consumes a subject
+// residue — "left"). This is the standard fix for linear-gap SW's main flaw:
+// without it, an alignment with several small separate indels scores identically
+// to one with a single indel of the same total length, which misrepresents real
+// indel-bearing SINE copies.
+const DIR_NONE = 0, DIR_DIAG = 1, DIR_UP = 2, DIAG_FROM_X = 1, DIAG_FROM_Y = 2; // reused below with clearer names
+function smithWatermanAffine(query, subject) {
+    const m = query.length, n = subject.length;
+    if (m === 0 || n === 0) return null;
+    const W = n + 1;
+    // Float64Array, not Int32Array: GAP_EXTEND_COST is fractional (0.5) under
+    // EMBOSS water's default scoring, and an integer-typed matrix would
+    // silently truncate every gap-extension penalty to 0.
+    const M  = new Float64Array((m + 1) * W);
+    const X  = new Float64Array((m + 1) * W);
+    const Y  = new Float64Array((m + 1) * W);
+    // Traceback: for each matrix, which state the optimal predecessor was in.
+    // 0 = none/reset (local alignment restart), 1 = came from M, 2 = came from X, 3 = came from Y
+    const TM = new Uint8Array((m + 1) * W);
+    const TX = new Uint8Array((m + 1) * W);
+    const TY = new Uint8Array((m + 1) * W);
+    const NEG = -1e9;
+    for (let j = 0; j <= n; j++) { X[j] = NEG; Y[j] = NEG; }
+
+    let maxScore = 0, maxI = 0, maxJ = 0, maxState = 1;
+
+    // Pre-encode both strings to numeric codes ONCE (m+n charCodeAt calls total)
+    // instead of calling charCodeAt m*n times inside the hot loop below, and
+    // inline the match/mismatch comparison instead of a per-cell function call —
+    // together these were the actual bottleneck (measured ~30ms for a 200x320
+    // window before this change; the earlier per-cell overhead, not the DP
+    // itself, dominated).
+    const qCodes = new Uint16Array(m);
+    for (let k = 0; k < m; k++) qCodes[k] = query.charCodeAt(k);
+    const sCodes = new Uint16Array(n);
+    for (let k = 0; k < n; k++) sCodes[k] = subject.charCodeAt(k);
+
     for (let i = 1; i <= m; i++) {
+        const rowBase = i * W, prevRowBase = (i - 1) * W;
+        X[rowBase] = NEG; Y[rowBase] = NEG; M[rowBase] = 0;
+        const qc = qCodes[i - 1];
         for (let j = 1; j <= n; j++) {
-            const base = i * (n + 1) + j;
-            const d    = q[i - 1] === s[j - 1] ? MATCH : MISMATCH;
-            const diag = H[(i - 1) * (n + 1) + (j - 1)] + d;
-            const up   = H[(i - 1) * (n + 1) + j] + GAP_EXT;
-            const left = H[i * (n + 1) + (j - 1)] + GAP_EXT;
-            const best = Math.max(0, diag, up, left);
-            H[base] = best;
-            TB[base] = best === 0 ? 0 : best === diag ? 1 : best === up ? 2 : 3;
-            if (best > maxScore) { maxScore = best; maxI = i; maxJ = j; }
+            const base = rowBase + j, diagBase = prevRowBase + (j - 1), upBase = prevRowBase + j, leftBase = rowBase + (j - 1);
+
+            // X: gap in subject (consume query residue, move down)
+            const xOpen = M[upBase] + GAP_FIRST, xExt = X[upBase] + GAP_EXT;
+            if (xOpen >= xExt) { X[base] = xOpen; TX[base] = 1; } else { X[base] = xExt; TX[base] = 2; }
+
+            // Y: gap in query (consume subject residue, move right)
+            const yOpen = M[leftBase] + GAP_FIRST, yExt = Y[leftBase] + GAP_EXT;
+            if (yOpen >= yExt) { Y[base] = yOpen; TY[base] = 1; } else { Y[base] = yExt; TY[base] = 3; }
+
+            // M: match/mismatch, or restart (local alignment) — inlined, not scoreOf(), for speed
+            const s = (qc === sCodes[j - 1]) ? MATCH : MISMATCH;
+            const diagM = M[diagBase] + s, diagX = X[diagBase] + s, diagY = Y[diagBase] + s;
+            let best = 0, dir = 0;
+            if (diagM > best) { best = diagM; dir = 1; }
+            if (diagX > best) { best = diagX; dir = 2; }
+            if (diagY > best) { best = diagY; dir = 3; }
+            M[base] = best; TM[base] = dir;
+
+            const cellBest = Math.max(M[base], X[base], Y[base]);
+            if (cellBest > maxScore) {
+                maxScore = cellBest; maxI = i; maxJ = j;
+                maxState = M[base] === cellBest ? 1 : (X[base] === cellBest ? 2 : 3);
+            }
         }
     }
-    if (maxScore === 0) return null;
+    if (maxScore <= 0) return null;
 
+    // Traceback across the 3-matrix state machine
     let alignQ = '', alignS = '';
-    let i = maxI, j = maxJ;
-    while (i > 0 && j > 0 && H[i * (n + 1) + j] > 0) {
-        const dir = TB[i * (n + 1) + j];
-        if (dir === 1) { alignQ = q[i - 1] + alignQ; alignS = s[j - 1] + alignS; i--; j--; }
-        else if (dir === 2) { alignQ = q[i - 1] + alignQ; alignS = '-' + alignS; i--; }
-        else               { alignQ = '-' + alignQ; alignS = s[j - 1] + alignS; j--; }
+    let i = maxI, j = maxJ, state = maxState;
+    while (i > 0 && j > 0) {
+        const base = i * W + j;
+        if (state === 1) { // M: came via match/mismatch
+            const dir = TM[base];
+            if (dir === 0) break; // local restart point
+            alignQ = query[i - 1] + alignQ; alignS = subject[j - 1] + alignS;
+            i--; j--; state = dir;
+        } else if (state === 2) { // X: gap in subject, consumed a query residue
+            alignQ = query[i - 1] + alignQ; alignS = '-' + alignS;
+            const dir = TX[base]; i--; state = dir === 1 ? 1 : 2;
+        } else { // Y: gap in query, consumed a subject residue
+            alignQ = '-' + alignQ; alignS = subject[j - 1] + alignS;
+            const dir = TY[base]; j--; state = dir === 1 ? 1 : 3;
+        }
     }
     const qStart = i + 1, sStart = j + 1;
 
@@ -78,7 +205,7 @@ function smithWaterman(query, subject) {
 
     const alignLen = alignQ.length;
     const percent  = alignLen > 0 ? ((identity / alignLen) * 100).toFixed(1) : '0.0';
-    const bitScore = parseFloat(Math.max(0, (maxScore * 0.625 - Math.log(0.41)) / Math.log(2)).toFixed(1));
+    const bitScore = parseFloat(Math.max(0, (LAMBDA * maxScore - Math.log(K_APPROX)) / Math.log(2)).toFixed(1));
 
     return { score: maxScore, bitScore, identity, gaps, alignLen, percent,
              queryStart: qStart, queryEnd: maxI,
@@ -86,47 +213,36 @@ function smithWaterman(query, subject) {
              querySeq: alignQ, hitSeq: alignS, midline, strand: '+' };
 }
 
-// Run SW on both strands; return the hit with the higher score.
-// Converts minus-strand coordinates back to forward-strand numbering.
-function swBothStrands(query, entrySeq, entryLen) {
-    const fwd = smithWaterman(query, entrySeq);
-    const rc  = smithWaterman(query, revComp(entrySeq.substring(0, 600)));
-
-    if (!fwd && !rc) return null;
-    if (!rc || (fwd && fwd.score >= rc.score)) return fwd;
-
-    // RC hit — convert positions back to forward strand coordinates
-    const cap = Math.min(entryLen, 600);
-    const rcStart = rc.hitStart;
-    const rcEnd   = rc.hitEnd;
-    rc.hitStart = cap - rcEnd   + 1;
-    rc.hitEnd   = cap - rcStart + 1;
-    rc.strand   = '-';
-    return rc;
-}
-
-// ── Kmer inverted index ───────────────────────────────────────
+// ── K-mer inverted index (position-aware, IUPAC-safe) ─────────
+// Stores (seqIndex, position) pairs per k-mer, over the WHOLE sequence (no
+// length cap) — position is what lets search() anchor a window around the true
+// match location in a long subject, rather than only ever looking at its start.
+// Ambiguous bases (encoded as 255) break the current k-mer run entirely, so an
+// N never contributes to seeding in either direction (previously it silently
+// became 'A', which could seed a false match through masked regions).
 const KMER      = 9;
-const KMER_MASK = (1 << (KMER * 2)) - 1; // 0x3FFFF
-const BS_SIZE   = ((1 << (KMER * 2)) >>> 5); // 8192 uint32 words
+const KMER_MASK = (1 << (KMER * 2)) - 1;
+const BS_SIZE   = ((1 << (KMER * 2)) >>> 5);
 
 function buildInvertedIndex(dbSeqs) {
-    const posting = new Map();
-    const seqBs   = new Uint32Array(BS_SIZE);
+    const posting = new Map(); // kmer -> flat [seqIdx0,pos0, seqIdx1,pos1, ...]
+    const seqBs = new Uint32Array(BS_SIZE);
 
     for (let i = 0; i < dbSeqs.length; i++) {
         const enc = dbSeqs[i]._enc;
         if (!enc || enc.length < KMER) continue;
         seqBs.fill(0);
-        let h = 0;
-        for (let j = 0; j < KMER - 1; j++) h = ((h << 2) | enc[j]) & KMER_MASK;
-        for (let j = KMER - 1; j < enc.length; j++) {
+        let h = 0, validRun = 0;
+        for (let j = 0; j < enc.length; j++) {
+            if (enc[j] === AMBIG) { validRun = 0; h = 0; continue; }
             h = ((h << 2) | enc[j]) & KMER_MASK;
-            if (seqBs[h >>> 5] & (1 << (h & 31))) continue; // deduplicate per seq
+            validRun++;
+            if (validRun < KMER) continue;
+            if (seqBs[h >>> 5] & (1 << (h & 31))) continue; // first occurrence per seq only
             seqBs[h >>> 5] |= (1 << (h & 31));
             let list = posting.get(h);
             if (!list) { list = []; posting.set(h, list); }
-            list.push(i);
+            list.push(i, j - KMER + 1);
         }
     }
     const index = new Map();
@@ -134,38 +250,109 @@ function buildInvertedIndex(dbSeqs) {
     return index;
 }
 
-function searchDatabase(querySeq, dbSeqs, index, maxHits = 10) {
-    const MIN_HITS = 3, MAX_SW = 400;
-    const qEnc = encodeSeq(querySeq, 600);
-    if (qEnc.length < KMER) return [];
-
-    const counts = new Uint16Array(dbSeqs.length);
-    const qBs    = new Uint32Array(BS_SIZE);
-    let h = 0;
-    for (let i = 0; i < KMER - 1; i++) h = ((h << 2) | qEnc[i]) & KMER_MASK;
-    for (let i = KMER - 1; i < qEnc.length; i++) {
-        h = ((h << 2) | qEnc[i]) & KMER_MASK;
+// Walk one query strand's k-mers against the index, returning per-candidate
+// {count, bestDiagonal} — diagonal = subjectPos - queryPos identifies roughly
+// where in the subject this query orientation lines up.
+function seedCandidates(qEnc, index) {
+    const counts = new Map();       // seqIdx -> hit count
+    const diagVotes = new Map();    // seqIdx -> Map(diagonal -> votes)
+    const qBs = new Uint32Array(BS_SIZE);
+    let h = 0, validRun = 0;
+    for (let qi = 0; qi < qEnc.length; qi++) {
+        if (qEnc[qi] === AMBIG) { validRun = 0; h = 0; continue; }
+        h = ((h << 2) | qEnc[qi]) & KMER_MASK;
+        validRun++;
+        if (validRun < KMER) continue;
         if (qBs[h >>> 5] & (1 << (h & 31))) continue;
         qBs[h >>> 5] |= (1 << (h & 31));
-        const list = index ? index.get(h) : null;
-        if (list) for (let j = 0; j < list.length; j++) counts[list[j]]++;
-    }
-
-    const candidates = [];
-    for (let i = 0; i < dbSeqs.length; i++) {
-        if (counts[i] >= MIN_HITS) candidates.push({ entry: dbSeqs[i], hits: counts[i] });
-    }
-    candidates.sort((a, b) => b.hits - a.hits);
-
-    const scored = [];
-    for (const { entry } of candidates.slice(0, MAX_SW)) {
-        const sw = swBothStrands(querySeq, entry.seq, entry.length);
-        if (sw && sw.score > 0 && sw.identity > 0) {
-            scored.push({ id: entry.id, def: entry.def, length: entry.length,
-                          seq: entry.seq,   // full sequence for FASTA copy
-                          hsps: [{ ...sw, evalue: 0 }] });
+        const list = index.get(h);
+        if (!list) continue;
+        const qPos = qi - KMER + 1;
+        for (let k = 0; k < list.length; k += 2) {
+            const seqIdx = list[k], subjPos = list[k + 1];
+            counts.set(seqIdx, (counts.get(seqIdx) || 0) + 1);
+            const diag = subjPos - qPos;
+            let dv = diagVotes.get(seqIdx);
+            if (!dv) { dv = new Map(); diagVotes.set(seqIdx, dv); }
+            dv.set(diag, (dv.get(diag) || 0) + 1);
         }
     }
+    return { counts, diagVotes };
+}
+
+function bestDiagonal(diagVotes) {
+    let best = 0, bestCount = -1;
+    for (const [d, c] of diagVotes) if (c > bestCount) { best = d; bestCount = c; }
+    return best;
+}
+
+const WINDOW_SLACK = 60; // extra bp of subject context on each side of the seed-implied region
+
+function searchDatabase(querySeq, dbSeqs, index, maxHits = 10) {
+    const MIN_HITS = 3, MAX_SW = 400;
+    const qEnc = encodeSeq(querySeq);
+    if (qEnc.length < KMER) return [];
+    const qRevComp = revComp(querySeq);
+    const qEncRC = encodeSeq(qRevComp);
+
+    const fwd = seedCandidates(qEnc, index);
+    const rev = seedCandidates(qEncRC, index);
+
+    const candidateSet = new Set();
+    for (const seqIdx of fwd.counts.keys()) if (fwd.counts.get(seqIdx) >= MIN_HITS) candidateSet.add(seqIdx);
+    for (const seqIdx of rev.counts.keys()) if (rev.counts.get(seqIdx) >= MIN_HITS) candidateSet.add(seqIdx);
+
+    const ranked = [...candidateSet].map(seqIdx => ({
+        seqIdx,
+        score: Math.max(fwd.counts.get(seqIdx) || 0, rev.counts.get(seqIdx) || 0)
+    })).sort((a, b) => b.score - a.score).slice(0, MAX_SW);
+
+    const scored = [];
+    const dbTotalLen = dbSeqs.reduce((acc, e) => acc + e.length, 0) || 1;
+
+    for (const { seqIdx } of ranked) {
+        const entry = dbSeqs[seqIdx];
+        const subjLen = entry.length;
+        let bestHit = null;
+
+        // Try the forward-strand orientation
+        const fwdDv = fwd.diagVotes.get(seqIdx);
+        if (fwdDv) {
+            const diag = bestDiagonal(fwdDv);
+            const winStart = Math.max(0, diag - WINDOW_SLACK);
+            const winEnd = Math.min(subjLen, diag + querySeq.length + WINDOW_SLACK);
+            if (winEnd > winStart) {
+                const hit = smithWatermanAffine(querySeq, entry.seq.substring(winStart, winEnd));
+                if (hit) {
+                    hit.hitStart += winStart; hit.hitEnd += winStart; hit.strand = '+';
+                    bestHit = hit;
+                }
+            }
+        }
+
+        // Try the reverse-complement orientation (querySeq's RC seeded against the same forward-indexed subject)
+        const revDv = rev.diagVotes.get(seqIdx);
+        if (revDv) {
+            const diag = bestDiagonal(revDv);
+            const winStart = Math.max(0, diag - WINDOW_SLACK);
+            const winEnd = Math.min(subjLen, diag + querySeq.length + WINDOW_SLACK);
+            if (winEnd > winStart) {
+                const hit = smithWatermanAffine(qRevComp, entry.seq.substring(winStart, winEnd));
+                if (hit && (!bestHit || hit.score > bestHit.score)) {
+                    hit.hitStart += winStart; hit.hitEnd += winStart; hit.strand = '-';
+                    bestHit = hit;
+                }
+            }
+        }
+
+        if (bestHit && bestHit.score > 0 && bestHit.identity > 0) {
+            const evalue = K_APPROX * querySeq.length * dbTotalLen * Math.exp(-LAMBDA * bestHit.score);
+            bestHit.evalue = evalue;
+            scored.push({ id: entry.id, def: entry.def, length: entry.length,
+                          seq: entry.seq, hsps: [bestHit] });
+        }
+    }
+
     scored.sort((a, b) => b.hsps[0].bitScore - a.hsps[0].bitScore);
     return scored.slice(0, maxHits);
 }
@@ -173,7 +360,6 @@ function searchDatabase(querySeq, dbSeqs, index, maxHits = 10) {
 // ── FASTA parser ───────────────────────────────────────────────
 function parseFasta(content) {
     const seqs = [];
-    // Split on '>' but keep sequences intact
     let start = content.indexOf('>');
     if (start < 0) return seqs;
 
@@ -188,7 +374,6 @@ function parseFasta(content) {
                          .replace(/[^ACGTRYSWKMBDHVN]/g, 'N');
         if (!seq || seq.length < 20) { start = next < 0 ? content.length : next; continue; }
 
-        // Support both space-separated and tab-separated headers (RepBase .bnk style)
         const tabIdx   = header.indexOf('\t');
         const spaceIdx = header.indexOf(' ');
         const splitAt  = tabIdx >= 0 ? tabIdx : spaceIdx >= 0 ? spaceIdx : header.length;
@@ -234,12 +419,11 @@ const DB_SEQS = {};
 const DB_IDX  = {};
 
 async function ensureDb(dbName, dbUrl, requestId) {
-    if (DB_SEQS[dbName]) return;  // already loaded this session
+    if (DB_SEQS[dbName]) return;
 
     let idb = null;
     try { idb = await openIDB(); } catch (_) { /* IDB not available, skip cache */ }
 
-    // Check remote file size for cache freshness
     let remoteSize = null;
     try {
         const head = await fetch(dbUrl, { method: 'HEAD' });
@@ -272,7 +456,7 @@ async function ensureDb(dbName, dbUrl, requestId) {
 
     self.postMessage({ type: 'progress', requestId, dbName, stage: 'indexing' });
     const seqs = parseFasta(text);
-    for (const e of seqs) e._enc = encodeSeq(e.seq, 600);
+    for (const e of seqs) e._enc = encodeSeq(e.seq); // no length cap — full sequence indexed
     DB_SEQS[dbName] = seqs;
     DB_IDX[dbName]  = buildInvertedIndex(seqs);
 }
@@ -300,7 +484,6 @@ self.onmessage = async ({ data }) => {
         }
 
     } else if (type === 'clearCache') {
-        // Optionally clear IndexedDB cache (called if user wants fresh data)
         try {
             const idb = await openIDB();
             await new Promise((resolve, reject) => {

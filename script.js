@@ -13417,8 +13417,12 @@ function buildBlastHitElement(hit, hitIndex, dbIndex, queryLen) {
     stats.className = 'blast-hit-stats';
     const strandLabel = hsp.strand === '-' ? 'Plus/Minus' : 'Plus/Plus';
     const strandClass = hsp.strand === '-' ? 'stat-strand-minus' : 'stat-strand-plus';
+    const evalueStr = (typeof hsp.evalue === 'number')
+        ? (hsp.evalue < 0.001 ? hsp.evalue.toExponential(2) : hsp.evalue.toFixed(4))
+        : 'n/a';
     stats.innerHTML =
-        `Score = ${hsp.bitScore} bits (${hsp.score})&nbsp;&nbsp; ` +
+        `Score = ${hsp.bitScore} bits (${Math.round(hsp.score * 10) / 10})&nbsp;&nbsp; ` +
+        `E-value = ${evalueStr}&nbsp;&nbsp; ` +
         `Identity = ${hsp.identity}/${hsp.alignLen} (${hsp.percent}%)&nbsp;&nbsp; ` +
         `Gaps = ${hsp.gaps}/${hsp.alignLen}<br>` +
         `Strand = <span class="${strandClass}">${strandLabel}</span>&nbsp;&nbsp; ` +
