@@ -110,9 +110,25 @@ function computeLambda(matchScore, mismatchScore) {
 // the DP matrices below are Float64Array, not Int32Array, regardless of
 // which preset is active (water's gapextend=0.5 needs it; keeping one
 // numeric type for all presets avoids a whole second code path).
+// "blastn" here means NCBI blastn's SCORING numbers only (reward+2/penalty-3/
+// gapopen5/gapextend2 — these are blastn's actual, well-established published
+// defaults, high confidence, unlike ssearch36's gap numbers above). It does
+// NOT mean blastn's actual seed-and-extend algorithm: real blastn requires
+// TWO word hits on the same diagonal within a window before even attempting
+// extension, then an ungapped X-drop walk, then only a BOUNDED gapped X-drop
+// DP around what survives — never an unbounded full local Smith-Waterman.
+// Researched 2026-08-23 (see glm-harness task viewalign-blastn-preset):
+// building that literal two-hit/X-drop pipeline was deliberately NOT done —
+// the seeding step here (any single shared k-mer, no two-hit requirement)
+// and the extension step (full affine-gap DP over a window, not a greedy
+// X-drop walk) both diverge from real blastn regardless of which scoring
+// preset is active. If real BLASTN-mechanics fidelity is ever needed (not
+// just "useful search with blastn-familiar score numbers"), that's a
+// separate, larger build — don't let this preset's name imply it's done.
 const SCORING_PRESETS = {
     water:     { match: 5, mismatch: -4, gapOpenCost: 10, gapExtendCost: 0.5 },
     ssearch36: { match: 5, mismatch: -4, gapOpenCost: 12, gapExtendCost: 4 },
+    blastn:    { match: 2, mismatch: -3, gapOpenCost: 5,  gapExtendCost: 2 },
 };
 
 let MATCH, MISMATCH, GAP_OPEN_COST, GAP_EXTEND_COST, GAP_FIRST, GAP_EXT, LAMBDA;
