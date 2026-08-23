@@ -19,6 +19,11 @@ No installation, no build step, no framework dependencies.
   frameshift detection, translation track
 - **Subfamily clustering**: position-pattern clustering with fuzzy merging and configurable
   quality thresholds, plus diagnostic-feature tables and cluster colouring
+- **Sequence search**: BLAST-*like* search against loaded FASTA databases, runs entirely
+  client-side in a Web Worker with selectable water/ssearch36/blastn-style scoring presets
+  (not real NCBI BLAST or ssearch36, no install required). See `features-inventory.md` §
+  "Sequence search" for exactly how this works, including a real incident where it silently
+  broke and how it's guarded against recurring.
 - **More analysis**: dot plots with region detection, repeat/TSD finder, UPGMA trees,
   regex motif search, 50 restriction enzyme sites
 - **Publication export**: SVG (viewport or full), Word-compatible RTF with per-residue
