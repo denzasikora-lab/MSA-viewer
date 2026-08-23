@@ -17140,12 +17140,74 @@ function initColourSeqs() {
 
 // ============ BLAST SEARCH FUNCTIONS ============
 let blastResultsModal = null;
-let blastWorker = null;
+// ── Worker pool for sharded DP (speed round 3) ──────────────────
+// Round 1 shipped: k-mer-count DP cap + banded DP (verified, in production).
+// Round 2 (Web Worker pool sharding) was reverted after real-browser testing
+// found it made the actual common case WORSE: Web Workers share no memory,
+// so each worker must independently index a database, and eagerly priming
+// the whole pool in the background made a fresh session's first search
+// across the 4 bundled databases take ~32.5s instead of the ~15-18s it took
+// before any sharding existed (12 concurrent full index-builds competing
+// with the 4 real foreground searches for the same CPU/network).
+//
+// This round's fix: priming is fully SERIAL and only ever runs when NO
+// foreground search is in flight anywhere — one background index-build at a
+// time, started only in genuine idle time between searches, never
+// overlapping with real user-visible work. A database gains one additional
+// primed worker per idle gap after it's actually been searched (never
+// speculatively for databases nobody asked about), so parallelism grows
+// organically across a session with zero contention cost. The very first
+// search of any database is always single-worker — byte-identical cost to
+// no-sharding-at-all.
+let blastWorkerPool = [];
+const MAX_SHARD_WORKERS = 4; // matches the diminishing-returns point measured in bench Test D
+let workerPrimed = [];        // parallel to blastWorkerPool: Set of dbName already indexed on that worker
+let activeSearchCount = 0;    // real foreground searches currently in flight, across all databases
+let primingInFlight = false;  // at most one background index-build running at any time
+const primingWanted = new Set(); // dbName -> true once a real search has happened for it this session
 
-function getBlastWorker() {
-    if (!blastWorker) blastWorker = new Worker('./blast-worker.js');
-    return blastWorker;
+function getBlastWorkerPool() {
+    const hc = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
+    const n = Math.max(1, Math.min(MAX_SHARD_WORKERS, hc));
+    while (blastWorkerPool.length < n) {
+        blastWorkerPool.push(new Worker('./blast-worker.js'));
+        workerPrimed.push(new Set());
+    }
+    return blastWorkerPool.slice(0, n);
 }
+
+function primedWorkersFor(dbName) {
+    return blastWorkerPool.filter((_, i) => workerPrimed[i].has(dbName));
+}
+
+// Serial background priming, only when idle. Picks ONE (worker, database)
+// pair to index next — a database that's actually been searched
+// (`primingWanted`) and has at least one pool worker not yet primed for it —
+// and does nothing else until that single job resolves, then tries again.
+function maybeAdvancePriming() {
+    if (primingInFlight || activeSearchCount > 0) return; // never overlap with foreground work or another prime
+    for (const dbName of primingWanted) {
+        const dbUrl = primingDbUrls.get(dbName);
+        if (!dbUrl) continue;
+        const target = blastWorkerPool.findIndex((_, i) => !workerPrimed[i].has(dbName));
+        if (target === -1) continue; // already primed on every pool worker
+        primingInFlight = true;
+        const worker = blastWorkerPool[target];
+        const requestId = `prime-${dbName}-${Date.now()}-${Math.random()}`;
+        const handler = (e) => {
+            const d = e.data;
+            if (d.requestId !== requestId || d.type !== 'primed') return;
+            worker.removeEventListener('message', handler);
+            if (d.success) workerPrimed[target].add(dbName);
+            primingInFlight = false;
+            maybeAdvancePriming(); // continue the queue if still idle
+        };
+        worker.addEventListener('message', handler);
+        worker.postMessage({ type: 'prime', requestId, dbName, dbUrl });
+        return; // only ever start one job per call
+    }
+}
+const primingDbUrls = new Map(); // dbName -> url, recorded whenever a real search uses it
 
 function showBlastDialog(sequenceHeader, sequenceSeq) {
     // Create modal for database selection
@@ -17545,7 +17607,6 @@ function _rcStr(s) {
 
 async function runBlastSearch(seqHeader, seqSeq, databases, evalue) {
     showMessage('Running BLAST search...', 0);
-    const worker = getBlastWorker();
     const queryLen = seqSeq.replace(/[-\s]/g, '').length;
 
     const makeSearch = (db) => new Promise((resolve) => {
@@ -17562,23 +17623,66 @@ async function runBlastSearch(seqHeader, seqSeq, databases, evalue) {
             resolve([db.name, { error: `No URL configured for database "${db.name}" — check the /api/blast-db response includes a "url" field for it.` }]);
             return;
         }
-        const requestId = `${Date.now()}-${Math.random()}`;
-        const handler = (e) => {
-            const d = e.data;
-            if (d.requestId !== requestId) return;
-            if (d.type === 'progress') {
-                showMessage(`[${db.name}] ${d.stage}...`, 0);
-                return;
-            }
-            if (d.type === 'result') {
-                worker.removeEventListener('message', handler);
-                resolve([db.name, d]);
-            }
-        };
-        worker.addEventListener('message', handler);
-        worker.postMessage({ type: 'search', requestId, querySeq: seqSeq, dbName: db.name, dbUrl: db.url, maxHits: 10 });
+        primingWanted.add(db.name);
+        primingDbUrls.set(db.name, db.url);
+
+        const fullPool = getBlastWorkerPool();
+        const pool = primedWorkersFor(db.name);
+        // Use whatever subset of the pool is already primed for this database
+        // (grows organically over the session — see maybeAdvancePriming). Never
+        // primed yet -> exactly one worker, byte-identical cost to no sharding.
+        const shardWorkers = pool.length > 0 ? pool : [fullPool[0]];
+        const n = shardWorkers.length;
+        const requestIdBase = `${Date.now()}-${Math.random()}`;
+        let received = 0;
+        const shardHits = [];
+        let numSeqsTotal = 0, searchMsMax = 0, firstError = null, lastPreset = null;
+
+        shardWorkers.forEach((worker, i) => {
+            const requestId = `${requestIdBase}-${i}`;
+            const handler = (e) => {
+                const d = e.data;
+                if (d.requestId !== requestId) return;
+                if (d.type === 'progress') {
+                    showMessage(n > 1 ? `[${db.name}] shard ${i + 1}/${n}: ${d.stage}...` : `[${db.name}] ${d.stage}...`, 0);
+                    return;
+                }
+                if (d.type === 'result') {
+                    worker.removeEventListener('message', handler);
+                    received++;
+                    if (!d.success) {
+                        if (!firstError) firstError = d.error;
+                    } else {
+                        shardHits.push(...d.hits);
+                        numSeqsTotal = d.numSeqs;
+                        searchMsMax = Math.max(searchMsMax, d.searchMs);
+                        lastPreset = d.preset;
+                        const wi = blastWorkerPool.indexOf(worker);
+                        if (wi >= 0) workerPrimed[wi].add(db.name); // this worker now demonstrably has it indexed
+                    }
+                    if (received === n) {
+                        if (firstError && shardHits.length === 0) {
+                            resolve([db.name, { success: false, error: firstError }]);
+                        } else {
+                            shardHits.sort((a, b) => b.hsps[0].bitScore - a.hsps[0].bitScore);
+                            resolve([db.name, {
+                                success: true, hits: shardHits.slice(0, 10),
+                                numHits: Math.min(shardHits.length, 10),
+                                numSeqs: numSeqsTotal, searchMs: searchMsMax, preset: lastPreset,
+                            }]);
+                        }
+                    }
+                }
+            };
+            worker.addEventListener('message', handler);
+            worker.postMessage({
+                type: 'search', requestId, querySeq: seqSeq, dbName: db.name, dbUrl: db.url,
+                maxHits: 10, shard: { count: n, index: i },
+            });
+        });
     });
 
+    activeSearchCount++;
     try {
         const pairs = await Promise.all(databases.map(db => makeSearch(db)));
         const results = Object.fromEntries(pairs);
@@ -17587,6 +17691,9 @@ async function runBlastSearch(seqHeader, seqSeq, databases, evalue) {
     } catch (err) {
         console.error('BLAST search error:', err);
         showMessage(`Error: ${err.message}`, 5000);
+    } finally {
+        activeSearchCount--;
+        maybeAdvancePriming(); // only takes effect once activeSearchCount reaches 0
     }
 }
 

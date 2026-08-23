@@ -494,10 +494,40 @@ function bestDiagonal(diagVotes) {
 
 const WINDOW_SLACK = 60; // extra bp of subject context on each side of the seed-implied region
 
-function searchDatabase(querySeq, dbSeqs, index, maxHits = 10) {
+// ── DP sharding (speed round 3) ─────────────────────────────────────────
+// searchDatabase() is split so the expensive DP step can run in parallel
+// across Web Workers with no shared mutable state:
+//
+//   prepareSearchWork(querySeq, dbSeqs, index) -> { workItems, qRevComp, dbTotalLen }
+//     Cheap (~ms): encode query, seed both strands, rank candidates by raw
+//     k-mer hit count, emit self-contained work items. Each item carries the
+//     subject STRING plus the voted diagonal per strand, with NO reference to
+//     the db array or index Maps — any item can run on any worker.
+//
+//   scoreRankedCandidates(workItems, querySeq, qRevComp, dbTotalLen, useBanded, bandHalf)
+//     The expensive O(window^2) affine DP, pure (reads only its args). Returns
+//     hits in the SAME order as workItems (ranked order), each tagged _rank =
+//     the work-item index (global candidate rank). Does NOT sort or slice; the
+//     caller merges shards and applies the final top-N. Non-hits are omitted.
+//
+//   searchDatabase(querySeq, dbSeqs, index, maxHits)
+//     Thin wrapper: prepare -> score(all) -> stable sort by bitScore -> slice.
+//     Byte-identical to the pre-sharding implementation (same ranking, same
+//     stable sort, same slice, NO _rank in output). Used by server.js and the
+//     single-worker cold path, and as the canonical reference the sharded
+//     merge is proven equal to (bench/benchmark.js Test D).
+//
+// Merge equivalence: each shard owns work items with seqIdx % shardCount ===
+// shardIndex, so the union is the full ranked set (no gaps/overlaps). Sorting
+// the union by (bitScore desc, _rank asc) reproduces exactly the stable
+// bitScore sort searchDatabase does (stable = ranked order for ties = _rank
+// ascending), so the merged top-N is byte-identical to searchDatabase's top-N
+// at every shard count. Verified in Test D across 1/2/4/8 shards.
+function prepareSearchWork(querySeq, dbSeqs, index) {
     const MIN_HITS = 3, MAX_SW = 400, MAX_FULL_DP = 80;
+    const workItems = [];
     const qEnc = encodeSeq(querySeq);
-    if (qEnc.length < KMER) return [];
+    if (qEnc.length < KMER) return { workItems, qRevComp: '', dbTotalLen: 1 };
     const qRevComp = revComp(querySeq);
     const qEncRC = encodeSeq(qRevComp);
 
@@ -508,47 +538,62 @@ function searchDatabase(querySeq, dbSeqs, index, maxHits = 10) {
     for (const seqIdx of fwd.counts.keys()) if (fwd.counts.get(seqIdx) >= MIN_HITS) candidateSet.add(seqIdx);
     for (const seqIdx of rev.counts.keys()) if (rev.counts.get(seqIdx) >= MIN_HITS) candidateSet.add(seqIdx);
 
-    // Ranked by raw k-mer hit count (already computed above at zero extra
-    // cost — no separate pre-scoring pass needed). Profiling on a simulated
-    // 5000-sequence random database found the real bottleneck was running
-    // full O(window^2) affine DP on every one of up to MAX_SW=400 candidates
-    // (~1000ms), while seeding itself cost ~2ms — so capping how many
-    // candidates reach the expensive DP step at MAX_FULL_DP is the actual
-    // lever. k-mer count alone was checked and cleanly separates true hits
-    // from noise in that same benchmark (5 true hits ranked #0-#4 with
-    // counts 14-35, vs. every noise candidate at count <=4) — a first
-    // attempt at a fancier ungapped-diagonal pre-score was actually WORSE
-    // than this (it mis-ranked true hits with indel drift below noise,
-    // dropping 1-2 of 5 true hits in testing), so this stays deliberately
-    // simple: reuse the count that's already free instead of computing a
-    // new, less reliable one.
+    // Ranked by raw k-mer hit count — already computed by seeding at zero
+    // extra cost, no separate pre-scoring pass. Profiling on a 5000-seq random
+    // db found the bottleneck is full O(window^2) affine DP on up to MAX_SW=400
+    // candidates (~1000ms) while seeding is ~2ms, so capping how many reach DP
+    // at MAX_FULL_DP is the real lever. k-mer count cleanly separates true
+    // hits from noise (5 true hits ranked #0-#4 with counts 14-35 vs every
+    // noise candidate <=4). A fancier ungapped-diagonal pre-score was tried
+    // and was WORSE (mis-ranked indel-drifting true hits below noise, dropping
+    // 1-2 of 5), so this stays simple: reuse the free count instead of a new,
+    // less reliable one.
     const ranked = [...candidateSet].map(seqIdx => ({
         seqIdx,
         score: Math.max(fwd.counts.get(seqIdx) || 0, rev.counts.get(seqIdx) || 0)
     })).sort((a, b) => b.score - a.score).slice(0, Math.min(MAX_SW, MAX_FULL_DP));
 
-    const scored = [];
     const dbTotalLen = dbSeqs.reduce((acc, e) => acc + e.length, 0) || 1;
 
-    for (const { seqIdx } of ranked) {
+    for (let j = 0; j < ranked.length; j++) {
+        const { seqIdx } = ranked[j];
         const entry = dbSeqs[seqIdx];
-        const subjLen = entry.length;
+        const fwdDv = fwd.diagVotes.get(seqIdx);
+        const revDv = rev.diagVotes.get(seqIdx);
+        workItems.push({
+            seqIdx,
+            seq: entry.seq,
+            length: entry.length,
+            id: entry.id,
+            def: entry.def,
+            fwdDiag: fwdDv ? bestDiagonal(fwdDv) : null,
+            revDiag: revDv ? bestDiagonal(revDv) : null,
+            _rank: j,                       // global candidate rank, used by the merge
+        });
+    }
+
+    return { workItems, qRevComp, dbTotalLen };
+}
+
+function scoreRankedCandidates(workItems, querySeq, qRevComp, dbTotalLen, useBanded, bandHalf) {
+    const scored = [];
+    for (const it of workItems) {
+        const subjLen = it.length;
         let bestHit = null;
 
-        // Try the forward-strand orientation
-        const fwdDv = fwd.diagVotes.get(seqIdx);
-        if (fwdDv) {
-            const diag = bestDiagonal(fwdDv);
+        // Forward-strand orientation
+        if (it.fwdDiag !== null) {
+            const diag = it.fwdDiag;
             const winStart = Math.max(0, diag - WINDOW_SLACK);
             const winEnd = Math.min(subjLen, diag + querySeq.length + WINDOW_SLACK);
             if (winEnd > winStart) {
-                const window = entry.seq.substring(winStart, winEnd);
-                // bandDiag = the voted diagonal expressed in WINDOW coordinates
-                // (j - i within the substring) = diag - winStart. Banded DP is
-                // orthogonal to windowing: the window picks the subject slice,
-                // the band restricts which cells inside it get computed.
-                const hit = USE_BANDED_DP
-                    ? smithWatermanAffineBanded(querySeq, window, diag - winStart, BAND_HALF_WIDTH)
+                const window = it.seq.substring(winStart, winEnd);
+                // bandDiag = voted diagonal in WINDOW coords (j - i within the
+                // substring) = diag - winStart. Banded DP is orthogonal to
+                // windowing: the window picks the subject slice, the band
+                // restricts which cells inside it get computed.
+                const hit = useBanded
+                    ? smithWatermanAffineBanded(querySeq, window, diag - winStart, bandHalf)
                     : smithWatermanAffine(querySeq, window);
                 if (hit) {
                     hit.hitStart += winStart; hit.hitEnd += winStart; hit.strand = '+';
@@ -557,16 +602,16 @@ function searchDatabase(querySeq, dbSeqs, index, maxHits = 10) {
             }
         }
 
-        // Try the reverse-complement orientation (querySeq's RC seeded against the same forward-indexed subject)
-        const revDv = rev.diagVotes.get(seqIdx);
-        if (revDv) {
-            const diag = bestDiagonal(revDv);
+        // Reverse-complement orientation (querySeq's RC seeded against the same
+        // forward-indexed subject)
+        if (it.revDiag !== null) {
+            const diag = it.revDiag;
             const winStart = Math.max(0, diag - WINDOW_SLACK);
             const winEnd = Math.min(subjLen, diag + querySeq.length + WINDOW_SLACK);
             if (winEnd > winStart) {
-                const window = entry.seq.substring(winStart, winEnd);
-                const hit = USE_BANDED_DP
-                    ? smithWatermanAffineBanded(qRevComp, window, diag - winStart, BAND_HALF_WIDTH)
+                const window = it.seq.substring(winStart, winEnd);
+                const hit = useBanded
+                    ? smithWatermanAffineBanded(qRevComp, window, diag - winStart, bandHalf)
                     : smithWatermanAffine(qRevComp, window);
                 if (hit && (!bestHit || hit.score > bestHit.score)) {
                     hit.hitStart += winStart; hit.hitEnd += winStart; hit.strand = '-';
@@ -578,13 +623,21 @@ function searchDatabase(querySeq, dbSeqs, index, maxHits = 10) {
         if (bestHit && bestHit.score > 0 && bestHit.identity > 0) {
             const evalue = K_APPROX * querySeq.length * dbTotalLen * Math.exp(-LAMBDA * bestHit.score);
             bestHit.evalue = evalue;
-            scored.push({ id: entry.id, def: entry.def, length: entry.length,
-                          seq: entry.seq, hsps: [bestHit] });
+            scored.push({ id: it.id, def: it.def, length: it.length,
+                          seq: it.seq, hsps: [bestHit], _rank: it._rank });
         }
     }
+    return scored;   // ranked order, NOT sorted, NOT sliced, _rank-tagged
+}
 
+function searchDatabase(querySeq, dbSeqs, index, maxHits = 10) {
+    const prep = prepareSearchWork(querySeq, dbSeqs, index);
+    if (prep.workItems.length === 0) return [];
+    const scored = scoreRankedCandidates(prep.workItems, querySeq, prep.qRevComp, prep.dbTotalLen, USE_BANDED_DP, BAND_HALF_WIDTH);
+    // Stable sort by bitScore reproduces the original order (ranked order for
+    // ties). Strip _rank so the public output is byte-identical to pre-sharding.
     scored.sort((a, b) => b.hsps[0].bitScore - a.hsps[0].bitScore);
-    return scored.slice(0, maxHits);
+    return scored.slice(0, maxHits).map(({ _rank, ...rest }) => rest);
 }
 
 // ── FASTA parser ───────────────────────────────────────────────
@@ -696,7 +749,7 @@ self.onmessage = async ({ data }) => {
     const { type, requestId } = data;
 
     if (type === 'search') {
-        const { querySeq, dbName, dbUrl, maxHits, preset } = data;
+        const { querySeq, dbName, dbUrl, maxHits, preset, shard } = data;
         try {
             // Sets shared module-level scoring constants for this request. NOT
             // race-safe: if two 'search' messages with DIFFERENT presets are ever
@@ -710,17 +763,48 @@ self.onmessage = async ({ data }) => {
             applyScoringPreset(preset || 'water');
             await ensureDb(dbName, dbUrl, requestId);
             self.postMessage({ type: 'progress', requestId, dbName, stage: 'searching' });
-            const t0   = Date.now();
-            const hits = searchDatabase(querySeq, DB_SEQS[dbName], DB_IDX[dbName], maxHits || 10);
-            const ms   = Date.now() - t0;
+            const t0 = Date.now();
+            const sharded = shard && shard.count > 1;
+            let hits;
+            if (sharded) {
+                // Parallel path: own a slice of the ranked candidate set, run the
+                // pure DP on it, return hits UNSORTED/UNSLICED with _rank so the
+                // main thread can merge shards deterministically (see script.js).
+                const prep = prepareSearchWork(querySeq, DB_SEQS[dbName], DB_IDX[dbName]);
+                const myItems = prep.workItems.filter(it => it.seqIdx % shard.count === shard.index);
+                hits = scoreRankedCandidates(myItems, querySeq, prep.qRevComp, prep.dbTotalLen, USE_BANDED_DP, BAND_HALF_WIDTH);
+            } else {
+                // Single-worker / cold path: byte-identical to pre-sharding.
+                hits = searchDatabase(querySeq, DB_SEQS[dbName], DB_IDX[dbName], maxHits || 10);
+            }
+            const ms = Date.now() - t0;
             self.postMessage({
                 type: 'result', requestId, dbName, preset: ACTIVE_PRESET,
                 numHits: hits.length, hits, success: true,
                 numSeqs: DB_SEQS[dbName].length, searchMs: ms,
+                shardCount: sharded ? shard.count : 1,
+                shardIndex: sharded ? shard.index : 0,
             });
         } catch (err) {
             self.postMessage({ type: 'result', requestId, dbName,
                 numHits: 0, hits: [], success: false, error: err.message });
+        }
+
+    } else if (type === 'prime') {
+        // Background priming (speed round 3): index a database on this worker so
+        // a later sharded search can use it with no on-demand index build. No DP
+        // runs here — just fetch+parse+index (ensureDb). Main posts this only
+        // AFTER a real search resolves and only while no foreground search is in
+        // flight, so it never contends with user-visible work (see script.js
+        // drainPrimingQueue). Replies with a 'primed' message; ensureDb's own
+        // 'progress' messages are emitted too but the main thread's prime handler
+        // ignores them (it keys on 'primed').
+        const { dbName, dbUrl } = data;
+        try {
+            await ensureDb(dbName, dbUrl, requestId);
+            self.postMessage({ type: 'primed', requestId, dbName, success: true });
+        } catch (err) {
+            self.postMessage({ type: 'primed', requestId, dbName, success: false, error: err.message });
         }
 
     } else if (type === 'clearCache') {
