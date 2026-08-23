@@ -81,26 +81,61 @@ function computeLambda(matchScore, mismatchScore) {
     return (lo + hi) / 2;
 }
 
-// Scoring scheme matches EMBOSS `water`'s own EDNAFULL defaults (match +5 /
-// mismatch -4 / gapopen 10.0 / gapextend 0.5), per the reference Gotoh
-// implementation rather than blastn's scheme. EMBOSS defines "gapopen" as
-// the cost of CREATING a gap and "gapextend" as the per-residue cost, so a
-// gap of length L costs gapopen + L*gapextend — i.e. the first gap residue
-// costs gapopen+gapextend, matching this file's existing GAP_FIRST/GAP_EXT
-// split (only the magnitudes changed here, not the recurrence).
-// NOTE: gapextend=0.5 is fractional — the DP score matrices below are
-// therefore Float64Array, not Int32Array (an integer-typed matrix would
-// silently truncate every gap-extension penalty to 0).
-const MATCH = 5, MISMATCH = -4;
-const GAP_OPEN_COST = 10, GAP_EXTEND_COST = 0.5;   // costs (positive); subtracted below
-const GAP_FIRST = -(GAP_OPEN_COST + GAP_EXTEND_COST); // first gap residue
-const GAP_EXT   = -GAP_EXTEND_COST;                    // each subsequent gap residue
-const LAMBDA = computeLambda(MATCH, MISMATCH);
-// water itself reports no E-value (score/identity/similarity/gaps only) —
-// K_APPROX is this file's own add-on layer, still a fixed empirical
-// approximation not re-derived for this scoring scheme (pre-existing
-// limitation, unchanged by this update).
+// ── Selectable scoring presets ─────────────────────────────────
+// Same Gotoh DP recurrence for all presets — only the constants (and the
+// re-solved lambda) change. EMBOSS defines "gapopen" as the cost of
+// CREATING a gap and "gapextend" as the per-residue cost, so a gap of
+// length L costs gapopen + L*gapextend (first residue = gapopen+gapextend);
+// ssearch36/FASTA36 and blastn use the same convention.
+//
+// - "water": EMBOSS `water`'s real EDNAFULL defaults (match+5/mismatch-4/
+//   gapopen10.0/gapextend0.5) — confirmed against EMBOSS documentation.
+// - "ssearch36": FASTA36 suite's `ssearch36`. Match/mismatch (+5/-4) is the
+//   same DNA convention as water/blastn and reasonably well corroborated.
+//   The gap penalties (open=12, extend=4) are NOT independently confirmed —
+//   web-searched FASTA36 docs/manpages describe the existence of DNA gap
+//   defaults but never state the exact numbers in any source actually
+//   readable during this research; these values are a language model's
+//   best recollection only, flagged uncertain by the model itself. Treat as
+//   an approximation, not verified fact, until checked against real
+//   `ssearch36 -h` output or FASTA36 source. Additionally, ssearch36's real
+//   significance method is shuffled-sequence Monte Carlo + extreme-value
+//   fitting, NOT a closed-form Karlin-Altschul lambda/K — impossible to
+//   replicate exactly in a stateless function without running many repeat
+//   shuffled alignments per query. This preset reuses the same
+//   recompute-lambda-plus-fixed-K approach as "water", which is an honest
+//   approximation, not real ssearch36 statistics.
+// NOTE: ssearch36's gapextend=4 (not fractional) — GAP_EXTEND_COST can be
+// either an integer or fractional depending on preset, which is exactly why
+// the DP matrices below are Float64Array, not Int32Array, regardless of
+// which preset is active (water's gapextend=0.5 needs it; keeping one
+// numeric type for all presets avoids a whole second code path).
+const SCORING_PRESETS = {
+    water:     { match: 5, mismatch: -4, gapOpenCost: 10, gapExtendCost: 0.5 },
+    ssearch36: { match: 5, mismatch: -4, gapOpenCost: 12, gapExtendCost: 4 },
+};
+
+let MATCH, MISMATCH, GAP_OPEN_COST, GAP_EXTEND_COST, GAP_FIRST, GAP_EXT, LAMBDA;
+// K is NOT solved from first principles for either preset — a rigorous
+// gapped K needs numerical simulation beyond what's practical in a browser
+// worker — it uses the commonly-cited empirical approximation for gapped
+// nucleotide alignments (~0.1-0.14). E-values here are a real, size-aware,
+// monotonically meaningful statistic, but should be read as
+// "approximately BLAST/water-like," not identical to any specific real
+// tool's own output.
 const K_APPROX = 0.11;
+let ACTIVE_PRESET = 'water';
+
+function applyScoringPreset(name) {
+    const p = SCORING_PRESETS[name] || SCORING_PRESETS.water;
+    ACTIVE_PRESET = SCORING_PRESETS[name] ? name : 'water';
+    MATCH = p.match; MISMATCH = p.mismatch;
+    GAP_OPEN_COST = p.gapOpenCost; GAP_EXTEND_COST = p.gapExtendCost;
+    GAP_FIRST = -(GAP_OPEN_COST + GAP_EXTEND_COST);
+    GAP_EXT   = -GAP_EXTEND_COST;
+    LAMBDA = computeLambda(MATCH, MISMATCH);
+}
+applyScoringPreset('water'); // default, matches prior behavior exactly
 
 function scoreOf(a, b) { return a === b ? MATCH : MISMATCH; }
 
@@ -466,15 +501,25 @@ self.onmessage = async ({ data }) => {
     const { type, requestId } = data;
 
     if (type === 'search') {
-        const { querySeq, dbName, dbUrl, maxHits } = data;
+        const { querySeq, dbName, dbUrl, maxHits, preset } = data;
         try {
+            // Sets shared module-level scoring constants for this request. NOT
+            // race-safe: if two 'search' messages with DIFFERENT presets are ever
+            // in flight concurrently (there's an `await ensureDb` below before the
+            // DP actually runs), the later message's applyScoringPreset() call
+            // could flip these constants out from under the earlier one's DP loop.
+            // Not a problem today (script.js always searches all chosen databases
+            // under one single preset per user action), but would need per-call
+            // parameters instead of shared state before ever allowing mixed-preset
+            // concurrent requests.
+            applyScoringPreset(preset || 'water');
             await ensureDb(dbName, dbUrl, requestId);
             self.postMessage({ type: 'progress', requestId, dbName, stage: 'searching' });
             const t0   = Date.now();
             const hits = searchDatabase(querySeq, DB_SEQS[dbName], DB_IDX[dbName], maxHits || 10);
             const ms   = Date.now() - t0;
             self.postMessage({
-                type: 'result', requestId, dbName,
+                type: 'result', requestId, dbName, preset: ACTIVE_PRESET,
                 numHits: hits.length, hits, success: true,
                 numSeqs: DB_SEQS[dbName].length, searchMs: ms,
             });
