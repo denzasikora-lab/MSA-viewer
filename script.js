@@ -1409,7 +1409,17 @@ const EXCLUSIVE_MODAL_IDS = [
 // enough to want moving out of the way, resizing to see more at once, or
 // minimizing while working elsewhere without losing the results. Wiring up
 // another modal later is just another call to this function.
+// Registry so calling this again for the same modalId (e.g. a dialog that's
+// torn down and rebuilt fresh on every search, unlike clusteringModal which
+// persists) cleans up the PREVIOUS call's document-level mousemove/mouseup
+// listeners first — otherwise each call adds a new pair that's never
+// removed, since the old modal/header elements are gone but the listener
+// closures still reference them, leaking one pair of document listeners per
+// call over a session.
+const _modalDragResizeCleanup = {};
 function makeModalDraggableResizable(modalId, headerId, contentId) {
+    if (_modalDragResizeCleanup[modalId]) { _modalDragResizeCleanup[modalId](); delete _modalDragResizeCleanup[modalId]; }
+
     const modal = document.getElementById(modalId);
     const header = document.getElementById(headerId);
     if (!modal || !header) return;
@@ -1428,7 +1438,7 @@ function makeModalDraggableResizable(modalId, headerId, contentId) {
     }
 
     let dragging = false, dragStartX = 0, dragStartY = 0, modalStartX = 0, modalStartY = 0;
-    header.addEventListener('mousedown', (e) => {
+    const onHeaderMousedown = (e) => {
         if (e.target.closest('button')) return; // don't start a drag from the close/minimize buttons
         pinCurrentPosition();
         dragging = true;
@@ -1438,8 +1448,8 @@ function makeModalDraggableResizable(modalId, headerId, contentId) {
         modalStartX = rect.left;
         modalStartY = rect.top;
         e.preventDefault();
-    });
-    document.addEventListener('mousemove', (e) => {
+    };
+    const onDragMousemove = (e) => {
         if (!dragging) return;
         const dx = e.clientX - dragStartX;
         const dy = e.clientY - dragStartY;
@@ -1449,19 +1459,28 @@ function makeModalDraggableResizable(modalId, headerId, contentId) {
         const newTop = Math.min(Math.max(modalStartY + dy, 0), window.innerHeight - 30);
         modal.style.left = newLeft + 'px';
         modal.style.top = newTop + 'px';
-    });
-    document.addEventListener('mouseup', () => { dragging = false; });
+    };
+    const onDragMouseup = () => { dragging = false; };
+    header.addEventListener('mousedown', onHeaderMousedown);
+    document.addEventListener('mousemove', onDragMousemove);
+    document.addEventListener('mouseup', onDragMouseup);
 
     // Resize handle, bottom-right corner
     const handle = document.createElement('div');
     handle.title = 'Drag to resize';
     handle.style.cssText = 'position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize;'
         + 'background:linear-gradient(135deg,transparent 0%,transparent 50%,#999 50%,#999 60%,transparent 60%,transparent 70%,#999 70%,#999 80%,transparent 80%);';
-    modal.style.position = 'fixed'; // already true via inline style, kept explicit for clarity
+    // Pin immediately, before any drag/resize — some callers (e.g. the BLAST
+    // results dialog) center via a flexbox parent rather than fixed
+    // top/left/transform, so switching to position:fixed without first
+    // capturing the current on-screen rect as explicit pixels would snap
+    // the modal to the browser's default (0,0) the instant this runs.
+    modal.style.position = 'fixed';
+    pinCurrentPosition();
     modal.appendChild(handle);
 
     let resizing = false, resizeStartX = 0, resizeStartY = 0, startW = 0, startH = 0;
-    handle.addEventListener('mousedown', (e) => {
+    const onHandleMousedown = (e) => {
         pinCurrentPosition();
         const rect = modal.getBoundingClientRect();
         modal.style.height = rect.height + 'px';
@@ -1474,15 +1493,25 @@ function makeModalDraggableResizable(modalId, headerId, contentId) {
         startH = rect.height;
         e.preventDefault();
         e.stopPropagation();
-    });
-    document.addEventListener('mousemove', (e) => {
+    };
+    const onResizeMousemove = (e) => {
         if (!resizing) return;
         const newW = Math.max(320, startW + (e.clientX - resizeStartX));
         const newH = Math.max(120, startH + (e.clientY - resizeStartY));
         modal.style.width = newW + 'px';
         modal.style.height = newH + 'px';
-    });
-    document.addEventListener('mouseup', () => { resizing = false; });
+    };
+    const onResizeMouseup = () => { resizing = false; };
+    handle.addEventListener('mousedown', onHandleMousedown);
+    document.addEventListener('mousemove', onResizeMousemove);
+    document.addEventListener('mouseup', onResizeMouseup);
+
+    _modalDragResizeCleanup[modalId] = () => {
+        document.removeEventListener('mousemove', onDragMousemove);
+        document.removeEventListener('mouseup', onDragMouseup);
+        document.removeEventListener('mousemove', onResizeMousemove);
+        document.removeEventListener('mouseup', onResizeMouseup);
+    };
 
     // Minimize button - collapses to just the header bar
     const minBtn = document.createElement('button');
@@ -17865,6 +17894,56 @@ function _blastScoreTierColor(bitScore) {
 // real NCBI BLAST's web output is known for, that a plain summary table
 // doesn't give you (added 2026-08-24, user-requested; existing summary
 // table/alignment-block layout intentionally left untouched).
+// Single shared tooltip element for the hit-distribution diagram, created
+// once and reused across every bar/database tab — appended to <body> with
+// position:fixed so it's never clipped by the diagram's own scrollable
+// container (see the fix note where it's used, below).
+let _blastHitTooltipEl = null;
+function _getBlastHitTooltipEl() {
+    if (!_blastHitTooltipEl) {
+        _blastHitTooltipEl = document.createElement('div');
+        _blastHitTooltipEl.className = 'blast-hitdist-tooltip';
+        document.body.appendChild(_blastHitTooltipEl);
+    }
+    return _blastHitTooltipEl;
+}
+function _showBlastHitTooltip(html, e) {
+    const tip = _getBlastHitTooltipEl();
+    tip.innerHTML = html;
+    tip.style.display = 'block';
+    _moveBlastHitTooltip(e);
+}
+function _moveBlastHitTooltip(e) {
+    const tip = _getBlastHitTooltipEl();
+    if (tip.style.display !== 'block') return;
+    const pad = 12;
+    let x = e.clientX + pad, y = e.clientY + pad;
+    // Measure after making visible-but-positioned so offsetWidth/Height are
+    // real, then clamp to the viewport so it can never render off-screen.
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+    const rect = tip.getBoundingClientRect();
+    if (rect.right > window.innerWidth) x = window.innerWidth - rect.width - pad;
+    if (rect.bottom > window.innerHeight) y = e.clientY - rect.height - pad;
+    tip.style.left = Math.max(pad, x) + 'px';
+    tip.style.top = Math.max(pad, y) + 'px';
+}
+function _hideBlastHitTooltip() {
+    if (_blastHitTooltipEl) _blastHitTooltipEl.style.display = 'none';
+}
+
+// "Nice" tick step for a ruler spanning `len` units — same 1/2/5 x 10^n
+// progression genome browsers and chart libraries use so labels land on
+// round numbers (10, 20, 50, 100, 200, 500, ...) instead of awkward
+// fractions of the query length.
+function _niceTickStep(len, targetTicks) {
+    const raw = len / targetTicks;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const norm = raw / mag;
+    const step = norm < 1.5 ? 1 : norm < 3.5 ? 2 : norm < 7.5 ? 5 : 10;
+    return step * mag;
+}
+
 function buildHitDistributionDiagram(hits, queryLen, onHitClick) {
     const wrap = document.createElement('div');
     wrap.className = 'blast-hitdist';
@@ -17873,9 +17952,19 @@ function buildHitDistributionDiagram(hits, queryLen, onHitClick) {
     track.className = 'blast-hitdist-track';
     const W = 100; // percentage-based layout, scales with the pane's own width
 
+    // Ruler: interior tick marks + position labels every "nice" step (not
+    // just the two endpoints), so a hit's approximate query position can be
+    // read directly off the diagram instead of only inferred from bar
+    // position relative to the far edges.
     const ruler = document.createElement('div');
     ruler.className = 'blast-hitdist-ruler';
-    ruler.innerHTML = `<span class="tick-left">1</span><span class="tick-right">${queryLen} nt</span>`;
+    const step = _niceTickStep(queryLen, 6);
+    let rulerHtml = `<span class="tick-left">1</span><span class="tick-right">${queryLen} nt</span>`;
+    for (let pos = step; pos < queryLen - step * 0.4; pos += step) {
+        const pct = (pos / queryLen) * W;
+        rulerHtml += `<span class="tick-mid" style="left:${pct}%">${Math.round(pos)}</span>`;
+    }
+    ruler.innerHTML = rulerHtml;
     track.appendChild(ruler);
 
     hits.forEach((hit, hi) => {
@@ -17896,14 +17985,26 @@ function buildHitDistributionDiagram(hits, queryLen, onHitClick) {
         bar.setAttribute('role', 'button');
         bar.setAttribute('aria-label', `Hit ${hi + 1}: ${hit.id}, score ${hsp.bitScore} bits, e-value ${hsp.evalue}`);
 
+        // Tooltip content only — NOT appended as a child of `bar`. A tooltip
+        // nested inside .blast-hitdist-section (which scrolls, and can sit
+        // near the top of its own bounded box) gets silently clipped by the
+        // ancestor's overflow:auto the moment it would render above/outside
+        // that box (this is exactly what happened before this fix — visible
+        // in a screenshot as a tooltip cut off mid-render). Using ONE shared
+        // tooltip element appended to <body> and positioned via mouse
+        // coordinates in `position:fixed` (viewport-relative, immune to any
+        // ancestor's overflow/scroll clipping) fixes this regardless of
+        // where the hovered bar sits in its scroll container.
         const evalueStr = (typeof hsp.evalue === 'number')
             ? (hsp.evalue < 0.001 ? hsp.evalue.toExponential(2) : hsp.evalue.toFixed(4)) : 'n/a';
-        const tip = document.createElement('div');
-        tip.className = 'blast-hitdist-tooltip';
-        tip.innerHTML = `<b>${(hit.def || hit.id).substring(0, 60)}</b><br>` +
+        const tipHtml = `<b>${(hit.def || hit.id).substring(0, 60)}</b><br>` +
             `score = ${hsp.bitScore} bits &nbsp; e-value = ${evalueStr}<br>` +
             `Q ${hsp.queryStart}..${hsp.queryEnd} (${hsp.strand === '-' ? 'Plus/Minus' : 'Plus/Plus'})`;
-        bar.appendChild(tip);
+        bar.addEventListener('mouseenter', (e) => _showBlastHitTooltip(tipHtml, e));
+        bar.addEventListener('mousemove', (e) => _moveBlastHitTooltip(e));
+        bar.addEventListener('mouseleave', _hideBlastHitTooltip);
+        bar.addEventListener('focus', (e) => _showBlastHitTooltip(tipHtml, { clientX: bar.getBoundingClientRect().left, clientY: bar.getBoundingClientRect().top }));
+        bar.addEventListener('blur', _hideBlastHitTooltip);
 
         const activate = () => onHitClick(hi);
         bar.addEventListener('click', activate);
@@ -17928,10 +18029,12 @@ function displayBlastResults(queryName, queryLen, results) {
 
     const dialog = document.createElement('div');
     dialog.className = 'blast-results-dialog-text';
+    dialog.id = 'blastResultsDialog';
 
     // ---- Title bar ----
     const titleBar = document.createElement('div');
     titleBar.className = 'blast-text-title-bar';
+    titleBar.id = 'blastResultsTitleBar';
     const titleEl = document.createElement('span');
     titleEl.textContent = `BLAST Results \u2014 ${queryName}  (${queryLen} nt)`;
     titleEl.style.fontWeight = 'bold';
@@ -17943,6 +18046,14 @@ function displayBlastResults(queryName, queryLen, results) {
     titleBar.appendChild(titleEl);
     titleBar.appendChild(closeBtn);
     dialog.appendChild(titleBar);
+
+    // Wraps tab bar + panes as one unit so the drag/resize/minimize helper
+    // (makeModalDraggableResizable) has a single "content" element to hide
+    // when minimized, without touching the title bar.
+    const contentWrap = document.createElement('div');
+    contentWrap.id = 'blastResultsContentWrap';
+    contentWrap.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;';
+    dialog.appendChild(contentWrap);
 
     // ---- Tab bar ----
     const tabBar = document.createElement('div');
@@ -18042,7 +18153,7 @@ function displayBlastResults(queryName, queryLen, results) {
             pane.appendChild(hitsSection);
         }
 
-        dialog.appendChild(pane);
+        contentWrap.appendChild(pane);
         panes.push(pane);
 
         tab.addEventListener('click', () => {
@@ -18053,7 +18164,7 @@ function displayBlastResults(queryName, queryLen, results) {
         });
     }
 
-    dialog.insertBefore(tabBar, panes[0]);
+    contentWrap.insertBefore(tabBar, panes[0]);
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
     blastResultsModal = overlay;
@@ -18061,6 +18172,11 @@ function displayBlastResults(queryName, queryLen, results) {
     overlay.addEventListener('click', e => {
         if (e.target === overlay) { overlay.remove(); blastResultsModal = null; }
     });
+
+    // Draggable/resizable/minimizable, same reusable helper clusteringModal
+    // uses — user-requested, since a fixed 92vw x 82vh dialog didn't leave
+    // room to adjust for a database with many long alignment blocks.
+    makeModalDraggableResizable('blastResultsDialog', 'blastResultsTitleBar', 'blastResultsContentWrap');
 }
 
 // ============================================================================

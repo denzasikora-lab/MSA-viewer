@@ -2382,19 +2382,22 @@ span.diagnostic-mutation {
    visual weight. */
 .blast-hitdist-section { flex-shrink:0; overflow-y:auto; max-height:130px; border-bottom:2px solid #ddd; padding:6px 14px; }
 .blast-hitdist-track { position:relative; }
-.blast-hitdist-ruler { position:relative; height:12px; font-family:'Courier New',monospace; font-size:10px; color:#555; border-bottom:1px solid #999; margin-bottom:2px; }
+.blast-hitdist-ruler { position:relative; height:16px; font-family:'Courier New',monospace; font-size:10px; color:#555; border-bottom:1px solid #999; margin-bottom:2px; }
 .blast-hitdist-ruler .tick-left { position:absolute; left:0; top:0; }
 .blast-hitdist-ruler .tick-right { position:absolute; right:0; top:0; }
+.blast-hitdist-ruler .tick-mid { position:absolute; top:0; transform:translateX(-50%); }
+.blast-hitdist-ruler .tick-mid::after { content:''; position:absolute; left:50%; bottom:-5px; width:1px; height:4px; background:#999; }
 .blast-hitdist-row { position:relative; height:7px; }
 .blast-hitdist-bar {
     position:absolute; top:2.5px; height:2px; border-radius:1px; cursor:pointer;
     opacity:0.9; outline:none;
 }
 .blast-hitdist-bar:hover, .blast-hitdist-bar:focus { opacity:1; height:3px; top:2px; box-shadow:0 0 0 1px #333; }
-.blast-hitdist-bar .blast-hitdist-tooltip { display:none; }
-.blast-hitdist-bar:hover .blast-hitdist-tooltip, .blast-hitdist-bar:focus .blast-hitdist-tooltip { display:block; }
+/* Single shared tooltip, appended to <body>, position:fixed so it's never
+   clipped by the diagram's own scrollable ancestor (.blast-hitdist-section) —
+   see the JS-side note where it's created for the incident this replaced. */
 .blast-hitdist-tooltip {
-    position:absolute; bottom:8px; left:0; z-index:5; background:#222; color:#fff;
+    position:fixed; z-index:10010; background:#222; color:#fff; display:none;
     font-size:10px; font-family:-apple-system,'Segoe UI',sans-serif; padding:4px 7px;
     border-radius:3px; white-space:nowrap; pointer-events:none;
 }

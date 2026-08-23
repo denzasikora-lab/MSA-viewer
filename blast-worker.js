@@ -701,6 +701,11 @@ function idbPut(db, key, value) {
 const DB_SEQS = {};
 const DB_IDX  = {};
 
+// Bump this if the index's shape changes (k-mer size, encoding scheme,
+// what fields a work item carries, etc.) so a stale cached index from a
+// previous version of this file is never loaded as if it were current.
+const DB_INDEX_CACHE_VERSION = 1;
+
 async function ensureDb(dbName, dbUrl, requestId) {
     if (DB_SEQS[dbName]) return;
 
@@ -712,6 +717,30 @@ async function ensureDb(dbName, dbUrl, requestId) {
         const head = await fetch(dbUrl, { method: 'HEAD' });
         remoteSize = parseInt(head.headers.get('content-length') || '0') || null;
     } catch (_) {}
+
+    // Try the cached BUILT INDEX first — if present and still valid, this
+    // skips re-parsing the FASTA and re-building the k-mer index entirely,
+    // not just the network download (previously: only the raw FASTA text
+    // was cached, so every new tab/window/pool-worker re-parsed and
+    // re-indexed from scratch every time, even with a warm text cache —
+    // profiled at ~1.9-2.2s for the larger bundled databases, non-trivial).
+    // The IndexedDB structured-clone algorithm supports Map and TypedArray
+    // values natively, so the index (a Map of k-mer -> Int32Array posting
+    // lists) and each sequence's encoded Uint8Array round-trip as real
+    // objects, not just JSON-safe primitives — no manual serialization step.
+    if (idb) {
+        try {
+            const cachedIdx = await idbGet(idb, dbName + ':idx');
+            const cachedIdxSize = await idbGet(idb, dbName + ':idx:size');
+            if (cachedIdx && cachedIdx.version === DB_INDEX_CACHE_VERSION &&
+                (!remoteSize || cachedIdxSize === remoteSize)) {
+                self.postMessage({ type: 'progress', requestId, dbName, stage: 'loading cached index' });
+                DB_SEQS[dbName] = cachedIdx.seqs;
+                DB_IDX[dbName]  = cachedIdx.index;
+                return;
+            }
+        } catch (_) { /* corrupt/incompatible cache entry — fall through and rebuild */ }
+    }
 
     let text = null;
 
@@ -740,8 +769,18 @@ async function ensureDb(dbName, dbUrl, requestId) {
     self.postMessage({ type: 'progress', requestId, dbName, stage: 'indexing' });
     const seqs = parseFasta(text);
     for (const e of seqs) e._enc = encodeSeq(e.seq); // no length cap — full sequence indexed
+    const index = buildInvertedIndex(seqs);
     DB_SEQS[dbName] = seqs;
-    DB_IDX[dbName]  = buildInvertedIndex(seqs);
+    DB_IDX[dbName]  = index;
+
+    if (idb) {
+        try {
+            await idbPut(idb, dbName + ':idx', { version: DB_INDEX_CACHE_VERSION, seqs, index });
+            if (remoteSize) await idbPut(idb, dbName + ':idx:size', remoteSize);
+        } catch (_) { /* quota exceeded (a full index is larger than raw text — more likely to hit
+                          this than the text cache above) or private mode — ignore, falls back to
+                          rebuilding from text cache next time, which is still faster than a re-download */ }
+    }
 }
 
 // ── Message handler ───────────────────────────────────────────
