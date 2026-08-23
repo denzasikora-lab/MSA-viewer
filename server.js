@@ -511,6 +511,19 @@ app.post('/api/blast-all', (req, res) => {
 // ============ BLAST DATABASE MANAGEMENT ============
 
 // GET /api/blast-db — list all databases
+//
+// IMPORTANT — `url` is REQUIRED and MUST stay in this response:
+// The actual search UI (script.js runBlastSearch -> blast-worker.js) never calls
+// blastn/makeblastdb — it's a client-side JS search engine that fetches each
+// database's raw FASTA directly over HTTP (served by `express.static('.')` below)
+// and indexes/searches it in a Web Worker. `url` is the only thing that tells the
+// worker where to fetch from. `formatted`/`.nhr` below relates ONLY to the separate,
+// currently-unused server-side /api/blast REST route (real blastn) — it has nothing
+// to do with whether a database is actually searchable from the UI.
+// This exact field was silently dropped once already (see commit c38abf2, which
+// replaced a hardcoded frontend db list — that had `url` on every entry — with this
+// server-fetched one, and didn't carry `url` over). If you refactor this response
+// shape again, keep `url`, or the search silently 404s with no indication why.
 app.get('/api/blast-db', (req, res) => {
     reloadDbRegistry();
     const dbs = {};
@@ -518,7 +531,8 @@ app.get('/api/blast-db', (req, res) => {
         dbs[name] = {
             description: info.desc || name,
             exists: fs.existsSync(info.path),
-            formatted: info.path && fs.existsSync(path.join(path.dirname(info.path), name + '.nhr'))
+            formatted: info.path && fs.existsSync(path.join(path.dirname(info.path), name + '.nhr')),
+            url: info.path ? '/' + path.basename(info.path) : undefined  // REQUIRED by the client-side search worker — do not drop
         };
     }
     res.json({ databases: dbs });

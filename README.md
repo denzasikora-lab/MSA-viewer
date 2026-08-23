@@ -1,11 +1,11 @@
 # MSA Viewer
 
-A fast, interactive HTML-based MSA viewer for FASTA/MSF/NEXUS alignments, with local BLAST search and remote file loading via SSH.
+A fast, interactive HTML-based MSA viewer for FASTA/MSF/NEXUS alignments, with client-side sequence search and remote file loading via SSH.
 
 ## Features
 
 - **Interactive Alignment Viewer**: Scroll, zoom, highlight, color schemes
-- **Sequence Search**: Local BLAST search against loaded databases (RepBase, custom collections)
+- **Sequence Search**: BLAST-*like* search against loaded FASTA databases — runs entirely client-side in a Web Worker (not real NCBI BLAST, no BLAST+ install required). See `features-inventory.md` § "Sequence search" for exactly how this works and a real incident where it silently broke.
 - **Remote File Loading**: SSH to multiple servers (direct or via jump hosts)
   - Manual: Paste file path and click "Fetch"
   - Via Midnight Commander: Press `F2 → v` in MC, then click "Check Queue" to load

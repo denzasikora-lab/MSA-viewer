@@ -13101,6 +13101,12 @@ function showBlastDialog(sequenceHeader, sequenceSeq) {
 }
 
 // Dynamic BLAST database helpers
+//
+// `info.url` (below) is REQUIRED — it's the only thing that lets runBlastSearch's
+// Web Worker (blast-worker.js) know where to fetch each database's raw FASTA from.
+// This is a client-side JS search engine, not real blastn; there is no other way
+// for it to find the data. If this ever silently drops again (as it did once, in
+// commit c38abf2), search fails with "HTTP 404 fetching undefined" and no other clue.
 async function fetchDatabases() {
     try {
         const resp = await fetch('/api/blast-db');
@@ -13113,7 +13119,8 @@ async function fetchDatabases() {
                 label: info.description || name,
                 description: info.description || '',
                 checked: true,
-                available: info.exists && info.formatted
+                available: info.exists,
+                url: info.url  // REQUIRED by the client-side search worker — do not drop
             });
         }
         dbs.sort((a, b) => a.label.localeCompare(b.label));
@@ -13323,6 +13330,19 @@ async function runBlastSearch(seqHeader, seqSeq, databases, evalue) {
     const queryLen = seqSeq.replace(/[-\s]/g, '').length;
 
     const makeSearch = (db) => new Promise((resolve) => {
+        // db.url is REQUIRED here: this search engine is 100% client-side — the worker
+        // fetches the raw FASTA itself (see blast-worker.js ensureDb()), it never talks
+        // to a BLAST binary. If db.url is missing this fails with a confusing
+        // "HTTP 404 fetching undefined" deep inside the worker instead of here, at the
+        // one place that actually knows which database and why. Regressed once already
+        // (commit c38abf2 replaced a hardcoded db list that had url set on every entry
+        // with a server-fetched one that didn't carry `url` over) — fail loudly, not
+        // silently, so the next regression is obvious immediately instead of a mystery
+        // hours later.
+        if (!db.url) {
+            resolve([db.name, { error: `No URL configured for database "${db.name}" — check the /api/blast-db response includes a "url" field for it.` }]);
+            return;
+        }
         const requestId = `${Date.now()}-${Math.random()}`;
         const handler = (e) => {
             const d = e.data;

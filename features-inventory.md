@@ -47,7 +47,7 @@ GPU-composited Canvas 2D context. Draws only rows and columns visible in the vie
 
 **Why novel:** Handles alignments that crash pure-DOM viewers. Auto-activation removes the performance decision from the user — the tool adapts.
 
-### Compact mode (IGV-style read packing) � *removed, may return*
+### Compact mode (IGV-style read packing) � *removed, may return*
 SVG-based greedy track assignment. Each read is a horizontal bar. Mismatch positions colored red. Coverage histogram above reads. Two optional overlays:
 - **Diffs only:** 4-pixel hairlines — only variant positions visible. Hundreds of reads collapse to a single-column-width signal.
 - **Pairs:** Dashed lines connecting paired-end reads using SAM flags 0x1/0x40/0x80 at computed mate positions.
@@ -208,13 +208,26 @@ Search bar accepts exact motifs (with configurable 0–10 mismatches) or JavaScr
 
 **Why novel:** Regex mode with the `.*` toggle is a single-checkbox conversion from exact to pattern search. Match-length-aware highlighting is rare.
 
-### BLAST search with server-backed database management
-Right-click a sequence → BLAST opens a dialog listing all configured databases, fetched dynamically from the server (`GET /api/blast-db`). Checkboxes select targets; unavailable databases (missing files or unformatted) are shown greyed out. Click **+ Manage Databases** to open a full CRUD modal:
-- **List:** all databases with name, description, and availability status
-- **Add:** file-picker for a FASTA file, name + description fields; server writes the FASTA, runs `makeblastdb`, and registers it in `blast_dbs.json`
-- **Delete:** removes the FASTA file and all BLAST index files (`.nhr`, `.nin`, `.nsq`, `.nog`, `.nsd`, `.nsi`, `.ndb`, `.not`, `.ntf`, `.nto`, `.njs`)
+### Sequence search ("BLAST Search" menu item) — client-side JS engine, NOT real BLAST
 
-**Why novel:** BLAST database management from the browser without touching the server CLI. No hardcoded paths — databases are registered in a JSON registry and survive server restarts. The modal lists, creates, and deletes databases in one place. Greying out unavailable databases prevents stale checkboxes from silently failing.
+**This is the single most confused feature in the codebase (2026-08-23: it silently broke, took hours to root-cause, see below) — read this whole section before touching any of the files it names.**
+
+**What it actually is:** a 100% client-side, in-browser search engine. It is *not* NCBI BLAST — `blastn` is never invoked for this feature. Right-click a sequence → "BLAST Search" → pick databases → `runBlastSearch()` (`script.js`) posts a message to a Web Worker (`blast-worker.js`), which:
+1. `fetch()`es the chosen database's raw FASTA file directly (served statically by `express.static('.')` in `server.js` — any file in the project root is fetchable by its own filename over HTTP)
+2. caches it in IndexedDB so repeat searches skip re-downloading
+3. parses it, builds an in-memory inverted k-mer index, and searches against it in pure JS
+
+It is "local" only in the sense that nothing leaves your machine (browser ↔ your own `localhost:3000`) — not in the sense of using a locally-installed BLAST+ binary.
+
+**The list of databases** comes from `GET /api/blast-db` (`fetchDatabases()` in `script.js`). Each entry **must** include a `url` field (e.g. `/SINEBase.nr95.fa`) — this is the only way the Worker knows what to fetch. **This field has no other purpose and no other consumer** — do not remove it during a refactor just because nothing seems to read it nearby.
+
+**A completely separate, currently-unused feature lives in the same file:** `server.js`'s `POST /api/blast` and `POST /api/blast-all` routes *do* call real `blastn`/`makeblastdb`, if BLAST+ is actually installed and on PATH. **No UI element calls either route.** The `formatted`/`.nhr`-index-file checks in `GET /api/blast-db` exist only for this separate, dead code path — they have nothing to do with whether a database actually works in the search UI. Do not use "formatted: false" as a reason to hide a database from the picker; that gate was removed 2026-08-23 for exactly this reason (see incident below).
+
+**Database management** (Click **+ Manage Databases**): a CRUD modal — file-picker to add a new FASTA (server writes it, attempts `makeblastdb` for the unused real-BLAST path, registers it in `blast_dbs.json`), or delete a database and its index files.
+
+**Incident history (2026-08-23):** commit `1afb6da` ("Add GitHub Pages BLAST") introduced this feature with a *hardcoded* database array in `script.js`, every entry carrying a working `url`. A later commit, `c38abf2` ("Add save/load sequence order, dynamic BLAST database management UI"), replaced that hardcoded array with the current server-fetched `fetchDatabases()` — and didn't carry the `url` field over. The bug was silent for an unknown period: the picker still listed databases (gated only on file existence/`formatted`, neither of which involves `url`), so nothing looked wrong until someone actually ran a search, which failed with `HTTP 404 fetching undefined` — a message that gives no hint that `url` is the missing piece. Fixed 2026-08-23 (both `server.js`'s response and `script.js`'s list now include `url` again), plus a loud explicit check added in `runBlastSearch()` so a future regression fails immediately with a named-database error instead of a cryptic worker-internal 404.
+
+**Why novel:** BLAST-quality sequence search that runs entirely client-side, with zero backend search dependency — works even with no BLAST+ installed anywhere, which is also why it can run unmodified from GitHub Pages (no server at all). Database management from the browser without touching a CLI, registry persisted in `blast_dbs.json` so it survives restarts.
 
 ---
 
