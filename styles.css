@@ -2376,8 +2376,8 @@ span.diagnostic-mutation {
 
 /* Graphical hit-distribution diagram (NCBI-BLAST-style position bars) */
 .blast-hitdist { margin-bottom:8px; }
-.blast-hitdist-legend { font-size:10px; color:#555; margin-bottom:4px; }
-.blast-hitdist-legend .swatch { display:inline-block; width:9px; height:9px; border-radius:1px; margin-right:3px; vertical-align:middle; }
+.blast-hitdist-legend { font-size:10px; color:#555; margin-bottom:4px; display:flex; align-items:center; gap:6px; }
+.blast-hitdist-legend .gradient-bar { display:inline-block; width:120px; height:8px; border-radius:2px; border:1px solid rgba(0,0,0,0.15); }
 .blast-hitdist-track { position:relative; }
 .blast-hitdist-ruler { position:relative; height:16px; font-family:'Courier New',monospace; font-size:10px; color:#555; border-bottom:1px solid #999; margin-bottom:2px; }
 .blast-hitdist-ruler .tick-left { position:absolute; left:0; top:0; }

@@ -17830,16 +17830,33 @@ function buildBlastHitElement(hit, hitIndex, dbIndex, queryLen) {
     return div;
 }
 
-// Score-tier colors follow NCBI BLAST's conventional bit-score bands
-// (>=200 red, 80-200 pink/magenta, 50-80 green, 40-50 blue, <40 black).
+// Score color follows NCBI BLAST's conventional bit-score bands as GRADIENT
+// STOPS (>=200 red, 80-200 pink/magenta, 50-80 green, 40-50 blue, <40 black)
+// rather than flat discrete buckets — bitScore is linearly interpolated
+// between whichever two stops it falls between, so two hits with close but
+// different scores get visibly different (not identical) bar colors.
 // Exact hex values are a reasonable approximation tuned for contrast on a
 // white background, not pixel-verified against NCBI's own stylesheet.
+const _BLAST_SCORE_GRADIENT_STOPS = [
+    { at: 0,   rgb: [0x1A, 0x1A, 0x1A] }, // black,  <40
+    { at: 40,  rgb: [0x00, 0x50, 0xD0] }, // blue,   40-50
+    { at: 50,  rgb: [0x00, 0x7A, 0x00] }, // green,  50-80
+    { at: 80,  rgb: [0xC8, 0x00, 0xC8] }, // magenta,80-200
+    { at: 200, rgb: [0xE4, 0x00, 0x00] }, // red,    >=200
+];
 function _blastScoreTierColor(bitScore) {
-    if (bitScore >= 200) return '#E40000';
-    if (bitScore >= 80)  return '#C800C8';
-    if (bitScore >= 50)  return '#007A00';
-    if (bitScore >= 40)  return '#0050D0';
-    return '#1A1A1A';
+    const stops = _BLAST_SCORE_GRADIENT_STOPS;
+    if (bitScore <= stops[0].at) return `rgb(${stops[0].rgb.join(',')})`;
+    if (bitScore >= stops[stops.length - 1].at) return `rgb(${stops[stops.length - 1].rgb.join(',')})`;
+    for (let i = 0; i < stops.length - 1; i++) {
+        const a = stops[i], b = stops[i + 1];
+        if (bitScore >= a.at && bitScore <= b.at) {
+            const t = (bitScore - a.at) / (b.at - a.at);
+            const rgb = a.rgb.map((c, k) => Math.round(c + (b.rgb[k] - c) * t));
+            return `rgb(${rgb.join(',')})`;
+        }
+    }
+    return `rgb(${stops[stops.length - 1].rgb.join(',')})`; // unreachable, defensive
 }
 
 // Graphical hit-distribution diagram: one thin horizontal bar per hit,
@@ -17854,10 +17871,12 @@ function buildHitDistributionDiagram(hits, queryLen, onHitClick) {
 
     const legend = document.createElement('div');
     legend.className = 'blast-hitdist-legend';
-    legend.innerHTML = [
-        ['#E40000', '≥200'], ['#C800C8', '80-200'], ['#007A00', '50-80'],
-        ['#0050D0', '40-50'], ['#1A1A1A', '<40'],
-    ].map(([c, l]) => `<span class="swatch" style="background:${c}"></span>${l}`).join('&nbsp;&nbsp;');
+    const gradientCss = _BLAST_SCORE_GRADIENT_STOPS
+        .map(s => `rgb(${s.rgb.join(',')}) ${(s.at / 200) * 100}%`).join(', ');
+    legend.innerHTML =
+        `<span class="gradient-bar" style="background:linear-gradient(to right, ${gradientCss})"></span>` +
+        `<span class="gradient-label-left">&lt;40 bits</span>` +
+        `<span class="gradient-label-right">&ge;200 bits</span>`;
     wrap.appendChild(legend);
 
     const track = document.createElement('div');
