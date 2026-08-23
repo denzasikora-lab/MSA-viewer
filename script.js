@@ -7559,12 +7559,28 @@ function _isLargeAlignmentPending() {
 // nameLengthSlider-based estimate is the best available proxy pre-render.
 function _computeLargeAlignmentBlockChars() {
     const zoom = _sliderToZoom(parseInt(el('zoomSlider')?.value || 50)) / 100;
-    const charPx = 10 * zoom;
+    // 7.8px is this app's own real measured monospace character width at
+    // 100% zoom (see _measureUnifiedColumnMetrics's fallback default,
+    // measured from an actual rendered .seq-data span) — NOT 10px, which
+    // was a wrong estimate that happened to be harmless before this
+    // function's result was ever actually used to render (only to update
+    // the slider's displayed number) but became a real under-utilization
+    // bug ("screen fit is too narrow") once fitBlockSizeBeforeInitialRender
+    // started using this estimate for the real initial render.
+    const charPx = 7.8 * zoom;
     const namePx = (parseInt(el('nameLengthSlider')?.value || 25) * charPx) + 8;
     // Use window.innerWidth instead of container.clientWidth to avoid forcing
     // a synchronous reflow over the (potentially already-rendered) DOM —
-    // millions of child spans make clientWidth reads take 30+ seconds.
-    const available = window.innerWidth - namePx - 40;
+    // millions of child spans make clientWidth reads take 30+ seconds. This
+    // means the real container is narrower than window.innerWidth by
+    // whatever page chrome/scrollbar/padding it has (measured ~18px on this
+    // app's own layout) on top of namePx being an estimate (nameLengthSlider
+    // chars, not the real rendered name column) rather than a measurement —
+    // margin of 70 (not 40) covers both gaps with room to spare; verified
+    // via a real 120,000-residue test alignment that 40 still let the real
+    // render overflow by 18px even after fixing the char-width constant
+    // below, while 70 renders with zero overflow.
+    const available = window.innerWidth - namePx - 70;
     return Math.max(40, Math.min(300, Math.floor(available / charPx)));
 }
 
@@ -7626,9 +7642,11 @@ function setBlockSizeToScreen() {
         charPx = r.width;
     }
     if (!charPx) {
-        // Fallback: use zoom-scaled monospace estimate (10px @ 100%)
+        // Fallback: use zoom-scaled monospace estimate (7.8px @ 100% — this
+        // app's own real measured character width, see
+        // _measureUnifiedColumnMetrics's fallback default; NOT 10px)
         const zoom = _sliderToZoom(parseInt(el('zoomSlider')?.value || 50)) / 100;
-        charPx = 10 * zoom;
+        charPx = 7.8 * zoom;
     }
     // Available width = inner width of the container (excluding names)
     // Names col is sticky - measure it from the first name span
