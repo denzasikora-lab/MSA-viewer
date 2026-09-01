@@ -198,6 +198,11 @@ Equal-angle (Felsenstein) unrooted layout with adjustable label rendering: **fon
 
 **Why novel:** Most lightweight tree viewers either don't support unrooted layout at all or render it with static label placement and no collision handling. Combining angle-matched rotation with capped, tooltip-preserving grouping gives usable output at high leaf counts without losing any label information (the full name list is always one hover away).
 
+### Branch-click info readout and subtree viewer
+Clicking any branch or node shows a dismissable info line above the tree canvas: leaf name + branch length for a leaf, or descendant leaf count for an internal node/branch — independent of the swap/re-root click mode, so switching modes isn't needed just to read a value. Internal nodes with 2+ leaves get a **View subtree** button that opens the clicked node's descendants alone in a separate overlay (its own scale bar, labels, matching the main tree's current layout/font/orientation), closable via its own button, the backdrop, or Escape.
+
+**Why novel:** Lets you drill into one crowded clade of a large tree at full size without losing your place in — or altering — the main view.
+
 ### Multi-mode consensus engine
 Two modes: **Plurity** (strict nucleotide — normal bases only, A/C/G/T priority, U→T normalization) and **Ambiguous** (IUPAC codes for multi-base positions). Independent **threshold** (frequency of majority base) and **coverage minimum** (fraction of non-gap sequences required). **Fallback mode**: gap or keep-best when no base meets threshold. Used by the consensus line, group consensus, replace-with-consensus, and SAM pileup consensus — all sharing the same engine with per-use configurable parameters.
 
