@@ -464,6 +464,17 @@
     return found;
   }
 
+  function countLeaves(node) {
+    if (!node.children.length) return 1;
+    return node.children.reduce(function (s, c) { return s + countLeaves(c); }, 0);
+  }
+  function collectLeafNames(node, out) {
+    out = out || [];
+    if (!node.children.length) { out.push(node.name || '?'); return out; }
+    node.children.forEach(function (c) { collectLeafNames(c, out); });
+    return out;
+  }
+
   function draw() {
     var box = document.getElementById('treeSvgCanvas');
     if (!box || !st.root) return;
@@ -558,6 +569,48 @@
     setTimeout(draw, 30);
   }
 
+  // Renders the clicked node's descendants alone, in their own small overlay - lets you
+  // zoom into a crowded region of a big tree without losing your place in the full one.
+  function openSubtreeModal(node) {
+    var overlay = document.getElementById('treeSubtreeOverlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'treeSubtreeOverlay';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(20,30,40,0.55);z-index:10070;' +
+        'display:flex;align-items:center;justify-content:center;';
+      overlay.innerHTML =
+        '<div style="background:#fff;border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,0.3);' +
+        'width:min(900px,92vw);height:min(650px,86vh);display:flex;flex-direction:column;overflow:hidden;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #e2e8ee;">' +
+            '<b id="treeSubtreeTitle" style="font-size:13px;color:#31485c;"></b>' +
+            '<button type="button" id="treeSubtreeCloseBtn" class="tree-tool">Close</button>' +
+          '</div>' +
+          '<div id="treeSubtreeCanvas" style="flex:1;overflow:auto;padding:8px;"></div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', function (ev) { if (ev.target === overlay) overlay.remove(); });
+      overlay.querySelector('#treeSubtreeCloseBtn').addEventListener('click', function () { overlay.remove(); });
+      document.addEventListener('keydown', function esc(ev) {
+        if (ev.key === 'Escape') { var o = document.getElementById('treeSubtreeOverlay'); if (o) o.remove(); }
+      });
+    }
+    var nLeaves = countLeaves(node);
+    overlay.querySelector('#treeSubtreeTitle').textContent = 'Subtree — ' + nLeaves + ' leaves';
+    var canvas = overlay.querySelector('#treeSubtreeCanvas');
+    var subRoot = cloneTree(node);
+    subRoot.len = 0;   // draw the subtree on its own, not offset by its length in the parent
+    canvas.innerHTML = buildTreeSVGString(subRoot, {
+      measure: measurer(st.fontFamily),
+      width: 850, height: 600, zoom: 1,
+      layout: st.layout === 'unrooted' ? 'unrooted' : 'rect',
+      labelSpacing: st.labelSpacing,
+      fontSize: st.fontSize,
+      fontFamily: st.fontFamily,
+      labelOrientation: st.labelOrientation,
+      groupOverlap: st.groupOverlap
+    });
+  }
+
   function setTree(root, pushNewick) {
     st.root = root;
     draw();
@@ -585,6 +638,7 @@
     var id = parseInt(hit.getAttribute('data-node'), 10);
     var node = nodeById(id);
     if (!node) return;
+    showNodeInfo(node, hit.classList.contains('tree-branch-hit'));
     if (st.mode === 'reroot') {
       if (!hit.classList.contains('tree-branch-hit')) return;   // re-root needs a branch
       setTree(rerootOnBranch(st.root, node), true);
@@ -592,6 +646,28 @@
       if (!swapAt(node)) return;
       setTree(st.root, true);
     }
+  }
+
+  // Clicking a branch/node always shows a small info readout - independent of
+  // swap/re-root mode - so you don't have to switch modes just to see a branch
+  // length or how many leaves sit under a node.
+  function showNodeInfo(node, isBranch) {
+    var line = document.getElementById('treeInfoLine');
+    if (!line) return;
+    var nLeaves = countLeaves(node);
+    var isLeaf = !node.children.length;
+    var parts = [];
+    if (isLeaf) {
+      parts.push('<b>' + esc(node.name || '?') + '</b>');
+    } else {
+      parts.push(nLeaves + ' leaves below this node');
+    }
+    if (isBranch) parts.push('branch length ' + (node.len || 0).toFixed(6));
+    line.querySelector('#treeInfoText').innerHTML = parts.join(' &middot; ');
+    var subBtn = line.querySelector('#treeInfoSubtreeBtn');
+    subBtn.style.display = (!isLeaf && nLeaves >= 2) ? '' : 'none';
+    subBtn.onclick = function () { openSubtreeModal(node); };
+    line.style.display = 'flex';
   }
 
   // ---------- UI ----------
@@ -650,6 +726,12 @@
         '<button type="button" class="tree-tool" data-act="reset" title="Back to the computed tree">Reset</button>' +
         '<span id="treeHint" style="color:#8a9bab;"></span>' +
       '</div>' +
+      '<div id="treeInfoLine" style="display:none;align-items:center;gap:10px;font-size:11px;' +
+      'color:#31485c;background:#f3f6f9;border:1px solid #dde5ec;border-radius:5px;padding:4px 8px;margin-bottom:5px;">' +
+        '<span id="treeInfoText"></span>' +
+        '<button type="button" id="treeInfoSubtreeBtn" class="tree-tool" style="display:none;">View subtree</button>' +
+        '<button type="button" id="treeInfoCloseBtn" class="tree-tool" title="Dismiss">&times;</button>' +
+      '</div>' +
       '<div id="treeSvgCanvas"></div>';
     nwOut.parentNode.insertBefore(panel, nwOut);
 
@@ -675,6 +757,9 @@
         }
       }
       draw();
+    });
+    panel.querySelector('#treeInfoCloseBtn').addEventListener('click', function () {
+      document.getElementById('treeInfoLine').style.display = 'none';
     });
     panel.querySelectorAll('input[name="treeClickMode"]').forEach(function (r) {
       r.addEventListener('change', function () {
