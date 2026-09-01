@@ -7860,7 +7860,13 @@ function handleColumnSelectMouseDown(e) {
 
 function handleNucleotideSelectMouseDown(e) {
     if (e.button !== 0) return false;
-    if (!isCtrlModifier(e) || isAltModifier(e)) return false;
+    if (isAltModifier(e)) return false;
+    // Plain click (no Ctrl) starts a selection drag — EXCEPT while GeneDoc edit
+    // mode is already active, where a plain click still needs to reach
+    // handleGeneDocEditMouseDown unchanged (moving the edit cursor, drag tools,
+    // etc.). Ctrl+click always means "select," active edit mode or not, same
+    // as before this change.
+    if (!isCtrlModifier(e) && state.editModeActive) return false;
 
     const span = closestFromEvent(e, '.seq-data span[data-pos]');
     if (!span || span.classList.contains('seq-length')) return false;
@@ -14890,6 +14896,30 @@ function attachUIListeners() {
             handleAlignmentPanStart(e);
         }, true);
         document.addEventListener('mousemove', handleMouseMove);
+        // Double-click a residue to enter GeneDoc edit mode positioned at that
+        // cell — replaces the old "plain click enters edit mode" behavior,
+        // which was removed because it made a plain click unusable for
+        // starting a nucleotide-selection drag (see handleNucleotideSelectMouseDown).
+        document.addEventListener('dblclick', (e) => {
+            const container = document.getElementById('alignmentContainer');
+            if (!container || !container.contains(domEventTarget(e))) return;
+            if (isCanvasMode()) return; // Canvas mode has its own click handling
+            const span = closestFromEvent(e, '.seq-data > span[data-pos]');
+            if (!span) return;
+            const seqLine = span.closest('.seq-line');
+            if (!seqLine || seqLine.classList.contains('consensus-line') || seqLine.classList.contains('scale-ruler-line')) return;
+            const rowIndex = parseInt(seqLine.dataset.seqIndex, 10);
+            const pos = parseInt(span.dataset.pos, 10);
+            if (!Number.isInteger(rowIndex) || !Number.isInteger(pos) || !state.seqs[rowIndex]) return;
+            e.preventDefault();
+            state.selectedNucs.clear();
+            state.pendingNucStart = null;
+            scheduleNucSelectionRefresh();
+            setGeneDocEditTool('residue');
+            if (!state.editModeActive) return; // refused (e.g. unsupported view) - message already shown
+            state.editCell = { row: rowIndex, pos };
+            updateEditActiveCell();
+        }, true);
     }
     if (alignmentContainer) {
         // *** PERFORMANCE: Event delegation for nucleotide tooltips ***
@@ -15732,13 +15762,13 @@ function handleGeneDocEditMouseDown(e) {
     const pos = parseInt(span.dataset.pos, 10);
     if (!Number.isInteger(rowIndex) || !Number.isInteger(pos) || !state.seqs[rowIndex]) return;
 
-    if (!state.editModeActive) {
-        // A plain click on a residue outside edit mode jumps straight into GeneDoc
-        // residue-typing mode positioned at the clicked cell, instead of requiring a
-        // separate click on the Edit toggle button first.
-        setGeneDocEditTool('residue');
-        if (!state.editModeActive) return; // refused (e.g. Canvas mode) - message already shown
-    }
+    // A plain click no longer auto-enters GeneDoc edit mode (it now starts a
+    // nucleotide-selection drag instead, see handleNucleotideSelectMouseDown —
+    // this handler is only reached at all when edit mode is already active).
+    // Entering edit mode is now double-click (see the dblclick listener below)
+    // or the explicit Edit toggle button, same as it always was before a plain
+    // click was ever wired to auto-enter it.
+    if (!state.editModeActive) return;
 
     const tool = state.editTool;
     if (!GENEDOC_MOVE_TOOLS.has(tool) && !GENEDOC_GAP_TOOLS.has(tool) && tool !== 'residue' && tool !== 'selectColumn') return;
