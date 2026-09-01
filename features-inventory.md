@@ -193,6 +193,11 @@ Tandem repeat detection with configurable minimum length and mismatch tolerance 
 ### UPGMA tree with optimal leaf ordering
 Pairwise identity distances → UPGMA clustering with orientation-optimized leaf ordering → Newick output with branch lengths → .nwk download → text tree visualization.
 
+### Unrooted tree label controls
+Equal-angle (Felsenstein) unrooted layout with adjustable label rendering: **font size** stepper (6-28px, independent of Zoom), **font family** dropdown (System UI / Serif / Monospace / Sans), **angled vs horizontal** orientation toggle (angled rotates each label to its branch angle, normalized to avoid upside-down text; horizontal keeps flat text for users who prefer it), and **automatic overlap grouping** (angled mode only) — leaves whose angular gap falls under a font-size-scaled threshold merge into a single "+N" orange label with a hover tooltip listing all member names, capped at 6 members per group to prevent runaway cascade-merging at large font sizes. Works alongside the existing Label spacing control from the equal-angle layout's density-floor heuristic.
+
+**Why novel:** Most lightweight tree viewers either don't support unrooted layout at all or render it with static label placement and no collision handling. Combining angle-matched rotation with capped, tooltip-preserving grouping gives usable output at high leaf counts without losing any label information (the full name list is always one hover away).
+
 ### Multi-mode consensus engine
 Two modes: **Plurity** (strict nucleotide — normal bases only, A/C/G/T priority, U→T normalization) and **Ambiguous** (IUPAC codes for multi-base positions). Independent **threshold** (frequency of majority base) and **coverage minimum** (fraction of non-gap sequences required). **Fallback mode**: gap or keep-best when no base meets threshold. Used by the consensus line, group consensus, replace-with-consensus, and SAM pileup consensus — all sharing the same engine with per-use configurable parameters.
 
