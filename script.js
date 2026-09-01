@@ -353,7 +353,6 @@ const state = {
     pendingNucStart: null,
     spanCache: new Map(),
     domSelectedNucs: new Map(),
-    domSelectedColumns: new Map(),
     domPendingNuc: null,
     lastSelectedIndex: null,
     lastSelectedColumn: null,
@@ -5708,7 +5707,7 @@ function renderAlignment(options = {}) {
     }
     state.spanCache = new Map();
     state.domSelectedNucs = new Map();
-    state.domSelectedColumns = new Map();
+    if (_columnSelectionStyleEl) _columnSelectionStyleEl.textContent = ''; // clear stale column highlight on new file load
     state.domPendingNuc = null;
 
     const nameLengthSlider = el('nameLengthSlider');
@@ -13946,21 +13945,36 @@ function updateRowSelections() {
         document.querySelectorAll(`.seq-name[data-seq-index="${index}"]`).forEach(name => name.classList.add('selected'));
     });
 }
+// Was: forEachColumnSpan(pos, ...) once per selected column, each iterating
+// every row's span cache and mutating classList on every hit -- O(selected
+// columns * rows) DOM mutations. Profiled on a 150-seq/800-col alignment:
+// a 96-column range select took ~314ms this way (96 * 150 = 14,400
+// classList.add calls), the actual reported "sooo slow" bug. A single
+// dynamically-generated <style> rule (attribute selectors matching every
+// selected position) achieves the same visual result via the browser's own
+// CSS engine instead of per-element DOM mutation -- O(selected columns)
+// string-building, no DOM writes proportional to row count at all. Fresh
+// rows created during scroll/windowing still get 'column-selected' baked
+// into their className at creation time (see the two other call sites of
+// `state.selectedColumns.has(pos)` in row-rendering) -- this only replaces
+// the "update already-rendered rows without a full re-render" mechanism.
+let _columnSelectionStyleEl = null;
 function updateColumnSelections() {
-    state.domSelectedColumns.forEach(spanSet => {
-        spanSet.forEach(span => span.classList.remove('column-selected'));
-    });
-    state.domSelectedColumns = new Map();
+    if (!_columnSelectionStyleEl) {
+        _columnSelectionStyleEl = document.createElement('style');
+        _columnSelectionStyleEl.id = 'column-selection-style';
+        document.head.appendChild(_columnSelectionStyleEl);
+    }
+    if (state.selectedColumns.size === 0) {
+        _columnSelectionStyleEl.textContent = '';
+        return;
+    }
+    const selectors = [];
     state.selectedColumns.forEach(pos => {
-        const spanSet = new Set();
-        forEachColumnSpan(pos, span => {
-            span.classList.add('column-selected');
-            spanSet.add(span);
-        });
-        if (spanSet.size > 0) {
-            state.domSelectedColumns.set(pos, spanSet);
-        }
+        const n = Number(pos);
+        if (Number.isInteger(n)) selectors.push(`.seq-data > span[data-pos="${n}"]`);
     });
+    _columnSelectionStyleEl.textContent = `${selectors.join(',')} { background-color: var(--column-selected-bg) !important; }`;
 }
 
 let pendingNucDomUpdate = false;
