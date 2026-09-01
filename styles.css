@@ -649,6 +649,12 @@ button:hover {
     overflow: auto;
     resize: vertical;
     position: relative;
+    /* Click-drag panning shouldn't trigger native browser text selection
+       on the SVG leaf labels (was showing as blue selection highlight). */
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
 }
 #treeSvgCanvas::after {
     content: '';
