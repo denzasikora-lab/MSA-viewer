@@ -638,9 +638,11 @@
           '<label class="tree-mode" title="Merge overlapping labels into one, hover to see the full list"><input type="checkbox" id="treeGroupOverlap" checked> group overlapping labels</label>' +
         '</span>' +
         '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
-        '<span style="color:#6b8299;">Click</span>' +
-        '<label class="tree-mode"><input type="radio" name="treeClickMode" value="swap" checked> swap branches</label>' +
-        '<label class="tree-mode"><input type="radio" name="treeClickMode" value="reroot"> re-root</label>' +
+        '<span style="display:inline-flex;align-items:center;gap:6px;">' +
+          '<span style="color:#6b8299;">Click</span>' +
+          '<label class="tree-mode"><input type="radio" name="treeClickMode" value="swap" checked> swap branches</label>' +
+          '<label class="tree-mode"><input type="radio" name="treeClickMode" value="reroot"> re-root</label>' +
+        '</span>' +
         '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
         '<button type="button" class="tree-tool" data-act="export-svg" title="Download the drawing as SVG">SVG</button>' +
         '<button type="button" class="tree-tool" data-act="export-png" title="Download the drawing as PNG (2x)">PNG</button>' +
