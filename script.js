@@ -8090,8 +8090,15 @@ function handleKeyDown(e) {
         state.altPressed = true;
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && !isFormField) {
-        copySelected();
-        e.preventDefault();
+        // If the user has a real native text selection (e.g. text selected inside
+        // a BLAST results panel or any other element), let the browser copy that
+        // text natively - don't hijack Ctrl+C for the app's own selection copy.
+        const sel = window.getSelection();
+        const hasNativeTextSelection = sel && !sel.isCollapsed && String(sel).length > 0;
+        if (!hasNativeTextSelection) {
+            copySelected();
+            e.preventDefault();
+        }
     }
     if (e.ctrlKey || e.metaKey) {
         switch (e.key.toLowerCase()) {
