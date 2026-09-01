@@ -211,7 +211,13 @@
     var radiusSum = 0;
     leaves.forEach(function (l) { radiusSum += Math.hypot(l.ux, l.uy); });
     var approxRadius = Math.max(radiusSum / leaves.length, 1e-9);
-    var minSpacingPx = 14;
+    // User-adjustable (opts.labelSpacing, default 1) — the automatic densityFloorScale
+    // estimate below is explicitly documented as a proportionate mitigation, not a
+    // guarantee (lopsided/clumped topologies can still collide locally); rather than only
+    // offering the shared Zoom control (which also scales font size and the whole image),
+    // a dedicated multiplier lets a user push spacing further for a specific stubborn tree
+    // without changing anything else.
+    var minSpacingPx = 14 * (opts.labelSpacing || 1);
     var densityFloorScale = (leaves.length * minSpacingPx) / (2 * Math.PI * approxRadius);
     // This is still a proportionate mitigation, not a full guarantee: it assumes leaves are
     // roughly evenly spread around the boundary, so a genuinely lopsided/clumped topology
@@ -243,11 +249,28 @@
       }
     })(root);
 
+    // Radial label orientation, matching FigTree/Dendroscope/iTOL (see the module-header
+    // comment): rotate each label to align with its own leaf's branch direction instead of
+    // always drawing horizontal text. This is the actual fix for label overlap in dense
+    // unrooted trees, more than densityFloorScale alone can be — horizontal text from many
+    // leaves whose branches point in similar-but-not-identical directions collides even when
+    // the leaf POINTS themselves have adequate radial spacing; text angled along each leaf's
+    // own direction fans labels apart along the same arc that already spaces the points.
+    // Rotation angle is normalized to [-90, 90] (flipping 180 + the anchor/offset side when
+    // needed) so a label in the left half of the tree is never rendered upside down.
     leaves.forEach(function (l) {
-      var toLeft = Math.cos(l.udir) < 0;
-      out.push('<text x="' + (PX(l) + (toLeft ? -5 : 5)).toFixed(1) + '" y="' + (PY(l) + fontSize / 3).toFixed(1) +
+      var deg = l.udir * 180 / Math.PI;
+      deg = ((deg + 180) % 360 + 360) % 360 - 180; // normalize to (-180, 180]
+      var flip = Math.abs(deg) > 90;
+      var textDeg = flip ? deg + 180 : deg;
+      var anchor = flip ? 'end' : 'start';
+      var offset = flip ? -5 : 5;
+      var px = PX(l), py = PY(l);
+      out.push('<text x="' + (px + offset).toFixed(1) + '" y="' + (py + fontSize / 3).toFixed(1) +
         '" font-size="' + fontSize.toFixed(1) + '" fill="#1f1f1f" pointer-events="none"' +
-        (toLeft ? ' text-anchor="end"' : '') + '>' + esc(l.name || '?') + '</text>');
+        ' text-anchor="' + anchor + '"' +
+        ' transform="rotate(' + textDeg.toFixed(1) + ' ' + px.toFixed(1) + ' ' + py.toFixed(1) + ')"' +
+        '>' + esc(l.name || '?') + '</text>');
     });
 
     if (anyLen) {
@@ -345,7 +368,7 @@
   }
 
   // ---------- module state ----------
-  var st = { root: null, original: null, sourceNewick: '', zoom: 1, mode: 'swap', layout: 'rect', full: false };
+  var st = { root: null, original: null, sourceNewick: '', zoom: 1, mode: 'swap', layout: 'rect', full: false, labelSpacing: 1 };
 
   function measurer() {
     var ctx = null;
@@ -368,10 +391,15 @@
       width: box.clientWidth || 700,
       height: box.clientHeight || 520,
       zoom: st.zoom,
-      layout: st.layout
+      layout: st.layout,
+      labelSpacing: st.labelSpacing
     });
     var zl = document.getElementById('treeZoomLabel');
     if (zl) zl.textContent = Math.round(st.zoom * 100) + '%';
+    var sl = document.getElementById('treeSpacingLabel');
+    if (sl) sl.textContent = Math.round(st.labelSpacing * 100) + '%';
+    var spacingGroup = document.getElementById('treeSpacingGroup');
+    if (spacingGroup) spacingGroup.style.display = st.layout === 'unrooted' ? 'inline-flex' : 'none';
   }
 
   // ---------- export ----------
@@ -494,6 +522,13 @@
         '<span id="treeZoomLabel" style="min-width:34px;text-align:center;">100%</span>' +
         '<button type="button" class="tree-tool" data-act="zoom-in" title="Zoom in">+</button>' +
         '<button type="button" class="tree-tool" data-act="zoom-fit" title="Fit to width">Fit</button>' +
+        '<span id="treeSpacingGroup" style="display:none;align-items:center;gap:6px;">' +
+          '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
+          '<span style="color:#6b8299;" title="How far apart unrooted-tree leaf labels are spaced, independent of Zoom">Label spacing</span>' +
+          '<button type="button" class="tree-tool" data-act="spacing-out" title="Less spacing">&minus;</button>' +
+          '<span id="treeSpacingLabel" style="min-width:34px;text-align:center;">100%</span>' +
+          '<button type="button" class="tree-tool" data-act="spacing-in" title="More spacing">+</button>' +
+        '</span>' +
         '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
         '<span style="color:#6b8299;">Layout</span>' +
         '<label class="tree-mode"><input type="radio" name="treeLayout" value="rect" checked> rooted</label>' +
@@ -519,6 +554,8 @@
       if (act === 'zoom-in') st.zoom = Math.min(4, st.zoom * 1.25);
       else if (act === 'zoom-out') st.zoom = Math.max(0.25, st.zoom / 1.25);
       else if (act === 'zoom-fit') st.zoom = 1;
+      else if (act === 'spacing-in') st.labelSpacing = Math.min(4, st.labelSpacing * 1.25);
+      else if (act === 'spacing-out') st.labelSpacing = Math.max(0.25, st.labelSpacing / 1.25);
       else if (act === 'export-svg') { exportSVG(); return; }
       else if (act === 'export-png') { exportPNG(); return; }
       else if (act === 'fullscreen') { setFullscreen(!st.full); return; }
