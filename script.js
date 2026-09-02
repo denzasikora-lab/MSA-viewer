@@ -8276,6 +8276,15 @@ function reverseComplementSelected() {
     reverseComplementSequences(Array.from(state.selectedRows));
 }
 
+// One-click reverse complement of the whole alignment, no selection needed first.
+function reverseComplementAll() {
+    if (state.seqs.length === 0) {
+        showMessage("No alignment loaded.", 3000);
+        return;
+    }
+    reverseComplementSequences(state.seqs.map((_, i) => i));
+}
+
 // -- Sort functions --
 function sortByName() {
     pushUndo();
@@ -14302,6 +14311,7 @@ function initializeAppUI() {
         'clearButton': () => fastaInput.value = '',
         'loadButton': () => parseAndRender(false),
         'reverseComplementButton': reverseComplementSelected,
+        'reverseComplementAllButton': reverseComplementAll,
         'copySelectedButton': copySelected,
         'copyAlignmentButton': copyAlignment,
         'deleteSelectedButton': deleteSelected,
