@@ -2488,25 +2488,44 @@ function _refreshUnifiedWindowOnScroll(container) {
         }
 
         if (!handledIncrementally) {
+            // Full rebuild for this one block: build and insert the replacement
+            // BEFORE removing the old one, so the container never has a gap
+            // where this block's columns/width are momentarily absent. This
+            // matters most in Full mode (a single block spanning the whole
+            // alignment width) - removing the sole block first, then building
+            // its replacement, briefly collapses the container's real
+            // scrollWidth, and the browser clamps alignmentContainer.scrollLeft
+            // to fit the (temporarily near-empty) content - exactly the same
+            // class of bug already documented and fixed for vertical scrollTop
+            // elsewhere in this file, but for horizontal scrollLeft: dragging
+            // the horizontal scrollbar right (which changes colStart/colEnd,
+            // forcing this exact full-rebuild path since the incremental path
+            // requires an unchanged column window) snapped back to the
+            // leftmost position on the first attempt, then worked on a second
+            // attempt - because by then this block's cached colStart/colEnd
+            // already matched the target position and the incremental path
+            // (which never removes anything) applied instead.
+            const blockDiv = _buildUnifiedBlock(b, start, end, p.len, blockHeightPx, rowHeightPx, effectiveScrollTop, effectiveClientHeight, effectiveScrollLeft, effectiveClientWidth, charWidthPx, nameColWidthPx, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, p.shouldRenderConsensus, p.consensusPosition, p.consensus, p.options, headerHeightPx);
+            _unifiedRenderedRowRanges.set(b, { rowStart, rowEnd, colStart, colEnd });
             if (existingBlockDiv) {
-                // Full rebuild for this one block: drop its rows' spanCache
-                // entries first (scoped per-block equivalent of the old
-                // whole-container cache wipe).
+                container.insertBefore(blockDiv, existingBlockDiv);
+                // Drop the old block's rows' spanCache entries, then remove it
+                // now that its replacement is already in place.
                 existingBlockDiv.querySelectorAll(':scope > .seq-line[data-seq-index]').forEach(rowEl => {
                     const idx = parseInt(rowEl.getAttribute('data-seq-index'), 10);
                     if (!Number.isNaN(idx) && idx >= 0) state.spanCache?.delete(idx);
                 });
                 existingBlockDiv.remove();
+            } else {
+                // No previous block at this index - keep DOM order ascending
+                // by block index: insert before the first remaining block
+                // whose index is greater, else right before bottomSpacer.
+                let insertBefore = bottomSpacer;
+                for (const [idx, el] of existingBlocksByIndex) {
+                    if (idx > b && el.isConnected) { insertBefore = el; break; }
+                }
+                container.insertBefore(blockDiv, insertBefore);
             }
-            const blockDiv = _buildUnifiedBlock(b, start, end, p.len, blockHeightPx, rowHeightPx, effectiveScrollTop, effectiveClientHeight, effectiveScrollLeft, effectiveClientWidth, charWidthPx, nameColWidthPx, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, p.shouldRenderConsensus, p.consensusPosition, p.consensus, p.options, headerHeightPx);
-            _unifiedRenderedRowRanges.set(b, { rowStart, rowEnd, colStart, colEnd });
-            // Keep DOM order ascending by block index: insert before the first
-            // remaining block whose index is greater, else right before bottomSpacer.
-            let insertBefore = bottomSpacer;
-            for (const [idx, el] of existingBlocksByIndex) {
-                if (idx > b && el.isConnected) { insertBefore = el; break; }
-            }
-            container.insertBefore(blockDiv, insertBefore);
             existingBlocksByIndex.set(b, blockDiv);
         }
         keptIndices.add(b);
