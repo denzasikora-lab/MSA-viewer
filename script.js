@@ -2223,6 +2223,57 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     return blockDiv;
 }
 
+// Incrementally updates one already-rendered block's visible row window,
+// reusing existing row DOM nodes that remain in range instead of removing
+// and recreating everything. Returns true if it performed an incremental
+// update, false if it couldn't (caller should fall back to a full rebuild
+// of this block via _buildUnifiedBlock).
+function _incrementalUpdateBlockRows(blockDiv, blockIndex, newRowStart, newRowEnd, rowHeightPx, colStart, colEnd, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, isLastBlock, nSeq) {
+    const oldRange = _unifiedRenderedRowRanges.get(blockIndex);
+    if (!oldRange) return false;
+
+    const rowSpacers = blockDiv.querySelectorAll(':scope > .unified-row-spacer');
+    if (rowSpacers.length !== 2) return false;
+    const [topRowSpacer, bottomRowSpacer] = rowSpacers;
+
+    // Remove rows that scrolled out of the new range. Also clean up their
+    // spanCache entries so forEachColumnSpan/updateColumnSelections never
+    // iterate a stale, detached row.
+    const existingRows = blockDiv.querySelectorAll(':scope > .seq-line[data-seq-index]');
+    existingRows.forEach(rowEl => {
+        const idx = parseInt(rowEl.getAttribute('data-seq-index'), 10);
+        if (Number.isNaN(idx) || idx < 0) return; // leave consensus/other special rows alone
+        if (idx < newRowStart || idx > newRowEnd) {
+            state.spanCache?.delete(idx);
+            rowEl.remove();
+        }
+    });
+
+    // Add rows that scrolled into the new range but aren't already present.
+    // Insert each new row in the correct ascending position relative to
+    // whatever real rows already remain, so DOM order stays sorted by index
+    // (needed for the removal loop and any code that assumes row order).
+    for (let i = newRowStart; i <= newRowEnd; i++) {
+        if (blockDiv.querySelector(`:scope > .seq-line[data-seq-index="${i}"]`)) continue;
+        const lineDiv = createSequenceLine(i, colStart, colEnd + 1, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, conservationData);
+        // Find the first remaining row with a greater index and insert before it;
+        // if none, insert right before the bottom spacer.
+        let insertBefore = bottomRowSpacer;
+        const rowsNow = blockDiv.querySelectorAll(':scope > .seq-line[data-seq-index]');
+        for (const r of rowsNow) {
+            const ridx = parseInt(r.getAttribute('data-seq-index'), 10);
+            if (!Number.isNaN(ridx) && ridx > i) { insertBefore = r; break; }
+        }
+        blockDiv.insertBefore(lineDiv, insertBefore);
+    }
+
+    topRowSpacer.style.height = (newRowStart * rowHeightPx) + 'px';
+    bottomRowSpacer.style.height = (Math.max(0, nSeq - 1 - newRowEnd) * rowHeightPx) + 'px';
+
+    _unifiedRenderedRowRanges.set(blockIndex, { rowStart: newRowStart, rowEnd: newRowEnd });
+    return true;
+}
+
 // Unified windowed render entry point for large ("crazy") alignments.
 // Full mode = blockWidth set to len (1 block); Block mode = blockWidth from
 // the slider (multiple blocks). Windows at three granularities: block-level
