@@ -962,6 +962,9 @@ input[type="number"] {
     -ms-user-select: none;
     /* Instant scroll updates during drag to avoid jank */
     scroll-behavior: auto;
+    /* Virtualized rows/spacers preserve geometry explicitly. Browser scroll
+       anchoring fights those updates and visibly shifts scrollTop afterward. */
+    overflow-anchor: none;
     z-index: 1; /* Ensure it's below the fixed menu (z-index: 1000) when menu appears */
 }
 /* Hide native horizontal scrollbar so only the custom bar is visible */
