@@ -1971,6 +1971,22 @@ function _applyColumnWindowStyle(dataEl, len, colStart, charWidthPx) {
     dataEl.style.paddingLeft = (colStart * charWidthPx) + 'px';
 }
 
+// Shared column-window calculation for one block. Each block's .seq-data
+// is blockLen*charWidthPx wide and starts at the left edge of the scrollable
+// data area, so scrollLeft maps to block-local column offsets. Adding `start`
+// converts the local offset back to an absolute alignment column.
+function _computeBlockColumnWindow(start, end, scrollLeft, visibleDataWidth, charWidthPx) {
+    const blockLen = end - start;
+    if (blockLen * charWidthPx <= visibleDataWidth) {
+        return { colStart: start, colEnd: end - 1, needsColWindow: false };
+    }
+    const overscan = 20;
+    let colStart = Math.max(start, start + Math.floor(scrollLeft / charWidthPx) - overscan);
+    let colEnd = Math.min(end - 1, start + Math.ceil((scrollLeft + visibleDataWidth) / charWidthPx) - 1 + overscan);
+    if (colStart > colEnd) { colStart = start; colEnd = end - 1; }
+    return { colStart, colEnd, needsColWindow: colStart > start || colEnd < end - 1 };
+}
+
 // Builds one block's DOM for the non-windowed (small-alignment) render path.
 // Factored out so the windowed and non-windowed paths share one implementation.
 // Used by both Full mode (blockWidth = len, one block) and Block mode
@@ -2122,10 +2138,7 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     // than the viewport (Full mode with 1 giant block), only visible columns
     // are rendered with padding-left for the offset.
     const visibleDataWidth = Math.max(0, clientWidth - nameColWidthPx);
-    let colStart = Math.max(start, Math.floor(scrollLeft / charWidthPx) - 20);
-    let colEnd = Math.min(end - 1, Math.ceil((scrollLeft + visibleDataWidth) / charWidthPx) - 1 + 20);
-    if (colStart > colEnd) { colStart = start; colEnd = end - 1; }
-    const needsColWindow = colStart > start || colEnd < end - 1;
+    const { colStart, colEnd, needsColWindow } = _computeBlockColumnWindow(start, end, scrollLeft, visibleDataWidth, charWidthPx);
 
     // Ruler — was previously generated for the block's FULL width (blockLen,
     // up to the whole alignment in Full mode's single-block case) on every
@@ -2462,10 +2475,7 @@ function _refreshUnifiedWindowOnScroll(container) {
         // does, so we can tell whether an existing block's rows can be
         // patched in place or need a full rebuild (see comment above).
         const visibleDataWidth = Math.max(0, effectiveClientWidth - nameColWidthPx);
-        let colStart = Math.max(start, Math.floor(effectiveScrollLeft / charWidthPx) - 20);
-        let colEnd = Math.min(end - 1, Math.ceil((effectiveScrollLeft + visibleDataWidth) / charWidthPx) - 1 + 20);
-        if (colStart > colEnd) { colStart = start; colEnd = end - 1; }
-        const needsColWindow = colStart > start || colEnd < end - 1;
+        const { colStart, colEnd, needsColWindow } = _computeBlockColumnWindow(start, end, effectiveScrollLeft, visibleDataWidth, charWidthPx);
 
         // Recompute this block's row window exactly as _buildUnifiedBlock does.
         const blockTop = b * blockHeightPx;
