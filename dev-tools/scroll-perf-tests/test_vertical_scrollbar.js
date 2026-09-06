@@ -55,6 +55,7 @@ const { chromium } = require('playwright-core');
   }
 
   const initial = await inspect('Block initial');
+  await page.screenshot({ path: __dirname + '/vertical_scrollbar_block.png' });
   await page.evaluate(() => {
     const bar = document.querySelector('.vertical-scrollbar');
     bar.scrollTop = 600;
@@ -94,8 +95,32 @@ const { chromium } = require('playwright-core');
   const canvas = await inspect('Canvas');
   await page.screenshot({ path: __dirname + '/vertical_scrollbar.png' });
 
+  await page.evaluate(() => {
+    const bar = document.querySelector('.vertical-scrollbar');
+    bar.scrollTop += 100;
+    bar.dispatchEvent(new Event('scroll'));
+  });
+  await page.waitForTimeout(100);
+  const afterCanvasBarScroll = await inspect('Canvas after bar scroll');
+
+  await page.evaluate(async () => {
+    document.getElementById('modeBlocks').checked = true;
+    document.getElementById('fastaInput').value = '>small_1\nACGT\n>small_2\nACGT';
+    await parseAndRender(false);
+  });
+  await page.waitForTimeout(100);
+  const smallAlignment = await inspect('small non-windowed Block');
+
   const failures = [];
-  for (const state of [initial, afterBarScroll, afterAlignmentScroll, afterPointerDrag, full, canvas]) {
+  for (const state of [
+    initial,
+    afterBarScroll,
+    afterAlignmentScroll,
+    afterPointerDrag,
+    full,
+    canvas,
+    afterCanvasBarScroll
+  ]) {
     if (state.barDisplay === 'none') failures.push(`${state.label}: scrollbar hidden`);
     if (state.barScrollHeight <= state.barClientHeight) {
       failures.push(`${state.label}: scrollbar has no scrollable range`);
@@ -127,6 +152,14 @@ const { chromium } = require('playwright-core');
       `DOM pointer drag incorrectly changed Canvas offset: ${afterAlignmentScroll.canvasOffsetY} -> ${afterPointerDrag.canvasOffsetY}`
     );
   }
+  if (Math.abs(afterCanvasBarScroll.barScrollTop - afterCanvasBarScroll.canvasOffsetY) > 2) {
+    failures.push(
+      `Canvas bar did not drive Canvas offset: ${afterCanvasBarScroll.barScrollTop} vs ${afterCanvasBarScroll.canvasOffsetY}`
+    );
+  }
+  if (smallAlignment.barDisplay !== 'none') {
+    failures.push('small non-windowed alignment shows a useless vertical scrollbar');
+  }
   if (errors.length) failures.push(`page errors: ${errors.join('; ')}`);
 
   console.log(JSON.stringify({
@@ -136,6 +169,8 @@ const { chromium } = require('playwright-core');
     afterPointerDrag,
     full,
     canvas,
+    afterCanvasBarScroll,
+    smallAlignment,
     errors,
     failures
   }, null, 2));

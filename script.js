@@ -17502,15 +17502,13 @@ function initColourSeqs() {
 })();
 
 // ============================================================================
-// Persistent vertical scrollbar for Canvas mode
+// Persistent vertical scrollbar for Canvas and scrollable DOM modes
 // ============================================================================
-// Full/Block mode get a real vertical scrollbar for free (alignmentContainer
-// uses native overflow:auto there). Canvas mode draws to a single <canvas>
-// panned via _canvasState.offsetY with overflow:hidden on the container, so
-// it had wheel/drag panning but nothing on screen showing a scrollbar at
-// all - no visible thumb, no click-to-jump, no sense of position within a
-// tall alignment. Mirrors setupPersistentScrollbar's horizontal logic on
-// the Y axis, shown only while Canvas mode is active.
+// alignmentContainer's native bars are hidden in CSS so the viewer can use
+// persistent controls in a consistent position. Canvas pans through
+// _canvasState.offsetY; windowed Full/Block modes use alignment.scrollTop.
+// This bar mirrors setupPersistentScrollbar's horizontal logic and selects
+// the appropriate scroll state for the active mode.
 (function setupPersistentVerticalScrollbar() {
     const alignment = document.getElementById('alignmentContainer');
     const bar = document.querySelector('.vertical-scrollbar');
