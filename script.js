@@ -17608,8 +17608,12 @@ function initColourSeqs() {
         dragRaf = window.requestAnimationFrame(() => {
             const newScroll = startScroll - lastDy;
             syncing = true;
-            _canvasState.offsetY = newScroll;
-            _canvasState.scheduleDraw?.();
+            if (isCanvasMode()) {
+                _canvasState.offsetY = newScroll;
+                _canvasState.scheduleDraw?.();
+            } else {
+                alignment.scrollTop = newScroll;
+            }
             bar.scrollTop = newScroll;
             syncing = false;
             dragRaf = null;
