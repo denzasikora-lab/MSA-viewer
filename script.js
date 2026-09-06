@@ -17579,7 +17579,12 @@ function initColourSeqs() {
     bar.addEventListener('scroll', onBarScroll, { passive: true });
     alignment.addEventListener('scroll', onAlignmentScroll, { passive: true });
     window.addEventListener('resize', () => window.requestAnimationFrame(syncVisibilityAndSize));
-    const mo = new MutationObserver(() => window.requestAnimationFrame(syncVisibilityAndSize));
+    const mo = new MutationObserver(() => {
+        window.requestAnimationFrame(() => {
+            syncVisibilityAndSize();
+            window.requestAnimationFrame(syncVisibilityAndSize);
+        });
+    });
     mo.observe(alignment, { childList: true, subtree: true, characterData: false, attributes: false });
     // Mode radios don't fire a DOM mutation on alignmentContainer by
     // themselves - listen directly so switching into/out of Canvas mode
