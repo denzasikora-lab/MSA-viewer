@@ -1023,14 +1023,10 @@ input[type="number"] {
     pointer-events: auto;
 }
 
-/* Vertical counterpart of .horizontal-scrollbar - Canvas mode has no native
-   scrollable DOM node (alignmentContainer uses overflow:hidden there and
-   panning happens via _canvasState.offsetY instead), so unlike Full/Block
-   mode - which get a real vertical scrollbar for free from the browser -
-   Canvas mode had NO visible vertical scrollbar at all: wheel/drag panning
-   worked but there was nothing on screen to show it, grab it, or see
-   position within a tall alignment. Positioned absolutely over
-   alignmentContainer's right edge; JS shows/hides and sizes it per mode. */
+/* Vertical counterpart of .horizontal-scrollbar. Native alignment scrollbars
+   are hidden, so JS shows this control for Canvas and scrollable Full/Block
+   modes, sizes it to the alignment viewport, and synchronizes the active
+   mode's Canvas offset or DOM scrollTop. */
 .vertical-scrollbar {
     position: absolute;
     top: 0;
@@ -1044,7 +1040,7 @@ input[type="number"] {
     cursor: grab;
     user-select: none;
     touch-action: pan-y;
-    display: none; /* JS shows this only while Canvas mode is active */
+    display: none; /* JS shows this only while the active mode can scroll */
 }
 .vertical-scrollbar-thumb { width: 1px; }
 .vertical-scrollbar.grabbing { cursor: grabbing; }
