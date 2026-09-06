@@ -48,7 +48,8 @@ const { chromium } = require('playwright-core');
         barClientHeight: bar.clientHeight,
         alignmentScrollTop: alignment.scrollTop,
         alignmentScrollHeight: alignment.scrollHeight,
-        alignmentClientHeight: alignment.clientHeight
+        alignmentClientHeight: alignment.clientHeight,
+        canvasOffsetY: typeof _canvasState !== 'undefined' ? _canvasState.offsetY : null
       };
     }, label);
   }
@@ -70,6 +71,14 @@ const { chromium } = require('playwright-core');
   await page.waitForTimeout(200);
   const afterAlignmentScroll = await inspect('Block after alignment scroll');
 
+  const barBox = await page.locator('.vertical-scrollbar').boundingBox();
+  await page.mouse.move(barBox.x + 4, barBox.y + 500);
+  await page.mouse.down();
+  await page.mouse.move(barBox.x + 4, barBox.y + 400, { steps: 5 });
+  await page.mouse.up();
+  await page.waitForTimeout(200);
+  const afterPointerDrag = await inspect('Block after pointer drag');
+
   await page.evaluate(async () => {
     document.getElementById('modeSingle').checked = true;
     await onModeChange();
@@ -86,7 +95,7 @@ const { chromium } = require('playwright-core');
   await page.screenshot({ path: __dirname + '/vertical_scrollbar.png' });
 
   const failures = [];
-  for (const state of [initial, afterBarScroll, afterAlignmentScroll, full, canvas]) {
+  for (const state of [initial, afterBarScroll, afterAlignmentScroll, afterPointerDrag, full, canvas]) {
     if (state.barDisplay === 'none') failures.push(`${state.label}: scrollbar hidden`);
     if (state.barScrollHeight <= state.barClientHeight) {
       failures.push(`${state.label}: scrollbar has no scrollable range`);
@@ -101,11 +110,22 @@ const { chromium } = require('playwright-core');
       failures.push(`${state.label}: scrollbar height is misaligned`);
     }
   }
-  if (Math.abs(afterBarScroll.alignmentScrollTop - 600) > 2) {
-    failures.push(`bar did not drive Block scroll: ${afterBarScroll.alignmentScrollTop}`);
+  for (const state of [afterBarScroll, afterAlignmentScroll, afterPointerDrag, full]) {
+    if (Math.abs(state.barScrollTop - state.alignmentScrollTop) > 2) {
+      failures.push(
+        `${state.label}: bar ${state.barScrollTop} is not synchronized with alignment ${state.alignmentScrollTop}`
+      );
+    }
   }
-  if (Math.abs(afterAlignmentScroll.barScrollTop - 1200) > 2) {
-    failures.push(`Block scroll did not update bar: ${afterAlignmentScroll.barScrollTop}`);
+  if (afterPointerDrag.alignmentScrollTop <= afterAlignmentScroll.alignmentScrollTop + 20) {
+    failures.push(
+      `DOM pointer drag did not move alignment: ${afterAlignmentScroll.alignmentScrollTop} -> ${afterPointerDrag.alignmentScrollTop}`
+    );
+  }
+  if (afterPointerDrag.canvasOffsetY !== afterAlignmentScroll.canvasOffsetY) {
+    failures.push(
+      `DOM pointer drag incorrectly changed Canvas offset: ${afterAlignmentScroll.canvasOffsetY} -> ${afterPointerDrag.canvasOffsetY}`
+    );
   }
   if (errors.length) failures.push(`page errors: ${errors.join('; ')}`);
 
@@ -113,6 +133,7 @@ const { chromium } = require('playwright-core');
     initial,
     afterBarScroll,
     afterAlignmentScroll,
+    afterPointerDrag,
     full,
     canvas,
     errors,
