@@ -73,6 +73,10 @@ Start the app server first: `node server.js` from the repo root (default port 30
 - **`test_vertical_scrollbar.js`** - verifies that the right-side scrollbar is
   visible, aligned and scrollable in windowed Block, Full and Canvas modes,
   and that DOM-mode scrolling stays synchronized in both directions.
+- **`test_block_450_scroll_stability.js`** - reproduces the wide-viewport,
+  50%-zoom Block-mode defect around position 450, verifies every column in
+  the block is rendered, and records whether virtualization adjusts
+  `scrollTop` after each requested scroll.
 
 Each script prints its own pass/fail-shaped JSON to stdout - read the
 comments at the top of each for exactly what it's asserting.
