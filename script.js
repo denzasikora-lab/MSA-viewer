@@ -7709,6 +7709,40 @@ function _applyDomScrollAnchorToCanvas(anchor) {
     _canvasState.onOffsetChange?.();
 }
 
+// Reverse direction: converts Canvas mode's current pan offset into the
+// same row/column-index anchor shape, read BEFORE Canvas's own state is
+// touched by the switch (renderAlignment() doesn't reset _canvasState
+// itself, but reads it as if it still reflects "the view we're leaving",
+// so this must run before anything else changes mode).
+function _captureCanvasScrollAnchor() {
+    const rowPitch = _canvasState.rowPitch || _canvasState.metrics?.charH || 16;
+    const charW = _canvasState.metrics?.charW || 8;
+    return {
+        rowIndex: (_canvasState.offsetY || 0) / rowPitch,
+        colIndex: (_canvasState.offsetX || 0) / charW
+    };
+}
+
+// Applies a previously-captured anchor to a DOM mode (Full/Block/classic)
+// after renderAlignment() has already built that mode's view. Uses the
+// cached _unifiedRowHeightPx/_unifiedCharWidthPx (populated by the last
+// windowed DOM render, if any) rather than measuring a live row here,
+// because for a windowed alignment the newly-rendered DOM only covers
+// whatever range scrollTop=0 produced - a live measurement would be
+// correct but arrives too late to matter. For the windowed case, after
+// setting scrollTop/scrollLeft this also explicitly re-runs the scroll
+// refresh so the visible block/row range matches the new position
+// immediately, instead of showing stale content until the next real
+// scroll event.
+function _applyCanvasScrollAnchorToDom(anchor) {
+    if (!anchor) return;
+    const rowPx = _unifiedRowHeightPx || 16;
+    const colPx = _unifiedCharWidthPx || 8;
+    alignmentContainer.scrollTop = Math.max(0, anchor.rowIndex * rowPx);
+    alignmentContainer.scrollLeft = Math.max(0, anchor.colIndex * colPx);
+    if (state._needsWindowedDom) _refreshUnifiedWindowOnScroll(alignmentContainer);
+}
+
 async function onModeChange() {
     // Full mode (v167-v169) now windows both rows and columns, so it no
     // longer freezes - only the first paint's one-time conservation
@@ -7745,12 +7779,14 @@ async function onModeChange() {
     // auto-switching back to Canvas for the rest of this file's session.
     _userDismissedAutoCanvas = true;
     const enteringCanvasFromDom = document.getElementById('modeCanvas')?.checked && _lastModeRadioId !== 'modeCanvas';
+    const leavingCanvasToDom = !document.getElementById('modeCanvas')?.checked && _lastModeRadioId === 'modeCanvas';
     // Capture the current scroll position BEFORE renderAlignment() wipes
-    // alignmentContainer's DOM (which resets native scrollTop to 0) - see
-    // _captureDomScrollAnchor's comment. Only the DOM-mode -> Canvas
-    // direction is handled here; Canvas -> DOM keeps its prior behavior
-    // (a known, separate follow-up, not fixed by this change).
+    // alignmentContainer's DOM (which resets native scrollTop to 0) / before
+    // anything else touches _canvasState - see _captureDomScrollAnchor's and
+    // _captureCanvasScrollAnchor's comments. Handles both directions between
+    // Canvas mode and a DOM mode (Full/Block/classic).
     const domScrollAnchor = enteringCanvasFromDom ? _captureDomScrollAnchor() : null;
+    const canvasScrollAnchor = leavingCanvasToDom ? _captureCanvasScrollAnchor() : null;
     if (document.getElementById('modeCanvas')?.checked) {
         // Entering Canvas mode: these caches are keyed only by length/shadeMode,
         // so any same-length edit made while away from Canvas (residue edits,
@@ -7774,6 +7810,7 @@ async function onModeChange() {
     exitEditModeForUnsupportedView({ rerender: false });
     renderAlignment();
     if (domScrollAnchor) _applyDomScrollAnchorToCanvas(domScrollAnchor);
+    if (canvasScrollAnchor) _applyCanvasScrollAnchorToDom(canvasScrollAnchor);
     setupHoverMenuReveal();
     _lastModeRadioId = document.querySelector('input[name="mode"]:checked')?.id || _lastModeRadioId;
 }
