@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v183';
+const BUILD_TAG = 'v184';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1981,8 +1981,17 @@ function _computeBlockColumnWindow(start, end, scrollLeft, visibleDataWidth, cha
         return { colStart: start, colEnd: end - 1, needsColWindow: false };
     }
     const overscan = 20;
-    let colStart = Math.max(start, start + Math.floor(scrollLeft / charWidthPx) - overscan);
-    let colEnd = Math.min(end - 1, start + Math.ceil((scrollLeft + visibleDataWidth) / charWidthPx) - 1 + overscan);
+    // Horizontal scrollLeft is container-global. Clamp it to this block's width
+    // so a pan in an earlier block cannot truncate a vertically focused block.
+    const maxLocalScroll = Math.max(0, blockLen * charWidthPx - visibleDataWidth);
+    const localScrollLeft = Math.min(Math.max(0, scrollLeft), maxLocalScroll);
+    let colStart = start + Math.max(0, Math.floor(localScrollLeft / charWidthPx) - overscan);
+    let colEnd = start + Math.min(
+        blockLen - 1,
+        Math.ceil((localScrollLeft + visibleDataWidth) / charWidthPx) - 1 + overscan
+    );
+    colStart = Math.max(start, Math.min(colStart, end - 1));
+    colEnd = Math.max(colStart, Math.min(colEnd, end - 1));
     if (colStart > colEnd) { colStart = start; colEnd = end - 1; }
     return { colStart, colEnd, needsColWindow: colStart > start || colEnd < end - 1 };
 }
@@ -7123,6 +7132,23 @@ function _zoomToSlider(zoomPct) {
     return Math.round(100 * Math.log2(zoomPct / 50) / 2);
 }
 
+function _readZoomSliderRaw() {
+    const slider = el('zoomSlider');
+    const raw = parseInt(slider?.value ?? '', 10);
+    return Number.isNaN(raw) ? _zoomToSlider(100) : raw;
+}
+
+// v182+ stores raw log-slider positions (0-100). Older presets/snapshots stored
+// linear zoom percent (50-200) in the same field.
+function _normalizeStoredZoomSlider(stored, legacyPercent = false) {
+    const n = parseInt(stored, 10);
+    if (Number.isNaN(n)) return _zoomToSlider(100);
+    if (legacyPercent || n > 100) {
+        return _zoomToSlider(Math.min(200, Math.max(50, n)));
+    }
+    return Math.max(0, Math.min(100, n));
+}
+
 function _placeZoom100Tick() {
     const slider = el('zoomSlider');
     const tick = el('zoom100Tick');
@@ -7940,7 +7966,7 @@ function _isLargeAlignmentPending() {
 // Real name-column width isn't known yet at that point either way; the
 // nameLengthSlider-based estimate is the best available proxy pre-render.
 function _computeLargeAlignmentBlockChars() {
-    const zoom = _sliderToZoom(parseInt(el('zoomSlider')?.value || 50)) / 100;
+    const zoom = _sliderToZoom(_readZoomSliderRaw()) / 100;
     // 7.8px is this app's own real measured monospace character width at
     // 100% zoom (see _measureUnifiedColumnMetrics's fallback default,
     // measured from an actual rendered .seq-data span) — NOT 10px, which
@@ -8027,7 +8053,7 @@ function setBlockSizeToScreen() {
         // Fallback: use zoom-scaled monospace estimate (7.8px @ 100% — this
         // app's own real measured character width, see
         // _measureUnifiedColumnMetrics's fallback default; NOT 10px)
-        const zoom = _sliderToZoom(parseInt(el('zoomSlider')?.value || 50)) / 100;
+        const zoom = _sliderToZoom(_readZoomSliderRaw()) / 100;
         charPx = 7.8 * zoom;
     }
     // Available width = inner width of the container (excluding names)
@@ -8588,9 +8614,7 @@ function handleKeyDown(e) {
                 e.preventDefault();
                 break;
             case '0':
-                // Reset zoom to 100%
-                el('zoomSlider').value = _zoomToSlider(100);
-                setZoom(100);
+                resetZoom();
                 e.preventDefault();
                 break;
             case 'm':
@@ -9404,6 +9428,7 @@ function savePreset() {
         dark: el('darkSlider').value,
         light: el('lightSlider').value,
         zoom: el('zoomSlider').value,
+        zoomFormat: 'logSlider',
         mode: el('modeBlocks').checked ? 'blocks' : 'single',
         blockSize: el('blockSizeSlider').value,
         nameLen: el('nameLengthSlider').value,
@@ -9464,9 +9489,7 @@ function loadPreset() {
             return;
         }
         if (k === 'zoom') {
-            let n = parseInt(value, 10);
-            if (Number.isNaN(n)) return;
-            if (n > 100) n = _zoomToSlider(n);
+            const n = _normalizeStoredZoomSlider(value, p.zoomFormat !== 'logSlider');
             const zoomSliderEl = el('zoomSlider');
             if (zoomSliderEl) {
                 zoomSliderEl.min = '0';
@@ -9487,7 +9510,7 @@ function loadPreset() {
             document.documentElement.style.setProperty('--nameLen', value);
         }
     });
-    setZoom(_sliderToZoom(parseInt(el('zoomSlider')?.value || 50, 10)));
+    setZoom(_sliderToZoom(_readZoomSliderRaw()));
     el('modeBlocks').checked = p.mode === 'blocks';
     el('modeSingle').checked = p.mode !== 'blocks';
     el('stickyNames').checked = p.stickyNames !== undefined ? p.stickyNames : true;
@@ -9559,6 +9582,7 @@ function _buildSnapshotPayload() {
             darkColor: el('darkColorPicker')?.value,
             lightColor: el('lightColorPicker')?.value,
             zoom: el('zoomSlider')?.value,
+            zoomFormat: 'logSlider',
             mode: el('modeBlocks')?.checked ? 'blocks' : 'single',
             blockSize: el('blockSizeSlider')?.value,
             nameLen: el('nameLengthSlider')?.value,
@@ -9610,17 +9634,15 @@ function _applySnapshotView(view) {
     applySliderPair('dark', 'darkSlider', 'darkInput');
     applySliderPair('light', 'lightSlider', 'lightInput');
     applySliderPair('zoom', 'zoomSlider', null, (v) => {
-        let n = parseInt(v, 10);
-        if (!Number.isNaN(n)) {
-            // Migration: old snapshots stored zoom as percent (50-200), new ones store raw slider (0-100)
-            if (n > 100) n = _zoomToSlider(n);
-            const sliderEl = el('zoomSlider');
-            if (sliderEl) {
-                sliderEl.value = n;
-                updateSliderBackground(sliderEl);
-            }
-            setZoom(_sliderToZoom(n));
+        const n = _normalizeStoredZoomSlider(v, view.zoomFormat !== 'logSlider');
+        const sliderEl = el('zoomSlider');
+        if (sliderEl) {
+            sliderEl.min = '0';
+            sliderEl.max = '100';
+            sliderEl.value = n;
+            updateSliderBackground(sliderEl);
         }
+        setZoom(_sliderToZoom(n));
     });
     applySliderPair('blockSize', 'blockSizeSlider', 'blockSizeInput');
     applySliderPair('nameLen', 'nameLengthSlider', 'nameLengthInput', (v) => setNameLengthUI(v));
@@ -15180,6 +15202,24 @@ function attachUIListeners() {
             event.preventDefault();
             event.stopPropagation();
             resetZoom();
+        });
+    }
+    const zoomWrap = zoomSlider?.parentElement;
+    if (zoomWrap?.classList.contains('zoom-slider-wrap')) {
+        zoomWrap.addEventListener('mousedown', (event) => {
+            if (event.target !== zoomSlider) return;
+            const rect = zoomSlider.getBoundingClientRect();
+            const thumb = 8;
+            const usable = Math.max(0, rect.width - thumb);
+            if (usable <= 0) return;
+            const frac = (event.clientX - rect.left - thumb / 2) / usable;
+            const min = Number(zoomSlider.min) || 0;
+            const max = Number(zoomSlider.max) || 100;
+            const raw = min + frac * (max - min);
+            if (raw >= _zoomToSlider(100)) {
+                event.preventDefault();
+                resetZoom();
+            }
         });
     }
 

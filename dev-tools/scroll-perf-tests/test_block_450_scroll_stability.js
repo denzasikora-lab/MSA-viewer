@@ -91,6 +91,46 @@ const { chromium } = require('playwright-core');
       `position-450 block rendered ${blockCheck.block2.renderedColumns}/${blockCheck.blockWidth} columns`
     );
   }
+
+  const afterHorizontalPan = await page.evaluate(() => {
+    const inspectBlock = blockIndex => {
+      const block = document.querySelector(`.block-block[data-block-index="${blockIndex}"]`);
+      const row = block?.querySelector('.seq-line[data-seq-index] .seq-data');
+      const spans = row ? [...row.querySelectorAll('span[data-pos]')] : [];
+      return {
+        blockIndex,
+        renderedColumns: spans.length,
+        firstPosition: spans.length ? Number(spans[0].dataset.pos) : null,
+        lastPosition: spans.length ? Number(spans[spans.length - 1].dataset.pos) : null
+      };
+    };
+    const container = document.getElementById('alignmentContainer');
+    container.scrollLeft = 12000;
+    container.scrollTop = _unifiedBlockHeightPx * 2 + 20;
+    return {
+      scrollLeft: container.scrollLeft,
+      block2: inspectBlock(2)
+    };
+  });
+  await page.waitForTimeout(300);
+  const afterHorizontalPanSettled = await page.evaluate(() => {
+    const block = document.querySelector('.block-block[data-block-index="2"]');
+    const row = block?.querySelector('.seq-line[data-seq-index] .seq-data');
+    const spans = row ? [...row.querySelectorAll('span[data-pos]')] : [];
+    return {
+      renderedColumns: spans.length,
+      firstPosition: spans.length ? Number(spans[0].dataset.pos) : null,
+      lastPosition: spans.length ? Number(spans[spans.length - 1].dataset.pos) : null,
+      blockWidth: Number(document.getElementById('blockSizeSlider').value)
+    };
+  });
+  const minColumnsAfterPan = Math.min(afterHorizontalPanSettled.blockWidth, 40);
+  if (afterHorizontalPanSettled.renderedColumns < minColumnsAfterPan) {
+    failures.push(
+      `after horizontal pan, block 2 rendered ${afterHorizontalPanSettled.renderedColumns}/${afterHorizontalPanSettled.blockWidth} columns`
+    );
+  }
+
   for (const sample of scrollSamples) {
     if (Math.abs(sample.afterSecondFrame - sample.requested) > 2) {
       failures.push(
@@ -100,7 +140,14 @@ const { chromium } = require('playwright-core');
   }
   if (errors.length) failures.push(`page errors: ${errors.join('; ')}`);
 
-  console.log(JSON.stringify({ blockCheck, scrollSamples, errors, failures }, null, 2));
+  console.log(JSON.stringify({
+    blockCheck,
+    afterHorizontalPan,
+    afterHorizontalPanSettled,
+    scrollSamples,
+    errors,
+    failures
+  }, null, 2));
   await browser.close();
   if (failures.length) process.exitCode = 1;
 })().catch(error => {

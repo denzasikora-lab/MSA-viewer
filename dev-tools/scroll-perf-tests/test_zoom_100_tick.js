@@ -59,9 +59,64 @@ const { chromium } = require('playwright-core');
   await page.waitForFunction(() => document.getElementById('zoomVal')?.textContent === '50%');
   const at50 = await measure();
 
-  await page.locator('#zoom100Tick').click();
-  await page.waitForFunction(() => document.getElementById('zoomVal')?.textContent === '100%');
-  const afterTickClick = await measure();
+  const afterTickClick = await page.evaluate(() => {
+    document.getElementById('zoom100Tick').click();
+    _placeZoom100Tick();
+    const slider = document.getElementById('zoomSlider');
+    return {
+      zoomText: document.getElementById('zoomVal')?.textContent,
+      sliderValue: Number(slider.value),
+      mappedZoom: _sliderToZoom(Number(slider.value))
+    };
+  });
+
+  const afterTrackClick = await page.evaluate(() => {
+    const slider = document.getElementById('zoomSlider');
+    slider.value = '0';
+    slider.dispatchEvent(new Event('input', { bubbles: true }));
+    const rect = slider.getBoundingClientRect();
+    const thumb = 8;
+    const usable = Math.max(0, rect.width - thumb);
+    const clientX = rect.left + thumb / 2 + usable * 0.92;
+    slider.dispatchEvent(new MouseEvent('mousedown', {
+      bubbles: true,
+      cancelable: true,
+      clientX,
+      clientY: rect.top + rect.height / 2
+    }));
+    return {
+      zoomText: document.getElementById('zoomVal')?.textContent,
+      sliderValue: Number(slider.value),
+      mappedZoom: _sliderToZoom(Number(slider.value))
+    };
+  });
+
+  const afterLegacyPreset = await page.evaluate(() => {
+    localStorage.setItem('msaviewer_preset_v44', JSON.stringify({
+      black: 50,
+      dark: 50,
+      light: 50,
+      zoom: 100,
+      mode: 'blocks',
+      blockSize: 200,
+      nameLen: 50,
+      consensusThreshold: 50,
+      consensusType: 'normal',
+      showConsensus: false,
+      shadeMode: 'all',
+      enableBlack: true,
+      enableDark: true,
+      enableLight: true,
+      stickyNames: true
+    }));
+    loadPreset();
+    const slider = document.getElementById('zoomSlider');
+    return {
+      zoomText: document.getElementById('zoomVal')?.textContent,
+      sliderValue: Number(slider.value),
+      mappedZoom: _sliderToZoom(Number(slider.value))
+    };
+  });
 
   const afterMutatedRange = await page.evaluate(() => {
     const slider = document.getElementById('zoomSlider');
@@ -94,6 +149,12 @@ const { chromium } = require('playwright-core');
   if (afterTickClick.zoomText !== '100%' || afterTickClick.sliderValue !== 50) {
     failures.push(`tick click did not restore 100%: ${JSON.stringify(afterTickClick)}`);
   }
+  if (afterTrackClick.zoomText !== '100%' || afterTrackClick.sliderValue !== 50) {
+    failures.push(`track click on zoom-in side did not restore 100%: ${JSON.stringify(afterTrackClick)}`);
+  }
+  if (afterLegacyPreset.zoomText !== '100%' || afterLegacyPreset.sliderValue !== 50) {
+    failures.push(`legacy preset zoom:100 loaded as ${afterLegacyPreset.zoomText} (slider ${afterLegacyPreset.sliderValue})`);
+  }
   if (afterMutatedRange.sliderMin !== '0' || afterMutatedRange.sliderMax !== '100') {
     failures.push(`setZoom(100) did not restore slider range: ${afterMutatedRange.sliderMin}-${afterMutatedRange.sliderMax}`);
   }
@@ -106,6 +167,8 @@ const { chromium } = require('playwright-core');
     initial,
     at50,
     afterTickClick,
+    afterTrackClick,
+    afterLegacyPreset,
     afterMutatedRange,
     errors,
     failures
