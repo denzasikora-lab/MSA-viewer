@@ -65,6 +65,11 @@ Start the app server first: `node server.js` from the repo root (default port 30
   switches to Canvas mode, and checks whether the same alignment rows are
   visible before/after (catches the "view jumps when switching modes" bug
   class).
+- **`test_zoom_window_geometry.js`** - changes a windowed DOM alignment from
+  100% to 50% zoom, checks both the immediate and settled viewport geometry,
+  scrolls with a real wheel event, then pressure-tests 200% and Full mode.
+  It fails if stale row-height caches leave a blank lower viewport or if
+  rendered rows become duplicated or disagree with sequence data.
 
 Each script prints its own pass/fail-shaped JSON to stdout - read the
 comments at the top of each for exactly what it's asserting.

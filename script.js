@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v180';
+const BUILD_TAG = 'v181';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -2025,6 +2025,15 @@ let _unifiedWindowRenderParams = null;
 // DOM, keyed by block index. Populated in _buildUnifiedBlock, consumed
 // by a future incremental-diff version of _refreshUnifiedWindowOnScroll.
 let _unifiedRenderedRowRanges = new Map();
+
+function _invalidateUnifiedWindowMeasurements() {
+    _unifiedRowHeightPx = null;
+    _unifiedBlockHeightPx = null;
+    _unifiedHeaderHeightPx = null;
+    _unifiedCharWidthPx = null;
+    _unifiedNameColWidthPx = null;
+    _unifiedRenderedRowRanges.clear();
+}
 
 function _measureUnifiedRowHeight(sampleRowEl) {
     if (sampleRowEl) {
@@ -7084,13 +7093,29 @@ function setZoom(percent) {
     // painted background independently - leaving 1px unpainted seams between rows
     // at some zoom levels, at different rows as the fractional part changes.
     const size = Math.max(1, Math.round((percent / 100) * 13));
+    const isCanvas = document.getElementById('modeCanvas')?.checked;
+    const isWindowedDom = state._needsWindowedDom &&
+        (document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked);
+    // Window geometry must be measured at the final font size, not midway
+    // through the container's 0.1s CSS font-size transition.
+    if (isWindowedDom) alignmentContainer.style.transition = 'none';
     alignmentContainer.style.fontSize = size + 'px';
     el('zoomVal').textContent = percent + '%';
     el('zoomVal').classList.toggle('not-default', percent !== 100);
-    // DOM mode picks up the new font-size via CSS inheritance automatically,
-    // but Canvas mode measures/bakes glyphs at a fixed size on render, so it
-    // needs an explicit re-render to track the zoom slider.
-    if (document.getElementById('modeCanvas')?.checked) debounceRender();
+    // Canvas measures/bakes glyphs at render time. Large Full/Block views also
+    // need a rebuild: their row/column spacers and viewport windows are based
+    // on cached pixel measurements that become stale when the font size changes.
+    if (isCanvas) {
+        debounceRender();
+    } else if (isWindowedDom) {
+        _invalidateUnifiedWindowMeasurements();
+        renderAlignment();
+        // Keep transitions disabled through the next paint so restoring the
+        // stylesheet rule cannot animate away from the geometry just measured.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            alignmentContainer.style.removeProperty('transition');
+        }));
+    }
 }
 function setZoomFromSlider() {
     const slider = el('zoomSlider');
