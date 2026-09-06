@@ -2221,9 +2221,23 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
 // the slider (multiple blocks). Windows at three granularities: block-level
 // (which blocks are visible), row-level (which rows within each block), and
 // column-level (only when a block is wider than the viewport).
-function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, preservedScrollTop) {
+function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, preservedScrollTop, _isRetry) {
     _unifiedWindowRenderParams = { len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options };
     const numBlocks = Math.max(1, Math.ceil(len / blockWidth));
+    // rowHeightPx falls back to a hardcoded 16px guess until a real row has been
+    // measured. That guess rarely matches the actual rendered row height (font
+    // stack/size dependent, seen as low as 13px), and this value gets baked into
+    // every block's bottom-row-spacer AND into blockHeightPx itself (measured
+    // from this same first, wrongly-sized block below) - the mismatch then
+    // compounds across every block's blockTop = blockIndex * blockHeightPx,
+    // drifting further with each block and eventually scrolling into an area
+    // with no real content (confirmed directly: a 621-seq/13px-row alignment
+    // measured blockHeightPx ~9771px from a first block whose true content
+    // only fills ~8100px, and by block 12 that ~1650px/block error compounded
+    // into a multi-thousand-pixel gap - scrolling to the bottom landed on
+    // blank space with the real rows rendered thousands of pixels off-screen).
+    // See the retry block below for the actual fix: rebuild once if the real
+    // measurement (taken after this pass) turns out to disagree.
     const rowHeightPx = Math.max(1, _unifiedRowHeightPx || 16);
     const blockHeightPx = Math.max(1, _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx());
     const effectiveScrollTop = preservedScrollTop != null ? preservedScrollTop : container.scrollTop;
@@ -2259,14 +2273,34 @@ function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNam
     container.appendChild(bottomSpacer);
 
     // Measure from the first real block and its first real row
+    let measuredRowHeightPx = rowHeightPx;
     if (firstRealBlock) {
         _measureUnifiedBlockHeight(firstRealBlock);
         _measureUnifiedHeaderHeight(firstRealBlock);
         const firstRow = firstRealBlock.querySelector('.seq-line[data-seq-index]');
         if (firstRow) {
-            _measureUnifiedRowHeight(firstRow);
+            measuredRowHeightPx = _measureUnifiedRowHeight(firstRow);
             _measureUnifiedColumnMetrics(firstRow);
         }
+    }
+
+    // Self-correct: if the row height actually measured from real, rendered
+    // content disagrees with the (possibly-fallback) value this pass used to
+    // build every block's internal spacer math and blockHeightPx itself,
+    // rebuild once now with the corrected value - before the user ever sees
+    // the drifted layout - rather than letting every block after the first
+    // silently accumulate the error (see the comment above rowHeightPx).
+    // The _isRetry guard makes this at most one extra pass: the second call
+    // always measures the same real DOM it just built, so it can't disagree
+    // with itself.
+    if (!_isRetry && Math.abs(measuredRowHeightPx - rowHeightPx) > 0.5) {
+        container.innerHTML = '';
+        // blockHeightPx was measured from this pass's wrongly-sized block (built
+        // with the stale rowHeightPx) - reset it too, so the retry derives a
+        // fresh fallback from the now-correct row height instead of reusing a
+        // blockHeightPx that's just as poisoned as the row height was.
+        _unifiedBlockHeightPx = null;
+        return renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, preservedScrollTop, true);
     }
 
     // Restore scroll position (same suppress dance as the existing functions)
