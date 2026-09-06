@@ -17521,26 +17521,39 @@ function initColourSeqs() {
     let syncing = false;
 
     function syncVisibilityAndSize() {
-        if (!isCanvasMode()) {
+        if (isCanvasMode()) {
+            bar.style.display = 'block';
+            const rect = alignment.getBoundingClientRect();
+            bar.style.top = alignment.offsetTop + 'px';
+            bar.style.height = rect.height + 'px';
+            syncing = true;
+            const h = _canvasState.totalContentH || alignment.clientHeight;
+            thumb.style.height = Math.max(h, alignment.clientHeight + 1) + 'px';
+            bar.scrollTop = _canvasState.offsetY || 0;
+            syncing = false;
+        } else if (alignment.scrollHeight > alignment.clientHeight) {
+            bar.style.display = 'block';
+            const rect = alignment.getBoundingClientRect();
+            bar.style.top = alignment.offsetTop + 'px';
+            bar.style.height = rect.height + 'px';
+            syncing = true;
+            thumb.style.height = Math.max(alignment.scrollHeight, alignment.clientHeight + 1) + 'px';
+            bar.scrollTop = alignment.scrollTop;
+            syncing = false;
+        } else {
             bar.style.display = 'none';
-            return;
         }
-        bar.style.display = 'block';
-        const rect = alignment.getBoundingClientRect();
-        bar.style.top = alignment.offsetTop + 'px';
-        bar.style.height = rect.height + 'px';
-        syncing = true;
-        const h = _canvasState.totalContentH || alignment.clientHeight;
-        thumb.style.height = Math.max(h, alignment.clientHeight + 1) + 'px';
-        bar.scrollTop = _canvasState.offsetY || 0;
-        syncing = false;
     }
 
     function onBarScroll() {
-        if (syncing || !isCanvasMode()) return;
+        if (syncing) return;
         syncing = true;
-        _canvasState.offsetY = bar.scrollTop;
-        _canvasState.scheduleDraw?.();
+        if (isCanvasMode()) {
+            _canvasState.offsetY = bar.scrollTop;
+            _canvasState.scheduleDraw?.();
+        } else {
+            alignment.scrollTop = bar.scrollTop;
+        }
         syncing = false;
     }
 
@@ -17556,8 +17569,17 @@ function initColourSeqs() {
         syncing = false;
     };
 
+    // DOM mode: keep the bar in sync when the alignment scrolls natively
+    function onAlignmentScroll() {
+        if (syncing || isCanvasMode()) return;
+        syncing = true;
+        bar.scrollTop = alignment.scrollTop;
+        syncing = false;
+    }
+
     syncVisibilityAndSize();
     bar.addEventListener('scroll', onBarScroll, { passive: true });
+    alignment.addEventListener('scroll', onAlignmentScroll, { passive: true });
     window.addEventListener('resize', () => window.requestAnimationFrame(syncVisibilityAndSize));
     const mo = new MutationObserver(() => window.requestAnimationFrame(syncVisibilityAndSize));
     mo.observe(alignment, { childList: true, subtree: true, characterData: false, attributes: false });
