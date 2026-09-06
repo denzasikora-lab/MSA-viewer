@@ -77,6 +77,9 @@ Start the app server first: `node server.js` from the repo root (default port 30
   50%-zoom Block-mode defect around position 450, verifies every column in
   the block is rendered, and records whether virtualization adjusts
   `scrollTop` after each requested scroll.
+- **`test_zoom_100_tick.js`** - checks that the zoom track has a visible 100%
+  mark at the log midpoint, that clicking the mark restores 100%, and that
+  a mutated slider min/max cannot move that mark to the left edge.
 
 Each script prints its own pass/fail-shaped JSON to stdout - read the
 comments at the top of each for exactly what it's asserting.

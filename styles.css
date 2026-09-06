@@ -882,6 +882,40 @@ input[type="range"].shading-slider::-moz-range-thumb {
     cursor: pointer;
     background: white;
 }
+.zoom-slider-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 100px;
+    max-width: 200px;
+    padding-top: 8px;
+}
+.zoom-slider-wrap .normal-slider {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+}
+.zoom-100-tick {
+    position: absolute;
+    top: 0;
+    width: 12px;
+    height: 10px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    transform: translateX(-50%);
+    cursor: pointer;
+    z-index: 2;
+}
+.zoom-100-tick::before {
+    content: '';
+    display: block;
+    width: 0;
+    height: 0;
+    margin: 0 auto;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #444;
+}
 input[type="range"].normal-slider {
     -webkit-appearance: none;
     appearance: none;

@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v182';
+const BUILD_TAG = 'v183';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -7123,6 +7123,26 @@ function _zoomToSlider(zoomPct) {
     return Math.round(100 * Math.log2(zoomPct / 50) / 2);
 }
 
+function _placeZoom100Tick() {
+    const slider = el('zoomSlider');
+    const tick = el('zoom100Tick');
+    if (!slider || !tick) return;
+    const min = Number(slider.min) || 0;
+    const max = Number(slider.max) || 100;
+    const span = max - min || 1;
+    const frac = (_zoomToSlider(100) - min) / span;
+    const wrap = tick.parentElement;
+    const sliderRect = slider.getBoundingClientRect();
+    const wrapRect = wrap?.getBoundingClientRect();
+    if (!wrapRect || wrapRect.width <= 0 || sliderRect.width <= 0) return;
+    // Native range thumbs sit on an inset track (half a thumb at each end).
+    // Place the 100% mark over that thumb position, not the raw box midpoint.
+    const thumb = 8;
+    const usable = Math.max(0, sliderRect.width - thumb);
+    const center = (sliderRect.left - wrapRect.left) + thumb / 2 + usable * frac;
+    tick.style.left = center + 'px';
+}
+
 function setZoom(percent) {
     // Round to a whole pixel. With .seq-line { line-height: 1.0 } a fractional
     // font-size produces fractional row heights, and the browser rounds each row's
@@ -7138,6 +7158,19 @@ function setZoom(percent) {
     alignmentContainer.style.fontSize = size + 'px';
     el('zoomVal').textContent = percent + '%';
     el('zoomVal').classList.toggle('not-default', percent !== 100);
+    // Keep the raw 0-100 log slider, its fill, and the 100% tick in lockstep
+    // with the displayed percent. setZoom used to update only the label, so a
+    // later background refresh against a stale/min-max-mutated slider made
+    // "100%" appear near the left edge of the track.
+    const slider = el('zoomSlider');
+    if (slider) {
+        if (slider.min !== '0') slider.min = '0';
+        if (slider.max !== '100') slider.max = '100';
+        const sliderVal = String(_zoomToSlider(percent));
+        if (slider.value !== sliderVal) slider.value = sliderVal;
+        updateSliderBackground(slider);
+    }
+    _placeZoom100Tick();
     // Canvas measures/bakes glyphs at render time. Large Full/Block views also
     // need a rebuild: their row/column spacers and viewport windows are based
     // on cached pixel measurements that become stale when the font size changes.
@@ -9430,6 +9463,19 @@ function loadPreset() {
             if (inputElement) inputElement.value = clamped;
             return;
         }
+        if (k === 'zoom') {
+            let n = parseInt(value, 10);
+            if (Number.isNaN(n)) return;
+            if (n > 100) n = _zoomToSlider(n);
+            const zoomSliderEl = el('zoomSlider');
+            if (zoomSliderEl) {
+                zoomSliderEl.min = '0';
+                zoomSliderEl.max = '100';
+                zoomSliderEl.value = n;
+                updateSliderBackground(zoomSliderEl);
+            }
+            return;
+        }
         const sliderEl = el(k + 'Slider');
         if (sliderEl) {
             sliderEl.value = value;
@@ -9441,7 +9487,7 @@ function loadPreset() {
             document.documentElement.style.setProperty('--nameLen', value);
         }
     });
-    setZoom(p.zoom > 100 ? p.zoom : _sliderToZoom(p.zoom));
+    setZoom(_sliderToZoom(parseInt(el('zoomSlider')?.value || 50, 10)));
     el('modeBlocks').checked = p.mode === 'blocks';
     el('modeSingle').checked = p.mode !== 'blocks';
     el('stickyNames').checked = p.stickyNames !== undefined ? p.stickyNames : true;
@@ -15118,6 +15164,23 @@ function attachUIListeners() {
             setZoomFromSlider();
             updateSliderBackground(zoomSlider);
         }, 50));
+        _placeZoom100Tick();
+        window.addEventListener('resize', () => window.requestAnimationFrame(_placeZoom100Tick));
+        if (typeof ResizeObserver !== 'undefined') {
+            const wrap = zoomSlider.parentElement;
+            if (wrap) {
+                const zoomTickObserver = new ResizeObserver(() => _placeZoom100Tick());
+                zoomTickObserver.observe(wrap);
+            }
+        }
+    }
+    const zoom100Tick = el('zoom100Tick');
+    if (zoom100Tick) {
+        zoom100Tick.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            resetZoom();
+        });
     }
 
     // Set up radio button groups
@@ -17615,8 +17678,11 @@ function initColourSeqs() {
     bar.addEventListener('scroll', onBarScroll, { passive: true });
     alignment.addEventListener('scroll', onAlignmentScroll, { passive: true });
     window.addEventListener('resize', () => window.requestAnimationFrame(syncVisibilityAndSize));
+    // Only watch direct children (blocks/spacers). subtree:true used to fire
+    // once per virtualized row insert/remove and force a layout read of the
+    // bar during the already-expensive scroll refresh.
     const mo = new MutationObserver(() => window.requestAnimationFrame(syncVisibilityAndSize));
-    mo.observe(alignment, { childList: true, subtree: true, characterData: false, attributes: false });
+    mo.observe(alignment, { childList: true, subtree: false, characterData: false, attributes: false });
     // Mode radios don't fire a DOM mutation on alignmentContainer by
     // themselves - listen directly so switching into/out of Canvas mode
     // shows/hides this bar immediately, not just on the next resize/render.

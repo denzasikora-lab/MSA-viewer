@@ -172,7 +172,10 @@
                         <div class="slider-container display-slider-row" style="flex: 1; max-width: 500px;">
                             <span class="slider-label" title="Zoom controls for alignment display">Zoom</span>
                             <button id="zoomOutButton" class="zoom-button" title="Zoom out (shortcut: Ctrl+-)">-</button>
-                            <input type="range" id="zoomSlider" class="normal-slider" min="0" max="100" value="50" title="Zoom level for alignment display (50-200%)" style="flex: 1; min-width: 100px; max-width: 200px;">
+                            <div class="zoom-slider-wrap">
+                                <button type="button" id="zoom100Tick" class="zoom-100-tick" title="Reset zoom to 100%" aria-label="Reset zoom to 100%"></button>
+                                <input type="range" id="zoomSlider" class="normal-slider" min="0" max="100" value="50" title="Zoom level for alignment display (50-200%)">
+                            </div>
                             <span id="zoomVal" class="zoom-value" title="Click to reset to 100%" style="min-width: 42px; text-align: center; cursor: pointer;" onclick="resetZoom()">100%</span>
                             <button id="zoomInButton" class="zoom-button" title="Zoom in (shortcut: Ctrl++)">+</button>
                         </div>
@@ -1100,7 +1103,7 @@ B: -</pre>
 
     <script src="cluster.js?v=164"></script>
     <script src="bam-parser.js?v=164"></script>
-    <script src="script.js?v=182"></script>
+    <script src="script.js?v=183"></script>
     <script src="tree-draw.js?v=164"></script>
     <script>
     // All functionality moved to script.js
