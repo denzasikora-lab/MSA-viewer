@@ -1910,6 +1910,7 @@ function calculateGaplessPositions(sequence) {
 // (c) remove/rebuild only the DOM between two spacer sentinels rather than
 // the whole container.
 function _removeNodesBetweenSpacers(topSpacer, bottomSpacer) {
+    _unifiedRenderedRowRanges.clear();
     let node = topSpacer.nextSibling;
     while (node && node !== bottomSpacer) {
         const next = node.nextSibling;
@@ -2020,6 +2021,10 @@ let _unifiedHeaderHeightPx = null;
 let _unifiedCharWidthPx = null;
 let _unifiedNameColWidthPx = null;
 let _unifiedWindowRenderParams = null;
+// Per-block record of which row indices are currently rendered in the
+// DOM, keyed by block index. Populated in _buildUnifiedBlock, consumed
+// by a future incremental-diff version of _refreshUnifiedWindowOnScroll.
+let _unifiedRenderedRowRanges = new Map();
 
 function _measureUnifiedRowHeight(sampleRowEl) {
     if (sampleRowEl) {
@@ -2098,6 +2103,7 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     const blockLen = end - start;
     const blockDiv = document.createElement('div');
     blockDiv.className = 'block-block';
+    blockDiv.dataset.blockIndex = String(blockIndex);
     const isLastBlock = (start + (end - start) >= len) || end >= len;
 
     // Column windowing within this block - computed up front so the ruler and
@@ -2182,6 +2188,7 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
         rowStart = 0;
         rowEnd = Math.min(Math.max(0, nSeq - 1), 50);
     }
+    _unifiedRenderedRowRanges.set(blockIndex, { rowStart, rowEnd });
 
     // Top row spacer (fills the space of rows above the visible window)
     const topRowSpacer = document.createElement('div');
