@@ -2258,35 +2258,61 @@ function _incrementalUpdateBlockRows(blockDiv, blockIndex, newRowStart, newRowEn
     if (rowSpacers.length !== 2) return false;
     const [topRowSpacer, bottomRowSpacer] = rowSpacers;
 
-    // Remove rows that scrolled out of the new range. Also clean up their
-    // spanCache entries so forEachColumnSpan/updateColumnSelections never
-    // iterate a stale, detached row.
+    // Build one Map from sequence index to existing row element during the
+    // existing initial querySelectorAll.
     const existingRows = blockDiv.querySelectorAll(':scope > .seq-line[data-seq-index]');
+    const rowMap = new Map();
     existingRows.forEach(rowEl => {
         const idx = parseInt(rowEl.getAttribute('data-seq-index'), 10);
         if (Number.isNaN(idx) || idx < 0) return; // leave consensus/other special rows alone
+        rowMap.set(idx, rowEl);
+    });
+
+    // Remove out-of-range rows and delete them from that Map. Also clean up their
+    // spanCache entries so forEachColumnSpan/updateColumnSelections never
+    // iterate a stale, detached row.
+    rowMap.forEach((rowEl, idx) => {
         if (idx < newRowStart || idx > newRowEnd) {
             state.spanCache?.delete(idx);
             rowEl.remove();
+            rowMap.delete(idx);
         }
     });
 
-    // Add rows that scrolled into the new range but aren't already present.
-    // Insert each new row in the correct ascending position relative to
-    // whatever real rows already remain, so DOM order stays sorted by index
-    // (needed for the removal loop and any code that assumes row order).
+    // Determine missing contiguous runs in [newRowStart, newRowEnd].
+    const missingRuns = [];
+    let runStart = -1;
     for (let i = newRowStart; i <= newRowEnd; i++) {
-        if (blockDiv.querySelector(`:scope > .seq-line[data-seq-index="${i}"]`)) continue;
-        const lineDiv = createSequenceLine(i, colStart, colEnd + 1, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, conservationData);
-        // Find the first remaining row with a greater index and insert before it;
-        // if none, insert right before the bottom spacer.
-        let insertBefore = bottomRowSpacer;
-        const rowsNow = blockDiv.querySelectorAll(':scope > .seq-line[data-seq-index]');
-        for (const r of rowsNow) {
-            const ridx = parseInt(r.getAttribute('data-seq-index'), 10);
-            if (!Number.isNaN(ridx) && ridx > i) { insertBefore = r; break; }
+        if (!rowMap.has(i)) {
+            if (runStart < 0) runStart = i;
+        } else {
+            if (runStart >= 0) {
+                missingRuns.push([runStart, i - 1]);
+                runStart = -1;
+            }
         }
-        blockDiv.insertBefore(lineDiv, insertBefore);
+    }
+    if (runStart >= 0) missingRuns.push([runStart, newRowEnd]);
+
+    // Build each missing run in a detached DocumentFragment, with rows in
+    // ascending sequence-index order, and insert each fragment once before
+    // the first retained row with a greater index, or before bottomRowSpacer
+    // if there is none.
+    for (const [start, end] of missingRuns) {
+        const frag = document.createDocumentFragment();
+        for (let i = start; i <= end; i++) {
+            const lineDiv = createSequenceLine(i, colStart, colEnd + 1, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, conservationData);
+            frag.appendChild(lineDiv);
+        }
+        let insertBefore = bottomRowSpacer;
+        let nextGreaterIdx = Infinity;
+        rowMap.forEach((rowEl, idx) => {
+            if (idx > end && idx < nextGreaterIdx) {
+                nextGreaterIdx = idx;
+                insertBefore = rowEl;
+            }
+        });
+        blockDiv.insertBefore(frag, insertBefore);
     }
 
     topRowSpacer.style.height = (newRowStart * rowHeightPx) + 'px';
