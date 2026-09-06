@@ -7668,6 +7668,47 @@ function syncQuickModeSwitch() {
 // below. Matches the radio marked `checked` by default in the HTML.
 let _lastModeRadioId = 'modeBlocks';
 
+// Converts the alignment's current DOM scroll position (native scrollTop/
+// scrollLeft on alignmentContainer) into a mode-independent "row index /
+// column index at the top-left of the viewport" anchor. Needed because
+// Canvas mode uses an entirely different scroll mechanism (_canvasState.
+// offsetY/offsetX, a synthetic pan offset with its own pixel pitch, not
+// alignmentContainer's native scrollTop/scrollLeft) - switching modes
+// without converting between the two silently reset the view to the top of
+// the alignment (alignmentContainer.innerHTML='' during the mode's
+// re-render zeroes native scrollTop, and Canvas mode's own offset starts
+// wherever it was last left, which is 0 the first time). Measures a live
+// row/span rather than trusting the windowed renderer's cached
+// _unifiedRowHeightPx/_unifiedCharWidthPx, which are null for a small
+// (non-windowed) alignment and would silently produce a 0/0 anchor.
+function _captureDomScrollAnchor() {
+    const sampleRow = alignmentContainer.querySelector('.seq-line[data-seq-index]');
+    const sampleSpan = sampleRow?.querySelector('.seq-data span[data-pos]');
+    const rowPx = (sampleRow ? sampleRow.getBoundingClientRect().height : 0) || _unifiedRowHeightPx || 16;
+    const colPx = (sampleSpan ? sampleSpan.getBoundingClientRect().width : 0) || _unifiedCharWidthPx || 8;
+    return {
+        rowIndex: alignmentContainer.scrollTop / rowPx,
+        colIndex: alignmentContainer.scrollLeft / colPx
+    };
+}
+
+// Applies a previously-captured anchor to Canvas mode's own pan offset,
+// after renderAlignment() has already built Canvas mode's view (so
+// _canvasState.rowPitch/metrics reflect this alignment, not a stale value
+// from whatever was last shown in Canvas mode). Forces one extra redraw at
+// the corrected offset - cheap (a canvas repaint, not a DOM rebuild), so
+// this reads as landing directly on the right spot rather than a visible
+// jump-then-correct.
+function _applyDomScrollAnchorToCanvas(anchor) {
+    if (!anchor) return;
+    const rowPitch = _canvasState.rowPitch || _canvasState.metrics?.charH || 16;
+    const charW = _canvasState.metrics?.charW || 8;
+    _canvasState.offsetY = Math.max(0, anchor.rowIndex * rowPitch);
+    _canvasState.offsetX = Math.max(0, anchor.colIndex * charW);
+    _canvasState.scheduleDraw?.();
+    _canvasState.onOffsetChange?.();
+}
+
 async function onModeChange() {
     // Full mode (v167-v169) now windows both rows and columns, so it no
     // longer freezes - only the first paint's one-time conservation
@@ -7703,6 +7744,13 @@ async function onModeChange() {
     // not dispatch 'change'), so this is an unambiguous signal to stop
     // auto-switching back to Canvas for the rest of this file's session.
     _userDismissedAutoCanvas = true;
+    const enteringCanvasFromDom = document.getElementById('modeCanvas')?.checked && _lastModeRadioId !== 'modeCanvas';
+    // Capture the current scroll position BEFORE renderAlignment() wipes
+    // alignmentContainer's DOM (which resets native scrollTop to 0) - see
+    // _captureDomScrollAnchor's comment. Only the DOM-mode -> Canvas
+    // direction is handled here; Canvas -> DOM keeps its prior behavior
+    // (a known, separate follow-up, not fixed by this change).
+    const domScrollAnchor = enteringCanvasFromDom ? _captureDomScrollAnchor() : null;
     if (document.getElementById('modeCanvas')?.checked) {
         // Entering Canvas mode: these caches are keyed only by length/shadeMode,
         // so any same-length edit made while away from Canvas (residue edits,
@@ -7725,6 +7773,7 @@ async function onModeChange() {
     // panel open over a display its tools cannot touch. Renders below, so no re-render here.
     exitEditModeForUnsupportedView({ rerender: false });
     renderAlignment();
+    if (domScrollAnchor) _applyDomScrollAnchorToCanvas(domScrollAnchor);
     setupHoverMenuReveal();
     _lastModeRadioId = document.querySelector('input[name="mode"]:checked')?.id || _lastModeRadioId;
 }
