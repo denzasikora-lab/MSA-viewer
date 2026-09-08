@@ -1143,7 +1143,8 @@ input[type="number"] {
     -webkit-user-select: none;
     -ms-user-select: none;
     contain: style;
-    line-height: 1.0;
+    line-height: 1.15;
+    padding-bottom: 1px;
 }
 .seq-name.static {
     position: static;
