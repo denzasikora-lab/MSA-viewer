@@ -3912,20 +3912,24 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             const name = state.seqs[i].header || ('Seq' + (i + 1));
             const displayName = name.length > nameLen ? name.substring(0, nameLen) + '\u2026' : name;
             ctx.font = nameFontStr;
+            const nameBaselineY = y + CHAR_H - 2;
             if (stickyNames) {
                 ctx.fillStyle = '#fff';
                 ctx.fillRect(0, y, NAME_W, CHAR_H);
                 ctx.fillStyle = '#333';
-                ctx.fillText(displayName, 4, y);
+                ctx.textBaseline = 'alphabetic';
+                ctx.fillText(displayName, 4, nameBaselineY);
             } else if (ox < NAME_W) {
                 ctx.save();
                 ctx.beginPath();
                 ctx.rect(0, y, NAME_W, CHAR_H);
                 ctx.clip();
                 ctx.fillStyle = '#333';
-                ctx.fillText(displayName, 4 - ox, y);
+                ctx.textBaseline = 'alphabetic';
+                ctx.fillText(displayName, 4 - ox, nameBaselineY);
                 ctx.restore();
             }
+            ctx.textBaseline = 'top';
             ctx.font = fontStr;
 
             // AA translation row(s) (codon analysis)
