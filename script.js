@@ -12845,6 +12845,130 @@ function initTreeBuilderControls() {
     if (modelSelect) modelSelect.addEventListener('change', rebuildIfOpen);
 }
 
+// ── MAFFT WASM (off main thread for large jobs) ─────────────────────────────
+let _activeMafftWorker = null;
+
+function _mafftFastaStats(fasta) {
+    let seqCount = 0;
+    let totalResidues = 0;
+    let maxLen = 0;
+    let curLen = 0;
+    let inSeq = false;
+    for (const raw of fasta.split('\n')) {
+        const line = raw.trim();
+        if (!line) continue;
+        if (line.startsWith('>')) {
+            if (inSeq) {
+                totalResidues += curLen;
+                maxLen = Math.max(maxLen, curLen);
+            }
+            seqCount++;
+            curLen = 0;
+            inSeq = true;
+        } else if (inSeq) {
+            curLen += line.replace(/[-.]/g, '').length;
+        }
+    }
+    if (inSeq) {
+        totalResidues += curLen;
+        maxLen = Math.max(maxLen, curLen);
+    }
+    return { seqCount, totalResidues, maxLen };
+}
+
+function _confirmMafftJob(stats, extraArgs) {
+    const { seqCount, totalResidues, maxLen } = stats;
+    if (totalResidues <= 250000) {
+        return { ok: true, extraArgs };
+    }
+
+    let estimate = 'several minutes';
+    if (totalResidues > 3000000) estimate = '30+ minutes (possibly much longer)';
+    else if (totalResidues > 1000000) estimate = '10–30 minutes';
+
+    const proceed = window.confirm(
+        `Align ${seqCount} sequences (${totalResidues.toLocaleString()} residues, longest ${maxLen.toLocaleString()} bp)?\n\n` +
+        `Alignment runs in the background — the viewer stays responsive.\n` +
+        `Rough estimate at default settings: ${estimate}.\n\n` +
+        `Continue?`
+    );
+    if (!proceed) return { ok: false };
+
+    const cycleIdx = extraArgs.indexOf('-C');
+    const cycles = cycleIdx >= 0 ? parseInt(extraArgs[cycleIdx + 1], 10) : 2;
+    if (totalResidues > 500000 && (!Number.isNaN(cycles) ? cycles >= 2 : true)) {
+        const useFast = window.confirm(
+            `Large alignment — use faster mode (1 refinement cycle instead of ${cycles || 2})?\n\n` +
+            `OK = faster (lower accuracy)\n` +
+            `Cancel = keep current settings`
+        );
+        if (useFast) {
+            const args = extraArgs.filter((arg, i) => arg !== '-C' && (i === 0 || extraArgs[i - 1] !== '-C'));
+            args.push('-C', '1');
+            return { ok: true, extraArgs: args };
+        }
+    }
+    return { ok: true, extraArgs };
+}
+
+function _cancelActiveMafftWorker() {
+    if (_activeMafftWorker) {
+        _activeMafftWorker.terminate();
+        _activeMafftWorker = null;
+    }
+}
+
+function _runMafftInWorker(fasta, extraArgs) {
+    return new Promise((resolve, reject) => {
+        _cancelActiveMafftWorker();
+        const id = Date.now();
+        const worker = new Worker(`mafft-worker.js?v=${BUILD_TAG.replace(/^v/, '')}`);
+        _activeMafftWorker = worker;
+        worker.onmessage = (ev) => {
+            if (ev.data?.id !== id) return;
+            _activeMafftWorker = null;
+            worker.terminate();
+            if (ev.data.ok) resolve(ev.data.result);
+            else reject(new Error(ev.data.error || 'MAFFT failed'));
+        };
+        worker.onerror = (err) => {
+            _activeMafftWorker = null;
+            worker.terminate();
+            reject(err);
+        };
+        worker.postMessage({ id, type: 'align', fasta, extraArgs, wasmPath: '' });
+    });
+}
+
+async function _mafftAlignWithUi(fasta, extraArgs, label) {
+    const stats = _mafftFastaStats(fasta);
+    const confirmed = _confirmMafftJob(stats, extraArgs);
+    if (!confirmed.ok) return null;
+    extraArgs = confirmed.extraArgs;
+
+    let cancelled = false;
+    try {
+        const result = await runWithProgress(
+            label || 'Aligning with MAFFT...',
+            async (updateBusy) => {
+                updateBusy(`${stats.seqCount} seqs, ${stats.totalResidues.toLocaleString()} residues`);
+                await yieldToPaint();
+                return _runMafftInWorker(fasta, extraArgs);
+            },
+            '',
+            () => { cancelled = true; _cancelActiveMafftWorker(); }
+        );
+        if (cancelled) {
+            showMessage('MAFFT alignment cancelled.', 2500);
+            return null;
+        }
+        return result;
+    } catch (err) {
+        if (cancelled) return null;
+        throw err;
+    }
+}
+
 function realignSelectedBlock() {
     if (state.seqs.length === 0) {
         showMessage("No sequences loaded.", 2000);
@@ -12872,9 +12996,8 @@ function realignSelectedBlock() {
     const { args: extraArgs, seqType } = getMafftExtraArgs();
     if (seqType !== '2') extraArgs.push('-E', seqType);
 
-    showMessage("Realigning block with MAFFT...", 0);
-    const mafft = new MafftWasm();
-    mafft.realignBlock(blockFasta, extraArgs).then(result => {
+    _mafftAlignWithUi(blockFasta, extraArgs, 'Realigning block with MAFFT...').then(result => {
+        if (!result) return;
         const aligned = parseMafftOutput(result);
         if (aligned.length !== state.seqs.length) {
             showMessage("Error: MAFFT returned different number of sequences.", 3000);
@@ -12913,7 +13036,7 @@ function realignSelectedBlock() {
 /**
  * Realign all loaded sequences using MAFFT WASM.
  */
-function realignAll() {
+async function realignAll() {
     if (state.seqs.length < 2) {
         showMessage("Need at least 2 sequences to align.", 2000);
         return;
@@ -12950,9 +13073,9 @@ function realignAll() {
         guideOrder = reordered.order;
     }
 
-    showMessage("Aligning all sequences with MAFFT...", 0);
-    const mafft = new MafftWasm();
-    mafft.align(fasta, extraArgs).then(result => {
+    try {
+        const result = await _mafftAlignWithUi(fasta, extraArgs, 'Aligning all sequences with MAFFT...');
+        if (!result) return;
         const aligned = parseMafftOutput(result);
         if (aligned.length === 0) {
             showMessage("Error: MAFFT returned no sequences.", 3000);
@@ -12996,10 +13119,10 @@ function realignAll() {
         const msgs = [`Aligned ${state.seqs.length} sequences successfully!`];
         if (flippedNames.size > 0) msgs.push(`RC'd: ${[...flippedNames].join(', ')}`);
         showMessage(msgs.join(' '), flippedNames.size > 0 ? 5000 : 2000);
-    }).catch(err => {
+    } catch (err) {
         showMessage("MAFFT alignment error: " + err.message, 4000);
         console.error("MAFFT alignment error:", err);
-    });
+    }
 }
 
 /**
@@ -13037,9 +13160,12 @@ function realignSelected() {
         }
     }
 
-    showMessage(`Realigning ${selectedIndices.length} selected sequences with MAFFT...`, 0);
-    const mafft = new MafftWasm();
-    mafft.align(fasta, extraArgs).then(result => {
+    _mafftAlignWithUi(
+        fasta,
+        extraArgs,
+        `Realigning ${selectedIndices.length} selected sequences with MAFFT...`
+    ).then(result => {
+        if (!result) return;
         const aligned = parseMafftOutput(result);
         if (aligned.length === 0) {
             showMessage("Error: MAFFT returned no sequences.", 3000);
@@ -13422,10 +13548,10 @@ function addSequencesAndAlign() {
     });
 
     closeAddSequencesModal();
-    showMessage("Adding sequences and aligning with MAFFT...", 0);
 
-    const mafft = new MafftWasm();
-    mafft.addAndAlign(existingFasta, adjustedNewText, extraArgs).then(result => {
+    const combinedFasta = existingFasta + '\n' + adjustedNewText;
+    _mafftAlignWithUi(combinedFasta, extraArgs, 'Adding sequences and aligning with MAFFT...').then(result => {
+        if (!result) return;
         const aligned = parseMafftOutput(result);
         if (aligned.length === 0) {
             showMessage("Error: MAFFT returned no sequences.", 3000);
