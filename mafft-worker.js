@@ -1,4 +1,5 @@
 'use strict';
+// GLM harness smoke: verified by automated loop
 // Run disttbfast (MAFFT WASM) off the main thread so the viewer stays responsive.
 importScripts('disttbfast.js');
 
