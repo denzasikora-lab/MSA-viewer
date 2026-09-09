@@ -577,8 +577,16 @@
                                     <input type="number" id="mafftGapExt" value="0.0" min="0" max="5" step="0.05" style="width: 55px; height: 20px; font-size: 11px;" title="Gap extension penalty / offset (default: 0.0 for nucleotides)">
                                 </div>
                                 <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
+                                    <label style="font-size: 11px; min-width: 55px; text-align: right;">Speed:</label>
+                                    <select id="mafftSpeed" style="height: 20px; font-size: 11px;" title="MAFFT refinement speed (-C cycles). Overrides the Cycles field when set.">
+                                        <option value="0">Fast (-C 0)</option>
+                                        <option value="1">Balanced (-C 1)</option>
+                                        <option value="2" selected>Accurate (-C 2)</option>
+                                    </select>
+                                </div>
+                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
                                     <label style="font-size: 11px; min-width: 55px; text-align: right;">Cycles:</label>
-                                    <input type="number" id="mafftCycles" value="2" min="1" max="10" step="1" style="width: 55px; height: 20px; font-size: 11px;" title="Number of tree-rebuild cycles (default: 2, more = slower but more accurate)">
+                                    <input type="number" id="mafftCycles" value="2" min="0" max="10" step="1" style="width: 55px; height: 20px; font-size: 11px;" title="Legacy cycle override (ignored when Speed is set)">
                                 </div>
                                 <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
                                     <label style="font-size: 11px; min-width: 55px; text-align: right;"></label>
@@ -1103,7 +1111,7 @@ B: -</pre>
 
     <script src="cluster.js?v=164"></script>
     <script src="bam-parser.js?v=164"></script>
-    <script src="script.js?v=185"></script>
+    <script src="script.js?v=186"></script>
     <script src="tree-draw.js?v=164"></script>
     <script>
     // All functionality moved to script.js

@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v185';
+const BUILD_TAG = 'v186';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -12004,12 +12004,15 @@ function getMafftExtraArgs() {
     const seqType = el('mafftSeqType')?.value;
     const gapOpen = parseFloat(el('mafftGapOpen')?.value);
     const gapExt = parseFloat(el('mafftGapExt')?.value);
-    const cycles = parseInt(el('mafftCycles')?.value);
+    const speedEl = el('mafftSpeed');
+    let cycles = speedEl
+        ? parseInt(speedEl.value, 10)
+        : parseInt(el('mafftCycles')?.value, 10);
     const offset = parseFloat(el('mafftOffset')?.value);
 
     if (!isNaN(gapOpen)) args.push('-f', String(-gapOpen));
     if (!isNaN(gapExt)) args.push('-h', String(-gapExt));
-    if (!isNaN(cycles) && cycles >= 1) args.push('-C', String(cycles));
+    if (!Number.isNaN(cycles) && cycles >= 0) args.push('-C', String(cycles));
     // Note: disttbfast's -e flag does not accept a numeric value (it's a boolean flag);
     // passing '-e -0.123' causes illegal-option parse errors, so offset is omitted.
 
@@ -12903,9 +12906,9 @@ function _confirmMafftJob(stats, extraArgs) {
             `Cancel = keep current settings`
         );
         if (useFast) {
-            const args = extraArgs.filter((arg, i) => arg !== '-C' && (i === 0 || extraArgs[i - 1] !== '-C'));
-            args.push('-C', '1');
-            return { ok: true, extraArgs: args };
+            const speedEl = el('mafftSpeed');
+            if (speedEl) speedEl.value = totalResidues > 3000000 ? '0' : '1';
+            return { ok: true, extraArgs: getMafftExtraArgs().args };
         }
     }
     return { ok: true, extraArgs };
