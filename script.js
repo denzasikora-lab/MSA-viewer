@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v186';
+const BUILD_TAG = 'v187';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -12850,6 +12850,7 @@ function initTreeBuilderControls() {
 
 // ── MAFFT WASM (off main thread for large jobs) ─────────────────────────────
 let _activeMafftWorker = null;
+let _activeMafftReject = null;
 
 function _mafftFastaStats(fasta) {
     let seqCount = 0;
@@ -12919,6 +12920,11 @@ function _cancelActiveMafftWorker() {
         _activeMafftWorker.terminate();
         _activeMafftWorker = null;
     }
+    if (_activeMafftReject) {
+        const reject = _activeMafftReject;
+        _activeMafftReject = null;
+        reject(new Error('MAFFT alignment cancelled'));
+    }
 }
 
 function _runMafftInWorker(fasta, extraArgs) {
@@ -12927,15 +12933,18 @@ function _runMafftInWorker(fasta, extraArgs) {
         const id = Date.now();
         const worker = new Worker(`mafft-worker.js?v=${BUILD_TAG.replace(/^v/, '')}`);
         _activeMafftWorker = worker;
+        _activeMafftReject = reject;
         worker.onmessage = (ev) => {
             if (ev.data?.id !== id) return;
             _activeMafftWorker = null;
+            _activeMafftReject = null;
             worker.terminate();
             if (ev.data.ok) resolve(ev.data.result);
             else reject(new Error(ev.data.error || 'MAFFT failed'));
         };
         worker.onerror = (err) => {
             _activeMafftWorker = null;
+            _activeMafftReject = null;
             worker.terminate();
             reject(err);
         };
@@ -12967,7 +12976,7 @@ async function _mafftAlignWithUi(fasta, extraArgs, label) {
         }
         return result;
     } catch (err) {
-        if (cancelled) return null;
+        if (cancelled || String(err?.message || '').includes('cancelled')) return null;
         throw err;
     }
 }
