@@ -1,5 +1,6 @@
-// Load the REAL ViewAlign, load the SINE16b fixture, apply the block-mask
-// overlay live, screenshot. Verifies the overlay lines up with real residues.
+// Load real ViewAlign, load the SINE16b fixture, apply the block-mask overlay
+// LIVE via the in-script.js integration, screenshot. Tests the DEFAULT
+// (Blocks) mode as well as Single.
 const { launch, loadFasta } = require('../lib/browser');
 const { start } = require('../lib/static-server');
 const fs = require('fs');
@@ -7,7 +8,7 @@ const path = require('path');
 
 (async () => {
   const ROOT = path.join(__dirname, '..', '..');
-  const srv = await start(ROOT);
+  const srv = await start();
   const base = `http://localhost:${srv.port}`;
   const fasta = fs.readFileSync(path.join(ROOT, 'tests/fixtures/blockmask/oma_SINE16b.aln.fa'), 'utf8');
   const presets = fs.readFileSync(path.join(ROOT, 'reference/granularity_presets.json'), 'utf8');
@@ -20,42 +21,43 @@ const path = require('path');
 
   await page.goto(`${base}/index.html`, { waitUntil: 'networkidle', timeout: 25000 });
   await loadFasta(page, fasta);
-  await page.waitForTimeout(300);
-  // Overlay currently supports the unwrapped Single view only.
-  await page.evaluate(() => {
-    const s = document.getElementById('modeSingle');
-    if (s && !s.checked) { s.checked = true; document.getElementById('modeBlocks').checked = false; onModeChange(); }
-  });
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(400);
 
-  const info = await page.evaluate((presetsJson) => {
-    window.__BLOCKMASK_PRESETS = JSON.parse(presetsJson);
-    if (!window.BlockMaskOverlay) return { err: 'overlay script not present' };
-    const mask = window.BlockMaskOverlay.applyLive('V3_medium');
-    window.BlockMaskOverlay.setOpacity(0.5);
-    const layer = document.getElementById('blockMaskLayer');
-    let nrows = -1;
-    try { nrows = (typeof state !== 'undefined' && state.seqs) ? state.seqs.length : -1; } catch (e) {}
-    return {
-      rows: nrows,
-      seqLines: document.querySelectorAll('.seq-line[data-seq-index]').length,
-      blocks: mask ? mask.blocks.length : -1,
-      splits: mask ? mask.blocks.filter(b => b.rows !== 'all').length : -1,
-      rects: layer ? layer.querySelectorAll('rect').length : -1
-    };
-  }, presets);
-  console.log('info:', info);
+  const shoot = async (label, mode) => {
+    const info = await page.evaluate(({ presetsJson, mode }) => {
+      window.__BLOCKMASK_PRESETS = JSON.parse(presetsJson);
+      if (mode) {
+        const r = document.getElementById(mode);
+        const other = document.getElementById(mode === 'modeSingle' ? 'modeBlocks' : 'modeSingle');
+        if (r && !r.checked) { r.checked = true; if (other) other.checked = false; onModeChange(); }
+      }
+      const mask = (typeof applyBlockMaskLive === 'function') ? applyBlockMaskLive('V3_medium') : null;
+      if (typeof setBlockMaskOpacity === 'function') setBlockMaskOpacity(0.45);
+      const layers = document.querySelectorAll('.block-mask-layer');
+      let rects = 0; layers.forEach(l => rects += l.querySelectorAll('rect').length);
+      return {
+        blocksDom: document.querySelectorAll('.block-block').length,
+        seqLines: document.querySelectorAll('.seq-line[data-seq-index]').length,
+        maskBlocks: mask ? mask.blocks.length : -1,
+        splits: mask ? mask.blocks.filter(b => b.rows !== 'all').length : -1,
+        layers: layers.length,
+        rects
+      };
+    }, { presetsJson: presets, mode });
+    console.log(label, info);
+    await page.waitForTimeout(250);
+    await page.evaluate(() => {
+      const c = document.getElementById('alignmentContainer');
+      if (c) c.scrollLeft = Math.max(0, c.scrollWidth * 0.55);
+      if (typeof renderBlockMaskOverlay === 'function') renderBlockMaskOverlay();
+    });
+    await page.waitForTimeout(250);
+    await page.screenshot({ path: path.join(__dirname, 'real-viewer-' + label + '.png') });
+  };
+
+  await shoot('single', 'modeSingle');
+  await shoot('blocks', 'modeBlocks');
   console.log('errors:', errs.length ? errs : 'none');
-
-  await page.waitForTimeout(300);
-  // scroll the alignment container to the element/right-flank boundary
-  await page.evaluate(() => {
-    const c = document.getElementById('alignmentContainer');
-    if (c) c.scrollLeft = Math.max(0, c.scrollWidth * 0.62);
-    if (window.BlockMaskOverlay) window.BlockMaskOverlay.redraw();
-  });
-  await page.waitForTimeout(300);
-  await page.screenshot({ path: path.join(__dirname, 'real-viewer-overlay.png') });
 
   await browser.close();
   srv.server.close();

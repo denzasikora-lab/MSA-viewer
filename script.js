@@ -362,6 +362,7 @@ const state = {
     conservationDataCache: null,
     alignmentIndex: null, // { nSeqs, maxLen, totalResidues, mode, flags } from pre-parse scan
     _needsWindowedDom: false, // computed in renderAlignment from TOTAL_RESIDUES directly
+    blockMask: null, // 2D block-mask overlay JSON (see renderBlockMaskOverlay)
     deletedHistory: [],
     redoHistory: [],
     currentFilename: '',
@@ -5961,7 +5962,190 @@ function renderAlignment(options = {}) {
         });
     }
     syncCodonModePanel();
+    renderBlockMaskOverlay();
 }
+
+// ==== 2D block-mask overlay ==============================================
+// Draws a block mask (from block-mask.js's computeBlockMask, or a supplied
+// JSON via ?mask=) as a translucent rectangle layer over the rendered
+// alignment. Reuses the viewer's own .block-block DOM and its residue spans
+// for geometry rather than re-deriving char/row metrics. Called at the end
+// of renderAlignment so it stays in sync with reorder / mode / zoom changes.
+//
+// Mask JSON: { row_headers:[...], blocks:[{type, col_start, col_end,
+//              rows:"all"|[k...], group_rank?}] }
+// where col_* are 0-based inclusive alignment columns and each k indexes
+// row_headers (the non-consensus sequences in the order the mask was built).
+
+const BLOCKMASK_COLORS = {
+    CONSERVATIVE: '#16a34a', MOSAIC: '#f59e0b', DECAY_SLOPE: '#8b5cf6',
+    DIVERGENT: '#cbd5e1', SIMPLE_REPEAT: '#ec4899'
+};
+const BLOCKMASK_SVGNS = 'http://www.w3.org/2000/svg';
+let _blockMaskOpacity = 0.45;
+
+function setBlockMaskOpacity(v) {
+    _blockMaskOpacity = Math.max(0, Math.min(1, +v));
+    renderBlockMaskOverlay();
+}
+function clearBlockMask() {
+    state.blockMask = null;
+    renderBlockMaskOverlay();
+}
+
+// Longest run of consecutive indices / group size, in the ORIGINAL mask row
+// order (which mirrors MAFFT's similarity ordering). A low value means the
+// group crosscuts that ordering - real localized mosaic, or noise - and is
+// drawn with a dashed warning stroke rather than a clean rectangle.
+function _blockMaskGroupContiguity(rows) {
+    if (!rows || rows.length < 2) return 1;
+    const s = rows.slice().sort((a, b) => a - b);
+    let best = 1, run = 1;
+    for (let i = 1; i < s.length; i++) {
+        if (s[i] === s[i - 1] + 1) { run++; if (run > best) best = run; }
+        else run = 1;
+    }
+    return best / s.length;
+}
+
+function renderBlockMaskOverlay() {
+    document.querySelectorAll('.block-mask-layer').forEach(el => el.remove());
+    const mask = state.blockMask;
+    if (!mask || !Array.isArray(mask.blocks) || !Array.isArray(mask.row_headers)) return;
+    if (document.getElementById('modeCanvas')?.checked) return;   // Canvas: unsupported
+    if (state._needsWindowedDom) return;                          // windowed DOM: unsupported yet
+    const container = document.getElementById('alignmentContainer');
+    if (!container) return;
+    const blockEls = container.querySelectorAll('.block-block');
+    if (!blockEls.length) return;
+
+    // mask row k -> current visual index in state.seqs (by header string)
+    const headerToIdx = new Map();
+    for (let i = 0; i < state.seqs.length; i++) {
+        const h = state.seqs[i].header;
+        if (!headerToIdx.has(h)) headerToIdx.set(h, i);
+    }
+    const rowVis = mask.row_headers.map(h => headerToIdx.has(h) ? headerToIdx.get(h) : -1);
+
+    blockEls.forEach(blockEl => {
+        const dataRows = blockEl.querySelectorAll('.seq-line[data-seq-index]');
+        if (!dataRows.length) return;
+        const firstData = dataRows[0].querySelector('.seq-data');
+        const spans = firstData ? firstData.querySelectorAll('span[data-pos]') : [];
+        if (spans.length < 2) return;
+        const colStart = parseInt(spans[0].dataset.pos, 10);
+        const colEnd = parseInt(spans[spans.length - 1].dataset.pos, 10);
+        const bRect = blockEl.getBoundingClientRect();
+        if (getComputedStyle(blockEl).position === 'static') blockEl.style.position = 'relative';
+
+        const sp0L = spans[0].getBoundingClientRect().left;
+        const cw = spans[1].getBoundingClientRect().left - sp0L;
+        const x0 = sp0L - bRect.left + blockEl.scrollLeft;
+        const colX = (P) => {
+            const sp = firstData.querySelector('span[data-pos="' + P + '"]');
+            if (sp) return sp.getBoundingClientRect().left - bRect.left + blockEl.scrollLeft;
+            return x0 + (P - colStart) * cw;
+        };
+
+        const rowElByIdx = new Map();
+        dataRows.forEach(r => rowElByIdx.set(parseInt(r.dataset.seqIndex, 10), r));
+        const rowH = dataRows[0].getBoundingClientRect().height;
+        const rowTop = (seqIdx) => {
+            const r = rowElByIdx.get(seqIdx);
+            return r ? (r.getBoundingClientRect().top - bRect.top + blockEl.scrollTop) : null;
+        };
+        const firstY = dataRows[0].getBoundingClientRect().top - bRect.top + blockEl.scrollTop;
+        const lastY = dataRows[dataRows.length - 1].getBoundingClientRect().top - bRect.top + blockEl.scrollTop + rowH;
+
+        const svg = document.createElementNS(BLOCKMASK_SVGNS, 'svg');
+        svg.setAttribute('class', 'block-mask-layer');
+        svg.style.position = 'absolute';
+        svg.style.left = '0';
+        svg.style.top = '0';
+        svg.style.pointerEvents = 'none';
+        svg.style.overflow = 'visible';
+        svg.style.zIndex = '4';
+        svg.setAttribute('width', blockEl.scrollWidth);
+        svg.setAttribute('height', blockEl.scrollHeight);
+
+        mask.blocks.forEach(mb => {
+            if (mb.col_end < colStart || mb.col_start > colEnd) return;
+            const cs = Math.max(mb.col_start, colStart);
+            const ce = Math.min(mb.col_end, colEnd);
+            const x = colX(cs);
+            const w = (ce - cs + 1) * cw;
+            const fill = BLOCKMASK_COLORS[mb.type] || '#999';
+
+            const addRect = (y, h, op, dashed) => {
+                const r = document.createElementNS(BLOCKMASK_SVGNS, 'rect');
+                r.setAttribute('x', x.toFixed(1));
+                r.setAttribute('y', y.toFixed(1));
+                r.setAttribute('width', Math.max(0.5, w).toFixed(1));
+                r.setAttribute('height', Math.max(1, h).toFixed(1));
+                r.setAttribute('fill', fill);
+                r.setAttribute('fill-opacity', op.toFixed(3));
+                if (dashed) {
+                    r.setAttribute('stroke', '#c0392b');
+                    r.setAttribute('stroke-width', '1');
+                    r.setAttribute('stroke-dasharray', '3 2');
+                    r.setAttribute('fill-opacity', (op * 0.7).toFixed(3));
+                }
+                svg.appendChild(r);
+            };
+
+            if (mb.rows === 'all') {
+                addRect(firstY, lastY - firstY, _blockMaskOpacity * 0.8, false);
+                return;
+            }
+            const vis = [];
+            for (const k of mb.rows) {
+                const si = rowVis[k];
+                if (si >= 0 && rowElByIdx.has(si)) vis.push(si);
+            }
+            if (!vis.length) return;
+            vis.sort((a, b) => rowElByIdx.get(a).getBoundingClientRect().top - rowElByIdx.get(b).getBoundingClientRect().top);
+            const dashed = _blockMaskGroupContiguity(mb.rows) < 0.6;
+            let runStart = vis[0], prev = vis[0];
+            const flush = (a, z) => {
+                const ya = rowTop(a), yz = rowTop(z);
+                if (ya == null || yz == null) return;
+                addRect(ya, (yz - ya) + rowH, _blockMaskOpacity, dashed);
+            };
+            for (let i = 1; i < vis.length; i++) {
+                const yPrev = rowElByIdx.get(prev).getBoundingClientRect().top;
+                const yCur = rowElByIdx.get(vis[i]).getBoundingClientRect().top;
+                if (Math.abs(yCur - yPrev - rowH) < rowH * 0.5) { prev = vis[i]; continue; }
+                flush(runStart, prev);
+                runStart = vis[i];
+                prev = vis[i];
+            }
+            flush(runStart, prev);
+        });
+
+        blockEl.appendChild(svg);
+    });
+}
+
+// Compute a mask live from the loaded alignment + a granularity preset object
+// (window.__BLOCKMASK_PRESETS[name]) or an explicit params object.
+function applyBlockMaskLive(presetOrParams) {
+    if (typeof BlockMask === 'undefined') { showMessage('block-mask.js not loaded', 3000); return null; }
+    if (!state.seqs || !state.seqs.length) { showMessage('Load an alignment first', 3000); return null; }
+    const fasta = state.seqs.map(s => '>' + s.header + '\n' + s.seq).join('\n') + '\n';
+    let params = presetOrParams;
+    if (typeof presetOrParams === 'string') {
+        params = (window.__BLOCKMASK_PRESETS || {})[presetOrParams];
+        if (!params) { showMessage('Unknown block-mask preset: ' + presetOrParams, 3000); return null; }
+    }
+    state.blockMask = BlockMask.computeBlockMask(fasta, params || {}, {});
+    renderBlockMaskOverlay();
+    return state.blockMask;
+}
+
+window.applyBlockMaskLive = applyBlockMaskLive;
+window.renderBlockMaskOverlay = renderBlockMaskOverlay;
+window.setBlockMaskOpacity = setBlockMaskOpacity;
+window.clearBlockMask = clearBlockMask;
 
 // Unified source info updater so counts stay accurate after deletions/insertions
 function updateSourceInfo() {
@@ -14470,12 +14654,22 @@ function initializeAppUI() {
     //   ?url=<relative_or_absolute_url>   - fetch FASTA/MSF from URL
     //   ?data=<base64_encoded_text>        - decode inline data
     //   ?title=<text>                      - optional display title
+    //   ?mask=<url>                        - fetch a 2D block-mask JSON and overlay it
     const urlParams = new URLSearchParams(window.location.search);
     const autoSnapshot = urlParams.get('snapshot');
     const autoSnapshotFile = urlParams.get('snapshotFile');
     const autoUrl   = urlParams.get('url');
     const autoData  = urlParams.get('data');
     const autoTitle = urlParams.get('title');
+    const autoMask  = urlParams.get('mask');
+    const _loadBlockMaskFromUrl = (u) => fetch(u)
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(j => {
+            if (!j || !Array.isArray(j.blocks) || !Array.isArray(j.row_headers)) throw new Error('not a block-mask JSON');
+            state.blockMask = j;
+            if (typeof renderBlockMaskOverlay === 'function') renderBlockMaskOverlay();
+        })
+        .catch(err => { console.warn('[blockmask] ?mask= load failed:', err.message); });
 
     if (autoSnapshotFile) {
         showMessage('Loading snapshot file...', 0);
@@ -14513,8 +14707,10 @@ function initializeAppUI() {
                 const fastaInputEl = el('fastaInput');
                 if (fastaInputEl) fastaInputEl.value = text;
                 state.currentFilename = autoTitle || autoUrl.split('/').pop() || 'URL';
-                parseAndRender(true);
-                showMessage('Alignment loaded from URL', 2000);
+                return Promise.resolve(parseAndRender(true)).then(() => {
+                    showMessage('Alignment loaded from URL', 2000);
+                    if (autoMask) return _loadBlockMaskFromUrl(autoMask);
+                });
             })
             .catch(err => {
                 console.error('URL auto-load failed:', err);
@@ -14526,8 +14722,10 @@ function initializeAppUI() {
             const fastaInputEl = el('fastaInput');
             if (fastaInputEl) fastaInputEl.value = text;
             state.currentFilename = autoTitle || 'Inline data';
-            parseAndRender(true);
-            showMessage('Alignment loaded from inline data', 2000);
+            Promise.resolve(parseAndRender(true)).then(() => {
+                showMessage('Alignment loaded from inline data', 2000);
+                if (autoMask) return _loadBlockMaskFromUrl(autoMask);
+            });
         } catch (err) {
             console.error('Inline data decode failed:', err);
             showMessage(`Failed to decode data: ${err.message}`, 5000);
