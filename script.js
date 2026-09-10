@@ -6171,7 +6171,7 @@ function _blockMaskParamsFromSliders() {
     let any = false;
     for (const [key, id] of BLOCKMASK_KNOBS) {
         const s = el(id);
-        if (s) { p[key] = parseFloat(s.value); any = true; }
+        if (s) { const v = parseFloat(s.value); if (!Number.isNaN(v)) { p[key] = v; any = true; } }
     }
     return any ? p : null;
 }
