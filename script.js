@@ -6156,17 +6156,60 @@ function applyBlockMaskLive(presetOrParams) {
 
 // Panel action: compute from the loaded alignment using the selected preset
 // and report a short summary (block count, split zones, any scattered groups).
-function computeAndShowBlockMask() {
-    const sel = el('blockMaskPreset');
-    const preset = sel ? sel.value : 'V3_medium';
+// The eight "squint" knobs, with the panel slider id for each. The sliders
+// are optional markup (see index.html #clustering-controls); everything here
+// no-ops gracefully when they are absent.
+const BLOCKMASK_KNOBS = [
+    ['WIN', 'bmKnobWIN'], ['MOSAIC_STD', 'bmKnobMOSAIC_STD'],
+    ['BG_MARGIN', 'bmKnobBG_MARGIN'], ['MIN_ZONE_W', 'bmKnobMIN_ZONE_W'],
+    ['ZONE_BRIDGE', 'bmKnobZONE_BRIDGE'], ['ROW_MIN_GROUP', 'bmKnobROW_MIN_GROUP'],
+    ['ROW_MIN_GAP_ABS', 'bmKnobROW_MIN_GAP_ABS'], ['MIN_BLOCK_W', 'bmKnobMIN_BLOCK_W']
+];
+
+function _blockMaskParamsFromSliders() {
+    const p = {};
+    let any = false;
+    for (const [key, id] of BLOCKMASK_KNOBS) {
+        const s = el(id);
+        if (s) { p[key] = parseFloat(s.value); any = true; }
+    }
+    return any ? p : null;
+}
+
+function _blockMaskSyncSlidersToPreset(name) {
+    const preset = BLOCKMASK_PRESETS[name];
+    if (!preset) return;
+    for (const [key, id] of BLOCKMASK_KNOBS) {
+        const s = el(id);
+        if (!s || preset[key] == null) continue;
+        s.value = preset[key];
+        const out = el(id + 'Val');
+        if (out) out.textContent = preset[key];
+    }
+}
+
+function _blockMaskStatusFrom(mask) {
     const status = el('blockMaskStatus');
-    const mask = applyBlockMaskLive(preset);
     if (!status) return;
     if (!mask) { status.textContent = 'no mask (load an alignment first)'; return; }
     const splits = mask.blocks.filter(b => b.rows !== 'all');
     const scattered = splits.filter(b => Array.isArray(b.rows) && _blockMaskGroupContiguity(b.rows) < 0.6).length;
     status.textContent = `${mask.blocks.length} blocks, ${splits.length} row-split`
         + (scattered ? `, ${scattered} scattered (dashed)` : '');
+}
+
+function computeAndShowBlockMask() {
+    const sel = el('blockMaskPreset');
+    const preset = sel ? sel.value : 'V3_medium';
+    _blockMaskSyncSlidersToPreset(preset);
+    _blockMaskStatusFrom(applyBlockMaskLive(preset));
+}
+
+// Recompute from whatever the sliders currently say (used on slider release).
+function recomputeBlockMaskFromSliders() {
+    const params = _blockMaskParamsFromSliders();
+    if (!params) { computeAndShowBlockMask(); return; }
+    _blockMaskStatusFrom(applyBlockMaskLive(params));
 }
 
 function initBlockMaskPanel() {
@@ -6178,8 +6221,23 @@ function initBlockMaskPanel() {
     const sel = el('blockMaskPreset');
     if (sel && !sel._bmBound) {
         sel._bmBound = true;
-        sel.addEventListener('change', () => { if (state.blockMask) computeAndShowBlockMask(); });
+        sel.addEventListener('change', () => {
+            _blockMaskSyncSlidersToPreset(sel.value);
+            if (state.blockMask) computeAndShowBlockMask();
+        });
     }
+    for (const [, id] of BLOCKMASK_KNOBS) {
+        const s = el(id);
+        if (!s || s._bmBound) continue;
+        s._bmBound = true;
+        s.addEventListener('input', () => {
+            const out = el(id + 'Val');
+            if (out) out.textContent = s.value;
+        });
+        s.addEventListener('change', () => { if (state.blockMask) recomputeBlockMaskFromSliders(); });
+    }
+    // seed slider readouts + values from the current preset selection
+    if (sel) _blockMaskSyncSlidersToPreset(sel.value);
 }
 
 window.applyBlockMaskLive = applyBlockMaskLive;
