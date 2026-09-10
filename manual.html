@@ -205,6 +205,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       <a href="#cl-breakpoints">4.4 Size Breakpoints</a>
       <a href="#cl-presets">4.5 Presets &amp; Workflow</a>
       <a href="#cl-understanding">4.6 Understanding Results</a>
+      <a href="#cl-blockmask">4.7 2D Block Mask (squint view)</a>
     </div>
   </div>
 
@@ -751,6 +752,40 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li><em>Colour by Cluster</em> (Actions menu) assigns persistent background colours to sequence names by cluster membership</li>
     <li><em>Group Consensus</em> (Consensus menu) computes and inserts a consensus row for any selected cluster</li>
   </ul>
+
+  <h3 id="cl-blockmask">4.7 2D Block Mask (squint view)</h3>
+  <p>
+    Reach for this when you want the coarse shape of an alignment at a glance -
+    where the conserved core is, where a region is shared by only a subset of
+    copies, where a flank decays gradually instead of ending cleanly - without
+    reading every column. It answers &ldquo;what is the structure here?&rdquo;
+    the way squinting at the alignment would: fine per-column noise blurs out
+    and a few labelled rectangles remain, drawn as a translucent mask directly
+    over the residues.
+  </p>
+  <p>
+    Open the <strong>2D block mask</strong> block in the Clustering panel and
+    click <em>Show mask</em>. Each rectangle is a range of columns &times; a set
+    of rows, coloured by type: <span style="color:#16a34a;font-weight:bold;">green</span>
+    conservative (high identity, all rows agree),
+    <span style="color:#f59e0b;font-weight:bold;">amber</span> mosaic (elevated
+    identity but only a <em>subset</em> of rows share it - the rectangle covers
+    just those rows), <span style="color:#8b5cf6;font-weight:bold;">purple</span>
+    decay slope (identity trending down over a stretch, LINE-like erosion rather
+    than a real boundary), and grey divergent flank. The <strong>V1&ndash;V5</strong>
+    preset sets the &ldquo;squint&rdquo; coarseness - V1 gives a few big blocks,
+    V5 many fine ones - and <em>Advanced (squint knobs)</em> exposes the eight
+    parameters behind the presets as sliders; releasing any slider recomputes
+    the mask. Opacity is adjustable. A row-split rectangle drawn with a
+    <strong>dashed red outline</strong> is a warning: that group&rsquo;s members
+    are <em>scattered</em> in the post-alignment (MAFFT similarity) order rather
+    than sitting together, so the group is defined by a local region that
+    crosscuts overall similarity - genuine localized mosaicism, or noise. Treat
+    it with caution and check the copies directly. The mask also loads
+    automatically from a <code>?mask=&lt;url&gt;</code> URL parameter alongside
+    <code>?url=</code>. Full and Block view modes are supported; Canvas mode is
+    not.
+  </p>
 </section>
 
 <!-- ════════════════════════════════════════ -->

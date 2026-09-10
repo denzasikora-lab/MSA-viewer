@@ -442,6 +442,19 @@
                                         <input type="range" id="blockMaskOpacity" min="0.1" max="0.9" step="0.05" value="0.45" style="flex: 1;">
                                     </label>
                                     <div id="blockMaskStatus" style="font-size: 10px; color: #555; margin-top: 4px; min-height: 12px;"></div>
+                                    <details style="margin-top: 4px;">
+                                        <summary style="font-size: 10px; color: #555; cursor: pointer;">Advanced (squint knobs)</summary>
+                                        <div style="display: flex; flex-direction: column; gap: 2px; margin-top: 4px; font-size: 10px;" title="Same eight knobs the V1-V5 presets set. Move one and release to recompute the mask.">
+                                            <label style="display: flex; align-items: center; gap: 4px;">WIN <input type="range" id="bmKnobWIN" min="8" max="48" step="2" value="20" style="flex: 1;"><span id="bmKnobWINVal" style="width: 34px; text-align: right;">20</span></label>
+                                            <label style="display: flex; align-items: center; gap: 4px;">MOSAIC_STD <input type="range" id="bmKnobMOSAIC_STD" min="0.06" max="0.20" step="0.01" value="0.12" style="flex: 1;"><span id="bmKnobMOSAIC_STDVal" style="width: 34px; text-align: right;">0.12</span></label>
+                                            <label style="display: flex; align-items: center; gap: 4px;">BG_MARGIN <input type="range" id="bmKnobBG_MARGIN" min="0.05" max="0.16" step="0.01" value="0.10" style="flex: 1;"><span id="bmKnobBG_MARGINVal" style="width: 34px; text-align: right;">0.10</span></label>
+                                            <label style="display: flex; align-items: center; gap: 4px;">MIN_ZONE_W <input type="range" id="bmKnobMIN_ZONE_W" min="8" max="45" step="1" value="18" style="flex: 1;"><span id="bmKnobMIN_ZONE_WVal" style="width: 34px; text-align: right;">18</span></label>
+                                            <label style="display: flex; align-items: center; gap: 4px;">ZONE_BRIDGE <input type="range" id="bmKnobZONE_BRIDGE" min="1" max="6" step="1" value="4" style="flex: 1;"><span id="bmKnobZONE_BRIDGEVal" style="width: 34px; text-align: right;">4</span></label>
+                                            <label style="display: flex; align-items: center; gap: 4px;">ROW_MIN_GROUP <input type="range" id="bmKnobROW_MIN_GROUP" min="3" max="8" step="1" value="4" style="flex: 1;"><span id="bmKnobROW_MIN_GROUPVal" style="width: 34px; text-align: right;">4</span></label>
+                                            <label style="display: flex; align-items: center; gap: 4px;">ROW_MIN_GAP_ABS <input type="range" id="bmKnobROW_MIN_GAP_ABS" min="0.08" max="0.28" step="0.01" value="0.15" style="flex: 1;"><span id="bmKnobROW_MIN_GAP_ABSVal" style="width: 34px; text-align: right;">0.15</span></label>
+                                            <label style="display: flex; align-items: center; gap: 4px;">MIN_BLOCK_W <input type="range" id="bmKnobMIN_BLOCK_W" min="5" max="45" step="1" value="15" style="flex: 1;"><span id="bmKnobMIN_BLOCK_WVal" style="width: 34px; text-align: right;">15</span></label>
+                                        </div>
+                                    </details>
                                 </div>
                             </div>
                         </div>
