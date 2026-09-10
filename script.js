@@ -6240,11 +6240,51 @@ function initBlockMaskPanel() {
     if (sel) _blockMaskSyncSlidersToPreset(sel.value);
 }
 
+function groupRowsByBlockMask() {
+    if (!state.blockMask || !state.blockMask.blocks || state.blockMask.blocks.length === 0) {
+        showMessage('No block mask - click "Show mask" first', 3000);
+        return;
+    }
+    const rowSplitBlocks = state.blockMask.blocks.filter(b => Array.isArray(b.rows));
+    if (rowSplitBlocks.length === 0) {
+        showMessage('No row-split groups to order by', 3000);
+        return;
+    }
+    const zoneKey = rowSplitBlocks[0].col_start + ':' + rowSplitBlocks[0].col_end;
+    const zoneBlocks = rowSplitBlocks.filter(b => (b.col_start + ':' + b.col_end) === zoneKey);
+    zoneBlocks.sort((a, b) => {
+        if (a.group_rank === 'residual' && b.group_rank !== 'residual') return 1;
+        if (b.group_rank === 'residual' && a.group_rank !== 'residual') return -1;
+        return a.group_rank - b.group_rank;
+    });
+    const headList = [];
+    for (const block of zoneBlocks) {
+        for (const k of block.rows) {
+            const h = state.blockMask.row_headers[k];
+            if (!headList.includes(h)) headList.push(h);
+        }
+    }
+    const orderMap = new Map(headList.map((h, i) => [h, i]));
+    const matched = [];
+    const rest = [];
+    for (const s of state.seqs) {
+        if (orderMap.has(s.header)) matched.push(s);
+        else rest.push(s);
+    }
+    matched.sort((a, b) => orderMap.get(a.header) - orderMap.get(b.header));
+    pushUndo();
+    state.seqs = [...matched, ...rest];
+    state.lastAction = 'sort';
+    renderAlignment();
+    showMessage('Rows grouped by block mask (' + matched.length + ' moved)', 2500);
+}
+
 window.applyBlockMaskLive = applyBlockMaskLive;
 window.renderBlockMaskOverlay = renderBlockMaskOverlay;
 window.setBlockMaskOpacity = setBlockMaskOpacity;
 window.clearBlockMask = clearBlockMask;
 window.computeAndShowBlockMask = computeAndShowBlockMask;
+window.groupRowsByBlockMask = groupRowsByBlockMask;
 
 // Unified source info updater so counts stay accurate after deletions/insertions
 function updateSourceInfo() {
@@ -14522,6 +14562,7 @@ function initializeAppUI() {
         'clusterGuideTreeButton': clusterByGuideTree,
         'blockMaskComputeButton': computeAndShowBlockMask,
         'blockMaskClearButton': () => { clearBlockMask(); const s = el('blockMaskStatus'); if (s) s.textContent = ''; },
+        'blockMaskGroupButton': groupRowsByBlockMask,
         'savePresetButton': savePreset,
         'loadPresetButton': loadPreset,
         'snapshotCreateTopButton': createSnapshot,
