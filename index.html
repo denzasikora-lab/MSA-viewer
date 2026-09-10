@@ -425,6 +425,24 @@
                                 <select id="clusteringPresetList" style="width: 100%; max-width: 150px; height: 24px; font-size: 11px;" title="Select a saved parameter preset to load">
                                     <option value="">-- Select preset --</option>
                                 </select>
+                                <div style="border-top: 1px solid #ddd; margin-top: 8px; padding-top: 6px;">
+                                    <div style="font-size: 10px; font-weight: bold; color: #555; margin-bottom: 4px;" title="Coarse structural summary drawn as a translucent rectangle mask over the alignment: conserved core, mosaic (subset-only) regions, decay slopes, divergent flanks. Row-split rectangles cover only their member rows; a group scattered in MAFFT order gets a dashed warning stroke.">2D block mask (squint view)</div>
+                                    <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin-bottom: 4px;">
+                                        <select id="blockMaskPreset" style="flex: 1; min-width: 90px; height: 22px; font-size: 10px;" title="Squint coarseness: V1 = few big blocks, V5 = many fine blocks">
+                                            <option value="V1_coarsest">V1 coarsest</option>
+                                            <option value="V2_coarse">V2 coarse</option>
+                                            <option value="V3_medium" selected>V3 medium</option>
+                                            <option value="V4_fine">V4 fine</option>
+                                            <option value="V5_finest">V5 finest</option>
+                                        </select>
+                                        <button id="blockMaskComputeButton" style="flex: 1; min-width: 70px; height: 22px; font-size: 10px; background: #8b5cf6; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Compute the block mask from the currently loaded alignment and overlay it">Show mask</button>
+                                        <button id="blockMaskClearButton" style="height: 22px; font-size: 10px;" title="Remove the block-mask overlay">Clear</button>
+                                    </div>
+                                    <label style="font-size: 10px; display: flex; align-items: center; gap: 4px;" title="Overlay opacity">Opacity
+                                        <input type="range" id="blockMaskOpacity" min="0.1" max="0.9" step="0.05" value="0.45" style="flex: 1;">
+                                    </label>
+                                    <div id="blockMaskStatus" style="font-size: 10px; color: #555; margin-top: 4px; min-height: 12px;"></div>
+                                </div>
                             </div>
                         </div>
                     </div>

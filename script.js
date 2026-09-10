@@ -5984,6 +5984,17 @@ const BLOCKMASK_COLORS = {
 const BLOCKMASK_SVGNS = 'http://www.w3.org/2000/svg';
 let _blockMaskOpacity = 0.45;
 
+// "Squint" granularity presets, coarsest -> finest. Mirrors
+// reference/granularity_presets.json so the panel works on the deployed
+// (static) site with no fetch. See block-mask.js for what each key does.
+const BLOCKMASK_PRESETS = {
+    V1_coarsest: { WIN: 44, MOSAIC_STD: 0.16, BG_MARGIN: 0.12, MIN_ZONE_W: 40, ZONE_BRIDGE: 6, ROW_MIN_GROUP: 6, ROW_MIN_GAP_ABS: 0.22, MIN_BLOCK_W: 40 },
+    V2_coarse:   { WIN: 32, MOSAIC_STD: 0.14, BG_MARGIN: 0.11, MIN_ZONE_W: 30, ZONE_BRIDGE: 5, ROW_MIN_GROUP: 5, ROW_MIN_GAP_ABS: 0.19, MIN_BLOCK_W: 25 },
+    V3_medium:   { WIN: 20, MOSAIC_STD: 0.12, BG_MARGIN: 0.10, MIN_ZONE_W: 18, ZONE_BRIDGE: 4, ROW_MIN_GROUP: 4, ROW_MIN_GAP_ABS: 0.15, MIN_BLOCK_W: 15 },
+    V4_fine:     { WIN: 14, MOSAIC_STD: 0.11, BG_MARGIN: 0.09, MIN_ZONE_W: 12, ZONE_BRIDGE: 3, ROW_MIN_GROUP: 3, ROW_MIN_GAP_ABS: 0.12, MIN_BLOCK_W: 9 },
+    V5_finest:   { WIN: 10, MOSAIC_STD: 0.10, BG_MARGIN: 0.08, MIN_ZONE_W: 8,  ZONE_BRIDGE: 2, ROW_MIN_GROUP: 3, ROW_MIN_GAP_ABS: 0.10, MIN_BLOCK_W: 5 }
+};
+
 function setBlockMaskOpacity(v) {
     _blockMaskOpacity = Math.max(0, Math.min(1, +v));
     renderBlockMaskOverlay();
@@ -6134,18 +6145,48 @@ function applyBlockMaskLive(presetOrParams) {
     const fasta = state.seqs.map(s => '>' + s.header + '\n' + s.seq).join('\n') + '\n';
     let params = presetOrParams;
     if (typeof presetOrParams === 'string') {
-        params = (window.__BLOCKMASK_PRESETS || {})[presetOrParams];
+        params = BLOCKMASK_PRESETS[presetOrParams] || (window.__BLOCKMASK_PRESETS || {})[presetOrParams];
         if (!params) { showMessage('Unknown block-mask preset: ' + presetOrParams, 3000); return null; }
     }
+    state._blockMaskPreset = (typeof presetOrParams === 'string') ? presetOrParams : null;
     state.blockMask = BlockMask.computeBlockMask(fasta, params || {}, {});
     renderBlockMaskOverlay();
     return state.blockMask;
+}
+
+// Panel action: compute from the loaded alignment using the selected preset
+// and report a short summary (block count, split zones, any scattered groups).
+function computeAndShowBlockMask() {
+    const sel = el('blockMaskPreset');
+    const preset = sel ? sel.value : 'V3_medium';
+    const status = el('blockMaskStatus');
+    const mask = applyBlockMaskLive(preset);
+    if (!status) return;
+    if (!mask) { status.textContent = 'no mask (load an alignment first)'; return; }
+    const splits = mask.blocks.filter(b => b.rows !== 'all');
+    const scattered = splits.filter(b => Array.isArray(b.rows) && _blockMaskGroupContiguity(b.rows) < 0.6).length;
+    status.textContent = `${mask.blocks.length} blocks, ${splits.length} row-split`
+        + (scattered ? `, ${scattered} scattered (dashed)` : '');
+}
+
+function initBlockMaskPanel() {
+    const op = el('blockMaskOpacity');
+    if (op && !op._bmBound) {
+        op._bmBound = true;
+        op.addEventListener('input', () => setBlockMaskOpacity(op.value));
+    }
+    const sel = el('blockMaskPreset');
+    if (sel && !sel._bmBound) {
+        sel._bmBound = true;
+        sel.addEventListener('change', () => { if (state.blockMask) computeAndShowBlockMask(); });
+    }
 }
 
 window.applyBlockMaskLive = applyBlockMaskLive;
 window.renderBlockMaskOverlay = renderBlockMaskOverlay;
 window.setBlockMaskOpacity = setBlockMaskOpacity;
 window.clearBlockMask = clearBlockMask;
+window.computeAndShowBlockMask = computeAndShowBlockMask;
 
 // Unified source info updater so counts stay accurate after deletions/insertions
 function updateSourceInfo() {
@@ -14421,6 +14462,8 @@ function initializeAppUI() {
         'clusteringOptimalPresetButton': createOptimalPreset,
         'clusteringProbeButton': analyzeClusterability,
         'clusterGuideTreeButton': clusterByGuideTree,
+        'blockMaskComputeButton': computeAndShowBlockMask,
+        'blockMaskClearButton': () => { clearBlockMask(); const s = el('blockMaskStatus'); if (s) s.textContent = ''; },
         'savePresetButton': savePreset,
         'loadPresetButton': loadPreset,
         'snapshotCreateTopButton': createSnapshot,
@@ -14736,6 +14779,7 @@ function initializeAppUI() {
     initStatsTabs();
     initTreeBuilderControls();
     initResEnzymeSearch();
+    initBlockMaskPanel();
     updateBamButtonVisibility();
 }
 
