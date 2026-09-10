@@ -56,3 +56,4 @@ blast_dbs/
 tests/blockmask/real-viewer-*.png
 tests/blockmask/*.glmresp.txt
 tests/blockmask/*.glmpatch.bak
+reference/__pycache__/
