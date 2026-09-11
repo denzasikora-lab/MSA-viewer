@@ -845,6 +845,20 @@
   // a fully relaxed search (minPerfect=1, minOccurrences=1) once very few
   // rows remain, same as cluster.js's own "RESCUE"/"RETRY" behavior.
   function _diagnosticRowSplit(A, rows, colStart, colEnd, spans, P) {
+    // Guard against the exact overfitting mode found on the real
+    // mosaic_subset.aln.fa fixture (20 rows, 1 known real subgroup): with
+    // too few rows to search, cluster.js's own "RESCUE"/ultra-relaxed
+    // fallback (minPerfect=1, minOccurrences=1 once few rows remain) is
+    // fine for its own purpose - a UI feature that must eventually place
+    // every leftover sequence SOMEWHERE - but block-bicluster.js already
+    // has a legitimate "residual" group for rows that don't cluster, so
+    // there is no reason to force-fit small pools here, and doing so
+    // manufactured ~25 spurious 3-row groups from what should have been
+    // exactly 1 real subgroup once _windowedRowSplitScan started calling
+    // this on many small windows/pools. Deliberately NOT using that
+    // relaxed fallback at all.
+    if (rows.length < P.HAPLOTYPE_MIN_USABLE_ROWS) return null;
+
     var maxRounds = 5;
     var minSize = P.MIN_BLOCK_ROWS;
     var groups = [];
@@ -862,7 +876,6 @@
         sizeMediumLarge: 20,
         relaxUpperBound: false
       };
-      if (avail.length <= 10) { opts.minPerfect = 1; opts.minOccurrences = 1; }
 
       var group = _findBestDiagnosticGroup(A, rows, avail, colStart, colEnd, spans, P, opts);
       if (!group) {
@@ -987,6 +1000,14 @@
     var totalWidth = colEnd - colStart + 1;
     var winWidth = P.WINDOW_SCAN_WIDTH;
     if (totalWidth <= winWidth) return null; // whole range already tried by the caller
+
+    // NOTE: an earlier version applied a stricter gain threshold here as a
+    // look-elsewhere correction. Measured directly: it broke real Stage 2b
+    // recovery without fixing the actual false-positive source (narrow
+    // ranges under WINDOW_SCAN_WIDTH bypass this scan entirely and call
+    // bestRowSplit directly - see _diagnosticRowSplit's own guards for the
+    // fix that actually mattered, on the mosaic_subset regression this was
+    // meant to address). Removed rather than kept as a no-op multiplier.
 
     var step = Math.max(1, Math.floor(winWidth / 2));
     var best = null, bestWinStart = -1, bestWinEnd = -1;
