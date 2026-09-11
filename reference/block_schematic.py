@@ -33,6 +33,30 @@ MOSAIC_STD = 0.12       # per-window match-rate std above this counts as mosaic
 DECAY_MIN_RUN = 3       # consecutive declining windows to call it a slope
 
 
+CONSENSUS_MIN_COVERAGE = 3
+
+
+def has_explicit_consensus(names):
+    return any("CONSENSUS" in h.upper() for h in names)
+
+
+def build_majority_consensus_row(A, min_coverage=CONSENSUS_MIN_COVERAGE):
+    """When no row is named 'consensus', using an arbitrary member row as
+    the reference is unsound: wherever THAT row happens to have its own
+    private gap (an insertion present in other copies but not in it), the
+    element coordinate space (built from that row's own non-gap positions)
+    skips those columns entirely -- a real hole in the mask, not a
+    rendering artifact. Build a true per-column majority-vote row instead."""
+    ncols = A.shape[1]
+    row = np.full(ncols, GAP, dtype=np.int8)
+    for j in range(ncols):
+        col = A[:, j]
+        col = col[col != GAP]
+        if len(col) >= min_coverage:
+            row[j] = int(np.bincount(col, minlength=4)[:4].argmax())
+    return row
+
+
 def read_aln(path):
     names, seqs, cur = [], [], None
     for line in open(path):
@@ -153,14 +177,25 @@ def cluster_by_value(pairs, min_gap_abs=None, min_gap_ratio=None, min_group=None
 def row_partition_for_window(seqs_full, maj_full, lo_i, hi_i):
     """Per-row match-rate to majority over [lo_i,hi_i), then gap-clustered.
     Returns a list of row-index groups (each a list of row indices); rows
-    with too little data in this window are omitted, not defaulted."""
+    with too little data in this window are omitted, not defaulted.
+
+    Coverage requirement is relative to each row's OWN real sequence in
+    this span, not a fixed fraction of the window's stitched width. A wide
+    zone (e.g. a flank with strong per-copy length variation) can be far
+    wider than any single row's actual bases there; requiring "half the
+    window" in that case means NO row ever qualifies, and clustering
+    silently returns nothing. Requiring "half of what this row actually
+    has here" lets a short flank in a wide zone still be classified."""
     pairs = []
     for idx, s in enumerate(seqs_full):
         vals = []
+        own_len = 0
         for j in range(lo_i, hi_i):
-            if j < len(s) and s[j] != GAP and maj_full[j] != GAP:
-                vals.append(1.0 if s[j] == maj_full[j] else 0.0)
-        if len(vals) >= max(3, (hi_i - lo_i) // 2):
+            if j < len(s) and s[j] != GAP:
+                own_len += 1
+                if maj_full[j] != GAP:
+                    vals.append(1.0 if s[j] == maj_full[j] else 0.0)
+        if len(vals) >= max(3, own_len * 0.5):
             pairs.append((idx, float(np.mean(vals))))
     return cluster_by_value(pairs)
 

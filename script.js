@@ -6388,7 +6388,11 @@ function renderBlockMaskOverlay() {
     const rowVis = mask.row_headers.map(h => headerToIdx.has(h) ? headerToIdx.get(h) : -1);
 
     blockEls.forEach(blockEl => {
-        const dataRows = blockEl.querySelectorAll('.seq-line[data-seq-index]');
+        // :not(.consensus-line) -- ViewAlign's own displayed Consensus row
+        // carries data-seq-index="-1" too (see addConsensusLine /
+        // CONSENSUS_ROW_INDEX); it must never be treated as a mask row or
+        // used as the top/bottom edge of a full-height rectangle.
+        const dataRows = blockEl.querySelectorAll('.seq-line[data-seq-index]:not(.consensus-line)');
         if (!dataRows.length) return;
         const firstData = dataRows[0].querySelector('.seq-data');
         const spans = firstData ? firstData.querySelectorAll('span[data-pos]') : [];

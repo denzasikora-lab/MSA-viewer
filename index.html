@@ -330,17 +330,19 @@
                             <!-- Trimming Section -->
                             <div style="border-bottom: 1px solid #ddd; padding-bottom: 8px; margin-bottom: 8px;">
                                 <div style="font-weight: bold; font-size: 11px; margin-bottom: 6px;">Trimming</div>
-                                <div style="margin-bottom: 6px;">
-                                    <label for="leftGapInput" style="font-size: 11px; display: block; margin-bottom: 2px;" title="Columns at the left edge with this % or more gaps are trimmed">Left Trim Gap %:</label>
-                                    <input type="number" id="leftGapInput" min="0" max="100" value="50" step="5" style="width: 60px; height: 22px; padding: 2px; font-size: 11px;" title="If sliding window at left edge has >= this % gaps, trim it">
-                                </div>
-                                <div style="margin-bottom: 6px;">
-                                    <label for="rightGapInput" style="font-size: 11px; display: block; margin-bottom: 2px;" title="Columns at the right edge with this % or more gaps are trimmed">Right Trim Gap %:</label>
-                                    <input type="number" id="rightGapInput" min="0" max="100" value="80" step="5" style="width: 60px; height: 22px; padding: 2px; font-size: 11px;" title="If sliding window at right edge has >= this % gaps, trim it">
-                                </div>
-                                <div style="margin-bottom: 6px;">
-                                    <label for="edgeWindowInput" style="font-size: 11px; display: block; margin-bottom: 2px;" title="Number of consecutive columns checked at each edge for gap density">Edge Window (cols):</label>
-                                    <input type="number" id="edgeWindowInput" min="1" max="50" value="15" step="1" style="width: 60px; height: 22px; padding: 2px; font-size: 11px;" title="Width of the sliding window used at alignment edges">
+                                <div style="margin-bottom: 6px; display: flex; gap: 10px;">
+                                    <div>
+                                        <label for="leftGapInput" style="font-size: 11px; display: block; margin-bottom: 2px;" title="Columns at the left edge with this % or more gaps are trimmed">Left Trim Gap %:</label>
+                                        <input type="number" id="leftGapInput" min="0" max="100" value="50" step="5" style="width: 55px; height: 22px; padding: 2px; font-size: 11px;" title="If sliding window at left edge has >= this % gaps, trim it">
+                                    </div>
+                                    <div>
+                                        <label for="rightGapInput" style="font-size: 11px; display: block; margin-bottom: 2px;" title="Columns at the right edge with this % or more gaps are trimmed">Right Trim Gap %:</label>
+                                        <input type="number" id="rightGapInput" min="0" max="100" value="80" step="5" style="width: 55px; height: 22px; padding: 2px; font-size: 11px;" title="If sliding window at right edge has >= this % gaps, trim it">
+                                    </div>
+                                    <div>
+                                        <label for="edgeWindowInput" style="font-size: 11px; display: block; margin-bottom: 2px;" title="Number of consecutive columns checked at each edge for gap density">Edge Window:</label>
+                                        <input type="number" id="edgeWindowInput" min="1" max="50" value="15" step="1" style="width: 50px; height: 22px; padding: 2px; font-size: 11px;" title="Width of the sliding window used at alignment edges">
+                                    </div>
                                 </div>
                                 <div style="margin-bottom: 6px; display: flex; gap: 8px; align-items: center;">
                                     <span style="font-size: 11px; font-weight: bold;">Trim mode:</span>

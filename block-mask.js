@@ -115,6 +115,41 @@
     return 0;
   }
 
+  function hasExplicitConsensus(names) {
+    for (var i = 0; i < names.length; i++) {
+      if (names[i].toUpperCase().indexOf('CONSENSUS') !== -1) return true;
+    }
+    return false;
+  }
+
+  // When no row is named "consensus", using an arbitrary member row as the
+  // reference is unsound: wherever THAT row happens to have its own private
+  // gap (an insertion present in other copies but not in it), the element
+  // coordinate space (built from that row's own non-gap positions) skips
+  // those columns entirely -- a real hole in the mask, not a rendering
+  // artifact. Build a true per-column majority-vote row instead, so the
+  // reference reflects the whole alignment, not one arbitrary member.
+  var CONSENSUS_MIN_COVERAGE = 3;
+  function buildMajorityConsensusRow(A, minCoverage) {
+    var ncols = A[0].length;
+    var row = new Int8Array(ncols);
+    for (var j = 0; j < ncols; j++) {
+      var counts = [0, 0, 0, 0];
+      var n = 0;
+      for (var i = 0; i < A.length; i++) {
+        var v = A[i][j];
+        if (v !== GAP) { counts[v]++; n++; }
+      }
+      row[j] = (n >= minCoverage) ? argmaxCounts4(counts) : GAP;
+    }
+    return row;
+  }
+  function argmaxCounts4(counts) {
+    var best = 0;
+    for (var k = 1; k < 4; k++) if (counts[k] > counts[best]) best = k;
+    return best;
+  }
+
   function nonGapIndices(row) {
     var out = [];
     for (var i = 0; i < row.length; i++) if (row[i] !== GAP) out.push(i);
@@ -282,14 +317,26 @@
   }
 
   function rowPartitionForWindow(seqsFull, majFull, loI, hiI, P) {
+    // Coverage requirement is relative to each row's OWN real sequence in
+    // this span, not a fixed fraction of the window's stitched width. A
+    // wide zone (e.g. a flank with strong per-copy length variation) can
+    // be far wider than any single row's actual bases there; requiring
+    // "half the window" in that case means NO row ever qualifies, and
+    // clustering silently returns nothing. Requiring "half of what this
+    // row actually has here" lets a short flank in a wide zone still be
+    // classified.
     var pairs = [];
-    var need = Math.max(3, (hiI - loI) >> 1);
     for (var idx = 0; idx < seqsFull.length; idx++) {
       var s = seqsFull[idx];
       var vals = [];
+      var ownLen = 0;
       for (var j = loI; j < hiI; j++) {
-        if (j < s.length && s[j] !== GAP && majFull[j] !== GAP) vals.push(s[j] === majFull[j] ? 1.0 : 0.0);
+        if (j < s.length && s[j] !== GAP) {
+          ownLen++;
+          if (majFull[j] !== GAP) vals.push(s[j] === majFull[j] ? 1.0 : 0.0);
+        }
       }
+      var need = Math.max(3, ownLen * 0.5);
       if (vals.length >= need) pairs.push([idx, mean(vals)]);
     }
     return clusterByValue(pairs, P);
