@@ -32,7 +32,11 @@
     MIN_BLOCK_COLS: 8,       // a block (or a split-off column range) narrower than this is never accepted
     MIN_SPLIT_GAIN: 0.05,    // bestRowSplit: absolute coherence gain of the accepted groups over the whole
     MIN_VARIANCE_REDUCTION: 0.15, // bestColumnSplit: fractional reduction in column-purity variance (see its comment for why this is a different scale from MIN_SPLIT_GAIN)
-    MERGE_TOLERANCE: 0.05    // two adjacent same-row leaves merge if doing so costs less than this
+    MERGE_TOLERANCE: 0.05,   // two adjacent same-row leaves merge if doing so costs less than this
+    HAPLOTYPE_MAX_PURITY: 0.85,   // a column counts as "diagnostic" for haplotype clustering if its dominant-state purity is below this (i.e. it's genuinely polymorphic, not just noisy)
+    HAPLOTYPE_MIN_INFO_COLS: 8,   // need at least this many diagnostic columns before haplotype clustering is attempted at all - fewer than this and a small row sample can always be bipartitioned to look clean on those same columns by pure look-elsewhere overfitting (measured: 4 was not enough, produced false splits on a uniform 16-row test fixture)
+    HAPLOTYPE_MIN_GAIN: 0.2,      // scored against diagnostic columns ONLY (see _columnListCoherence), not the whole window, so this is NOT on the same scale as MIN_SPLIT_GAIN - measured against both a real 48-row biological split (gain 0.22) and small-sample noise on a 16-row uniform fixture (gain up to 0.19), this threshold alone sits between them but is a thin margin - HAPLOTYPE_MIN_USABLE_ROWS below is the primary noise guard, this is a secondary one
+    HAPLOTYPE_MIN_USABLE_ROWS: 20 // below this many rows with real data at the diagnostic columns, a clean-looking 2-way split is too easily found by chance (measured: small samples of ~16 rows produced gain up to 0.19 on a uniform/noise fixture; real biological structure recovered here used 48 rows) - this is the primary guard against overfitting on small blocks, not a claim that real structure can't exist in fewer rows
   };
 
   function resolveParams(params) {
@@ -113,6 +117,23 @@
     var best = 0;
     for (var s = 1; s < 5; s++) if (counts[s] > counts[best]) best = s;
     return { covered: covered, dominant: best, dominantCount: counts[best] };
+  }
+
+  // Same purity-mean definition as blockCoherence, but over an arbitrary
+  // (not necessarily contiguous) list of absolute column indices - used by
+  // _haplotypeRowSplit to score a split against just its diagnostic
+  // columns, since averaging over a whole contiguous window (most of it
+  // invariant background) mathematically caps how much a real split can
+  // ever move the score, regardless of how clean the split is.
+  function _columnListCoherence(A, rows, cols, spans, P) {
+    var sum = 0, n = 0;
+    for (var c = 0; c < cols.length; c++) {
+      var cs = columnStats(A, rows, cols[c], spans);
+      if (cs.covered < P.MIN_COL_COVERAGE) continue;
+      sum += cs.dominantCount / cs.covered;
+      n++;
+    }
+    return n === 0 ? null : sum / n;
   }
 
   var _splitLeafCount = 0;
@@ -316,7 +337,15 @@
   // { rows: [...], residual: true } ], gain: <number> } (residual entry
   // omitted entirely if there are no leftover rows), or null per the
   // rejection rules above.
-  function bestRowSplit(A, rows, colStart, colEnd, spans, P) {
+  // Gap-clustering row split: scores each row by its OVERALL match-rate to
+  // the dominant state, averaged across every qualifying column in range.
+  // Works when one group shares a genuinely different whole-window pattern
+  // (e.g. a distinct tail/flank) from the rest. Does NOT work when the
+  // real split is defined by a handful of correlated diagnostic SNPs
+  // sitting among many invariant columns - see _haplotypeRowSplit below,
+  // which handles that case instead. See bestRowSplit for how the two are
+  // combined.
+  function _gapRowSplit(A, rows, colStart, colEnd, spans, P) {
     // Precompute column stats once for all columns in range
     var nCols = colEnd - colStart + 1;
     var colStatsArr = new Array(nCols);
@@ -453,6 +482,196 @@
     }
 
     return { groups: resultGroups, gain: gain };
+  }
+
+  // Haplotype-clustering row split: finds real correlated-SNP structure
+  // that _gapRowSplit misses (found by comparing to a real biological
+  // example, tests/fixtures/blockmask/testsets/oma_SINE16b_realigned.aln.fa
+  // cols 1152-1217 — two ~evenly-sized groups differing at ~12 of 66
+  // columns, no single "whole-window match rate" separates them because
+  // different rows carry different combinations of the minority/majority
+  // allele across those columns; a per-row scalar score averaged over all
+  // columns dilutes the signal and can't recover it, and even restricted
+  // to just the diagnostic columns a per-row match-rate against one global
+  // "dominant" vote per column still doesn't separate correlated
+  // haplotypes cleanly. This needs actual row-vs-row similarity
+  // clustering on the diagnostic columns, which is what this does:
+  //
+  // 1. Find "diagnostic" columns: covered >= P.MIN_COL_COVERAGE and
+  //    dominant-state purity < P.HAPLOTYPE_MAX_PURITY (i.e. genuinely
+  //    polymorphic - a near-invariant column carries no haplotype signal
+  //    and would just add noise to the distance metric). Bail (null) if
+  //    fewer than P.HAPLOTYPE_MIN_INFO_COLS qualify.
+  // 2. Build each row's state vector over just those columns, respecting
+  //    spans (a position outside a row's own real-base span is missing,
+  //    not a state). Drop rows with too little real data there.
+  // 3. Cluster into 2 groups by Hamming distance over the diagnostic
+  //    columns: seed with the single farthest-apart pair (deterministic,
+  //    no randomness), then iterate nearest-centroid assignment with
+  //    majority-vote centroids (k=2 k-modes, in effect) until stable or a
+  //    small iteration cap.
+  // 4. Accept only if both groups meet P.MIN_BLOCK_ROWS and the resulting
+  //    weighted-average blockCoherence beats the whole block's own
+  //    coherence by at least P.HAPLOTYPE_MIN_GAIN. Deliberately NO
+  //    majority-group-size guard here (unlike _gapRowSplit) - a real
+  //    haplotype split is often close to balanced by nature, and rejecting
+  //    balanced splits is exactly the failure mode this function exists to
+  //    fix; noise is instead guarded against by requiring several
+  //    genuinely polymorphic columns to agree, not by group-size shape.
+  function _haplotypeRowSplit(A, rows, colStart, colEnd, spans, P) {
+    var nCols = colEnd - colStart + 1;
+    var colStatsArr = new Array(nCols);
+    for (var j = 0; j < nCols; j++) colStatsArr[j] = columnStats(A, rows, colStart + j, spans);
+
+    var infoCols = [];
+    for (var j = 0; j < nCols; j++) {
+      var cs = colStatsArr[j];
+      if (cs.covered >= P.MIN_COL_COVERAGE && (cs.dominantCount / cs.covered) < P.HAPLOTYPE_MAX_PURITY) {
+        infoCols.push(j);
+      }
+    }
+    if (infoCols.length < P.HAPLOTYPE_MIN_INFO_COLS) return null;
+
+    // Per-row state vectors over the diagnostic columns only
+    var rowStates = {};
+    var usableRows = [];
+    var minKnown = Math.min(3, infoCols.length);
+    for (var k = 0; k < rows.length; k++) {
+      var i = rows[k];
+      var sp = spans[i];
+      var vec = new Array(infoCols.length);
+      var nKnown = 0;
+      for (var m = 0; m < infoCols.length; m++) {
+        var col = colStart + infoCols[m];
+        if (sp[0] === -1 || col < sp[0] || col > sp[1]) { vec[m] = null; continue; }
+        var v = A[i][col];
+        vec[m] = (v === GAP) ? 4 : v;
+        nKnown++;
+      }
+      if (nKnown >= minKnown) {
+        rowStates[i] = vec;
+        usableRows.push(i);
+      }
+    }
+    var minUsableRows = (P.HAPLOTYPE_MIN_USABLE_ROWS != null) ? P.HAPLOTYPE_MIN_USABLE_ROWS : (2 * P.MIN_BLOCK_ROWS);
+    if (usableRows.length < Math.max(2 * P.MIN_BLOCK_ROWS, minUsableRows)) return null;
+
+    function dist(a, b) {
+      var va = rowStates[a], vb = rowStates[b];
+      var diff = 0, n = 0;
+      for (var m = 0; m < va.length; m++) {
+        if (va[m] == null || vb[m] == null) continue;
+        n++;
+        if (va[m] !== vb[m]) diff++;
+      }
+      return n === 0 ? null : diff / n;
+    }
+
+    // Deterministic seeding: the single farthest-apart pair of rows
+    var bestPair = null, bestDist = -1;
+    for (var a = 0; a < usableRows.length; a++) {
+      for (var b = a + 1; b < usableRows.length; b++) {
+        var d = dist(usableRows[a], usableRows[b]);
+        if (d !== null && d > bestDist) { bestDist = d; bestPair = [usableRows[a], usableRows[b]]; }
+      }
+    }
+    if (bestPair === null || bestDist <= 0) return null;
+
+    function majorityVec(group) {
+      var vec = new Array(infoCols.length);
+      for (var m = 0; m < infoCols.length; m++) {
+        var counts = {};
+        for (var k = 0; k < group.length; k++) {
+          var s = rowStates[group[k]][m];
+          if (s == null) continue;
+          counts[s] = (counts[s] || 0) + 1;
+        }
+        var best = null, bestC = -1;
+        for (var key in counts) {
+          if (counts.hasOwnProperty(key) && counts[key] > bestC) { bestC = counts[key]; best = Number(key); }
+        }
+        vec[m] = best;
+      }
+      return vec;
+    }
+
+    var centroidA = rowStates[bestPair[0]].slice();
+    var centroidB = rowStates[bestPair[1]].slice();
+    var assignment = {};
+
+    for (var iter = 0; iter < 10; iter++) {
+      var newAssignment = {};
+      for (var k = 0; k < usableRows.length; k++) {
+        var i = usableRows[k];
+        var vec = rowStates[i];
+        var da = 0, db = 0, na = 0, nb = 0;
+        for (var m = 0; m < vec.length; m++) {
+          if (vec[m] == null) continue;
+          if (centroidA[m] != null) { na++; if (vec[m] !== centroidA[m]) da++; }
+          if (centroidB[m] != null) { nb++; if (vec[m] !== centroidB[m]) db++; }
+        }
+        var rateA = na > 0 ? da / na : 1;
+        var rateB = nb > 0 ? db / nb : 1;
+        newAssignment[i] = (rateA <= rateB) ? 'A' : 'B';
+      }
+      var groupA = usableRows.filter(function (i) { return newAssignment[i] === 'A'; });
+      var groupB = usableRows.filter(function (i) { return newAssignment[i] === 'B'; });
+      if (groupA.length === 0 || groupB.length === 0) return null;
+
+      var stable = true;
+      for (var key in newAssignment) {
+        if (newAssignment[key] !== assignment[key]) { stable = false; break; }
+      }
+      assignment = newAssignment;
+      centroidA = majorityVec(groupA);
+      centroidB = majorityVec(groupB);
+      if (stable) break;
+    }
+
+    var groupARows = usableRows.filter(function (i) { return assignment[i] === 'A'; });
+    var groupBRows = usableRows.filter(function (i) { return assignment[i] === 'B'; });
+    if (groupARows.length < P.MIN_BLOCK_ROWS || groupBRows.length < P.MIN_BLOCK_ROWS) return null;
+
+    var residualRows = [];
+    for (var k = 0; k < rows.length; k++) {
+      if (!rowStates.hasOwnProperty(rows[k])) residualRows.push(rows[k]);
+    }
+
+    // Score gain against just the diagnostic columns (not the whole,
+    // mostly-invariant window) - see _columnListCoherence's comment for
+    // why averaging over the full window would mathematically cap the
+    // measurable gain regardless of split quality.
+    var diagAbsCols = infoCols.map(function (m) { return colStart + m; });
+    var wholeBlockCoherence = _columnListCoherence(A, rows, diagAbsCols, spans, P);
+    if (wholeBlockCoherence === null) wholeBlockCoherence = 0;
+
+    var cohA = _columnListCoherence(A, groupARows, diagAbsCols, spans, P);
+    if (cohA === null) cohA = 0;
+    var cohB = _columnListCoherence(A, groupBRows, diagAbsCols, spans, P);
+    if (cohB === null) cohB = 0;
+
+    var weightedAvg = (cohA * groupARows.length + cohB * groupBRows.length) / (groupARows.length + groupBRows.length);
+    var gain = weightedAvg - wholeBlockCoherence;
+    if (gain < P.HAPLOTYPE_MIN_GAIN) return null;
+
+    var resultGroups = [
+      { rows: groupARows, residual: false },
+      { rows: groupBRows, residual: false }
+    ];
+    if (residualRows.length > 0) resultGroups.push({ rows: residualRows, residual: true });
+
+    return { groups: resultGroups, gain: gain };
+  }
+
+  // Tries both row-split strategies and takes whichever finds a real,
+  // higher-gain split (or the one that finds anything, if only one does).
+  // _gapRowSplit and _haplotypeRowSplit are complementary, not redundant -
+  // see each one's own comment for the structural case it covers.
+  function bestRowSplit(A, rows, colStart, colEnd, spans, P) {
+    var gapResult = _gapRowSplit(A, rows, colStart, colEnd, spans, P);
+    var hapResult = _haplotypeRowSplit(A, rows, colStart, colEnd, spans, P);
+    if (gapResult && hapResult) return (hapResult.gain > gapResult.gain) ? hapResult : gapResult;
+    return gapResult || hapResult || null;
   }
 
   // Recursive split-and-merge. Given a candidate block (rows, colStart,
