@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v179';
+const BUILD_TAG = 'v186';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -353,7 +353,6 @@ const state = {
     pendingNucStart: null,
     spanCache: new Map(),
     domSelectedNucs: new Map(),
-    domSelectedColumns: new Map(),
     domPendingNuc: null,
     lastSelectedIndex: null,
     lastSelectedColumn: null,
@@ -1410,7 +1409,17 @@ const EXCLUSIVE_MODAL_IDS = [
 // enough to want moving out of the way, resizing to see more at once, or
 // minimizing while working elsewhere without losing the results. Wiring up
 // another modal later is just another call to this function.
+// Registry so calling this again for the same modalId (e.g. a dialog that's
+// torn down and rebuilt fresh on every search, unlike clusteringModal which
+// persists) cleans up the PREVIOUS call's document-level mousemove/mouseup
+// listeners first — otherwise each call adds a new pair that's never
+// removed, since the old modal/header elements are gone but the listener
+// closures still reference them, leaking one pair of document listeners per
+// call over a session.
+const _modalDragResizeCleanup = {};
 function makeModalDraggableResizable(modalId, headerId, contentId) {
+    if (_modalDragResizeCleanup[modalId]) { _modalDragResizeCleanup[modalId](); delete _modalDragResizeCleanup[modalId]; }
+
     const modal = document.getElementById(modalId);
     const header = document.getElementById(headerId);
     if (!modal || !header) return;
@@ -1429,7 +1438,7 @@ function makeModalDraggableResizable(modalId, headerId, contentId) {
     }
 
     let dragging = false, dragStartX = 0, dragStartY = 0, modalStartX = 0, modalStartY = 0;
-    header.addEventListener('mousedown', (e) => {
+    const onHeaderMousedown = (e) => {
         if (e.target.closest('button')) return; // don't start a drag from the close/minimize buttons
         pinCurrentPosition();
         dragging = true;
@@ -1439,8 +1448,8 @@ function makeModalDraggableResizable(modalId, headerId, contentId) {
         modalStartX = rect.left;
         modalStartY = rect.top;
         e.preventDefault();
-    });
-    document.addEventListener('mousemove', (e) => {
+    };
+    const onDragMousemove = (e) => {
         if (!dragging) return;
         const dx = e.clientX - dragStartX;
         const dy = e.clientY - dragStartY;
@@ -1450,19 +1459,28 @@ function makeModalDraggableResizable(modalId, headerId, contentId) {
         const newTop = Math.min(Math.max(modalStartY + dy, 0), window.innerHeight - 30);
         modal.style.left = newLeft + 'px';
         modal.style.top = newTop + 'px';
-    });
-    document.addEventListener('mouseup', () => { dragging = false; });
+    };
+    const onDragMouseup = () => { dragging = false; };
+    header.addEventListener('mousedown', onHeaderMousedown);
+    document.addEventListener('mousemove', onDragMousemove);
+    document.addEventListener('mouseup', onDragMouseup);
 
     // Resize handle, bottom-right corner
     const handle = document.createElement('div');
     handle.title = 'Drag to resize';
     handle.style.cssText = 'position:absolute;right:0;bottom:0;width:14px;height:14px;cursor:nwse-resize;'
         + 'background:linear-gradient(135deg,transparent 0%,transparent 50%,#999 50%,#999 60%,transparent 60%,transparent 70%,#999 70%,#999 80%,transparent 80%);';
-    modal.style.position = 'fixed'; // already true via inline style, kept explicit for clarity
+    // Pin immediately, before any drag/resize — some callers (e.g. the BLAST
+    // results dialog) center via a flexbox parent rather than fixed
+    // top/left/transform, so switching to position:fixed without first
+    // capturing the current on-screen rect as explicit pixels would snap
+    // the modal to the browser's default (0,0) the instant this runs.
+    modal.style.position = 'fixed';
+    pinCurrentPosition();
     modal.appendChild(handle);
 
     let resizing = false, resizeStartX = 0, resizeStartY = 0, startW = 0, startH = 0;
-    handle.addEventListener('mousedown', (e) => {
+    const onHandleMousedown = (e) => {
         pinCurrentPosition();
         const rect = modal.getBoundingClientRect();
         modal.style.height = rect.height + 'px';
@@ -1475,15 +1493,25 @@ function makeModalDraggableResizable(modalId, headerId, contentId) {
         startH = rect.height;
         e.preventDefault();
         e.stopPropagation();
-    });
-    document.addEventListener('mousemove', (e) => {
+    };
+    const onResizeMousemove = (e) => {
         if (!resizing) return;
         const newW = Math.max(320, startW + (e.clientX - resizeStartX));
         const newH = Math.max(120, startH + (e.clientY - resizeStartY));
         modal.style.width = newW + 'px';
         modal.style.height = newH + 'px';
-    });
-    document.addEventListener('mouseup', () => { resizing = false; });
+    };
+    const onResizeMouseup = () => { resizing = false; };
+    handle.addEventListener('mousedown', onHandleMousedown);
+    document.addEventListener('mousemove', onResizeMousemove);
+    document.addEventListener('mouseup', onResizeMouseup);
+
+    _modalDragResizeCleanup[modalId] = () => {
+        document.removeEventListener('mousemove', onDragMousemove);
+        document.removeEventListener('mouseup', onDragMouseup);
+        document.removeEventListener('mousemove', onResizeMousemove);
+        document.removeEventListener('mouseup', onResizeMouseup);
+    };
 
     // Minimize button - collapses to just the header bar
     const minBtn = document.createElement('button');
@@ -1883,6 +1911,7 @@ function calculateGaplessPositions(sequence) {
 // (c) remove/rebuild only the DOM between two spacer sentinels rather than
 // the whole container.
 function _removeNodesBetweenSpacers(topSpacer, bottomSpacer) {
+    _unifiedRenderedRowRanges.clear();
     let node = topSpacer.nextSibling;
     while (node && node !== bottomSpacer) {
         const next = node.nextSibling;
@@ -1943,6 +1972,31 @@ function _applyColumnWindowStyle(dataEl, len, colStart, charWidthPx) {
     dataEl.style.paddingLeft = (colStart * charWidthPx) + 'px';
 }
 
+// Shared column-window calculation for one block. Each block's .seq-data
+// is blockLen*charWidthPx wide and starts at the left edge of the scrollable
+// data area, so scrollLeft maps to block-local column offsets. Adding `start`
+// converts the local offset back to an absolute alignment column.
+function _computeBlockColumnWindow(start, end, scrollLeft, visibleDataWidth, charWidthPx) {
+    const blockLen = end - start;
+    if (blockLen * charWidthPx <= visibleDataWidth) {
+        return { colStart: start, colEnd: end - 1, needsColWindow: false };
+    }
+    const overscan = 20;
+    // Horizontal scrollLeft is container-global. Clamp it to this block's width
+    // so a pan in an earlier block cannot truncate a vertically focused block.
+    const maxLocalScroll = Math.max(0, blockLen * charWidthPx - visibleDataWidth);
+    const localScrollLeft = Math.min(Math.max(0, scrollLeft), maxLocalScroll);
+    let colStart = start + Math.max(0, Math.floor(localScrollLeft / charWidthPx) - overscan);
+    let colEnd = start + Math.min(
+        blockLen - 1,
+        Math.ceil((localScrollLeft + visibleDataWidth) / charWidthPx) - 1 + overscan
+    );
+    colStart = Math.max(start, Math.min(colStart, end - 1));
+    colEnd = Math.max(colStart, Math.min(colEnd, end - 1));
+    if (colStart > colEnd) { colStart = start; colEnd = end - 1; }
+    return { colStart, colEnd, needsColWindow: colStart > start || colEnd < end - 1 };
+}
+
 // Builds one block's DOM for the non-windowed (small-alignment) render path.
 // Factored out so the windowed and non-windowed paths share one implementation.
 // Used by both Full mode (blockWidth = len, one block) and Block mode
@@ -1993,6 +2047,19 @@ let _unifiedHeaderHeightPx = null;
 let _unifiedCharWidthPx = null;
 let _unifiedNameColWidthPx = null;
 let _unifiedWindowRenderParams = null;
+// Per-block record of which row indices are currently rendered in the
+// DOM, keyed by block index. Populated in _buildUnifiedBlock, consumed
+// by a future incremental-diff version of _refreshUnifiedWindowOnScroll.
+let _unifiedRenderedRowRanges = new Map();
+
+function _invalidateUnifiedWindowMeasurements() {
+    _unifiedRowHeightPx = null;
+    _unifiedBlockHeightPx = null;
+    _unifiedHeaderHeightPx = null;
+    _unifiedCharWidthPx = null;
+    _unifiedNameColWidthPx = null;
+    _unifiedRenderedRowRanges.clear();
+}
 
 function _measureUnifiedRowHeight(sampleRowEl) {
     if (sampleRowEl) {
@@ -2071,6 +2138,7 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     const blockLen = end - start;
     const blockDiv = document.createElement('div');
     blockDiv.className = 'block-block';
+    blockDiv.dataset.blockIndex = String(blockIndex);
     const isLastBlock = (start + (end - start) >= len) || end >= len;
 
     // Column windowing within this block - computed up front so the ruler and
@@ -2080,10 +2148,7 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     // than the viewport (Full mode with 1 giant block), only visible columns
     // are rendered with padding-left for the offset.
     const visibleDataWidth = Math.max(0, clientWidth - nameColWidthPx);
-    let colStart = Math.max(start, Math.floor(scrollLeft / charWidthPx) - 20);
-    let colEnd = Math.min(end - 1, Math.ceil((scrollLeft + visibleDataWidth) / charWidthPx) - 1 + 20);
-    if (colStart > colEnd) { colStart = start; colEnd = end - 1; }
-    const needsColWindow = colStart > start || colEnd < end - 1;
+    const { colStart, colEnd, needsColWindow } = _computeBlockColumnWindow(start, end, scrollLeft, visibleDataWidth, charWidthPx);
 
     // Ruler — was previously generated for the block's FULL width (blockLen,
     // up to the whole alignment in Full mode's single-block case) on every
@@ -2155,6 +2220,7 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
         rowStart = 0;
         rowEnd = Math.min(Math.max(0, nSeq - 1), 50);
     }
+    _unifiedRenderedRowRanges.set(blockIndex, { rowStart, rowEnd });
 
     // Top row spacer (fills the space of rows above the visible window)
     const topRowSpacer = document.createElement('div');
@@ -2189,14 +2255,105 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     return blockDiv;
 }
 
+// Incrementally updates one already-rendered block's visible row window,
+// reusing existing row DOM nodes that remain in range instead of removing
+// and recreating everything. Returns true if it performed an incremental
+// update, false if it couldn't (caller should fall back to a full rebuild
+// of this block via _buildUnifiedBlock).
+function _incrementalUpdateBlockRows(blockDiv, blockIndex, newRowStart, newRowEnd, rowHeightPx, colStart, colEnd, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, isLastBlock, nSeq) {
+    const oldRange = _unifiedRenderedRowRanges.get(blockIndex);
+    if (!oldRange) return false;
+
+    const rowSpacers = blockDiv.querySelectorAll(':scope > .unified-row-spacer');
+    if (rowSpacers.length !== 2) return false;
+    const [topRowSpacer, bottomRowSpacer] = rowSpacers;
+
+    // Build one Map from sequence index to existing row element during the
+    // existing initial querySelectorAll.
+    const existingRows = blockDiv.querySelectorAll(':scope > .seq-line[data-seq-index]');
+    const rowMap = new Map();
+    existingRows.forEach(rowEl => {
+        const idx = parseInt(rowEl.getAttribute('data-seq-index'), 10);
+        if (Number.isNaN(idx) || idx < 0) return; // leave consensus/other special rows alone
+        rowMap.set(idx, rowEl);
+    });
+
+    // Remove out-of-range rows and delete them from that Map. Also clean up their
+    // spanCache entries so forEachColumnSpan/updateColumnSelections never
+    // iterate a stale, detached row.
+    rowMap.forEach((rowEl, idx) => {
+        if (idx < newRowStart || idx > newRowEnd) {
+            state.spanCache?.delete(idx);
+            rowEl.remove();
+            rowMap.delete(idx);
+        }
+    });
+
+    // Determine missing contiguous runs in [newRowStart, newRowEnd].
+    const missingRuns = [];
+    let runStart = -1;
+    for (let i = newRowStart; i <= newRowEnd; i++) {
+        if (!rowMap.has(i)) {
+            if (runStart < 0) runStart = i;
+        } else {
+            if (runStart >= 0) {
+                missingRuns.push([runStart, i - 1]);
+                runStart = -1;
+            }
+        }
+    }
+    if (runStart >= 0) missingRuns.push([runStart, newRowEnd]);
+
+    // Build each missing run in a detached DocumentFragment, with rows in
+    // ascending sequence-index order, and insert each fragment once before
+    // the first retained row with a greater index, or before bottomRowSpacer
+    // if there is none.
+    for (const [start, end] of missingRuns) {
+        const frag = document.createDocumentFragment();
+        for (let i = start; i <= end; i++) {
+            const lineDiv = createSequenceLine(i, colStart, colEnd + 1, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, conservationData);
+            frag.appendChild(lineDiv);
+        }
+        let insertBefore = bottomRowSpacer;
+        let nextGreaterIdx = Infinity;
+        rowMap.forEach((rowEl, idx) => {
+            if (idx > end && idx < nextGreaterIdx) {
+                nextGreaterIdx = idx;
+                insertBefore = rowEl;
+            }
+        });
+        blockDiv.insertBefore(frag, insertBefore);
+    }
+
+    topRowSpacer.style.height = (newRowStart * rowHeightPx) + 'px';
+    bottomRowSpacer.style.height = (Math.max(0, nSeq - 1 - newRowEnd) * rowHeightPx) + 'px';
+
+    _unifiedRenderedRowRanges.set(blockIndex, { rowStart: newRowStart, rowEnd: newRowEnd });
+    return true;
+}
+
 // Unified windowed render entry point for large ("crazy") alignments.
 // Full mode = blockWidth set to len (1 block); Block mode = blockWidth from
 // the slider (multiple blocks). Windows at three granularities: block-level
 // (which blocks are visible), row-level (which rows within each block), and
 // column-level (only when a block is wider than the viewport).
-function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, preservedScrollTop) {
+function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, preservedScrollTop, _isRetry) {
     _unifiedWindowRenderParams = { len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options };
     const numBlocks = Math.max(1, Math.ceil(len / blockWidth));
+    // rowHeightPx falls back to a hardcoded 16px guess until a real row has been
+    // measured. That guess rarely matches the actual rendered row height (font
+    // stack/size dependent, seen as low as 13px), and this value gets baked into
+    // every block's bottom-row-spacer AND into blockHeightPx itself (measured
+    // from this same first, wrongly-sized block below) - the mismatch then
+    // compounds across every block's blockTop = blockIndex * blockHeightPx,
+    // drifting further with each block and eventually scrolling into an area
+    // with no real content (confirmed directly: a 621-seq/13px-row alignment
+    // measured blockHeightPx ~9771px from a first block whose true content
+    // only fills ~8100px, and by block 12 that ~1650px/block error compounded
+    // into a multi-thousand-pixel gap - scrolling to the bottom landed on
+    // blank space with the real rows rendered thousands of pixels off-screen).
+    // See the retry block below for the actual fix: rebuild once if the real
+    // measurement (taken after this pass) turns out to disagree.
     const rowHeightPx = Math.max(1, _unifiedRowHeightPx || 16);
     const blockHeightPx = Math.max(1, _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx());
     const effectiveScrollTop = preservedScrollTop != null ? preservedScrollTop : container.scrollTop;
@@ -2232,14 +2389,34 @@ function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNam
     container.appendChild(bottomSpacer);
 
     // Measure from the first real block and its first real row
+    let measuredRowHeightPx = rowHeightPx;
     if (firstRealBlock) {
         _measureUnifiedBlockHeight(firstRealBlock);
         _measureUnifiedHeaderHeight(firstRealBlock);
         const firstRow = firstRealBlock.querySelector('.seq-line[data-seq-index]');
         if (firstRow) {
-            _measureUnifiedRowHeight(firstRow);
+            measuredRowHeightPx = _measureUnifiedRowHeight(firstRow);
             _measureUnifiedColumnMetrics(firstRow);
         }
+    }
+
+    // Self-correct: if the row height actually measured from real, rendered
+    // content disagrees with the (possibly-fallback) value this pass used to
+    // build every block's internal spacer math and blockHeightPx itself,
+    // rebuild once now with the corrected value - before the user ever sees
+    // the drifted layout - rather than letting every block after the first
+    // silently accumulate the error (see the comment above rowHeightPx).
+    // The _isRetry guard makes this at most one extra pass: the second call
+    // always measures the same real DOM it just built, so it can't disagree
+    // with itself.
+    if (!_isRetry && Math.abs(measuredRowHeightPx - rowHeightPx) > 0.5) {
+        container.innerHTML = '';
+        // blockHeightPx was measured from this pass's wrongly-sized block (built
+        // with the stale rowHeightPx) - reset it too, so the retry derives a
+        // fresh fallback from the now-correct row height instead of reusing a
+        // blockHeightPx that's just as poisoned as the row height was.
+        _unifiedBlockHeightPx = null;
+        return renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options, preservedScrollTop, true);
     }
 
     // Restore scroll position (same suppress dance as the existing functions)
@@ -2267,17 +2444,13 @@ function _refreshUnifiedWindowOnScroll(container) {
     const blockHeightPx = Math.max(1, _unifiedBlockHeightPx || _unifiedFallbackBlockHeightPx());
     const { charWidthPx, nameColWidthPx } = _measureUnifiedColumnMetrics(null);
     const overscan = 1;
-    // Captured once, before any DOM mutation below. _removeNodesBetweenSpacers
-    // removes the old (potentially huge - up to the full alignment height in
-    // Full mode's single-block case) block content before the spacers are
-    // resized to match; during that gap the container's scrollable content
-    // momentarily collapses, and the browser synchronously clamps scrollTop
-    // to fit - so re-reading container.scrollTop live AFTER the removal (as
-    // this used to do, inside the loop below) could read back 0 regardless
-    // of where the user actually scrolled to, producing a negative/garbage
-    // row range and silently rendering zero rows. Confirmed by direct trace:
-    // scrollTop read 20000 immediately after being set, but 0 by the time
-    // _buildUnifiedBlock read it post-removal.
+    // Captured once, before any DOM mutation below - same reasoning as before
+    // this function stopped clearing the container outright: reading these
+    // live mid-mutation is not reliable (confirmed directly in an earlier
+    // version of this function: scrollTop read 20000 immediately after being
+    // set, but 0 by the time a rebuilt block read it post-removal, because
+    // removing the old content momentarily collapses the container's
+    // scrollable height and the browser clamps scrollTop to fit).
     const effectiveScrollTop = container.scrollTop;
     const effectiveClientHeight = container.clientHeight;
     const effectiveScrollLeft = container.scrollLeft;
@@ -2294,25 +2467,137 @@ function _refreshUnifiedWindowOnScroll(container) {
     // as skipping the row/block re-measure below) - it was already measured
     // from a real attached block during the initial render.
     const headerHeightPx = _unifiedHeaderHeightPx != null ? _unifiedHeaderHeightPx : _measureUnifiedHeaderHeight(null);
+    const nSeq = state.seqs.length;
 
-    // Clear the span cache before rebuilding: _refreshUnifiedWindowOnScroll removes old
-    // DOM nodes and builds new ones (registering fresh spans via registerSpanInCache),
-    // but never removed stale entries for no-longer-visible rows. After scrolling
-    // through the entire alignment, the cache could contain entries for ALL rows
-    // with references to detached spans, making forEachColumnSpan (called from
-    // updateColumnSelections below) iterate over all rows instead of just visible
-    // ones — O(selectedColumns × totalRows) instead of O(selectedColumns × visibleRows).
-    state.spanCache = new Map();
+    // Incremental update: reuse existing block DOM nodes in place instead of
+    // unconditionally removing and rebuilding everything on every scroll
+    // event. A previous version of this function called
+    // _removeNodesBetweenSpacers + rebuilt every visible block from scratch
+    // on every scroll - profiled directly (Chrome CPU profiler, real 621-
+    // seq/1928-col alignment, 15 scroll steps) at ~250-450ms/step, almost
+    // entirely native layout/style-recalc cost from destroying and
+    // recreating thousands of row/span DOM nodes most of which hadn't
+    // actually left the viewport.
+    //
+    // Each existing block is patched via _incrementalUpdateBlockRows (only
+    // removes rows that scrolled out, only creates rows that scrolled in)
+    // when ALL of these hold: the block already exists in the DOM, its
+    // column window (colStart/colEnd) is unchanged since its last render,
+    // and it was previously rendered with row-range tracking present. If a
+    // block's own width requires column windowing (needsColWindow - i.e. the
+    // block is wider than the viewport, only possible in Full mode's
+    // single-block case, not the many-narrow-blocks Block mode this was
+    // profiled against) it's deliberately excluded from the incremental path
+    // and always falls back to a full rebuild for that one block: patching
+    // existing rows' spans to a new horizontal column window in place would
+    // need the same _applyColumnWindowStyle padding-offset logic
+    // _buildUnifiedBlock applies to freshly-built rows, and getting that
+    // wrong silently misaligns residues rather than throwing - correctness
+    // over completeness here, this case is no slower than it already was.
+    const existingBlocksByIndex = new Map();
+    container.querySelectorAll(':scope > .block-block[data-block-index]').forEach(el => {
+        const idx = parseInt(el.getAttribute('data-block-index'), 10);
+        if (!Number.isNaN(idx)) existingBlocksByIndex.set(idx, el);
+    });
 
-    _removeNodesBetweenSpacers(topSpacer, bottomSpacer);
-    let firstRealBlock = null;
+    const keptIndices = new Set();
     for (let b = blockStart; b <= blockEnd; b++) {
         const start = b * p.blockWidth;
         const end = Math.min(start + p.blockWidth, p.len);
-        const blockDiv = _buildUnifiedBlock(b, start, end, p.len, blockHeightPx, rowHeightPx, effectiveScrollTop, effectiveClientHeight, effectiveScrollLeft, effectiveClientWidth, charWidthPx, nameColWidthPx, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, p.shouldRenderConsensus, p.consensusPosition, p.consensus, p.options, headerHeightPx);
-        container.insertBefore(blockDiv, bottomSpacer);
-        if (!firstRealBlock) firstRealBlock = blockDiv;
+        const isLastBlock = end >= p.len;
+        const existingBlockDiv = existingBlocksByIndex.get(b);
+
+        // Recompute this block's column window exactly as _buildUnifiedBlock
+        // does, so we can tell whether an existing block's rows can be
+        // patched in place or need a full rebuild (see comment above).
+        const visibleDataWidth = Math.max(0, effectiveClientWidth - nameColWidthPx);
+        const { colStart, colEnd, needsColWindow } = _computeBlockColumnWindow(start, end, effectiveScrollLeft, visibleDataWidth, charWidthPx);
+
+        // Recompute this block's row window exactly as _buildUnifiedBlock does.
+        const blockTop = b * blockHeightPx;
+        const rowAreaTop = blockTop + headerHeightPx;
+        const overscanRows = 15;
+        const visTop = Math.max(effectiveScrollTop, rowAreaTop);
+        const visBottom = Math.min(effectiveScrollTop + effectiveClientHeight, blockTop + blockHeightPx);
+        const safeRowHeightPx = Math.max(1, rowHeightPx);
+        let rowStart = Math.max(0, Math.floor((visTop - rowAreaTop) / safeRowHeightPx) - overscanRows);
+        let rowEnd = Math.min(Math.max(0, nSeq - 1), Math.floor((visBottom - rowAreaTop) / safeRowHeightPx) + overscanRows, rowStart + 300);
+        if (rowEnd < rowStart) {
+            rowStart = 0;
+            rowEnd = Math.min(Math.max(0, nSeq - 1), 50);
+        }
+
+        const oldRange = _unifiedRenderedRowRanges.get(b);
+        const canTryIncremental = !!existingBlockDiv && !needsColWindow &&
+            oldRange && oldRange.colStart === colStart && oldRange.colEnd === colEnd;
+
+        let handledIncrementally = false;
+        if (canTryIncremental) {
+            handledIncrementally = _incrementalUpdateBlockRows(existingBlockDiv, b, rowStart, rowEnd, rowHeightPx, colStart, colEnd, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, isLastBlock, nSeq);
+            if (handledIncrementally) {
+                // _incrementalUpdateBlockRows only tracks rowStart/rowEnd - store
+                // colStart/colEnd too so the next refresh can still tell whether
+                // the column window has since changed.
+                _unifiedRenderedRowRanges.set(b, { rowStart, rowEnd, colStart, colEnd });
+            }
+        }
+
+        if (!handledIncrementally) {
+            // Full rebuild for this one block: build and insert the replacement
+            // BEFORE removing the old one, so the container never has a gap
+            // where this block's columns/width are momentarily absent. This
+            // matters most in Full mode (a single block spanning the whole
+            // alignment width) - removing the sole block first, then building
+            // its replacement, briefly collapses the container's real
+            // scrollWidth, and the browser clamps alignmentContainer.scrollLeft
+            // to fit the (temporarily near-empty) content - exactly the same
+            // class of bug already documented and fixed for vertical scrollTop
+            // elsewhere in this file, but for horizontal scrollLeft: dragging
+            // the horizontal scrollbar right (which changes colStart/colEnd,
+            // forcing this exact full-rebuild path since the incremental path
+            // requires an unchanged column window) snapped back to the
+            // leftmost position on the first attempt, then worked on a second
+            // attempt - because by then this block's cached colStart/colEnd
+            // already matched the target position and the incremental path
+            // (which never removes anything) applied instead.
+            const blockDiv = _buildUnifiedBlock(b, start, end, p.len, blockHeightPx, rowHeightPx, effectiveScrollTop, effectiveClientHeight, effectiveScrollLeft, effectiveClientWidth, charWidthPx, nameColWidthPx, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, p.shouldRenderConsensus, p.consensusPosition, p.consensus, p.options, headerHeightPx);
+            _unifiedRenderedRowRanges.set(b, { rowStart, rowEnd, colStart, colEnd });
+            if (existingBlockDiv) {
+                container.insertBefore(blockDiv, existingBlockDiv);
+                // Drop the old block's rows' spanCache entries, then remove it
+                // now that its replacement is already in place.
+                existingBlockDiv.querySelectorAll(':scope > .seq-line[data-seq-index]').forEach(rowEl => {
+                    const idx = parseInt(rowEl.getAttribute('data-seq-index'), 10);
+                    if (!Number.isNaN(idx) && idx >= 0) state.spanCache?.delete(idx);
+                });
+                existingBlockDiv.remove();
+            } else {
+                // No previous block at this index - keep DOM order ascending
+                // by block index: insert before the first remaining block
+                // whose index is greater, else right before bottomSpacer.
+                let insertBefore = bottomSpacer;
+                for (const [idx, el] of existingBlocksByIndex) {
+                    if (idx > b && el.isConnected) { insertBefore = el; break; }
+                }
+                container.insertBefore(blockDiv, insertBefore);
+            }
+            existingBlocksByIndex.set(b, blockDiv);
+        }
+        keptIndices.add(b);
     }
+
+    // Remove any block that scrolled entirely out of the visible block range.
+    existingBlocksByIndex.forEach((el, idx) => {
+        if (!keptIndices.has(idx)) {
+            el.querySelectorAll(':scope > .seq-line[data-seq-index]').forEach(rowEl => {
+                const rIdx = parseInt(rowEl.getAttribute('data-seq-index'), 10);
+                if (!Number.isNaN(rIdx) && rIdx >= 0) state.spanCache?.delete(rIdx);
+            });
+            el.remove();
+            _unifiedRenderedRowRanges.delete(idx);
+        }
+    });
+
     topSpacer.style.height = (blockStart * blockHeightPx) + 'px';
     bottomSpacer.style.height = (Math.max(0, numBlocks - 1 - blockEnd) * blockHeightPx) + 'px';
     // Don't re-measure here — it forces a synchronous layout of everything just
@@ -3628,22 +3913,21 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             const name = state.seqs[i].header || ('Seq' + (i + 1));
             const displayName = name.length > nameLen ? name.substring(0, nameLen) + '\u2026' : name;
             ctx.font = nameFontStr;
-            // alphabetic baseline: with 'top', underscores in names like oma_SINE10
-            // sit on the row bottom edge and render as blank gaps.
-            const nameY = y + CHAR_H - 2;
-            ctx.textBaseline = 'alphabetic';
+            const nameBaselineY = y + CHAR_H - 2;
             if (stickyNames) {
                 ctx.fillStyle = '#fff';
                 ctx.fillRect(0, y, NAME_W, CHAR_H);
                 ctx.fillStyle = '#333';
-                ctx.fillText(displayName, 4, nameY);
+                ctx.textBaseline = 'alphabetic';
+                ctx.fillText(displayName, 4, nameBaselineY);
             } else if (ox < NAME_W) {
                 ctx.save();
                 ctx.beginPath();
                 ctx.rect(0, y, NAME_W, CHAR_H);
                 ctx.clip();
                 ctx.fillStyle = '#333';
-                ctx.fillText(displayName, 4 - ox, nameY);
+                ctx.textBaseline = 'alphabetic';
+                ctx.fillText(displayName, 4 - ox, nameBaselineY);
                 ctx.restore();
             }
             ctx.textBaseline = 'top';
@@ -5685,7 +5969,7 @@ function renderAlignment(options = {}) {
     }
     state.spanCache = new Map();
     state.domSelectedNucs = new Map();
-    state.domSelectedColumns = new Map();
+    if (_columnSelectionStyleEl) _columnSelectionStyleEl.textContent = ''; // clear stale column highlight on new file load
     state.domPendingNuc = null;
 
     const nameLengthSlider = el('nameLengthSlider');
@@ -7175,19 +7459,85 @@ function _zoomToSlider(zoomPct) {
     return Math.round(100 * Math.log2(zoomPct / 50) / 2);
 }
 
+function _readZoomSliderRaw() {
+    const slider = el('zoomSlider');
+    const raw = parseInt(slider?.value ?? '', 10);
+    return Number.isNaN(raw) ? _zoomToSlider(100) : raw;
+}
+
+// v182+ stores raw log-slider positions (0-100). Older presets/snapshots stored
+// linear zoom percent (50-200) in the same field.
+function _normalizeStoredZoomSlider(stored, legacyPercent = false) {
+    const n = parseInt(stored, 10);
+    if (Number.isNaN(n)) return _zoomToSlider(100);
+    if (legacyPercent || n > 100) {
+        return _zoomToSlider(Math.min(200, Math.max(50, n)));
+    }
+    return Math.max(0, Math.min(100, n));
+}
+
+function _placeZoom100Tick() {
+    const slider = el('zoomSlider');
+    const tick = el('zoom100Tick');
+    if (!slider || !tick) return;
+    const min = Number(slider.min) || 0;
+    const max = Number(slider.max) || 100;
+    const span = max - min || 1;
+    const frac = (_zoomToSlider(100) - min) / span;
+    const wrap = tick.parentElement;
+    const sliderRect = slider.getBoundingClientRect();
+    const wrapRect = wrap?.getBoundingClientRect();
+    if (!wrapRect || wrapRect.width <= 0 || sliderRect.width <= 0) return;
+    // Native range thumbs sit on an inset track (half a thumb at each end).
+    // Place the 100% mark over that thumb position, not the raw box midpoint.
+    const thumb = 8;
+    const usable = Math.max(0, sliderRect.width - thumb);
+    const center = (sliderRect.left - wrapRect.left) + thumb / 2 + usable * frac;
+    tick.style.left = center + 'px';
+}
+
 function setZoom(percent) {
     // Round to a whole pixel. With .seq-line { line-height: 1.0 } a fractional
     // font-size produces fractional row heights, and the browser rounds each row's
     // painted background independently - leaving 1px unpainted seams between rows
     // at some zoom levels, at different rows as the fractional part changes.
     const size = Math.max(1, Math.round((percent / 100) * 13));
+    const isCanvas = document.getElementById('modeCanvas')?.checked;
+    const isWindowedDom = state._needsWindowedDom &&
+        (document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked);
+    // Window geometry must be measured at the final font size, not midway
+    // through the container's 0.1s CSS font-size transition.
+    if (isWindowedDom) alignmentContainer.style.transition = 'none';
     alignmentContainer.style.fontSize = size + 'px';
     el('zoomVal').textContent = percent + '%';
     el('zoomVal').classList.toggle('not-default', percent !== 100);
-    // DOM mode picks up the new font-size via CSS inheritance automatically,
-    // but Canvas mode measures/bakes glyphs at a fixed size on render, so it
-    // needs an explicit re-render to track the zoom slider.
-    if (document.getElementById('modeCanvas')?.checked) debounceRender();
+    // Keep the raw 0-100 log slider, its fill, and the 100% tick in lockstep
+    // with the displayed percent. setZoom used to update only the label, so a
+    // later background refresh against a stale/min-max-mutated slider made
+    // "100%" appear near the left edge of the track.
+    const slider = el('zoomSlider');
+    if (slider) {
+        if (slider.min !== '0') slider.min = '0';
+        if (slider.max !== '100') slider.max = '100';
+        const sliderVal = String(_zoomToSlider(percent));
+        if (slider.value !== sliderVal) slider.value = sliderVal;
+        updateSliderBackground(slider);
+    }
+    _placeZoom100Tick();
+    // Canvas measures/bakes glyphs at render time. Large Full/Block views also
+    // need a rebuild: their row/column spacers and viewport windows are based
+    // on cached pixel measurements that become stale when the font size changes.
+    if (isCanvas) {
+        debounceRender();
+    } else if (isWindowedDom) {
+        _invalidateUnifiedWindowMeasurements();
+        renderAlignment();
+        // Keep transitions disabled through the next paint so restoring the
+        // stylesheet rule cannot animate away from the geometry just measured.
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+            alignmentContainer.style.removeProperty('transition');
+        }));
+    }
 }
 function setZoomFromSlider() {
     const slider = el('zoomSlider');
@@ -7662,6 +8012,11 @@ async function parseAndRender(isFromDrop = false) {
 
         // Update source info with comprehensive statistics
         updateSourceInfo();
+        // Large alignments: fit the block size to the screen BEFORE the first
+        // render, not after — see fitBlockSizeBeforeInitialRender() for why
+        // doing this only after render left the on-screen content overflowing
+        // even though the size slider showed a "corrected" value.
+        fitBlockSizeBeforeInitialRender();
         renderAlignment();
         updateBamButtonVisibility();
         // Auto-fit block size to screen width on every load
@@ -7779,6 +8134,81 @@ function syncQuickModeSwitch() {
 // below. Matches the radio marked `checked` by default in the HTML.
 let _lastModeRadioId = 'modeBlocks';
 
+// Converts the alignment's current DOM scroll position (native scrollTop/
+// scrollLeft on alignmentContainer) into a mode-independent "row index /
+// column index at the top-left of the viewport" anchor. Needed because
+// Canvas mode uses an entirely different scroll mechanism (_canvasState.
+// offsetY/offsetX, a synthetic pan offset with its own pixel pitch, not
+// alignmentContainer's native scrollTop/scrollLeft) - switching modes
+// without converting between the two silently reset the view to the top of
+// the alignment (alignmentContainer.innerHTML='' during the mode's
+// re-render zeroes native scrollTop, and Canvas mode's own offset starts
+// wherever it was last left, which is 0 the first time). Measures a live
+// row/span rather than trusting the windowed renderer's cached
+// _unifiedRowHeightPx/_unifiedCharWidthPx, which are null for a small
+// (non-windowed) alignment and would silently produce a 0/0 anchor.
+function _captureDomScrollAnchor() {
+    const sampleRow = alignmentContainer.querySelector('.seq-line[data-seq-index]');
+    const sampleSpan = sampleRow?.querySelector('.seq-data span[data-pos]');
+    const rowPx = (sampleRow ? sampleRow.getBoundingClientRect().height : 0) || _unifiedRowHeightPx || 16;
+    const colPx = (sampleSpan ? sampleSpan.getBoundingClientRect().width : 0) || _unifiedCharWidthPx || 8;
+    return {
+        rowIndex: alignmentContainer.scrollTop / rowPx,
+        colIndex: alignmentContainer.scrollLeft / colPx
+    };
+}
+
+// Applies a previously-captured anchor to Canvas mode's own pan offset,
+// after renderAlignment() has already built Canvas mode's view (so
+// _canvasState.rowPitch/metrics reflect this alignment, not a stale value
+// from whatever was last shown in Canvas mode). Forces one extra redraw at
+// the corrected offset - cheap (a canvas repaint, not a DOM rebuild), so
+// this reads as landing directly on the right spot rather than a visible
+// jump-then-correct.
+function _applyDomScrollAnchorToCanvas(anchor) {
+    if (!anchor) return;
+    const rowPitch = _canvasState.rowPitch || _canvasState.metrics?.charH || 16;
+    const charW = _canvasState.metrics?.charW || 8;
+    _canvasState.offsetY = Math.max(0, anchor.rowIndex * rowPitch);
+    _canvasState.offsetX = Math.max(0, anchor.colIndex * charW);
+    _canvasState.scheduleDraw?.();
+    _canvasState.onOffsetChange?.();
+}
+
+// Reverse direction: converts Canvas mode's current pan offset into the
+// same row/column-index anchor shape, read BEFORE Canvas's own state is
+// touched by the switch (renderAlignment() doesn't reset _canvasState
+// itself, but reads it as if it still reflects "the view we're leaving",
+// so this must run before anything else changes mode).
+function _captureCanvasScrollAnchor() {
+    const rowPitch = _canvasState.rowPitch || _canvasState.metrics?.charH || 16;
+    const charW = _canvasState.metrics?.charW || 8;
+    return {
+        rowIndex: (_canvasState.offsetY || 0) / rowPitch,
+        colIndex: (_canvasState.offsetX || 0) / charW
+    };
+}
+
+// Applies a previously-captured anchor to a DOM mode (Full/Block/classic)
+// after renderAlignment() has already built that mode's view. Uses the
+// cached _unifiedRowHeightPx/_unifiedCharWidthPx (populated by the last
+// windowed DOM render, if any) rather than measuring a live row here,
+// because for a windowed alignment the newly-rendered DOM only covers
+// whatever range scrollTop=0 produced - a live measurement would be
+// correct but arrives too late to matter. For the windowed case, after
+// setting scrollTop/scrollLeft this also explicitly re-runs the scroll
+// refresh so the visible block/row range matches the new position
+// immediately, instead of showing stale content until the next real
+// scroll event.
+function _applyCanvasScrollAnchorToDom(anchor) {
+    if (!anchor) return;
+    const rowPx = _unifiedRowHeightPx || 16;
+    const colPx = _unifiedCharWidthPx || 8;
+    alignmentContainer.scrollTop = Math.max(0, anchor.rowIndex * rowPx);
+    alignmentContainer.scrollLeft = Math.max(0, anchor.colIndex * colPx);
+    if (state._needsWindowedDom) _refreshUnifiedWindowOnScroll(alignmentContainer);
+}
+
 async function onModeChange() {
     // Full mode (v167-v169) now windows both rows and columns, so it no
     // longer freezes - only the first paint's one-time conservation
@@ -7814,6 +8244,15 @@ async function onModeChange() {
     // not dispatch 'change'), so this is an unambiguous signal to stop
     // auto-switching back to Canvas for the rest of this file's session.
     _userDismissedAutoCanvas = true;
+    const enteringCanvasFromDom = document.getElementById('modeCanvas')?.checked && _lastModeRadioId !== 'modeCanvas';
+    const leavingCanvasToDom = !document.getElementById('modeCanvas')?.checked && _lastModeRadioId === 'modeCanvas';
+    // Capture the current scroll position BEFORE renderAlignment() wipes
+    // alignmentContainer's DOM (which resets native scrollTop to 0) / before
+    // anything else touches _canvasState - see _captureDomScrollAnchor's and
+    // _captureCanvasScrollAnchor's comments. Handles both directions between
+    // Canvas mode and a DOM mode (Full/Block/classic).
+    const domScrollAnchor = enteringCanvasFromDom ? _captureDomScrollAnchor() : null;
+    const canvasScrollAnchor = leavingCanvasToDom ? _captureCanvasScrollAnchor() : null;
     if (document.getElementById('modeCanvas')?.checked) {
         // Entering Canvas mode: these caches are keyed only by length/shadeMode,
         // so any same-length edit made while away from Canvas (residue edits,
@@ -7836,8 +8275,73 @@ async function onModeChange() {
     // panel open over a display its tools cannot touch. Renders below, so no re-render here.
     exitEditModeForUnsupportedView({ rerender: false });
     renderAlignment();
+    if (domScrollAnchor) _applyDomScrollAnchorToCanvas(domScrollAnchor);
+    if (canvasScrollAnchor) _applyCanvasScrollAnchorToDom(canvasScrollAnchor);
     setupHoverMenuReveal();
     _lastModeRadioId = document.querySelector('input[name="mode"]:checked')?.id || _lastModeRadioId;
+}
+
+const LARGE_ALIGNMENT_RESIDUE_THRESHOLD = 80000;
+
+function _isLargeAlignmentPending() {
+    const _aliLen = state.seqs.length > 0 ? Math.max(...state.seqs.map(s => s.seq.length)) : 0;
+    return (state.seqs.length * _aliLen) > LARGE_ALIGNMENT_RESIDUE_THRESHOLD;
+}
+
+// Zoom-based estimate only — no DOM measurement, so it's safe to call BEFORE
+// the alignment has ever been rendered (see fitBlockSizeBeforeInitialRender).
+// Real name-column width isn't known yet at that point either way; the
+// nameLengthSlider-based estimate is the best available proxy pre-render.
+function _computeLargeAlignmentBlockChars() {
+    const zoom = _sliderToZoom(_readZoomSliderRaw()) / 100;
+    // 7.8px is this app's own real measured monospace character width at
+    // 100% zoom (see _measureUnifiedColumnMetrics's fallback default,
+    // measured from an actual rendered .seq-data span) — NOT 10px, which
+    // was a wrong estimate that happened to be harmless before this
+    // function's result was ever actually used to render (only to update
+    // the slider's displayed number) but became a real under-utilization
+    // bug ("screen fit is too narrow") once fitBlockSizeBeforeInitialRender
+    // started using this estimate for the real initial render.
+    const charPx = 7.8 * zoom;
+    const namePx = (parseInt(el('nameLengthSlider')?.value || 25) * charPx) + 8;
+    // Use window.innerWidth instead of container.clientWidth to avoid forcing
+    // a synchronous reflow over the (potentially already-rendered) DOM —
+    // millions of child spans make clientWidth reads take 30+ seconds. This
+    // means the real container is narrower than window.innerWidth by
+    // whatever page chrome/scrollbar/padding it has (measured ~18px on this
+    // app's own layout) on top of namePx being an estimate (nameLengthSlider
+    // chars, not the real rendered name column) rather than a measurement —
+    // margin of 70 (not 40) covers both gaps with room to spare; verified
+    // via a real 120,000-residue test alignment that 40 still let the real
+    // render overflow by 18px even after fixing the char-width constant
+    // below, while 70 renders with zero overflow.
+    const available = window.innerWidth - namePx - 70;
+    return Math.max(40, Math.min(300, Math.floor(available / charPx)));
+}
+
+// Called once, before the FIRST renderAlignment() of a newly loaded large
+// alignment, so that render uses a screen-fitted block size from the start.
+//
+// Bug this fixes (found via real overflow, not just review): the initial
+// load previously always rendered once with the block-size slider's stale
+// value (whatever it happened to be — its HTML default, or left over from a
+// previous file), THEN called setBlockSizeToScreen() to correct the slider's
+// displayed number — but for large alignments that function deliberately
+// skips re-rendering (getBoundingClientRect() over millions of spans can
+// hang the page for 30+ seconds). Net effect: the slider showed a "correct"
+// value the actual on-screen content never used, and the real rendered row
+// width (whatever the stale slider value produced) routinely overflowed the
+// visible screen, cutting the name column into the equation nowhere close to
+// how wide it would really end up. Fix: compute the estimate and update the
+// slider BEFORE the first render, so that render already uses the right
+// size — no second render needed, no overflow window.
+function fitBlockSizeBeforeInitialRender() {
+    if (!_isLargeAlignmentPending()) return;
+    const chars = _computeLargeAlignmentBlockChars();
+    const slider = el('blockSizeSlider');
+    const input = el('blockSizeInput');
+    if (slider) slider.value = chars;
+    if (input) input.value = chars;
 }
 
 function setBlockSizeToScreen() {
@@ -7849,21 +8353,15 @@ function setBlockSizeToScreen() {
 
     // For large alignments, getBoundingClientRect() forces a synchronous reflow
     // over millions of DOM spans, which can take tens of seconds. Use a
-    // zoom-based estimate instead and skip the re-render — the initial render
-    // already used a reasonable block size from the slider's current value.
-    const _aliLen = state.seqs.length > 0 ? Math.max(...state.seqs.map(s => s.seq.length)) : 0;
-    const _totalResidues = state.seqs.length * _aliLen;
-    if (_totalResidues > 80000) {
-        const zoom = _sliderToZoom(parseInt(el('zoomSlider')?.value || 50)) / 100;
-        const charPx = 10 * zoom;
-        const namePx = (parseInt(el('nameLengthSlider')?.value || 25) * charPx) + 8;
-        // Use window.innerWidth instead of container.clientWidth to avoid
-        // forcing a synchronous reflow over the just-rendered DOM (millions
-        // of spans). Reading clientWidth on a container with 3.6M child
-        // spans forces the browser to compute layout for all of them,
-        // taking 30+ seconds and hanging parseAndRender.
-        const available = window.innerWidth - namePx - 40;
-        const chars = Math.max(40, Math.min(300, Math.floor(available / charPx)));
+    // zoom-based estimate instead and skip the re-render. On initial load this
+    // is a harmless no-op re-computation — fitBlockSizeBeforeInitialRender()
+    // already applied the same estimate before the first render happened, so
+    // the displayed content already matches; this only matters for the
+    // manual "Screen" button click on an alignment already on screen, where
+    // skipping the reflow-heavy re-render is the right tradeoff (the user can
+    // already see whether it looks right without a forced measurement).
+    if (_isLargeAlignmentPending()) {
+        const chars = _computeLargeAlignmentBlockChars();
         const slider = el('blockSizeSlider');
         const input = el('blockSizeInput');
         if (slider) slider.value = chars;
@@ -7879,9 +8377,11 @@ function setBlockSizeToScreen() {
         charPx = r.width;
     }
     if (!charPx) {
-        // Fallback: use zoom-scaled monospace estimate (10px @ 100%)
-        const zoom = _sliderToZoom(parseInt(el('zoomSlider')?.value || 50)) / 100;
-        charPx = 10 * zoom;
+        // Fallback: use zoom-scaled monospace estimate (7.8px @ 100% — this
+        // app's own real measured character width, see
+        // _measureUnifiedColumnMetrics's fallback default; NOT 10px)
+        const zoom = _sliderToZoom(_readZoomSliderRaw()) / 100;
+        charPx = 7.8 * zoom;
     }
     // Available width = inner width of the container (excluding names)
     // Names col is sticky - measure it from the first name span
@@ -8095,7 +8595,13 @@ function handleColumnSelectMouseDown(e) {
 
 function handleNucleotideSelectMouseDown(e) {
     if (e.button !== 0) return false;
-    if (!isCtrlModifier(e) || isAltModifier(e)) return false;
+    if (isAltModifier(e)) return false;
+    // Plain click (no Ctrl) starts a selection drag — EXCEPT while GeneDoc edit
+    // mode is already active, where a plain click still needs to reach
+    // handleGeneDocEditMouseDown unchanged (moving the edit cursor, drag tools,
+    // etc.). Ctrl+click always means "select," active edit mode or not, same
+    // as before this change.
+    if (!isCtrlModifier(e) && state.editModeActive) return false;
 
     const span = closestFromEvent(e, '.seq-data span[data-pos]');
     if (!span || span.classList.contains('seq-length')) return false;
@@ -8320,8 +8826,15 @@ function handleKeyDown(e) {
         state.altPressed = true;
     }
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && !isFormField) {
-        copySelected();
-        e.preventDefault();
+        // If the user has a real native text selection (e.g. text selected inside
+        // a BLAST results panel or any other element), let the browser copy that
+        // text natively - don't hijack Ctrl+C for the app's own selection copy.
+        const sel = window.getSelection();
+        const hasNativeTextSelection = sel && !sel.isCollapsed && String(sel).length > 0;
+        if (!hasNativeTextSelection) {
+            copySelected();
+            e.preventDefault();
+        }
     }
     if (e.ctrlKey || e.metaKey) {
         switch (e.key.toLowerCase()) {
@@ -8428,9 +8941,7 @@ function handleKeyDown(e) {
                 e.preventDefault();
                 break;
             case '0':
-                // Reset zoom to 100%
-                el('zoomSlider').value = _zoomToSlider(100);
-                setZoom(100);
+                resetZoom();
                 e.preventDefault();
                 break;
             case 'm':
@@ -8497,6 +9008,15 @@ function reverseComplementSelected() {
         return;
     }
     reverseComplementSequences(Array.from(state.selectedRows));
+}
+
+// One-click reverse complement of the whole alignment, no selection needed first.
+function reverseComplementAll() {
+    if (state.seqs.length === 0) {
+        showMessage("No alignment loaded.", 3000);
+        return;
+    }
+    reverseComplementSequences(state.seqs.map((_, i) => i));
 }
 
 // -- Sort functions --
@@ -9235,6 +9755,7 @@ function savePreset() {
         dark: el('darkSlider').value,
         light: el('lightSlider').value,
         zoom: el('zoomSlider').value,
+        zoomFormat: 'logSlider',
         mode: el('modeBlocks').checked ? 'blocks' : 'single',
         blockSize: el('blockSizeSlider').value,
         nameLen: el('nameLengthSlider').value,
@@ -9294,6 +9815,17 @@ function loadPreset() {
             if (inputElement) inputElement.value = clamped;
             return;
         }
+        if (k === 'zoom') {
+            const n = _normalizeStoredZoomSlider(value, p.zoomFormat !== 'logSlider');
+            const zoomSliderEl = el('zoomSlider');
+            if (zoomSliderEl) {
+                zoomSliderEl.min = '0';
+                zoomSliderEl.max = '100';
+                zoomSliderEl.value = n;
+                updateSliderBackground(zoomSliderEl);
+            }
+            return;
+        }
         const sliderEl = el(k + 'Slider');
         if (sliderEl) {
             sliderEl.value = value;
@@ -9305,7 +9837,7 @@ function loadPreset() {
             document.documentElement.style.setProperty('--nameLen', value);
         }
     });
-    setZoom(p.zoom > 100 ? p.zoom : _sliderToZoom(p.zoom));
+    setZoom(_sliderToZoom(_readZoomSliderRaw()));
     el('modeBlocks').checked = p.mode === 'blocks';
     el('modeSingle').checked = p.mode !== 'blocks';
     el('stickyNames').checked = p.stickyNames !== undefined ? p.stickyNames : true;
@@ -9377,6 +9909,7 @@ function _buildSnapshotPayload() {
             darkColor: el('darkColorPicker')?.value,
             lightColor: el('lightColorPicker')?.value,
             zoom: el('zoomSlider')?.value,
+            zoomFormat: 'logSlider',
             mode: el('modeBlocks')?.checked ? 'blocks' : 'single',
             blockSize: el('blockSizeSlider')?.value,
             nameLen: el('nameLengthSlider')?.value,
@@ -9428,17 +9961,15 @@ function _applySnapshotView(view) {
     applySliderPair('dark', 'darkSlider', 'darkInput');
     applySliderPair('light', 'lightSlider', 'lightInput');
     applySliderPair('zoom', 'zoomSlider', null, (v) => {
-        let n = parseInt(v, 10);
-        if (!Number.isNaN(n)) {
-            // Migration: old snapshots stored zoom as percent (50-200), new ones store raw slider (0-100)
-            if (n > 100) n = _zoomToSlider(n);
-            const sliderEl = el('zoomSlider');
-            if (sliderEl) {
-                sliderEl.value = n;
-                updateSliderBackground(sliderEl);
-            }
-            setZoom(_sliderToZoom(n));
+        const n = _normalizeStoredZoomSlider(v, view.zoomFormat !== 'logSlider');
+        const sliderEl = el('zoomSlider');
+        if (sliderEl) {
+            sliderEl.min = '0';
+            sliderEl.max = '100';
+            sliderEl.value = n;
+            updateSliderBackground(sliderEl);
         }
+        setZoom(_sliderToZoom(n));
     });
     applySliderPair('blockSize', 'blockSizeSlider', 'blockSizeInput');
     applySliderPair('nameLen', 'nameLengthSlider', 'nameLengthInput', (v) => setNameLengthUI(v));
@@ -11796,12 +12327,15 @@ function getMafftExtraArgs() {
     const seqType = el('mafftSeqType')?.value;
     const gapOpen = parseFloat(el('mafftGapOpen')?.value);
     const gapExt = parseFloat(el('mafftGapExt')?.value);
-    const cycles = parseInt(el('mafftCycles')?.value);
+    const speedEl = el('mafftSpeed');
+    let cycles = speedEl
+        ? parseInt(speedEl.value, 10)
+        : parseInt(el('mafftCycles')?.value, 10);
     const offset = parseFloat(el('mafftOffset')?.value);
 
     if (!isNaN(gapOpen)) args.push('-f', String(-gapOpen));
     if (!isNaN(gapExt)) args.push('-h', String(-gapExt));
-    if (!isNaN(cycles) && cycles >= 1) args.push('-C', String(cycles));
+    if (!Number.isNaN(cycles) && cycles >= 0) args.push('-C', String(cycles));
     // Note: disttbfast's -e flag does not accept a numeric value (it's a boolean flag);
     // passing '-e -0.123' causes illegal-option parse errors, so offset is omitted.
 
@@ -12637,6 +13171,130 @@ function initTreeBuilderControls() {
     if (modelSelect) modelSelect.addEventListener('change', rebuildIfOpen);
 }
 
+// ── MAFFT WASM (off main thread for large jobs) ─────────────────────────────
+let _activeMafftWorker = null;
+
+function _mafftFastaStats(fasta) {
+    let seqCount = 0;
+    let totalResidues = 0;
+    let maxLen = 0;
+    let curLen = 0;
+    let inSeq = false;
+    for (const raw of fasta.split('\n')) {
+        const line = raw.trim();
+        if (!line) continue;
+        if (line.startsWith('>')) {
+            if (inSeq) {
+                totalResidues += curLen;
+                maxLen = Math.max(maxLen, curLen);
+            }
+            seqCount++;
+            curLen = 0;
+            inSeq = true;
+        } else if (inSeq) {
+            curLen += line.replace(/[-.]/g, '').length;
+        }
+    }
+    if (inSeq) {
+        totalResidues += curLen;
+        maxLen = Math.max(maxLen, curLen);
+    }
+    return { seqCount, totalResidues, maxLen };
+}
+
+function _confirmMafftJob(stats, extraArgs) {
+    const { seqCount, totalResidues, maxLen } = stats;
+    if (totalResidues <= 250000) {
+        return { ok: true, extraArgs };
+    }
+
+    let estimate = 'several minutes';
+    if (totalResidues > 3000000) estimate = '30+ minutes (possibly much longer)';
+    else if (totalResidues > 1000000) estimate = '10–30 minutes';
+
+    const proceed = window.confirm(
+        `Align ${seqCount} sequences (${totalResidues.toLocaleString()} residues, longest ${maxLen.toLocaleString()} bp)?\n\n` +
+        `Alignment runs in the background — the viewer stays responsive.\n` +
+        `Rough estimate at default settings: ${estimate}.\n\n` +
+        `Continue?`
+    );
+    if (!proceed) return { ok: false };
+
+    const cycleIdx = extraArgs.indexOf('-C');
+    const cycles = cycleIdx >= 0 ? parseInt(extraArgs[cycleIdx + 1], 10) : 2;
+    if (totalResidues > 500000 && (!Number.isNaN(cycles) ? cycles >= 2 : true)) {
+        const useFast = window.confirm(
+            `Large alignment — use faster mode (1 refinement cycle instead of ${cycles || 2})?\n\n` +
+            `OK = faster (lower accuracy)\n` +
+            `Cancel = keep current settings`
+        );
+        if (useFast) {
+            const speedEl = el('mafftSpeed');
+            if (speedEl) speedEl.value = totalResidues > 3000000 ? '0' : '1';
+            return { ok: true, extraArgs: getMafftExtraArgs().args };
+        }
+    }
+    return { ok: true, extraArgs };
+}
+
+function _cancelActiveMafftWorker() {
+    if (_activeMafftWorker) {
+        _activeMafftWorker.terminate();
+        _activeMafftWorker = null;
+    }
+}
+
+function _runMafftInWorker(fasta, extraArgs) {
+    return new Promise((resolve, reject) => {
+        _cancelActiveMafftWorker();
+        const id = Date.now();
+        const worker = new Worker(`mafft-worker.js?v=${BUILD_TAG.replace(/^v/, '')}`);
+        _activeMafftWorker = worker;
+        worker.onmessage = (ev) => {
+            if (ev.data?.id !== id) return;
+            _activeMafftWorker = null;
+            worker.terminate();
+            if (ev.data.ok) resolve(ev.data.result);
+            else reject(new Error(ev.data.error || 'MAFFT failed'));
+        };
+        worker.onerror = (err) => {
+            _activeMafftWorker = null;
+            worker.terminate();
+            reject(err);
+        };
+        worker.postMessage({ id, type: 'align', fasta, extraArgs, wasmPath: '' });
+    });
+}
+
+async function _mafftAlignWithUi(fasta, extraArgs, label) {
+    const stats = _mafftFastaStats(fasta);
+    const confirmed = _confirmMafftJob(stats, extraArgs);
+    if (!confirmed.ok) return null;
+    extraArgs = confirmed.extraArgs;
+
+    let cancelled = false;
+    try {
+        const result = await runWithProgress(
+            label || 'Aligning with MAFFT...',
+            async (updateBusy) => {
+                updateBusy(`${stats.seqCount} seqs, ${stats.totalResidues.toLocaleString()} residues`);
+                await yieldToPaint();
+                return _runMafftInWorker(fasta, extraArgs);
+            },
+            '',
+            () => { cancelled = true; _cancelActiveMafftWorker(); }
+        );
+        if (cancelled) {
+            showMessage('MAFFT alignment cancelled.', 2500);
+            return null;
+        }
+        return result;
+    } catch (err) {
+        if (cancelled) return null;
+        throw err;
+    }
+}
+
 function realignSelectedBlock() {
     if (state.seqs.length === 0) {
         showMessage("No sequences loaded.", 2000);
@@ -12664,9 +13322,8 @@ function realignSelectedBlock() {
     const { args: extraArgs, seqType } = getMafftExtraArgs();
     if (seqType !== '2') extraArgs.push('-E', seqType);
 
-    showMessage("Realigning block with MAFFT...", 0);
-    const mafft = new MafftWasm();
-    mafft.realignBlock(blockFasta, extraArgs).then(result => {
+    _mafftAlignWithUi(blockFasta, extraArgs, 'Realigning block with MAFFT...').then(result => {
+        if (!result) return;
         const aligned = parseMafftOutput(result);
         if (aligned.length !== state.seqs.length) {
             showMessage("Error: MAFFT returned different number of sequences.", 3000);
@@ -12705,7 +13362,7 @@ function realignSelectedBlock() {
 /**
  * Realign all loaded sequences using MAFFT WASM.
  */
-function realignAll() {
+async function realignAll() {
     if (state.seqs.length < 2) {
         showMessage("Need at least 2 sequences to align.", 2000);
         return;
@@ -12742,9 +13399,9 @@ function realignAll() {
         guideOrder = reordered.order;
     }
 
-    showMessage("Aligning all sequences with MAFFT...", 0);
-    const mafft = new MafftWasm();
-    mafft.align(fasta, extraArgs).then(result => {
+    try {
+        const result = await _mafftAlignWithUi(fasta, extraArgs, 'Aligning all sequences with MAFFT...');
+        if (!result) return;
         const aligned = parseMafftOutput(result);
         if (aligned.length === 0) {
             showMessage("Error: MAFFT returned no sequences.", 3000);
@@ -12788,10 +13445,10 @@ function realignAll() {
         const msgs = [`Aligned ${state.seqs.length} sequences successfully!`];
         if (flippedNames.size > 0) msgs.push(`RC'd: ${[...flippedNames].join(', ')}`);
         showMessage(msgs.join(' '), flippedNames.size > 0 ? 5000 : 2000);
-    }).catch(err => {
+    } catch (err) {
         showMessage("MAFFT alignment error: " + err.message, 4000);
         console.error("MAFFT alignment error:", err);
-    });
+    }
 }
 
 /**
@@ -12829,9 +13486,12 @@ function realignSelected() {
         }
     }
 
-    showMessage(`Realigning ${selectedIndices.length} selected sequences with MAFFT...`, 0);
-    const mafft = new MafftWasm();
-    mafft.align(fasta, extraArgs).then(result => {
+    _mafftAlignWithUi(
+        fasta,
+        extraArgs,
+        `Realigning ${selectedIndices.length} selected sequences with MAFFT...`
+    ).then(result => {
+        if (!result) return;
         const aligned = parseMafftOutput(result);
         if (aligned.length === 0) {
             showMessage("Error: MAFFT returned no sequences.", 3000);
@@ -13214,10 +13874,10 @@ function addSequencesAndAlign() {
     });
 
     closeAddSequencesModal();
-    showMessage("Adding sequences and aligning with MAFFT...", 0);
 
-    const mafft = new MafftWasm();
-    mafft.addAndAlign(existingFasta, adjustedNewText, extraArgs).then(result => {
+    const combinedFasta = existingFasta + '\n' + adjustedNewText;
+    _mafftAlignWithUi(combinedFasta, extraArgs, 'Adding sequences and aligning with MAFFT...').then(result => {
+        if (!result) return;
         const aligned = parseMafftOutput(result);
         if (aligned.length === 0) {
             showMessage("Error: MAFFT returned no sequences.", 3000);
@@ -14175,21 +14835,36 @@ function updateRowSelections() {
         document.querySelectorAll(`.seq-name[data-seq-index="${index}"]`).forEach(name => name.classList.add('selected'));
     });
 }
+// Was: forEachColumnSpan(pos, ...) once per selected column, each iterating
+// every row's span cache and mutating classList on every hit -- O(selected
+// columns * rows) DOM mutations. Profiled on a 150-seq/800-col alignment:
+// a 96-column range select took ~314ms this way (96 * 150 = 14,400
+// classList.add calls), the actual reported "sooo slow" bug. A single
+// dynamically-generated <style> rule (attribute selectors matching every
+// selected position) achieves the same visual result via the browser's own
+// CSS engine instead of per-element DOM mutation -- O(selected columns)
+// string-building, no DOM writes proportional to row count at all. Fresh
+// rows created during scroll/windowing still get 'column-selected' baked
+// into their className at creation time (see the two other call sites of
+// `state.selectedColumns.has(pos)` in row-rendering) -- this only replaces
+// the "update already-rendered rows without a full re-render" mechanism.
+let _columnSelectionStyleEl = null;
 function updateColumnSelections() {
-    state.domSelectedColumns.forEach(spanSet => {
-        spanSet.forEach(span => span.classList.remove('column-selected'));
-    });
-    state.domSelectedColumns = new Map();
+    if (!_columnSelectionStyleEl) {
+        _columnSelectionStyleEl = document.createElement('style');
+        _columnSelectionStyleEl.id = 'column-selection-style';
+        document.head.appendChild(_columnSelectionStyleEl);
+    }
+    if (state.selectedColumns.size === 0) {
+        _columnSelectionStyleEl.textContent = '';
+        return;
+    }
+    const selectors = [];
     state.selectedColumns.forEach(pos => {
-        const spanSet = new Set();
-        forEachColumnSpan(pos, span => {
-            span.classList.add('column-selected');
-            spanSet.add(span);
-        });
-        if (spanSet.size > 0) {
-            state.domSelectedColumns.set(pos, spanSet);
-        }
+        const n = Number(pos);
+        if (Number.isInteger(n)) selectors.push(`.seq-data > span[data-pos="${n}"]`);
     });
+    _columnSelectionStyleEl.textContent = `${selectors.join(',')} { background-color: var(--column-selected-bg) !important; }`;
 }
 
 let pendingNucDomUpdate = false;
@@ -14510,6 +15185,7 @@ function initializeAppUI() {
         'clearButton': () => fastaInput.value = '',
         'loadButton': () => parseAndRender(false),
         'reverseComplementButton': reverseComplementSelected,
+        'reverseComplementAllButton': reverseComplementAll,
         'copySelectedButton': copySelected,
         'copyAlignmentButton': copyAlignment,
         'deleteSelectedButton': deleteSelected,
@@ -14984,6 +15660,41 @@ function attachUIListeners() {
             setZoomFromSlider();
             updateSliderBackground(zoomSlider);
         }, 50));
+        _placeZoom100Tick();
+        window.addEventListener('resize', () => window.requestAnimationFrame(_placeZoom100Tick));
+        if (typeof ResizeObserver !== 'undefined') {
+            const wrap = zoomSlider.parentElement;
+            if (wrap) {
+                const zoomTickObserver = new ResizeObserver(() => _placeZoom100Tick());
+                zoomTickObserver.observe(wrap);
+            }
+        }
+    }
+    const zoom100Tick = el('zoom100Tick');
+    if (zoom100Tick) {
+        zoom100Tick.addEventListener('click', (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            resetZoom();
+        });
+    }
+    const zoomWrap = zoomSlider?.parentElement;
+    if (zoomWrap?.classList.contains('zoom-slider-wrap')) {
+        zoomWrap.addEventListener('mousedown', (event) => {
+            if (event.target !== zoomSlider) return;
+            const rect = zoomSlider.getBoundingClientRect();
+            const thumb = 8;
+            const usable = Math.max(0, rect.width - thumb);
+            if (usable <= 0) return;
+            const frac = (event.clientX - rect.left - thumb / 2) / usable;
+            const min = Number(zoomSlider.min) || 0;
+            const max = Number(zoomSlider.max) || 100;
+            const raw = min + frac * (max - min);
+            if (raw >= _zoomToSlider(100)) {
+                event.preventDefault();
+                resetZoom();
+            }
+        });
     }
 
     // Set up radio button groups
@@ -15143,6 +15854,30 @@ function attachUIListeners() {
             handleAlignmentPanStart(e);
         }, true);
         document.addEventListener('mousemove', handleMouseMove);
+        // Double-click a residue to enter GeneDoc edit mode positioned at that
+        // cell — replaces the old "plain click enters edit mode" behavior,
+        // which was removed because it made a plain click unusable for
+        // starting a nucleotide-selection drag (see handleNucleotideSelectMouseDown).
+        document.addEventListener('dblclick', (e) => {
+            const container = document.getElementById('alignmentContainer');
+            if (!container || !container.contains(domEventTarget(e))) return;
+            if (isCanvasMode()) return; // Canvas mode has its own click handling
+            const span = closestFromEvent(e, '.seq-data > span[data-pos]');
+            if (!span) return;
+            const seqLine = span.closest('.seq-line');
+            if (!seqLine || seqLine.classList.contains('consensus-line') || seqLine.classList.contains('scale-ruler-line')) return;
+            const rowIndex = parseInt(seqLine.dataset.seqIndex, 10);
+            const pos = parseInt(span.dataset.pos, 10);
+            if (!Number.isInteger(rowIndex) || !Number.isInteger(pos) || !state.seqs[rowIndex]) return;
+            e.preventDefault();
+            state.selectedNucs.clear();
+            state.pendingNucStart = null;
+            scheduleNucSelectionRefresh();
+            setGeneDocEditTool('residue');
+            if (!state.editModeActive) return; // refused (e.g. unsupported view) - message already shown
+            state.editCell = { row: rowIndex, pos };
+            updateEditActiveCell();
+        }, true);
     }
     if (alignmentContainer) {
         // *** PERFORMANCE: Event delegation for nucleotide tooltips ***
@@ -15985,13 +16720,13 @@ function handleGeneDocEditMouseDown(e) {
     const pos = parseInt(span.dataset.pos, 10);
     if (!Number.isInteger(rowIndex) || !Number.isInteger(pos) || !state.seqs[rowIndex]) return;
 
-    if (!state.editModeActive) {
-        // A plain click on a residue outside edit mode jumps straight into GeneDoc
-        // residue-typing mode positioned at the clicked cell, instead of requiring a
-        // separate click on the Edit toggle button first.
-        setGeneDocEditTool('residue');
-        if (!state.editModeActive) return; // refused (e.g. Canvas mode) - message already shown
-    }
+    // A plain click no longer auto-enters GeneDoc edit mode (it now starts a
+    // nucleotide-selection drag instead, see handleNucleotideSelectMouseDown —
+    // this handler is only reached at all when edit mode is already active).
+    // Entering edit mode is now double-click (see the dblclick listener below)
+    // or the explicit Edit toggle button, same as it always was before a plain
+    // click was ever wired to auto-enter it.
+    if (!state.editModeActive) return;
 
     const tool = state.editTool;
     if (!GENEDOC_MOVE_TOOLS.has(tool) && !GENEDOC_GAP_TOOLS.has(tool) && tool !== 'residue' && tool !== 'selectColumn') return;
@@ -17380,15 +18115,13 @@ function initColourSeqs() {
 })();
 
 // ============================================================================
-// Persistent vertical scrollbar for Canvas mode
+// Persistent vertical scrollbar for Canvas and scrollable DOM modes
 // ============================================================================
-// Full/Block mode get a real vertical scrollbar for free (alignmentContainer
-// uses native overflow:auto there). Canvas mode draws to a single <canvas>
-// panned via _canvasState.offsetY with overflow:hidden on the container, so
-// it had wheel/drag panning but nothing on screen showing a scrollbar at
-// all - no visible thumb, no click-to-jump, no sense of position within a
-// tall alignment. Mirrors setupPersistentScrollbar's horizontal logic on
-// the Y axis, shown only while Canvas mode is active.
+// alignmentContainer's native bars are hidden in CSS so the viewer can use
+// persistent controls in a consistent position. Canvas pans through
+// _canvasState.offsetY; windowed Full/Block modes use alignment.scrollTop.
+// This bar mirrors setupPersistentScrollbar's horizontal logic and selects
+// the appropriate scroll state for the active mode.
 (function setupPersistentVerticalScrollbar() {
     const alignment = document.getElementById('alignmentContainer');
     const bar = document.querySelector('.vertical-scrollbar');
@@ -17399,26 +18132,39 @@ function initColourSeqs() {
     let syncing = false;
 
     function syncVisibilityAndSize() {
-        if (!isCanvasMode()) {
+        if (isCanvasMode()) {
+            bar.style.display = 'block';
+            const rect = alignment.getBoundingClientRect();
+            bar.style.top = alignment.offsetTop + 'px';
+            bar.style.height = rect.height + 'px';
+            syncing = true;
+            const h = _canvasState.totalContentH || alignment.clientHeight;
+            thumb.style.height = Math.max(h, alignment.clientHeight + 1) + 'px';
+            bar.scrollTop = _canvasState.offsetY || 0;
+            syncing = false;
+        } else if (alignment.scrollHeight > alignment.clientHeight) {
+            bar.style.display = 'block';
+            const rect = alignment.getBoundingClientRect();
+            bar.style.top = alignment.offsetTop + 'px';
+            bar.style.height = rect.height + 'px';
+            syncing = true;
+            thumb.style.height = Math.max(alignment.scrollHeight, alignment.clientHeight + 1) + 'px';
+            bar.scrollTop = alignment.scrollTop;
+            syncing = false;
+        } else {
             bar.style.display = 'none';
-            return;
         }
-        bar.style.display = 'block';
-        const rect = alignment.getBoundingClientRect();
-        bar.style.top = alignment.offsetTop + 'px';
-        bar.style.height = rect.height + 'px';
-        syncing = true;
-        const h = _canvasState.totalContentH || alignment.clientHeight;
-        thumb.style.height = Math.max(h, alignment.clientHeight + 1) + 'px';
-        bar.scrollTop = _canvasState.offsetY || 0;
-        syncing = false;
     }
 
     function onBarScroll() {
-        if (syncing || !isCanvasMode()) return;
+        if (syncing) return;
         syncing = true;
-        _canvasState.offsetY = bar.scrollTop;
-        _canvasState.scheduleDraw?.();
+        if (isCanvasMode()) {
+            _canvasState.offsetY = bar.scrollTop;
+            _canvasState.scheduleDraw?.();
+        } else {
+            alignment.scrollTop = bar.scrollTop;
+        }
         syncing = false;
     }
 
@@ -17434,11 +18180,23 @@ function initColourSeqs() {
         syncing = false;
     };
 
+    // DOM mode: keep the bar in sync when the alignment scrolls natively
+    function onAlignmentScroll() {
+        if (syncing || isCanvasMode()) return;
+        syncing = true;
+        bar.scrollTop = alignment.scrollTop;
+        syncing = false;
+    }
+
     syncVisibilityAndSize();
     bar.addEventListener('scroll', onBarScroll, { passive: true });
+    alignment.addEventListener('scroll', onAlignmentScroll, { passive: true });
     window.addEventListener('resize', () => window.requestAnimationFrame(syncVisibilityAndSize));
+    // Only watch direct children (blocks/spacers). subtree:true used to fire
+    // once per virtualized row insert/remove and force a layout read of the
+    // bar during the already-expensive scroll refresh.
     const mo = new MutationObserver(() => window.requestAnimationFrame(syncVisibilityAndSize));
-    mo.observe(alignment, { childList: true, subtree: true, characterData: false, attributes: false });
+    mo.observe(alignment, { childList: true, subtree: false, characterData: false, attributes: false });
     // Mode radios don't fire a DOM mutation on alignmentContainer by
     // themselves - listen directly so switching into/out of Canvas mode
     // shows/hides this bar immediately, not just on the next resize/render.
@@ -17464,8 +18222,12 @@ function initColourSeqs() {
         dragRaf = window.requestAnimationFrame(() => {
             const newScroll = startScroll - lastDy;
             syncing = true;
-            _canvasState.offsetY = newScroll;
-            _canvasState.scheduleDraw?.();
+            if (isCanvasMode()) {
+                _canvasState.offsetY = newScroll;
+                _canvasState.scheduleDraw?.();
+            } else {
+                alignment.scrollTop = newScroll;
+            }
             bar.scrollTop = newScroll;
             syncing = false;
             dragRaf = null;
@@ -17486,12 +18248,74 @@ function initColourSeqs() {
 
 // ============ BLAST SEARCH FUNCTIONS ============
 let blastResultsModal = null;
-let blastWorker = null;
+// ── Worker pool for sharded DP (speed round 3) ──────────────────
+// Round 1 shipped: k-mer-count DP cap + banded DP (verified, in production).
+// Round 2 (Web Worker pool sharding) was reverted after real-browser testing
+// found it made the actual common case WORSE: Web Workers share no memory,
+// so each worker must independently index a database, and eagerly priming
+// the whole pool in the background made a fresh session's first search
+// across the 4 bundled databases take ~32.5s instead of the ~15-18s it took
+// before any sharding existed (12 concurrent full index-builds competing
+// with the 4 real foreground searches for the same CPU/network).
+//
+// This round's fix: priming is fully SERIAL and only ever runs when NO
+// foreground search is in flight anywhere — one background index-build at a
+// time, started only in genuine idle time between searches, never
+// overlapping with real user-visible work. A database gains one additional
+// primed worker per idle gap after it's actually been searched (never
+// speculatively for databases nobody asked about), so parallelism grows
+// organically across a session with zero contention cost. The very first
+// search of any database is always single-worker — byte-identical cost to
+// no-sharding-at-all.
+let blastWorkerPool = [];
+const MAX_SHARD_WORKERS = 4; // matches the diminishing-returns point measured in bench Test D
+let workerPrimed = [];        // parallel to blastWorkerPool: Set of dbName already indexed on that worker
+let activeSearchCount = 0;    // real foreground searches currently in flight, across all databases
+let primingInFlight = false;  // at most one background index-build running at any time
+const primingWanted = new Set(); // dbName -> true once a real search has happened for it this session
 
-function getBlastWorker() {
-    if (!blastWorker) blastWorker = new Worker('./blast-worker.js');
-    return blastWorker;
+function getBlastWorkerPool() {
+    const hc = (typeof navigator !== 'undefined' && navigator.hardwareConcurrency) || 4;
+    const n = Math.max(1, Math.min(MAX_SHARD_WORKERS, hc));
+    while (blastWorkerPool.length < n) {
+        blastWorkerPool.push(new Worker('./blast-worker.js'));
+        workerPrimed.push(new Set());
+    }
+    return blastWorkerPool.slice(0, n);
 }
+
+function primedWorkersFor(dbName) {
+    return blastWorkerPool.filter((_, i) => workerPrimed[i].has(dbName));
+}
+
+// Serial background priming, only when idle. Picks ONE (worker, database)
+// pair to index next — a database that's actually been searched
+// (`primingWanted`) and has at least one pool worker not yet primed for it —
+// and does nothing else until that single job resolves, then tries again.
+function maybeAdvancePriming() {
+    if (primingInFlight || activeSearchCount > 0) return; // never overlap with foreground work or another prime
+    for (const dbName of primingWanted) {
+        const dbUrl = primingDbUrls.get(dbName);
+        if (!dbUrl) continue;
+        const target = blastWorkerPool.findIndex((_, i) => !workerPrimed[i].has(dbName));
+        if (target === -1) continue; // already primed on every pool worker
+        primingInFlight = true;
+        const worker = blastWorkerPool[target];
+        const requestId = `prime-${dbName}-${Date.now()}-${Math.random()}`;
+        const handler = (e) => {
+            const d = e.data;
+            if (d.requestId !== requestId || d.type !== 'primed') return;
+            worker.removeEventListener('message', handler);
+            if (d.success) workerPrimed[target].add(dbName);
+            primingInFlight = false;
+            maybeAdvancePriming(); // continue the queue if still idle
+        };
+        worker.addEventListener('message', handler);
+        worker.postMessage({ type: 'prime', requestId, dbName, dbUrl });
+        return; // only ever start one job per call
+    }
+}
+const primingDbUrls = new Map(); // dbName -> url, recorded whenever a real search uses it
 
 function showBlastDialog(sequenceHeader, sequenceSeq) {
     // Create modal for database selection
@@ -17666,6 +18490,12 @@ function showBlastDialog(sequenceHeader, sequenceSeq) {
 }
 
 // Dynamic BLAST database helpers
+//
+// `info.url` (below) is REQUIRED — it's the only thing that lets runBlastSearch's
+// Web Worker (blast-worker.js) know where to fetch each database's raw FASTA from.
+// This is a client-side JS search engine, not real blastn; there is no other way
+// for it to find the data. If this ever silently drops again (as it did once, in
+// commit c38abf2), search fails with "HTTP 404 fetching undefined" and no other clue.
 async function fetchDatabases() {
     try {
         const resp = await fetch('/api/blast-db');
@@ -17677,7 +18507,7 @@ async function fetchDatabases() {
                 name,
                 label: info.description || name,
                 description: info.description || '',
-                url: info.url || null,
+                url: info.url || null,  // REQUIRED by the client-side search worker — do not drop
                 checked: true,
                 available: info.available !== false && !!info.exists && !!info.url
             });
@@ -17885,27 +18715,82 @@ function _rcStr(s) {
 
 async function runBlastSearch(seqHeader, seqSeq, databases, evalue) {
     showMessage('Running BLAST search...', 0);
-    const worker = getBlastWorker();
     const queryLen = seqSeq.replace(/[-\s]/g, '').length;
 
     const makeSearch = (db) => new Promise((resolve) => {
-        const requestId = `${Date.now()}-${Math.random()}`;
-        const handler = (e) => {
-            const d = e.data;
-            if (d.requestId !== requestId) return;
-            if (d.type === 'progress') {
-                showMessage(`[${db.name}] ${d.stage}...`, 0);
-                return;
-            }
-            if (d.type === 'result') {
-                worker.removeEventListener('message', handler);
-                resolve([db.name, d]);
-            }
-        };
-        worker.addEventListener('message', handler);
-        worker.postMessage({ type: 'search', requestId, querySeq: seqSeq, dbName: db.name, dbUrl: db.url, maxHits: 10 });
+        // db.url is REQUIRED here: this search engine is 100% client-side — the worker
+        // fetches the raw FASTA itself (see blast-worker.js ensureDb()), it never talks
+        // to a BLAST binary. If db.url is missing this fails with a confusing
+        // "HTTP 404 fetching undefined" deep inside the worker instead of here, at the
+        // one place that actually knows which database and why. Regressed once already
+        // (commit c38abf2 replaced a hardcoded db list that had url set on every entry
+        // with a server-fetched one that didn't carry `url` over) — fail loudly, not
+        // silently, so the next regression is obvious immediately instead of a mystery
+        // hours later.
+        if (!db.url) {
+            resolve([db.name, { error: `No URL configured for database "${db.name}" — check the /api/blast-db response includes a "url" field for it.` }]);
+            return;
+        }
+        primingWanted.add(db.name);
+        primingDbUrls.set(db.name, db.url);
+
+        const fullPool = getBlastWorkerPool();
+        const pool = primedWorkersFor(db.name);
+        // Use whatever subset of the pool is already primed for this database
+        // (grows organically over the session — see maybeAdvancePriming). Never
+        // primed yet -> exactly one worker, byte-identical cost to no sharding.
+        const shardWorkers = pool.length > 0 ? pool : [fullPool[0]];
+        const n = shardWorkers.length;
+        const requestIdBase = `${Date.now()}-${Math.random()}`;
+        let received = 0;
+        const shardHits = [];
+        let numSeqsTotal = 0, searchMsMax = 0, firstError = null, lastPreset = null;
+
+        shardWorkers.forEach((worker, i) => {
+            const requestId = `${requestIdBase}-${i}`;
+            const handler = (e) => {
+                const d = e.data;
+                if (d.requestId !== requestId) return;
+                if (d.type === 'progress') {
+                    showMessage(n > 1 ? `[${db.name}] shard ${i + 1}/${n}: ${d.stage}...` : `[${db.name}] ${d.stage}...`, 0);
+                    return;
+                }
+                if (d.type === 'result') {
+                    worker.removeEventListener('message', handler);
+                    received++;
+                    if (!d.success) {
+                        if (!firstError) firstError = d.error;
+                    } else {
+                        shardHits.push(...d.hits);
+                        numSeqsTotal = d.numSeqs;
+                        searchMsMax = Math.max(searchMsMax, d.searchMs);
+                        lastPreset = d.preset;
+                        const wi = blastWorkerPool.indexOf(worker);
+                        if (wi >= 0) workerPrimed[wi].add(db.name); // this worker now demonstrably has it indexed
+                    }
+                    if (received === n) {
+                        if (firstError && shardHits.length === 0) {
+                            resolve([db.name, { success: false, error: firstError }]);
+                        } else {
+                            shardHits.sort((a, b) => b.hsps[0].bitScore - a.hsps[0].bitScore);
+                            resolve([db.name, {
+                                success: true, hits: shardHits.slice(0, 10),
+                                numHits: Math.min(shardHits.length, 10),
+                                numSeqs: numSeqsTotal, searchMs: searchMsMax, preset: lastPreset,
+                            }]);
+                        }
+                    }
+                }
+            };
+            worker.addEventListener('message', handler);
+            worker.postMessage({
+                type: 'search', requestId, querySeq: seqSeq, dbName: db.name, dbUrl: db.url,
+                maxHits: 10, shard: { count: n, index: i },
+            });
+        });
     });
 
+    activeSearchCount++;
     try {
         const pairs = await Promise.all(databases.map(db => makeSearch(db)));
         const results = Object.fromEntries(pairs);
@@ -17914,6 +18799,9 @@ async function runBlastSearch(seqHeader, seqSeq, databases, evalue) {
     } catch (err) {
         console.error('BLAST search error:', err);
         showMessage(`Error: ${err.message}`, 5000);
+    } finally {
+        activeSearchCount--;
+        maybeAdvancePriming(); // only takes effect once activeSearchCount reaches 0
     }
 }
 
@@ -17963,8 +18851,12 @@ function buildBlastHitElement(hit, hitIndex, dbIndex, queryLen) {
     stats.className = 'blast-hit-stats';
     const strandLabel = hsp.strand === '-' ? 'Plus/Minus' : 'Plus/Plus';
     const strandClass = hsp.strand === '-' ? 'stat-strand-minus' : 'stat-strand-plus';
+    const evalueStr = (typeof hsp.evalue === 'number')
+        ? (hsp.evalue < 0.001 ? hsp.evalue.toExponential(2) : hsp.evalue.toFixed(4))
+        : 'n/a';
     stats.innerHTML =
-        `Score = ${hsp.bitScore} bits (${hsp.score})&nbsp;&nbsp; ` +
+        `Score = ${hsp.bitScore} bits (${Math.round(hsp.score * 10) / 10})&nbsp;&nbsp; ` +
+        `E-value = ${evalueStr}&nbsp;&nbsp; ` +
         `Identity = ${hsp.identity}/${hsp.alignLen} (${hsp.percent}%)&nbsp;&nbsp; ` +
         `Gaps = ${hsp.gaps}/${hsp.alignLen}<br>` +
         `Strand = <span class="${strandClass}">${strandLabel}</span>&nbsp;&nbsp; ` +
@@ -18000,6 +18892,165 @@ function buildBlastHitElement(hit, hitIndex, dbIndex, queryLen) {
     return div;
 }
 
+// Score color follows NCBI BLAST's conventional bit-score bands as GRADIENT
+// STOPS (>=200 red, 80-200 pink/magenta, 50-80 green, 40-50 blue, <40 black)
+// rather than flat discrete buckets — bitScore is linearly interpolated
+// between whichever two stops it falls between, so two hits with close but
+// different scores get visibly different (not identical) bar colors.
+// Exact hex values are a reasonable approximation tuned for contrast on a
+// white background, not pixel-verified against NCBI's own stylesheet.
+const _BLAST_SCORE_GRADIENT_STOPS = [
+    { at: 0,   rgb: [0x1A, 0x1A, 0x1A] }, // black,  <40
+    { at: 40,  rgb: [0x00, 0x50, 0xD0] }, // blue,   40-50
+    { at: 50,  rgb: [0x00, 0x7A, 0x00] }, // green,  50-80
+    { at: 80,  rgb: [0xC8, 0x00, 0xC8] }, // magenta,80-200
+    { at: 200, rgb: [0xE4, 0x00, 0x00] }, // red,    >=200
+];
+function _blastScoreTierColor(bitScore) {
+    const stops = _BLAST_SCORE_GRADIENT_STOPS;
+    if (bitScore <= stops[0].at) return `rgb(${stops[0].rgb.join(',')})`;
+    if (bitScore >= stops[stops.length - 1].at) return `rgb(${stops[stops.length - 1].rgb.join(',')})`;
+    for (let i = 0; i < stops.length - 1; i++) {
+        const a = stops[i], b = stops[i + 1];
+        if (bitScore >= a.at && bitScore <= b.at) {
+            const t = (bitScore - a.at) / (b.at - a.at);
+            const rgb = a.rgb.map((c, k) => Math.round(c + (b.rgb[k] - c) * t));
+            return `rgb(${rgb.join(',')})`;
+        }
+    }
+    return `rgb(${stops[stops.length - 1].rgb.join(',')})`; // unreachable, defensive
+}
+
+// Graphical hit-distribution diagram: one thin horizontal bar per hit,
+// positioned/sized by its query span, colored by score tier, on a ruler
+// spanning the full query length — the one genuinely "graphical" element
+// real NCBI BLAST's web output is known for, that a plain summary table
+// doesn't give you (added 2026-08-24, user-requested; existing summary
+// table/alignment-block layout intentionally left untouched).
+// Single shared tooltip element for the hit-distribution diagram, created
+// once and reused across every bar/database tab — appended to <body> with
+// position:fixed so it's never clipped by the diagram's own scrollable
+// container (see the fix note where it's used, below).
+let _blastHitTooltipEl = null;
+function _getBlastHitTooltipEl() {
+    if (!_blastHitTooltipEl) {
+        _blastHitTooltipEl = document.createElement('div');
+        _blastHitTooltipEl.className = 'blast-hitdist-tooltip';
+        document.body.appendChild(_blastHitTooltipEl);
+    }
+    return _blastHitTooltipEl;
+}
+function _showBlastHitTooltip(html, e) {
+    const tip = _getBlastHitTooltipEl();
+    tip.innerHTML = html;
+    tip.style.display = 'block';
+    _moveBlastHitTooltip(e);
+}
+function _moveBlastHitTooltip(e) {
+    const tip = _getBlastHitTooltipEl();
+    if (tip.style.display !== 'block') return;
+    const pad = 12;
+    let x = e.clientX + pad, y = e.clientY + pad;
+    // Measure after making visible-but-positioned so offsetWidth/Height are
+    // real, then clamp to the viewport so it can never render off-screen.
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+    const rect = tip.getBoundingClientRect();
+    if (rect.right > window.innerWidth) x = window.innerWidth - rect.width - pad;
+    if (rect.bottom > window.innerHeight) y = e.clientY - rect.height - pad;
+    tip.style.left = Math.max(pad, x) + 'px';
+    tip.style.top = Math.max(pad, y) + 'px';
+}
+function _hideBlastHitTooltip() {
+    if (_blastHitTooltipEl) _blastHitTooltipEl.style.display = 'none';
+}
+
+// "Nice" tick step for a ruler spanning `len` units — same 1/2/5 x 10^n
+// progression genome browsers and chart libraries use so labels land on
+// round numbers (10, 20, 50, 100, 200, 500, ...) instead of awkward
+// fractions of the query length.
+function _niceTickStep(len, targetTicks) {
+    const raw = len / targetTicks;
+    const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+    const norm = raw / mag;
+    const step = norm < 1.5 ? 1 : norm < 3.5 ? 2 : norm < 7.5 ? 5 : 10;
+    return step * mag;
+}
+
+function buildHitDistributionDiagram(hits, queryLen, onHitClick) {
+    const wrap = document.createElement('div');
+    wrap.className = 'blast-hitdist';
+
+    const track = document.createElement('div');
+    track.className = 'blast-hitdist-track';
+    const W = 100; // percentage-based layout, scales with the pane's own width
+
+    // Ruler: interior tick marks + position labels every "nice" step (not
+    // just the two endpoints), so a hit's approximate query position can be
+    // read directly off the diagram instead of only inferred from bar
+    // position relative to the far edges.
+    const ruler = document.createElement('div');
+    ruler.className = 'blast-hitdist-ruler';
+    const step = _niceTickStep(queryLen, 6);
+    let rulerHtml = `<span class="tick-left">1</span><span class="tick-right">${queryLen} nt</span>`;
+    for (let pos = step; pos < queryLen - step * 0.4; pos += step) {
+        const pct = (pos / queryLen) * W;
+        rulerHtml += `<span class="tick-mid" style="left:${pct}%">${Math.round(pos)}</span>`;
+    }
+    ruler.innerHTML = rulerHtml;
+    track.appendChild(ruler);
+
+    hits.forEach((hit, hi) => {
+        const hsp = hit.hsps[0];
+        const s0 = Math.min(hsp.queryStart, hsp.queryEnd);
+        const s1 = Math.max(hsp.queryStart, hsp.queryEnd);
+        const leftPct = ((s0 - 1) / queryLen) * W;
+        const widthPct = Math.max(0.8, ((s1 - s0 + 1) / queryLen) * W); // min width so short spans stay visible/clickable
+
+        const row = document.createElement('div');
+        row.className = 'blast-hitdist-row';
+        const bar = document.createElement('div');
+        bar.className = 'blast-hitdist-bar';
+        bar.style.left = leftPct + '%';
+        bar.style.width = widthPct + '%';
+        bar.style.background = _blastScoreTierColor(hsp.bitScore);
+        bar.tabIndex = 0;
+        bar.setAttribute('role', 'button');
+        bar.setAttribute('aria-label', `Hit ${hi + 1}: ${hit.id}, score ${hsp.bitScore} bits, e-value ${hsp.evalue}`);
+
+        // Tooltip content only — NOT appended as a child of `bar`. A tooltip
+        // nested inside .blast-hitdist-section (which scrolls, and can sit
+        // near the top of its own bounded box) gets silently clipped by the
+        // ancestor's overflow:auto the moment it would render above/outside
+        // that box (this is exactly what happened before this fix — visible
+        // in a screenshot as a tooltip cut off mid-render). Using ONE shared
+        // tooltip element appended to <body> and positioned via mouse
+        // coordinates in `position:fixed` (viewport-relative, immune to any
+        // ancestor's overflow/scroll clipping) fixes this regardless of
+        // where the hovered bar sits in its scroll container.
+        const evalueStr = (typeof hsp.evalue === 'number')
+            ? (hsp.evalue < 0.001 ? hsp.evalue.toExponential(2) : hsp.evalue.toFixed(4)) : 'n/a';
+        const tipHtml = `<b>${(hit.def || hit.id).substring(0, 60)}</b><br>` +
+            `score = ${hsp.bitScore} bits &nbsp; e-value = ${evalueStr}<br>` +
+            `Q ${hsp.queryStart}..${hsp.queryEnd} (${hsp.strand === '-' ? 'Plus/Minus' : 'Plus/Plus'})`;
+        bar.addEventListener('mouseenter', (e) => _showBlastHitTooltip(tipHtml, e));
+        bar.addEventListener('mousemove', (e) => _moveBlastHitTooltip(e));
+        bar.addEventListener('mouseleave', _hideBlastHitTooltip);
+        bar.addEventListener('focus', (e) => _showBlastHitTooltip(tipHtml, { clientX: bar.getBoundingClientRect().left, clientY: bar.getBoundingClientRect().top }));
+        bar.addEventListener('blur', _hideBlastHitTooltip);
+
+        const activate = () => onHitClick(hi);
+        bar.addEventListener('click', activate);
+        bar.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); } });
+
+        row.appendChild(bar);
+        track.appendChild(row);
+    });
+
+    wrap.appendChild(track);
+    return wrap;
+}
+
 function displayBlastResults(queryName, queryLen, results) {
     if (blastResultsModal) {
         blastResultsModal.remove();
@@ -18011,10 +19062,12 @@ function displayBlastResults(queryName, queryLen, results) {
 
     const dialog = document.createElement('div');
     dialog.className = 'blast-results-dialog-text';
+    dialog.id = 'blastResultsDialog';
 
     // ---- Title bar ----
     const titleBar = document.createElement('div');
     titleBar.className = 'blast-text-title-bar';
+    titleBar.id = 'blastResultsTitleBar';
     const titleEl = document.createElement('span');
     titleEl.textContent = `BLAST Results \u2014 ${queryName}  (${queryLen} nt)`;
     titleEl.style.fontWeight = 'bold';
@@ -18027,6 +19080,14 @@ function displayBlastResults(queryName, queryLen, results) {
     titleBar.appendChild(closeBtn);
     dialog.appendChild(titleBar);
 
+    // Wraps tab bar + panes as one unit so the drag/resize/minimize helper
+    // (makeModalDraggableResizable) has a single "content" element to hide
+    // when minimized, without touching the title bar.
+    const contentWrap = document.createElement('div');
+    contentWrap.id = 'blastResultsContentWrap';
+    contentWrap.style.cssText = 'display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden;';
+    dialog.appendChild(contentWrap);
+
     // ---- Tab bar ----
     const tabBar = document.createElement('div');
     tabBar.className = 'blast-tab-bar';
@@ -18038,8 +19099,6 @@ function displayBlastResults(queryName, queryLen, results) {
         const dbName = dbNames[di];
         const dbResults = results[dbName];
         const hits = dbResults.hits || [];
-        const numSeqs = dbResults.numSeqs || 0;
-        const searchMs = dbResults.searchMs || 0;
 
         // Tab button
         const tab = document.createElement('button');
@@ -18062,14 +19121,27 @@ function displayBlastResults(queryName, queryLen, results) {
             noPre.textContent = `No significant hits found in ${dbName}.`;
             pane.appendChild(noPre);
         } else {
+            // --- Graphical hit-distribution diagram: its own independently-
+            // scrollable pane, separate from the summary table below, so a
+            // database with many hits doesn't have the diagram and the table
+            // fight each other for the same bounded scroll area.
+            const highlightRow = (hi) => {
+                const row = pane.querySelector(`tr[data-hit-index="${hi}"]`);
+                if (!row) return;
+                row.scrollIntoView({ block: 'nearest' });
+                row.classList.add('blast-row-flash');
+                setTimeout(() => row.classList.remove('blast-row-flash'), 1500);
+                const target = hitsSection.querySelector(`#blast-hit-${di}-${hi}`);
+                if (target) hitsSection.scrollTop = target.offsetTop;
+            };
+            const diagramSection = document.createElement('div');
+            diagramSection.className = 'blast-hitdist-section';
+            diagramSection.appendChild(buildHitDistributionDiagram(hits, queryLen, highlightRow));
+            pane.appendChild(diagramSection);
+
             // --- Summary section ---
             const summarySection = document.createElement('div');
             summarySection.className = 'blast-summary-section';
-
-            const dbStats = document.createElement('div');
-            dbStats.className = 'blast-db-stats';
-            dbStats.textContent = `Database: ${dbName}   Sequences: ${numSeqs}   Hits: ${hits.length}   Search time: ${searchMs} ms`;
-            summarySection.appendChild(dbStats);
 
             const table = document.createElement('table');
             table.className = 'blast-summary-table';
@@ -18082,6 +19154,7 @@ function displayBlastResults(queryName, queryLen, results) {
                 const hsp = hit.hsps[0];
                 const tr = document.createElement('tr');
                 tr.className = 'blast-summary-row';
+                tr.dataset.hitIndex = hi;
                 const strandCls = hsp.strand === '-' ? 'strand-minus' : 'strand-plus';
                 const strandTxt = hsp.strand === '-' ? 'Plus/Minus' : 'Plus/Plus';
                 tr.innerHTML = `
@@ -18113,7 +19186,7 @@ function displayBlastResults(queryName, queryLen, results) {
             pane.appendChild(hitsSection);
         }
 
-        dialog.appendChild(pane);
+        contentWrap.appendChild(pane);
         panes.push(pane);
 
         tab.addEventListener('click', () => {
@@ -18124,7 +19197,7 @@ function displayBlastResults(queryName, queryLen, results) {
         });
     }
 
-    dialog.insertBefore(tabBar, panes[0]);
+    contentWrap.insertBefore(tabBar, panes[0]);
     overlay.appendChild(dialog);
     document.body.appendChild(overlay);
     blastResultsModal = overlay;
@@ -18132,6 +19205,11 @@ function displayBlastResults(queryName, queryLen, results) {
     overlay.addEventListener('click', e => {
         if (e.target === overlay) { overlay.remove(); blastResultsModal = null; }
     });
+
+    // Draggable/resizable/minimizable, same reusable helper clusteringModal
+    // uses — user-requested, since a fixed 92vw x 82vh dialog didn't leave
+    // room to adjust for a database with many long alignment blocks.
+    makeModalDraggableResizable('blastResultsDialog', 'blastResultsTitleBar', 'blastResultsContentWrap');
 }
 
 // ============================================================================

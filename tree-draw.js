@@ -142,7 +142,12 @@
   }
 
   function esc(t) {
-    return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    // Escaping " (as the fontFamily values with quoted names, e.g. "Courier New", exposed --
+    // esc() previously left literal double-quotes untouched, which corrupts any HTML/SVG
+    // attribute this output gets embedded into, e.g. <option value="..."> or the SVG root's
+    // own font-family="..." attribute) matters for every caller, not just font names: safe to
+    // add unconditionally since &quot; decodes back to " correctly in text content too.
+    return String(t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   // Equal-angle unrooted layout (Felsenstein, Inferring Phylogenies, ch. 34 — the same
@@ -189,10 +194,14 @@
       n.children.forEach(bounds);
     })(root);
 
-    var fontSize = Math.max(8, 12 * zoom);
+    // opts.fontSize is an absolute px override (the dedicated Font size control); when unset,
+    // fall back to the original zoom-derived formula so Zoom alone still scales text as before.
+    var fontSize = opts.fontSize ? Math.max(6, opts.fontSize) : Math.max(8, 12 * zoom);
+    var fontFamily = opts.fontFamily || 'system-ui,-apple-system,Segoe UI,sans-serif';
+    var orientation = opts.labelOrientation === 'horizontal' ? 'horizontal' : 'angled';
     var maxLabel = 0;
     leaves.forEach(function (l) { maxLabel = Math.max(maxLabel, measure(l.name || '?')); });
-    var margin = Math.min(maxLabel * zoom + 14, 240);
+    var margin = Math.min(maxLabel * (fontSize / 12) + 14, 240);
 
     var spanX = Math.max(maxX - minX, 1e-9), spanY = Math.max(maxY - minY, 1e-9);
     var innerW = Math.max(120, boxW - 2 * margin), innerH = Math.max(120, boxH - 2 * margin);
@@ -211,7 +220,13 @@
     var radiusSum = 0;
     leaves.forEach(function (l) { radiusSum += Math.hypot(l.ux, l.uy); });
     var approxRadius = Math.max(radiusSum / leaves.length, 1e-9);
-    var minSpacingPx = 14;
+    // User-adjustable (opts.labelSpacing, default 1) — the automatic densityFloorScale
+    // estimate below is explicitly documented as a proportionate mitigation, not a
+    // guarantee (lopsided/clumped topologies can still collide locally); rather than only
+    // offering the shared Zoom control (which also scales font size and the whole image),
+    // a dedicated multiplier lets a user push spacing further for a specific stubborn tree
+    // without changing anything else.
+    var minSpacingPx = 14 * (opts.labelSpacing || 1);
     var densityFloorScale = (leaves.length * minSpacingPx) / (2 * Math.PI * approxRadius);
     // This is still a proportionate mitigation, not a full guarantee: it assumes leaves are
     // roughly evenly spread around the boundary, so a genuinely lopsided/clumped topology
@@ -224,7 +239,7 @@
 
     var out = [];
     out.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW.toFixed(0) + '" height="' + totalH.toFixed(0) +
-      '" viewBox="0 0 ' + totalW.toFixed(0) + ' ' + totalH.toFixed(0) + '" font-family="system-ui,-apple-system,Segoe UI,sans-serif">');
+      '" viewBox="0 0 ' + totalW.toFixed(0) + ' ' + totalH.toFixed(0) + '" font-family="' + esc(fontFamily) + '">');
 
     (function draw(n) {
       n.children.forEach(function (c) {
@@ -243,11 +258,83 @@
       }
     })(root);
 
-    leaves.forEach(function (l) {
-      var toLeft = Math.cos(l.udir) < 0;
-      out.push('<text x="' + (PX(l) + (toLeft ? -5 : 5)).toFixed(1) + '" y="' + (PY(l) + fontSize / 3).toFixed(1) +
-        '" font-size="' + fontSize.toFixed(1) + '" fill="#1f1f1f" pointer-events="none"' +
-        (toLeft ? ' text-anchor="end"' : '') + '>' + esc(l.name || '?') + '</text>');
+    // Radial label orientation (opts.labelOrientation, default 'angled'), matching
+    // FigTree/Dendroscope/iTOL (see the module-header comment): rotate each label to align
+    // with its own leaf's branch direction instead of always drawing horizontal text. This is
+    // the actual fix for label overlap in dense unrooted trees, more than densityFloorScale
+    // alone can be — horizontal text from many leaves whose branches point in
+    // similar-but-not-identical directions collides even when the leaf POINTS themselves have
+    // adequate radial spacing; text angled along each leaf's own direction fans labels apart
+    // along the same arc that already spaces the points. 'horizontal' keeps the older,
+    // always-flat rendering for anyone who finds angled text harder to read.
+    // Rotation angle is normalized to [-90, 90] (flipping 180 + the anchor/offset side when
+    // needed) so a label in the left half of the tree is never rendered upside down.
+    function labelTransform(l) {
+      if (orientation === 'horizontal') {
+        var toLeft = Math.cos(l.udir) < 0;
+        return { anchor: toLeft ? 'end' : '', offset: toLeft ? -5 : 5, rotateAttr: '' };
+      }
+      var deg = l.udir * 180 / Math.PI;
+      deg = ((deg + 180) % 360 + 360) % 360 - 180; // normalize to (-180, 180]
+      var flip = Math.abs(deg) > 90;
+      var textDeg = flip ? deg + 180 : deg;
+      return { anchor: flip ? 'end' : 'start', offset: flip ? -5 : 5, textDeg: textDeg };
+    }
+
+    // Overlap grouping (opts.groupOverlap, default true, angled orientation only): when
+    // several adjacent leaves' branches point in nearly the same direction, their labels
+    // collide regardless of rotation or the Label spacing multiplier — an inherent limit of
+    // scale-based spacing (see the densityFloorScale comment above; a genuinely clumped
+    // topology can pack leaves closer than average no matter how far the WHOLE tree is
+    // scaled). Rather than let those specific labels overlap illegibly, merge them into one
+    // combined label ("first_name +N") with the full member list in a native <title> tooltip
+    // on hover. Grouping only affects LABEL TEXT — branch lines and node click-targets are
+    // still drawn individually for every leaf, so the tree topology itself is unaffected.
+    // Heuristic, not exact: compares the arc length between adjacent leaves (angular gap *
+    // radius) against the font height; a real per-label bounding-box collision check would be
+    // needed for a hard guarantee, same caveat as densityFloorScale.
+    var groupOverlap = opts.groupOverlap !== false && orientation === 'angled';
+    // Cap how many leaves one group can absorb. Without this, an extreme setting (e.g. a very
+    // large font size relative to how many leaves/how much radius is available) can correctly
+    // -- but uselessly -- merge nearly the WHOLE tree into one label listing every name, since
+    // the neighbor-to-neighbor comparison below has no reason to stop chaining if every
+    // adjacent gap in a dense run is individually below threshold. Capping bounds the worst
+    // case to a short, actually-readable "+N" label; the excess leaves beyond the cap fall
+    // back to individual (possibly still-crowded) labels rather than vanishing into one blob.
+    var MAX_GROUP_SIZE = 6;
+    var displayGroups = leaves.map(function (l) { return { members: [l] }; });
+    if (groupOverlap && leaves.length > 1) {
+      var sorted = leaves.slice().sort(function (a, b) { return a.udir - b.udir; });
+      var groups = [{ members: [sorted[0]] }];
+      for (var gi = 1; gi < sorted.length; gi++) {
+        var l = sorted[gi];
+        var cur = groups[groups.length - 1];
+        var prevL = cur.members[cur.members.length - 1];
+        var r = Math.max(Math.hypot(l.ux, l.uy), Math.hypot(prevL.ux, prevL.uy)) * scale;
+        var arcGap = (l.udir - prevL.udir) * Math.max(r, 1);
+        if (arcGap < fontSize * 1.8 && cur.members.length < MAX_GROUP_SIZE) cur.members.push(l); else groups.push({ members: [l] });
+      }
+      displayGroups = groups;
+    }
+
+    displayGroups.forEach(function (g) {
+      var members = g.members;
+      var l = members[Math.floor(members.length / 2)]; // anchor the combined label at the middle member's position
+      var t = labelTransform(l);
+      var px = PX(l), py = PY(l);
+      var isGroup = members.length > 1;
+      var label = isGroup
+        ? esc(members[0].name || '?') + ' +' + (members.length - 1)
+        : esc(l.name || '?');
+      var titleEl = isGroup
+        ? '<title>' + esc(members.map(function (m) { return m.name || '?'; }).join(', ')) + '</title>'
+        : '';
+      out.push('<text x="' + (px + t.offset).toFixed(1) + '" y="' + (py + fontSize / 3).toFixed(1) +
+        '" font-size="' + fontSize.toFixed(1) + '" fill="' + (isGroup ? '#a05a00' : '#1f1f1f') + '"' +
+        (isGroup ? ' font-weight="600" style="cursor:help;"' : ' pointer-events="none"') +
+        (t.anchor ? ' text-anchor="' + t.anchor + '"' : '') +
+        (t.textDeg !== undefined ? ' transform="rotate(' + t.textDeg.toFixed(1) + ' ' + px.toFixed(1) + ' ' + py.toFixed(1) + ')"' : '') +
+        '>' + titleEl + label + '</text>');
     });
 
     if (anyLen) {
@@ -291,10 +378,11 @@
     if (leafCount < 1) return '<div style="padding:8px;color:#777;">Empty tree.</div>';
     if (!usePhylo) (function fix(n) { if (!n.children.length) n.x = maxX; n.children.forEach(fix); })(root);
 
-    var fontSize = Math.max(8, 12 * zoom);
+    var fontSize = opts.fontSize ? Math.max(6, opts.fontSize) : Math.max(8, 12 * zoom);
+    var fontFamily = opts.fontFamily || 'system-ui,-apple-system,Segoe UI,sans-serif';
     var maxLabel = 0;
     (function w(n) { if (!n.children.length) maxLabel = Math.max(maxLabel, measure(n.name || '?')); n.children.forEach(w); })(root);
-    maxLabel *= zoom;
+    maxLabel *= (fontSize / 12);
 
     var labelW = Math.min(maxLabel + 10, 260 * zoom), gap = 8;
     var plotW = Math.max(150, (containerW - padL - gap - 8) * zoom - labelW);
@@ -306,7 +394,7 @@
 
     var out = [];
     out.push('<svg xmlns="http://www.w3.org/2000/svg" width="' + totalW.toFixed(0) + '" height="' + totalH.toFixed(0) +
-      '" viewBox="0 0 ' + totalW.toFixed(0) + ' ' + totalH.toFixed(0) + '" font-family="system-ui,-apple-system,Segoe UI,sans-serif">');
+      '" viewBox="0 0 ' + totalW.toFixed(0) + ' ' + totalH.toFixed(0) + '" font-family="' + esc(fontFamily) + '">');
 
     (function draw(n, parentX, isRoot) {
       var x2 = px(n.x), y = py(n.y), x1 = px(parentX);
@@ -345,11 +433,27 @@
   }
 
   // ---------- module state ----------
-  var st = { root: null, original: null, sourceNewick: '', zoom: 1, mode: 'swap', layout: 'rect', full: false };
+  var st = {
+    root: null, original: null, sourceNewick: '', zoom: 1, mode: 'swap', layout: 'rect', full: false,
+    labelSpacing: 1, fontSize: 12, fontFamily: 'system-ui,-apple-system,Segoe UI,sans-serif',
+    labelOrientation: 'angled', groupOverlap: true
+  };
+  var TREE_FONT_FAMILIES = [
+    { label: 'System UI', value: 'system-ui,-apple-system,Segoe UI,sans-serif' },
+    { label: 'Serif', value: 'Georgia,Cambria,"Times New Roman",Times,serif' },
+    { label: 'Monospace', value: '"Courier New",Courier,monospace' },
+    { label: 'Sans (Helvetica)', value: 'Helvetica,Arial,sans-serif' }
+  ];
 
-  function measurer() {
+  // Measures label width at the font size/family actually being rendered (a Font size or
+  // Font type control that doesn't match this measurement makes the computed margin/label
+  // column width wrong — too narrow if the real font renders wider than assumed, clipping
+  // text, or wastefully wide otherwise). Always measures at 12px and callers scale the result
+  // by (actualFontSize / 12) — matches the pre-existing zoom-scaling convention, just driven
+  // by the real font size instead of assuming it's always exactly 12*zoom.
+  function measurer(fontFamily) {
     var ctx = null;
-    try { ctx = document.createElement('canvas').getContext('2d'); ctx.font = '12px system-ui,-apple-system,sans-serif'; } catch (e) {}
+    try { ctx = document.createElement('canvas').getContext('2d'); ctx.font = '12px ' + (fontFamily || 'system-ui,-apple-system,sans-serif'); } catch (e) {}
     return ctx ? function (t) { return ctx.measureText(String(t)).width; }
                : function (t) { return String(t).length * 6.8; };
   }
@@ -360,18 +464,42 @@
     return found;
   }
 
+  function countLeaves(node) {
+    if (!node.children.length) return 1;
+    return node.children.reduce(function (s, c) { return s + countLeaves(c); }, 0);
+  }
+  function collectLeafNames(node, out) {
+    out = out || [];
+    if (!node.children.length) { out.push(node.name || '?'); return out; }
+    node.children.forEach(function (c) { collectLeafNames(c, out); });
+    return out;
+  }
+
   function draw() {
     var box = document.getElementById('treeSvgCanvas');
     if (!box || !st.root) return;
     box.innerHTML = buildTreeSVGString(st.root, {
-      measure: measurer(),
+      measure: measurer(st.fontFamily),
       width: box.clientWidth || 700,
       height: box.clientHeight || 520,
       zoom: st.zoom,
-      layout: st.layout
+      layout: st.layout,
+      labelSpacing: st.labelSpacing,
+      fontSize: st.fontSize,
+      fontFamily: st.fontFamily,
+      labelOrientation: st.labelOrientation,
+      groupOverlap: st.groupOverlap
     });
     var zl = document.getElementById('treeZoomLabel');
     if (zl) zl.textContent = Math.round(st.zoom * 100) + '%';
+    var sl = document.getElementById('treeSpacingLabel');
+    if (sl) sl.textContent = Math.round(st.labelSpacing * 100) + '%';
+    var fsl = document.getElementById('treeFontSizeLabel');
+    if (fsl) fsl.textContent = st.fontSize + 'px';
+    var spacingGroup = document.getElementById('treeSpacingGroup');
+    if (spacingGroup) spacingGroup.style.display = st.layout === 'unrooted' ? 'inline-flex' : 'none';
+    var unrootedGroup = document.getElementById('treeUnrootedGroup');
+    if (unrootedGroup) unrootedGroup.style.display = st.layout === 'unrooted' ? 'inline-flex' : 'none';
   }
 
   // ---------- export ----------
@@ -441,6 +569,48 @@
     setTimeout(draw, 30);
   }
 
+  // Renders the clicked node's descendants alone, in their own small overlay - lets you
+  // zoom into a crowded region of a big tree without losing your place in the full one.
+  function openSubtreeModal(node) {
+    var overlay = document.getElementById('treeSubtreeOverlay');
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = 'treeSubtreeOverlay';
+      overlay.style.cssText = 'position:fixed;inset:0;background:rgba(20,30,40,0.55);z-index:10070;' +
+        'display:flex;align-items:center;justify-content:center;';
+      overlay.innerHTML =
+        '<div style="background:#fff;border-radius:8px;box-shadow:0 8px 30px rgba(0,0,0,0.3);' +
+        'width:min(900px,92vw);height:min(650px,86vh);display:flex;flex-direction:column;overflow:hidden;">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #e2e8ee;">' +
+            '<b id="treeSubtreeTitle" style="font-size:13px;color:#31485c;"></b>' +
+            '<button type="button" id="treeSubtreeCloseBtn" class="tree-tool">Close</button>' +
+          '</div>' +
+          '<div id="treeSubtreeCanvas" style="flex:1;overflow:auto;padding:8px;"></div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      overlay.addEventListener('click', function (ev) { if (ev.target === overlay) overlay.remove(); });
+      overlay.querySelector('#treeSubtreeCloseBtn').addEventListener('click', function () { overlay.remove(); });
+      document.addEventListener('keydown', function esc(ev) {
+        if (ev.key === 'Escape') { var o = document.getElementById('treeSubtreeOverlay'); if (o) o.remove(); }
+      });
+    }
+    var nLeaves = countLeaves(node);
+    overlay.querySelector('#treeSubtreeTitle').textContent = 'Subtree — ' + nLeaves + ' leaves';
+    var canvas = overlay.querySelector('#treeSubtreeCanvas');
+    var subRoot = cloneTree(node);
+    subRoot.len = 0;   // draw the subtree on its own, not offset by its length in the parent
+    canvas.innerHTML = buildTreeSVGString(subRoot, {
+      measure: measurer(st.fontFamily),
+      width: 850, height: 600, zoom: 1,
+      layout: st.layout === 'unrooted' ? 'unrooted' : 'rect',
+      labelSpacing: st.labelSpacing,
+      fontSize: st.fontSize,
+      fontFamily: st.fontFamily,
+      labelOrientation: st.labelOrientation,
+      groupOverlap: st.groupOverlap
+    });
+  }
+
   function setTree(root, pushNewick) {
     st.root = root;
     draw();
@@ -468,6 +638,7 @@
     var id = parseInt(hit.getAttribute('data-node'), 10);
     var node = nodeById(id);
     if (!node) return;
+    showNodeInfo(node, hit.classList.contains('tree-branch-hit'));
     if (st.mode === 'reroot') {
       if (!hit.classList.contains('tree-branch-hit')) return;   // re-root needs a branch
       setTree(rerootOnBranch(st.root, node), true);
@@ -475,6 +646,28 @@
       if (!swapAt(node)) return;
       setTree(st.root, true);
     }
+  }
+
+  // Clicking a branch/node always shows a small info readout - independent of
+  // swap/re-root mode - so you don't have to switch modes just to see a branch
+  // length or how many leaves sit under a node.
+  function showNodeInfo(node, isBranch) {
+    var line = document.getElementById('treeInfoLine');
+    if (!line) return;
+    var nLeaves = countLeaves(node);
+    var isLeaf = !node.children.length;
+    var parts = [];
+    if (isLeaf) {
+      parts.push('<b>' + esc(node.name || '?') + '</b>');
+    } else {
+      parts.push(nLeaves + ' leaves below this node');
+    }
+    if (isBranch) parts.push('branch length ' + (node.len || 0).toFixed(6));
+    line.querySelector('#treeInfoText').innerHTML = parts.join(' &middot; ');
+    var subBtn = line.querySelector('#treeInfoSubtreeBtn');
+    subBtn.style.display = (!isLeaf && nLeaves >= 2) ? '' : 'none';
+    subBtn.onclick = function () { openSubtreeModal(node); };
+    line.style.display = 'flex';
   }
 
   // ---------- UI ----------
@@ -494,20 +687,50 @@
         '<span id="treeZoomLabel" style="min-width:34px;text-align:center;">100%</span>' +
         '<button type="button" class="tree-tool" data-act="zoom-in" title="Zoom in">+</button>' +
         '<button type="button" class="tree-tool" data-act="zoom-fit" title="Fit to width">Fit</button>' +
+        '<span id="treeSpacingGroup" style="display:none;align-items:center;gap:6px;">' +
+          '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
+          '<span style="color:#6b8299;" title="How far apart unrooted-tree leaf labels are spaced, independent of Zoom">Label spacing</span>' +
+          '<button type="button" class="tree-tool" data-act="spacing-out" title="Less spacing">&minus;</button>' +
+          '<span id="treeSpacingLabel" style="min-width:34px;text-align:center;">100%</span>' +
+          '<button type="button" class="tree-tool" data-act="spacing-in" title="More spacing">+</button>' +
+        '</span>' +
+        '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
+        '<span style="color:#6b8299;" title="Independent of Zoom">Font size</span>' +
+        '<button type="button" class="tree-tool" data-act="font-smaller" title="Smaller text">&minus;</button>' +
+        '<span id="treeFontSizeLabel" style="min-width:30px;text-align:center;">12px</span>' +
+        '<button type="button" class="tree-tool" data-act="font-larger" title="Larger text">+</button>' +
+        '<select id="treeFontFamily" title="Label font" style="font-size:11px;">' +
+          TREE_FONT_FAMILIES.map(function (f) { return '<option value="' + esc(f.value) + '">' + esc(f.label) + '</option>'; }).join('') +
+        '</select>' +
         '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
         '<span style="color:#6b8299;">Layout</span>' +
         '<label class="tree-mode"><input type="radio" name="treeLayout" value="rect" checked> rooted</label>' +
         '<label class="tree-mode"><input type="radio" name="treeLayout" value="unrooted"> unrooted</label>' +
+        '<span id="treeUnrootedGroup" style="display:none;align-items:center;gap:6px;">' +
+          '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
+          '<label class="tree-mode"><input type="radio" name="treeOrientation" value="angled" checked> angled labels</label>' +
+          '<label class="tree-mode"><input type="radio" name="treeOrientation" value="horizontal"> horizontal labels</label>' +
+          '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
+          '<label class="tree-mode" title="Merge overlapping labels into one, hover to see the full list"><input type="checkbox" id="treeGroupOverlap" checked> group overlapping labels</label>' +
+        '</span>' +
         '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
-        '<span style="color:#6b8299;">Click</span>' +
-        '<label class="tree-mode"><input type="radio" name="treeClickMode" value="swap" checked> swap branches</label>' +
-        '<label class="tree-mode"><input type="radio" name="treeClickMode" value="reroot"> re-root</label>' +
+        '<span style="display:inline-flex;align-items:center;gap:6px;">' +
+          '<span style="color:#6b8299;">Click</span>' +
+          '<label class="tree-mode"><input type="radio" name="treeClickMode" value="swap" checked> swap branches</label>' +
+          '<label class="tree-mode"><input type="radio" name="treeClickMode" value="reroot"> re-root</label>' +
+        '</span>' +
         '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
         '<button type="button" class="tree-tool" data-act="export-svg" title="Download the drawing as SVG">SVG</button>' +
         '<button type="button" class="tree-tool" data-act="export-png" title="Download the drawing as PNG (2x)">PNG</button>' +
         '<button type="button" class="tree-tool" data-act="fullscreen" title="Expand the tree to the whole window (Esc to leave)">Full screen</button>' +
         '<button type="button" class="tree-tool" data-act="reset" title="Back to the computed tree">Reset</button>' +
         '<span id="treeHint" style="color:#8a9bab;"></span>' +
+      '</div>' +
+      '<div id="treeInfoLine" style="display:none;align-items:center;gap:10px;font-size:11px;' +
+      'color:#31485c;background:#f3f6f9;border:1px solid #dde5ec;border-radius:5px;padding:4px 8px;margin-bottom:5px;">' +
+        '<span id="treeInfoText"></span>' +
+        '<button type="button" id="treeInfoSubtreeBtn" class="tree-tool" style="display:none;">View subtree</button>' +
+        '<button type="button" id="treeInfoCloseBtn" class="tree-tool" title="Dismiss">&times;</button>' +
       '</div>' +
       '<div id="treeSvgCanvas"></div>';
     nwOut.parentNode.insertBefore(panel, nwOut);
@@ -519,6 +742,10 @@
       if (act === 'zoom-in') st.zoom = Math.min(4, st.zoom * 1.25);
       else if (act === 'zoom-out') st.zoom = Math.max(0.25, st.zoom / 1.25);
       else if (act === 'zoom-fit') st.zoom = 1;
+      else if (act === 'spacing-in') st.labelSpacing = Math.min(4, st.labelSpacing * 1.25);
+      else if (act === 'spacing-out') st.labelSpacing = Math.max(0.25, st.labelSpacing / 1.25);
+      else if (act === 'font-larger') st.fontSize = Math.min(28, st.fontSize + 1);
+      else if (act === 'font-smaller') st.fontSize = Math.max(6, st.fontSize - 1);
       else if (act === 'export-svg') { exportSVG(); return; }
       else if (act === 'export-png') { exportPNG(); return; }
       else if (act === 'fullscreen') { setFullscreen(!st.full); return; }
@@ -531,6 +758,9 @@
       }
       draw();
     });
+    panel.querySelector('#treeInfoCloseBtn').addEventListener('click', function () {
+      document.getElementById('treeInfoLine').style.display = 'none';
+    });
     panel.querySelectorAll('input[name="treeClickMode"]').forEach(function (r) {
       r.addEventListener('change', function () {
         st.mode = r.value;
@@ -541,6 +771,18 @@
     panel.querySelectorAll('input[name="treeLayout"]').forEach(function (r) {
       r.addEventListener('change', function () { st.layout = r.value; draw(); });
     });
+    panel.querySelectorAll('input[name="treeOrientation"]').forEach(function (r) {
+      r.addEventListener('change', function () { st.labelOrientation = r.value; draw(); });
+    });
+    var fontFamilySel = panel.querySelector('#treeFontFamily');
+    if (fontFamilySel) {
+      fontFamilySel.value = st.fontFamily;
+      fontFamilySel.addEventListener('change', function () { st.fontFamily = fontFamilySel.value; draw(); });
+    }
+    var groupOverlapCb = panel.querySelector('#treeGroupOverlap');
+    if (groupOverlapCb) {
+      groupOverlapCb.addEventListener('change', function () { st.groupOverlap = groupOverlapCb.checked; draw(); });
+    }
     document.addEventListener('keydown', function (ev) {
       if (ev.key === 'Escape' && st.full) { ev.stopPropagation(); setFullscreen(false); }
     }, true);

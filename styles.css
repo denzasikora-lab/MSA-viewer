@@ -649,6 +649,12 @@ button:hover {
     overflow: auto;
     resize: vertical;
     position: relative;
+    /* Click-drag panning shouldn't trigger native browser text selection
+       on the SVG leaf labels (was showing as blue selection highlight). */
+    user-select: none;
+    -moz-user-select: none;
+    -webkit-user-select: none;
+    -ms-user-select: none;
 }
 #treeSvgCanvas::after {
     content: '';
@@ -876,6 +882,40 @@ input[type="range"].shading-slider::-moz-range-thumb {
     cursor: pointer;
     background: white;
 }
+.zoom-slider-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 100px;
+    max-width: 200px;
+    padding-top: 8px;
+}
+.zoom-slider-wrap .normal-slider {
+    width: 100%;
+    min-width: 0;
+    max-width: none;
+}
+.zoom-100-tick {
+    position: absolute;
+    top: 0;
+    width: 12px;
+    height: 10px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    transform: translateX(-50%);
+    cursor: pointer;
+    z-index: 2;
+}
+.zoom-100-tick::before {
+    content: '';
+    display: block;
+    width: 0;
+    height: 0;
+    margin: 0 auto;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid #444;
+}
 input[type="range"].normal-slider {
     -webkit-appearance: none;
     appearance: none;
@@ -956,6 +996,9 @@ input[type="number"] {
     -ms-user-select: none;
     /* Instant scroll updates during drag to avoid jank */
     scroll-behavior: auto;
+    /* Virtualized rows/spacers preserve geometry explicitly. Browser scroll
+       anchoring fights those updates and visibly shifts scrollTop afterward. */
+    overflow-anchor: none;
     z-index: 1; /* Ensure it's below the fixed menu (z-index: 1000) when menu appears */
 }
 /* Hide native horizontal scrollbar so only the custom bar is visible */
@@ -1017,14 +1060,10 @@ input[type="number"] {
     pointer-events: auto;
 }
 
-/* Vertical counterpart of .horizontal-scrollbar - Canvas mode has no native
-   scrollable DOM node (alignmentContainer uses overflow:hidden there and
-   panning happens via _canvasState.offsetY instead), so unlike Full/Block
-   mode - which get a real vertical scrollbar for free from the browser -
-   Canvas mode had NO visible vertical scrollbar at all: wheel/drag panning
-   worked but there was nothing on screen to show it, grab it, or see
-   position within a tall alignment. Positioned absolutely over
-   alignmentContainer's right edge; JS shows/hides and sizes it per mode. */
+/* Vertical counterpart of .horizontal-scrollbar. Native alignment scrollbars
+   are hidden, so JS shows this control for Canvas and scrollable Full/Block
+   modes, sizes it to the alignment viewport, and synchronizes the active
+   mode's Canvas offset or DOM scrollTop. */
 .vertical-scrollbar {
     position: absolute;
     top: 0;
@@ -1038,7 +1077,7 @@ input[type="number"] {
     cursor: grab;
     user-select: none;
     touch-action: pan-y;
-    display: none; /* JS shows this only while Canvas mode is active */
+    display: none; /* JS shows this only while the active mode can scroll */
 }
 .vertical-scrollbar-thumb { width: 1px; }
 .vertical-scrollbar.grabbing { cursor: grabbing; }
@@ -1104,7 +1143,8 @@ input[type="number"] {
     -webkit-user-select: none;
     -ms-user-select: none;
     contain: style;
-    line-height: 1.0;
+    line-height: 1.15;
+    padding-bottom: 1px;
 }
 .seq-name.static {
     position: static;
@@ -2364,7 +2404,6 @@ span.diagnostic-mutation {
 
 /* Summary section — fixed at top of each pane */
 .blast-summary-section { flex-shrink:0; overflow-y:auto; max-height:38%; border-bottom:2px solid #ddd; padding:6px 14px 0; }
-.blast-db-stats { font-family:'Courier New',monospace; font-size:11px; color:#555; margin-bottom:6px; }
 .blast-summary-table { width:100%; border-collapse:collapse; font-family:'Courier New',monospace; font-size:11px; white-space:nowrap; }
 .blast-summary-table thead th { background:#ececec; padding:4px 8px; text-align:left; border-bottom:2px solid #bbb; position:sticky; top:0; z-index:1; }
 .blast-summary-table td { padding:3px 8px; border-bottom:1px solid #f0f0f0; cursor:pointer; vertical-align:middle; }
@@ -2372,6 +2411,36 @@ span.diagnostic-mutation {
 .blast-summary-table .strand-plus  { color:#1a6b1a; font-weight:bold; }
 .blast-summary-table .strand-minus { color:#8b0000; font-weight:bold; }
 .blast-summary-row:hover td { background:#eef8ee; }
+.blast-row-flash td { background:#FFF3B0 !important; transition: background 1.5s ease; }
+
+/* Graphical hit-distribution diagram (NCBI-BLAST-style position bars) —
+   its own independently-scrollable section, separate from the summary
+   table below, so a database with many hits doesn't force the diagram and
+   the table to compete for the same bounded scroll area. Bars render as
+   near-hairline strokes (2px) but each row keeps a taller invisible hit
+   area (7px) so hovering/clicking a bar stays easy despite the thin
+   visual weight. */
+.blast-hitdist-section { flex-shrink:0; overflow-y:auto; max-height:130px; border-bottom:2px solid #ddd; padding:6px 14px; }
+.blast-hitdist-track { position:relative; }
+.blast-hitdist-ruler { position:relative; height:16px; font-family:'Courier New',monospace; font-size:10px; color:#555; border-bottom:1px solid #999; margin-bottom:2px; }
+.blast-hitdist-ruler .tick-left { position:absolute; left:0; top:0; }
+.blast-hitdist-ruler .tick-right { position:absolute; right:0; top:0; }
+.blast-hitdist-ruler .tick-mid { position:absolute; top:0; transform:translateX(-50%); }
+.blast-hitdist-ruler .tick-mid::after { content:''; position:absolute; left:50%; bottom:-5px; width:1px; height:4px; background:#999; }
+.blast-hitdist-row { position:relative; height:7px; }
+.blast-hitdist-bar {
+    position:absolute; top:2.5px; height:2px; border-radius:1px; cursor:pointer;
+    opacity:0.9; outline:none;
+}
+.blast-hitdist-bar:hover, .blast-hitdist-bar:focus { opacity:1; height:3px; top:2px; box-shadow:0 0 0 1px #333; }
+/* Single shared tooltip, appended to <body>, position:fixed so it's never
+   clipped by the diagram's own scrollable ancestor (.blast-hitdist-section) —
+   see the JS-side note where it's created for the incident this replaced. */
+.blast-hitdist-tooltip {
+    position:fixed; z-index:10010; background:#222; color:#fff; display:none;
+    font-size:10px; font-family:-apple-system,'Segoe UI',sans-serif; padding:4px 7px;
+    border-radius:3px; white-space:nowrap; pointer-events:none;
+}
 
 /* Scrollable hits section */
 .blast-hits-section { flex:1; overflow-y:auto; min-height:0; }
