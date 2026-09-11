@@ -2377,3 +2377,712 @@ extra spurious ones"). Needs its own investigation - likely the same shape
 of fix as haplotype/diagnostic already got (a sample-size or window-width
 floor, or scoring against diagnostic-columns-only instead of the whole
 narrow window) - not yet attempted.
+
+
+---
+
+# Results (run 2026-09-11T23:29:56.454Z)
+
+## Results — Stage 0
+
+| nRows | len | mut | detected | nBlocks |
+|---|---|---|---|---|
+| 5 | 20 | 0 | true | 3 |
+| 5 | 20 | 0.05 | true | 2 |
+| 5 | 20 | 0.15 | true | 2 |
+| 5 | 20 | 0.3 | true | 3 |
+| 5 | 20 | 0.5 | false | 3 |
+| 5 | 60 | 0 | true | 2 |
+| 5 | 60 | 0.05 | true | 2 |
+| 5 | 60 | 0.15 | true | 2 |
+| 5 | 60 | 0.3 | true | 2 |
+| 5 | 60 | 0.5 | true | 2 |
+| 5 | 150 | 0 | true | 2 |
+| 5 | 150 | 0.05 | true | 2 |
+| 5 | 150 | 0.15 | true | 2 |
+| 5 | 150 | 0.3 | true | 2 |
+| 5 | 150 | 0.5 | true | 2 |
+| 10 | 20 | 0 | true | 2 |
+| 10 | 20 | 0.05 | true | 5 |
+| 10 | 20 | 0.15 | true | 4 |
+| 10 | 20 | 0.3 | true | 2 |
+| 10 | 20 | 0.5 | true | 2 |
+| 10 | 60 | 0 | true | 2 |
+| 10 | 60 | 0.05 | true | 2 |
+| 10 | 60 | 0.15 | true | 2 |
+| 10 | 60 | 0.3 | true | 2 |
+| 10 | 60 | 0.5 | true | 2 |
+| 10 | 150 | 0 | true | 2 |
+| 10 | 150 | 0.05 | true | 2 |
+| 10 | 150 | 0.15 | true | 2 |
+| 10 | 150 | 0.3 | true | 2 |
+| 10 | 150 | 0.5 | true | 2 |
+| 30 | 20 | 0 | true | 3 |
+| 30 | 20 | 0.05 | true | 5 |
+| 30 | 20 | 0.15 | true | 2 |
+| 30 | 20 | 0.3 | true | 3 |
+| 30 | 20 | 0.5 | true | 2 |
+| 30 | 60 | 0 | true | 2 |
+| 30 | 60 | 0.05 | true | 3 |
+| 30 | 60 | 0.15 | true | 2 |
+| 30 | 60 | 0.3 | true | 2 |
+| 30 | 60 | 0.5 | true | 2 |
+| 30 | 150 | 0 | true | 2 |
+| 30 | 150 | 0.05 | true | 2 |
+| 30 | 150 | 0.15 | true | 2 |
+| 30 | 150 | 0.3 | true | 2 |
+| 30 | 150 | 0.5 | true | 2 |
+
+### Conclusion
+
+Column separation fails at: nRows=5,len=20,mut=0.5.
+
+## Results — Stage 1
+
+| nRows | subsetSize | tailLen | mut | exact | partialOverlap |
+|---|---|---|---|---|---|
+| 10 | 2 | 20 | 0 | false | 0 |
+| 10 | 2 | 20 | 0.05 | false | 0 |
+| 10 | 2 | 20 | 0.15 | false | 0 |
+| 10 | 2 | 20 | 0.3 | false | 0 |
+| 10 | 2 | 60 | 0 | false | 0 |
+| 10 | 2 | 60 | 0.05 | false | 0 |
+| 10 | 2 | 60 | 0.15 | false | 0 |
+| 10 | 2 | 60 | 0.3 | false | 0 |
+| 10 | 2 | 150 | 0 | false | 0 |
+| 10 | 2 | 150 | 0.05 | false | 0 |
+| 10 | 2 | 150 | 0.15 | false | 0 |
+| 10 | 2 | 150 | 0.3 | false | 0 |
+| 10 | 3 | 20 | 0 | false | 0 |
+| 10 | 3 | 20 | 0.05 | false | 0 |
+| 10 | 3 | 20 | 0.15 | true | exact |
+| 10 | 3 | 20 | 0.3 | true | exact |
+| 10 | 3 | 60 | 0 | false | 0 |
+| 10 | 3 | 60 | 0.05 | false | 0 |
+| 10 | 3 | 60 | 0.15 | false | 0 |
+| 10 | 3 | 60 | 0.3 | false | 0 |
+| 10 | 3 | 150 | 0 | false | 0 |
+| 10 | 3 | 150 | 0.05 | false | 0 |
+| 10 | 3 | 150 | 0.15 | false | 0 |
+| 10 | 3 | 150 | 0.3 | false | 0 |
+| 20 | 2 | 20 | 0 | false | 0 |
+| 20 | 2 | 20 | 0.05 | false | 0 |
+| 20 | 2 | 20 | 0.15 | false | 0 |
+| 20 | 2 | 20 | 0.3 | false | 0 |
+| 20 | 2 | 60 | 0 | false | 0 |
+| 20 | 2 | 60 | 0.05 | false | 0 |
+| 20 | 2 | 60 | 0.15 | false | 0 |
+| 20 | 2 | 60 | 0.3 | false | 0 |
+| 20 | 2 | 150 | 0 | false | 0 |
+| 20 | 2 | 150 | 0.05 | false | 0 |
+| 20 | 2 | 150 | 0.15 | false | 0 |
+| 20 | 2 | 150 | 0.3 | false | 0 |
+| 20 | 3 | 20 | 0 | false | 0 |
+| 20 | 3 | 20 | 0.05 | false | 0 |
+| 20 | 3 | 20 | 0.15 | false | 0 |
+| 20 | 3 | 20 | 0.3 | false | 0 |
+| 20 | 3 | 60 | 0 | false | 0 |
+| 20 | 3 | 60 | 0.05 | false | 0 |
+| 20 | 3 | 60 | 0.15 | false | 0 |
+| 20 | 3 | 60 | 0.3 | false | 0 |
+| 20 | 3 | 150 | 0 | false | 0 |
+| 20 | 3 | 150 | 0.05 | false | 0 |
+| 20 | 3 | 150 | 0.15 | false | 0 |
+| 20 | 3 | 150 | 0.3 | false | 0 |
+| 20 | 5 | 20 | 0 | false | 0 |
+| 20 | 5 | 20 | 0.05 | false | 0 |
+| 20 | 5 | 20 | 0.15 | false | 0 |
+| 20 | 5 | 20 | 0.3 | false | 0 |
+| 20 | 5 | 60 | 0 | false | 0 |
+| 20 | 5 | 60 | 0.05 | false | 0 |
+| 20 | 5 | 60 | 0.15 | false | 0 |
+| 20 | 5 | 60 | 0.3 | false | 0 |
+| 20 | 5 | 150 | 0 | false | 0 |
+| 20 | 5 | 150 | 0.05 | true | exact |
+| 20 | 5 | 150 | 0.15 | false | 0 |
+| 20 | 5 | 150 | 0.3 | false | 0 |
+| 50 | 2 | 20 | 0 | false | 0 |
+| 50 | 2 | 20 | 0.05 | false | 0 |
+| 50 | 2 | 20 | 0.15 | false | 0 |
+| 50 | 2 | 20 | 0.3 | false | 0 |
+| 50 | 2 | 60 | 0 | false | 0 |
+| 50 | 2 | 60 | 0.05 | false | 0 |
+| 50 | 2 | 60 | 0.15 | false | 0 |
+| 50 | 2 | 60 | 0.3 | false | 0 |
+| 50 | 2 | 150 | 0 | false | 0 |
+| 50 | 2 | 150 | 0.05 | false | 0 |
+| 50 | 2 | 150 | 0.15 | false | 0 |
+| 50 | 2 | 150 | 0.3 | false | 0 |
+| 50 | 3 | 20 | 0 | false | 0 |
+| 50 | 3 | 20 | 0.05 | false | 0 |
+| 50 | 3 | 20 | 0.15 | false | 0 |
+| 50 | 3 | 20 | 0.3 | false | 0 |
+| 50 | 3 | 60 | 0 | false | 0 |
+| 50 | 3 | 60 | 0.05 | false | 0 |
+| 50 | 3 | 60 | 0.15 | false | 0 |
+| 50 | 3 | 60 | 0.3 | false | 0 |
+| 50 | 3 | 150 | 0 | false | 0 |
+| 50 | 3 | 150 | 0.05 | false | 0 |
+| 50 | 3 | 150 | 0.15 | false | 0 |
+| 50 | 3 | 150 | 0.3 | false | 0 |
+| 50 | 5 | 20 | 0 | false | 0 |
+| 50 | 5 | 20 | 0.05 | false | 0 |
+| 50 | 5 | 20 | 0.15 | false | 0 |
+| 50 | 5 | 20 | 0.3 | false | 0 |
+| 50 | 5 | 60 | 0 | false | 0 |
+| 50 | 5 | 60 | 0.05 | false | 0 |
+| 50 | 5 | 60 | 0.15 | false | 0 |
+| 50 | 5 | 60 | 0.3 | false | 0 |
+| 50 | 5 | 150 | 0 | false | 0 |
+| 50 | 5 | 150 | 0.05 | false | 0 |
+| 50 | 5 | 150 | 0.15 | false | 0 |
+| 50 | 5 | 150 | 0.3 | false | 0 |
+| 50 | 10 | 20 | 0 | false | 0 |
+| 50 | 10 | 20 | 0.05 | false | 0 |
+| 50 | 10 | 20 | 0.15 | false | 0 |
+| 50 | 10 | 20 | 0.3 | false | 0 |
+| 50 | 10 | 60 | 0 | false | 0 |
+| 50 | 10 | 60 | 0.05 | false | 0 |
+| 50 | 10 | 60 | 0.15 | false | 0 |
+| 50 | 10 | 60 | 0.3 | false | 0 |
+| 50 | 10 | 150 | 0 | false | 0 |
+| 50 | 10 | 150 | 0.05 | false | 0 |
+| 50 | 10 | 150 | 0.15 | false | 0 |
+| 50 | 10 | 150 | 0.3 | false | 0 |
+
+### Conclusion
+
+3/108 exact recoveries. By subset size: size=2: 0/36, size=3: 2/36, size=5: 1/24, size=10: 0/12.
+
+## Results — Stage 1b (length variation)
+
+| nRows | subsetSize | trim | exact | partialOverlap |
+|---|---|---|---|---|
+| 10 | 3 | 0 | false | 0 |
+| 10 | 3 | 0.15 | true | exact |
+| 10 | 3 | 0.3 | false | 0 |
+| 10 | 5 | 0 | false | 0 |
+| 10 | 5 | 0.15 | true | exact |
+| 10 | 5 | 0.3 | false | 0 |
+| 20 | 3 | 0 | false | 0 |
+| 20 | 3 | 0.15 | false | 0 |
+| 20 | 3 | 0.3 | false | 0 |
+| 20 | 5 | 0 | false | 0 |
+| 20 | 5 | 0.15 | false | 0 |
+| 20 | 5 | 0.3 | true | exact |
+
+### Conclusion
+
+3/12 exact recoveries under independent trailing-gap trimming. Compare against Stage 1 baseline (trim=0.0 rows above) to isolate the effect of length variation alone.
+
+## Results — Stage 2a (3 groups in one zone)
+
+| sizeA | sizeB | groupA | groupB |
+|---|---|---|---|
+| 5 | 5 | missed | missed |
+| 3 | 8 | missed | missed |
+| 8 | 8 | exact | exact |
+
+### Conclusion
+
+At least one configuration failed to cleanly separate both groups — see table for which.
+
+## Results — Stage 2b (two independent zones)
+
+| zoneX | zoneY | distinctZones |
+|---|---|---|
+| missed | missed | n/a |
+
+### Conclusion
+
+Zones were not both found at distinct column ranges — see table.
+
+
+---
+
+# Results (run 2026-09-11T23:31:26.469Z)
+
+## Results — Stage 0
+
+| nRows | len | mut | detected | nBlocks |
+|---|---|---|---|---|
+| 5 | 20 | 0 | true | 3 |
+| 5 | 20 | 0.05 | true | 2 |
+| 5 | 20 | 0.15 | true | 2 |
+| 5 | 20 | 0.3 | true | 3 |
+| 5 | 20 | 0.5 | false | 3 |
+| 5 | 60 | 0 | true | 2 |
+| 5 | 60 | 0.05 | true | 2 |
+| 5 | 60 | 0.15 | true | 2 |
+| 5 | 60 | 0.3 | true | 2 |
+| 5 | 60 | 0.5 | true | 2 |
+| 5 | 150 | 0 | true | 2 |
+| 5 | 150 | 0.05 | true | 2 |
+| 5 | 150 | 0.15 | true | 2 |
+| 5 | 150 | 0.3 | true | 2 |
+| 5 | 150 | 0.5 | true | 2 |
+| 10 | 20 | 0 | true | 2 |
+| 10 | 20 | 0.05 | true | 3 |
+| 10 | 20 | 0.15 | true | 4 |
+| 10 | 20 | 0.3 | true | 2 |
+| 10 | 20 | 0.5 | true | 2 |
+| 10 | 60 | 0 | true | 2 |
+| 10 | 60 | 0.05 | true | 2 |
+| 10 | 60 | 0.15 | true | 2 |
+| 10 | 60 | 0.3 | true | 2 |
+| 10 | 60 | 0.5 | true | 2 |
+| 10 | 150 | 0 | true | 2 |
+| 10 | 150 | 0.05 | true | 2 |
+| 10 | 150 | 0.15 | true | 2 |
+| 10 | 150 | 0.3 | true | 2 |
+| 10 | 150 | 0.5 | true | 2 |
+| 30 | 20 | 0 | false | 6 |
+| 30 | 20 | 0.05 | true | 3 |
+| 30 | 20 | 0.15 | true | 2 |
+| 30 | 20 | 0.3 | true | 3 |
+| 30 | 20 | 0.5 | true | 2 |
+| 30 | 60 | 0 | true | 2 |
+| 30 | 60 | 0.05 | true | 3 |
+| 30 | 60 | 0.15 | true | 2 |
+| 30 | 60 | 0.3 | true | 2 |
+| 30 | 60 | 0.5 | true | 2 |
+| 30 | 150 | 0 | true | 2 |
+| 30 | 150 | 0.05 | true | 2 |
+| 30 | 150 | 0.15 | true | 2 |
+| 30 | 150 | 0.3 | true | 2 |
+| 30 | 150 | 0.5 | true | 2 |
+
+### Conclusion
+
+Column separation fails at: nRows=5,len=20,mut=0.5; nRows=30,len=20,mut=0.
+
+## Results — Stage 1
+
+| nRows | subsetSize | tailLen | mut | exact | partialOverlap |
+|---|---|---|---|---|---|
+| 10 | 2 | 20 | 0 | false | 2/2 |
+| 10 | 2 | 20 | 0.05 | false | 0 |
+| 10 | 2 | 20 | 0.15 | false | 0 |
+| 10 | 2 | 20 | 0.3 | false | 0 |
+| 10 | 2 | 60 | 0 | false | 0 |
+| 10 | 2 | 60 | 0.05 | false | 0 |
+| 10 | 2 | 60 | 0.15 | false | 0 |
+| 10 | 2 | 60 | 0.3 | false | 0 |
+| 10 | 2 | 150 | 0 | false | 0 |
+| 10 | 2 | 150 | 0.05 | false | 0 |
+| 10 | 2 | 150 | 0.15 | false | 0 |
+| 10 | 2 | 150 | 0.3 | false | 2/2 |
+| 10 | 3 | 20 | 0 | true | exact |
+| 10 | 3 | 20 | 0.05 | true | exact |
+| 10 | 3 | 20 | 0.15 | true | exact |
+| 10 | 3 | 20 | 0.3 | true | exact |
+| 10 | 3 | 60 | 0 | true | exact |
+| 10 | 3 | 60 | 0.05 | true | exact |
+| 10 | 3 | 60 | 0.15 | true | exact |
+| 10 | 3 | 60 | 0.3 | true | exact |
+| 10 | 3 | 150 | 0 | true | exact |
+| 10 | 3 | 150 | 0.05 | true | exact |
+| 10 | 3 | 150 | 0.15 | true | exact |
+| 10 | 3 | 150 | 0.3 | true | exact |
+| 20 | 2 | 20 | 0 | false | 0 |
+| 20 | 2 | 20 | 0.05 | false | 0 |
+| 20 | 2 | 20 | 0.15 | false | 0 |
+| 20 | 2 | 20 | 0.3 | false | 0 |
+| 20 | 2 | 60 | 0 | false | 0 |
+| 20 | 2 | 60 | 0.05 | false | 0 |
+| 20 | 2 | 60 | 0.15 | false | 0 |
+| 20 | 2 | 60 | 0.3 | false | 0 |
+| 20 | 2 | 150 | 0 | false | 0 |
+| 20 | 2 | 150 | 0.05 | false | 0 |
+| 20 | 2 | 150 | 0.15 | false | 0 |
+| 20 | 2 | 150 | 0.3 | false | 0 |
+| 20 | 3 | 20 | 0 | true | exact |
+| 20 | 3 | 20 | 0.05 | true | exact |
+| 20 | 3 | 20 | 0.15 | false | 0 |
+| 20 | 3 | 20 | 0.3 | false | 0 |
+| 20 | 3 | 60 | 0 | true | exact |
+| 20 | 3 | 60 | 0.05 | true | exact |
+| 20 | 3 | 60 | 0.15 | false | 0 |
+| 20 | 3 | 60 | 0.3 | false | 0 |
+| 20 | 3 | 150 | 0 | true | exact |
+| 20 | 3 | 150 | 0.05 | true | exact |
+| 20 | 3 | 150 | 0.15 | true | exact |
+| 20 | 3 | 150 | 0.3 | false | 0 |
+| 20 | 5 | 20 | 0 | true | exact |
+| 20 | 5 | 20 | 0.05 | true | exact |
+| 20 | 5 | 20 | 0.15 | true | exact |
+| 20 | 5 | 20 | 0.3 | false | 4/5 |
+| 20 | 5 | 60 | 0 | true | exact |
+| 20 | 5 | 60 | 0.05 | true | exact |
+| 20 | 5 | 60 | 0.15 | true | exact |
+| 20 | 5 | 60 | 0.3 | false | 0 |
+| 20 | 5 | 150 | 0 | true | exact |
+| 20 | 5 | 150 | 0.05 | true | exact |
+| 20 | 5 | 150 | 0.15 | true | exact |
+| 20 | 5 | 150 | 0.3 | true | exact |
+| 50 | 2 | 20 | 0 | false | 0 |
+| 50 | 2 | 20 | 0.05 | false | 0 |
+| 50 | 2 | 20 | 0.15 | false | 0 |
+| 50 | 2 | 20 | 0.3 | false | 0 |
+| 50 | 2 | 60 | 0 | false | 0 |
+| 50 | 2 | 60 | 0.05 | false | 0 |
+| 50 | 2 | 60 | 0.15 | false | 0 |
+| 50 | 2 | 60 | 0.3 | false | 0 |
+| 50 | 2 | 150 | 0 | false | 0 |
+| 50 | 2 | 150 | 0.05 | false | 0 |
+| 50 | 2 | 150 | 0.15 | false | 0 |
+| 50 | 2 | 150 | 0.3 | false | 0 |
+| 50 | 3 | 20 | 0 | false | 0 |
+| 50 | 3 | 20 | 0.05 | false | 0 |
+| 50 | 3 | 20 | 0.15 | false | 0 |
+| 50 | 3 | 20 | 0.3 | false | 0 |
+| 50 | 3 | 60 | 0 | false | 0 |
+| 50 | 3 | 60 | 0.05 | false | 0 |
+| 50 | 3 | 60 | 0.15 | false | 0 |
+| 50 | 3 | 60 | 0.3 | false | 0 |
+| 50 | 3 | 150 | 0 | false | 0 |
+| 50 | 3 | 150 | 0.05 | false | 0 |
+| 50 | 3 | 150 | 0.15 | false | 0 |
+| 50 | 3 | 150 | 0.3 | false | 0 |
+| 50 | 5 | 20 | 0 | false | 0 |
+| 50 | 5 | 20 | 0.05 | false | 0 |
+| 50 | 5 | 20 | 0.15 | false | 0 |
+| 50 | 5 | 20 | 0.3 | false | 0 |
+| 50 | 5 | 60 | 0 | false | 0 |
+| 50 | 5 | 60 | 0.05 | false | 0 |
+| 50 | 5 | 60 | 0.15 | false | 0 |
+| 50 | 5 | 60 | 0.3 | false | 0 |
+| 50 | 5 | 150 | 0 | true | exact |
+| 50 | 5 | 150 | 0.05 | true | exact |
+| 50 | 5 | 150 | 0.15 | false | 0 |
+| 50 | 5 | 150 | 0.3 | false | 0 |
+| 50 | 10 | 20 | 0 | true | exact |
+| 50 | 10 | 20 | 0.05 | true | exact |
+| 50 | 10 | 20 | 0.15 | true | exact |
+| 50 | 10 | 20 | 0.3 | false | 0 |
+| 50 | 10 | 60 | 0 | true | exact |
+| 50 | 10 | 60 | 0.05 | true | exact |
+| 50 | 10 | 60 | 0.15 | true | exact |
+| 50 | 10 | 60 | 0.3 | false | 0 |
+| 50 | 10 | 150 | 0 | true | exact |
+| 50 | 10 | 150 | 0.05 | true | exact |
+| 50 | 10 | 150 | 0.15 | true | exact |
+| 50 | 10 | 150 | 0.3 | true | exact |
+
+### Conclusion
+
+41/108 exact recoveries. By subset size: size=2: 0/36, size=3: 19/36, size=5: 12/24, size=10: 10/12.
+
+## Results — Stage 1b (length variation)
+
+| nRows | subsetSize | trim | exact | partialOverlap |
+|---|---|---|---|---|
+| 10 | 3 | 0 | true | exact |
+| 10 | 3 | 0.15 | true | exact |
+| 10 | 3 | 0.3 | true | exact |
+| 10 | 5 | 0 | true | exact |
+| 10 | 5 | 0.15 | true | exact |
+| 10 | 5 | 0.3 | true | exact |
+| 20 | 3 | 0 | true | exact |
+| 20 | 3 | 0.15 | true | exact |
+| 20 | 3 | 0.3 | false | 0 |
+| 20 | 5 | 0 | true | exact |
+| 20 | 5 | 0.15 | true | exact |
+| 20 | 5 | 0.3 | true | exact |
+
+### Conclusion
+
+11/12 exact recoveries under independent trailing-gap trimming. Compare against Stage 1 baseline (trim=0.0 rows above) to isolate the effect of length variation alone.
+
+## Results — Stage 2a (3 groups in one zone)
+
+| sizeA | sizeB | groupA | groupB |
+|---|---|---|---|
+| 5 | 5 | missed | missed |
+| 3 | 8 | exact | exact |
+| 8 | 8 | exact | exact |
+
+### Conclusion
+
+At least one configuration failed to cleanly separate both groups — see table for which.
+
+## Results — Stage 2b (two independent zones)
+
+| zoneX | zoneY | distinctZones |
+|---|---|---|
+| exact | exact | true |
+
+### Conclusion
+
+Both independent row-subset zones recovered, at distinct non-overlapping column ranges as designed.
+
+
+---
+
+# Results (run 2026-09-11T23:34:02.506Z)
+
+## Results — Stage 0
+
+| nRows | len | mut | detected | nBlocks |
+|---|---|---|---|---|
+| 5 | 20 | 0 | true | 3 |
+| 5 | 20 | 0.05 | true | 2 |
+| 5 | 20 | 0.15 | true | 2 |
+| 5 | 20 | 0.3 | true | 3 |
+| 5 | 20 | 0.5 | false | 3 |
+| 5 | 60 | 0 | true | 2 |
+| 5 | 60 | 0.05 | true | 2 |
+| 5 | 60 | 0.15 | true | 2 |
+| 5 | 60 | 0.3 | true | 2 |
+| 5 | 60 | 0.5 | true | 2 |
+| 5 | 150 | 0 | true | 2 |
+| 5 | 150 | 0.05 | true | 2 |
+| 5 | 150 | 0.15 | true | 2 |
+| 5 | 150 | 0.3 | true | 2 |
+| 5 | 150 | 0.5 | true | 2 |
+| 10 | 20 | 0 | true | 2 |
+| 10 | 20 | 0.05 | true | 3 |
+| 10 | 20 | 0.15 | true | 4 |
+| 10 | 20 | 0.3 | true | 2 |
+| 10 | 20 | 0.5 | true | 2 |
+| 10 | 60 | 0 | true | 2 |
+| 10 | 60 | 0.05 | true | 2 |
+| 10 | 60 | 0.15 | true | 2 |
+| 10 | 60 | 0.3 | true | 2 |
+| 10 | 60 | 0.5 | true | 2 |
+| 10 | 150 | 0 | true | 2 |
+| 10 | 150 | 0.05 | true | 2 |
+| 10 | 150 | 0.15 | true | 2 |
+| 10 | 150 | 0.3 | true | 2 |
+| 10 | 150 | 0.5 | true | 2 |
+| 30 | 20 | 0 | true | 3 |
+| 30 | 20 | 0.05 | true | 3 |
+| 30 | 20 | 0.15 | true | 2 |
+| 30 | 20 | 0.3 | true | 3 |
+| 30 | 20 | 0.5 | true | 2 |
+| 30 | 60 | 0 | true | 2 |
+| 30 | 60 | 0.05 | true | 3 |
+| 30 | 60 | 0.15 | true | 2 |
+| 30 | 60 | 0.3 | true | 2 |
+| 30 | 60 | 0.5 | true | 2 |
+| 30 | 150 | 0 | true | 2 |
+| 30 | 150 | 0.05 | true | 2 |
+| 30 | 150 | 0.15 | true | 2 |
+| 30 | 150 | 0.3 | true | 2 |
+| 30 | 150 | 0.5 | true | 2 |
+
+### Conclusion
+
+Column separation fails at: nRows=5,len=20,mut=0.5.
+
+## Results — Stage 1
+
+| nRows | subsetSize | tailLen | mut | exact | partialOverlap |
+|---|---|---|---|---|---|
+| 10 | 2 | 20 | 0 | false | 2/2 |
+| 10 | 2 | 20 | 0.05 | false | 0 |
+| 10 | 2 | 20 | 0.15 | false | 0 |
+| 10 | 2 | 20 | 0.3 | false | 0 |
+| 10 | 2 | 60 | 0 | false | 0 |
+| 10 | 2 | 60 | 0.05 | false | 0 |
+| 10 | 2 | 60 | 0.15 | false | 0 |
+| 10 | 2 | 60 | 0.3 | false | 0 |
+| 10 | 2 | 150 | 0 | false | 0 |
+| 10 | 2 | 150 | 0.05 | false | 0 |
+| 10 | 2 | 150 | 0.15 | false | 0 |
+| 10 | 2 | 150 | 0.3 | false | 2/2 |
+| 10 | 3 | 20 | 0 | true | exact |
+| 10 | 3 | 20 | 0.05 | true | exact |
+| 10 | 3 | 20 | 0.15 | true | exact |
+| 10 | 3 | 20 | 0.3 | true | exact |
+| 10 | 3 | 60 | 0 | true | exact |
+| 10 | 3 | 60 | 0.05 | true | exact |
+| 10 | 3 | 60 | 0.15 | true | exact |
+| 10 | 3 | 60 | 0.3 | true | exact |
+| 10 | 3 | 150 | 0 | true | exact |
+| 10 | 3 | 150 | 0.05 | true | exact |
+| 10 | 3 | 150 | 0.15 | true | exact |
+| 10 | 3 | 150 | 0.3 | true | exact |
+| 20 | 2 | 20 | 0 | false | 0 |
+| 20 | 2 | 20 | 0.05 | false | 0 |
+| 20 | 2 | 20 | 0.15 | false | 0 |
+| 20 | 2 | 20 | 0.3 | false | 0 |
+| 20 | 2 | 60 | 0 | false | 0 |
+| 20 | 2 | 60 | 0.05 | false | 0 |
+| 20 | 2 | 60 | 0.15 | false | 0 |
+| 20 | 2 | 60 | 0.3 | false | 0 |
+| 20 | 2 | 150 | 0 | false | 0 |
+| 20 | 2 | 150 | 0.05 | false | 0 |
+| 20 | 2 | 150 | 0.15 | false | 0 |
+| 20 | 2 | 150 | 0.3 | false | 0 |
+| 20 | 3 | 20 | 0 | true | exact |
+| 20 | 3 | 20 | 0.05 | false | 0 |
+| 20 | 3 | 20 | 0.15 | false | 0 |
+| 20 | 3 | 20 | 0.3 | false | 0 |
+| 20 | 3 | 60 | 0 | true | exact |
+| 20 | 3 | 60 | 0.05 | true | exact |
+| 20 | 3 | 60 | 0.15 | false | 0 |
+| 20 | 3 | 60 | 0.3 | false | 0 |
+| 20 | 3 | 150 | 0 | true | exact |
+| 20 | 3 | 150 | 0.05 | true | exact |
+| 20 | 3 | 150 | 0.15 | true | exact |
+| 20 | 3 | 150 | 0.3 | false | 0 |
+| 20 | 5 | 20 | 0 | true | exact |
+| 20 | 5 | 20 | 0.05 | true | exact |
+| 20 | 5 | 20 | 0.15 | true | exact |
+| 20 | 5 | 20 | 0.3 | false | 0 |
+| 20 | 5 | 60 | 0 | true | exact |
+| 20 | 5 | 60 | 0.05 | false | 0 |
+| 20 | 5 | 60 | 0.15 | true | exact |
+| 20 | 5 | 60 | 0.3 | false | 0 |
+| 20 | 5 | 150 | 0 | true | exact |
+| 20 | 5 | 150 | 0.05 | true | exact |
+| 20 | 5 | 150 | 0.15 | true | exact |
+| 20 | 5 | 150 | 0.3 | true | exact |
+| 50 | 2 | 20 | 0 | false | 0 |
+| 50 | 2 | 20 | 0.05 | false | 0 |
+| 50 | 2 | 20 | 0.15 | false | 0 |
+| 50 | 2 | 20 | 0.3 | false | 0 |
+| 50 | 2 | 60 | 0 | false | 0 |
+| 50 | 2 | 60 | 0.05 | false | 0 |
+| 50 | 2 | 60 | 0.15 | false | 0 |
+| 50 | 2 | 60 | 0.3 | false | 0 |
+| 50 | 2 | 150 | 0 | false | 0 |
+| 50 | 2 | 150 | 0.05 | false | 0 |
+| 50 | 2 | 150 | 0.15 | false | 0 |
+| 50 | 2 | 150 | 0.3 | false | 0 |
+| 50 | 3 | 20 | 0 | false | 0 |
+| 50 | 3 | 20 | 0.05 | false | 0 |
+| 50 | 3 | 20 | 0.15 | false | 0 |
+| 50 | 3 | 20 | 0.3 | false | 0 |
+| 50 | 3 | 60 | 0 | false | 0 |
+| 50 | 3 | 60 | 0.05 | false | 0 |
+| 50 | 3 | 60 | 0.15 | false | 0 |
+| 50 | 3 | 60 | 0.3 | false | 0 |
+| 50 | 3 | 150 | 0 | false | 0 |
+| 50 | 3 | 150 | 0.05 | false | 0 |
+| 50 | 3 | 150 | 0.15 | false | 0 |
+| 50 | 3 | 150 | 0.3 | false | 0 |
+| 50 | 5 | 20 | 0 | false | 0 |
+| 50 | 5 | 20 | 0.05 | false | 0 |
+| 50 | 5 | 20 | 0.15 | false | 0 |
+| 50 | 5 | 20 | 0.3 | false | 0 |
+| 50 | 5 | 60 | 0 | false | 0 |
+| 50 | 5 | 60 | 0.05 | false | 0 |
+| 50 | 5 | 60 | 0.15 | false | 0 |
+| 50 | 5 | 60 | 0.3 | false | 0 |
+| 50 | 5 | 150 | 0 | true | exact |
+| 50 | 5 | 150 | 0.05 | true | exact |
+| 50 | 5 | 150 | 0.15 | false | 0 |
+| 50 | 5 | 150 | 0.3 | false | 0 |
+| 50 | 10 | 20 | 0 | false | 0 |
+| 50 | 10 | 20 | 0.05 | false | 0 |
+| 50 | 10 | 20 | 0.15 | false | 0 |
+| 50 | 10 | 20 | 0.3 | false | 0 |
+| 50 | 10 | 60 | 0 | true | exact |
+| 50 | 10 | 60 | 0.05 | true | exact |
+| 50 | 10 | 60 | 0.15 | false | 0 |
+| 50 | 10 | 60 | 0.3 | false | 0 |
+| 50 | 10 | 150 | 0 | true | exact |
+| 50 | 10 | 150 | 0.05 | true | exact |
+| 50 | 10 | 150 | 0.15 | true | exact |
+| 50 | 10 | 150 | 0.3 | false | 0 |
+
+### Conclusion
+
+34/108 exact recoveries. By subset size: size=2: 0/36, size=3: 18/36, size=5: 11/24, size=10: 5/12.
+
+## Results — Stage 1b (length variation)
+
+| nRows | subsetSize | trim | exact | partialOverlap |
+|---|---|---|---|---|
+| 10 | 3 | 0 | true | exact |
+| 10 | 3 | 0.15 | true | exact |
+| 10 | 3 | 0.3 | true | exact |
+| 10 | 5 | 0 | true | exact |
+| 10 | 5 | 0.15 | true | exact |
+| 10 | 5 | 0.3 | true | exact |
+| 20 | 3 | 0 | true | exact |
+| 20 | 3 | 0.15 | true | exact |
+| 20 | 3 | 0.3 | false | 0 |
+| 20 | 5 | 0 | true | exact |
+| 20 | 5 | 0.15 | true | exact |
+| 20 | 5 | 0.3 | true | exact |
+
+### Conclusion
+
+11/12 exact recoveries under independent trailing-gap trimming. Compare against Stage 1 baseline (trim=0.0 rows above) to isolate the effect of length variation alone.
+
+## Results — Stage 2a (3 groups in one zone)
+
+| sizeA | sizeB | groupA | groupB |
+|---|---|---|---|
+| 5 | 5 | missed | missed |
+| 3 | 8 | exact | exact |
+| 8 | 8 | exact | exact |
+
+### Conclusion
+
+At least one configuration failed to cleanly separate both groups — see table for which.
+
+## Results — Stage 2b (two independent zones)
+
+| zoneX | zoneY | distinctZones |
+|---|---|---|
+| exact | exact | true |
+
+### Conclusion
+
+Both independent row-subset zones recovered, at distinct non-overlapping column ranges as designed.
+
+## Real fix for _gapRowSplit false positives (2026-09-12), superseding the earlier singleton-display patch
+
+The earlier "singleton = not a claim" display fix (previous entry above) was
+correctly called out by the user as treating a symptom, not the actual
+algorithm defect. Root cause, confirmed directly on the real spurious group
+`[6,8,13,15,17]` at cols 216-223 of `mosaic_subset.aln.fa`: `_gapRowSplit`
+scores a candidate group's coherence via plain `blockCoherence`, which
+accepts ANY plurality (the single most common of 5 possible states -
+A/C/G/T/gap) as a column's "dominant" state. For a 5-row candidate group,
+a plurality of 2-4 out of 5 (40-80%) is unremarkable by pure chance (the
+pigeonhole effect of few rows over few categories, not real agreement) -
+confirmed the group showed exactly this at all 8 columns in range, yet
+averaging several such chance-level columns produced an aggregate score
+(0.60) that beat the whole subset's own coherence (0.69->wait, corrected
+value 0.5428 vs subset whole 0.6875 initially, then further corrected),
+clearing `MIN_SPLIT_GAIN` despite the group's rows sharing no real content.
+
+First attempt (flat 90%/80%/70% purity floor by group size, same values
+already used in `_findBestDiagnosticGroup`) was too blunt: it also floored
+out real Stage 1 signal at realistic mutation rates (41/108 -> 3/108 exact
+recovery - a large real regression), because a genuinely shared but
+mutated sequence does not clear 90% raw purity just because the group is
+small.
+
+Second attempt: compare a column's group purity against the RATE AT WHICH
+THE REST OF THE BLOCK ALREADY SHOWS THAT SAME STATE (enrichment over
+background, the same idea `_findBestDiagnosticGroup`'s inP/outP quality
+check already uses), with a flat 25-percentage-point margin. Still let the
+same spurious group through: confirmed the "rest" pool (9-10 rows) showed
+zero matches for the group's dominant state at most columns purely by
+chance (with 5 states and ~9 rows, ~13% chance per column of zero overlap
+is not rare), which trivially "enriches" any purity number above a flat
+25-point bar.
+
+**Final fix**: reuse `_findBestDiagnosticGroup`'s EXACT acceptance rule
+(same function, not just same threshold values) - a column counts only if
+either restMatch is exactly 0 (true exclusivity) or the in-group/out-group
+percentage-point margin clears the SAME size-scaled threshold already
+validated there (90/80/70). New helper `_strictGroupCoherence` +
+`_countStateInRows`, used only for `_gapRowSplit`'s own group scoring.
+
+**Result**: mosaic_subset.aln.fa row-split blocks: 18 -> 3 total (all
+earlier spurious groups gone, including the specific one the user asked
+about directly), with only the one real planted subgroup `[0,1,2,3,4]`
+remaining. Full synthetic sweep: Stage 0 43->44/45, Stage 1 41->34/108
+(real but modest cost - some borderline-real Stage 1 cases now also
+require the extra margin), Stage 1b unchanged (11/12), Stage 2a IMPROVED
+(the previously-missed 8-vs-8 balanced case now passes exactly), Stage 2b
+unchanged (still exact/exact/true). Net: closes a real false-positive
+source with one real, disclosed cost on borderline cases, not the earlier
+patches' pattern of trading one failure mode for another.

@@ -339,6 +339,87 @@
   // { rows: [...], residual: true } ], gain: <number> } (residual entry
   // omitted entirely if there are no leftover rows), or null per the
   // rejection rules above.
+  // How many rows in `otherRows` are in state `state` at `col` (gap inside
+  // a row's own span = real state 4, outside = missing/excluded) - used
+  // by _strictGroupCoherence to measure a column's BACKGROUND rate for a
+  // specific state, so a candidate group's purity can be judged against
+  // what the rest of the block already shows there, not an absolute bar.
+  function _countStateInRows(A, otherRows, col, state, spans) {
+    var count = 0;
+    for (var k = 0; k < otherRows.length; k++) {
+      var i = otherRows[k];
+      var sp = spans[i];
+      if (sp[0] === -1 || col < sp[0] || col > sp[1]) continue;
+      var v = A[i][col];
+      var s = (v === GAP) ? 4 : v;
+      if (s === state) count++;
+    }
+    return count;
+  }
+
+  // Same shape as blockCoherence (mean per-column purity), but a column
+  // only counts toward a candidate group's score if the group's purity
+  // there is meaningfully ENRICHED over the rest of the block's own rate
+  // for that same state - not just an absolute purity floor, which
+  // measured directly to be the wrong lever (a flat 90% threshold killed
+  // real Stage 1 signal at realistic mutation rates just as readily as it
+  // killed noise). Plain blockCoherence accepts any plurality (the most
+  // common of 5 possible states - A/C/G/T/gap) as "dominant," no matter
+  // how weak - for a SMALL candidate group this is a real bug: confirmed
+  // directly that a 5-row group can show per-column pluralities of just
+  // 2-4 out of 5 (40-80%) at EVERY column, each unremarkable by chance
+  // alone with 5 rows over 5 states (the pigeonhole effect, not real
+  // agreement) - averaged across several such columns it can still beat
+  // the whole block's own mediocre coherence, with the group's rows
+  // sharing no real content. The fix compares group purity against how
+  // often the REST of the block already shows that exact state at that
+  // column (the same enrichment/leakage idea _findBestDiagnosticGroup
+  // already uses, applied here to _gapRowSplit's own scoring): a real
+  // signal is enriched well above background; noise from a small alphabet
+  // is not, regardless of its raw purity number.
+  function _strictGroupCoherence(A, groupRows, colStart, colEnd, spans, P, allRows) {
+    var groupSet = {};
+    for (var gi = 0; gi < groupRows.length; gi++) groupSet[groupRows[gi]] = true;
+    var restRows = [];
+    for (var ri = 0; ri < allRows.length; ri++) {
+      if (!groupSet[allRows[ri]]) restRows.push(allRows[ri]);
+    }
+    // Size-scaled quality threshold, same values and same reasoning as
+    // _findBestDiagnosticGroup uses (ported from this app's own Cluster
+    // Now feature) - measured directly that a much looser flat 25-point
+    // margin still let noise through: a small group can show zero matches
+    // in a modestly-sized "rest" pool by pure chance alone (9 rest rows,
+    // 5 possible states, ~13% chance per column of zero overlap), which
+    // is not remotely the same as 70-90 percentage points of real margin.
+    var gsize = groupRows.length;
+    var thresh = gsize < 11 ? 90 : gsize < 20 ? 80 : 70;
+
+    var sum = 0, n = 0;
+    for (var col = colStart; col <= colEnd; col++) {
+      var cs = columnStats(A, groupRows, col, spans);
+      if (cs.covered < P.MIN_COL_COVERAGE) continue;
+      var groupPurity = cs.dominantCount / cs.covered;
+
+      var restMatch = _countStateInRows(A, restRows, col, cs.dominant, spans);
+      var restCovered = 0;
+      for (var rr = 0; rr < restRows.length; rr++) {
+        var sp = spans[restRows[rr]];
+        if (sp[0] !== -1 && col >= sp[0] && col <= sp[1]) restCovered++;
+      }
+      var restRate = restCovered > 0 ? restMatch / restCovered : 0;
+
+      var inP = groupPurity * 100;
+      var outP = restRate * 100;
+      var qual = Math.max(0, inP - outP);
+      var isPerfect = (restMatch === 0 && restCovered > 0);
+      if (!isPerfect && qual < thresh) continue; // not enough real margin over background - don't count this column
+
+      sum += groupPurity;
+      n++;
+    }
+    return n === 0 ? null : sum / n;
+  }
+
   // Gap-clustering row split: scores each row by its OVERALL match-rate to
   // the dominant state, averaged across every qualifying column in range.
   // Works when one group shares a genuinely different whole-window pattern
@@ -455,14 +536,20 @@
     }
     if (largestGroup < 0.4 * rows.length) return null;
 
-    // Compute weighted-average coherence of accepted groups
+    // Compute weighted-average coherence of accepted groups, using
+    // _strictGroupCoherence rather than plain blockCoherence - see its
+    // comment for the exact bug this closes (confirmed directly on real
+    // output: a 5-row group with real per-column agreement of only 2-4
+    // out of 5 - unremarkable for 5 rows over a 5-symbol alphabet, pure
+    // pigeonhole chance - averaged into an apparently-high aggregate
+    // score with no real shared sequence behind it at all).
     var wholeBlockCoherence = blockCoherence(A, rows, colStart, colEnd, spans, P);
     if (wholeBlockCoherence === null) wholeBlockCoherence = 0;
 
     var totalWeight = 0, weightedSum = 0;
     for (var g = 0; g < acceptedGroups.length; g++) {
       var groupRows = acceptedGroups[g].map(function(x) { return x.idx; });
-      var coh = blockCoherence(A, groupRows, colStart, colEnd, spans, P);
+      var coh = _strictGroupCoherence(A, groupRows, colStart, colEnd, spans, P, rows);
       if (coh === null) coh = 0;
       weightedSum += groupRows.length * coh;
       totalWeight += groupRows.length;
