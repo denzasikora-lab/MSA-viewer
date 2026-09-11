@@ -6507,6 +6507,38 @@ function applyBlockMaskLive(presetOrParams) {
     return state.blockMask;
 }
 
+// Live compute for the new row/column-symmetric biclustering algorithm
+// (block-bicluster.js) - separate from the reference-row block-mask
+// above, reuses the SAME overlay renderer (renderBlockMaskOverlay) since
+// both produce the same { blocks: [{col_start,col_end,rows,...}],
+// row_headers } shape. computeBiclusterMask's blocks carry `.coherence`
+// (a float or null) rather than block-mask's categorical `.type` -
+// bucket coherence into the same BLOCKMASK_COLORS keys so the existing
+// renderer needs no changes: high coherence reads as CONSERVATIVE
+// (green), medium as MOSAIC (amber), low/unscoreable as DIVERGENT (gray).
+function _biclusterCoherenceToType(coherence) {
+    if (coherence == null) return 'DIVERGENT';
+    if (coherence >= 0.85) return 'CONSERVATIVE';
+    if (coherence >= 0.6) return 'MOSAIC';
+    return 'DIVERGENT';
+}
+
+function applyBiclusterLive() {
+    if (typeof BlockBicluster === 'undefined') { showMessage('block-bicluster.js not loaded', 3000); return null; }
+    if (!state.seqs || !state.seqs.length) { showMessage('Load an alignment first', 3000); return null; }
+    const fasta = state.seqs.map(s => '>' + s.header + '\n' + s.seq).join('\n') + '\n';
+    const raw = BlockBicluster.computeBiclusterMask(fasta, {});
+    raw.blocks.forEach(b => { b.type = _biclusterCoherenceToType(b.coherence); });
+    state.blockMask = raw;
+    state._blockMaskPreset = null;
+    renderBlockMaskOverlay();
+    return state.blockMask;
+}
+
+function computeAndShowBicluster() {
+    _blockMaskStatusFrom(applyBiclusterLive());
+}
+
 // Panel action: compute from the loaded alignment using the selected preset
 // and report a short summary (block count, split zones, any scattered groups).
 // The eight "squint" knobs, with the panel slider id for each. The sliders
@@ -15308,6 +15340,8 @@ function initializeAppUI() {
         'blockMaskComputeButton': computeAndShowBlockMask,
         'blockMaskClearButton': () => { clearBlockMask(); const s = el('blockMaskStatus'); if (s) s.textContent = ''; },
         'blockMaskGroupButton': groupRowsByBlockMask,
+        'biclusterComputeButton': computeAndShowBicluster,
+        'biclusterClearButton': () => { clearBlockMask(); const s = el('blockMaskStatus'); if (s) s.textContent = ''; },
         'savePresetButton': savePreset,
         'loadPresetButton': loadPreset,
         'snapshotCreateTopButton': createSnapshot,

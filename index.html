@@ -452,6 +452,13 @@
                                         <input type="range" id="blockMaskOpacity" min="0.1" max="0.9" step="0.05" value="0.45" style="flex: 1;">
                                     </label>
                                     <div id="blockMaskStatus" style="font-size: 10px; color: #555; margin-top: 4px; min-height: 12px;"></div>
+                                    <div style="border-top: 1px dashed #ccc; margin-top: 8px; padding-top: 6px;">
+                                        <div style="font-size: 10px; font-weight: bold; color: #555; margin-bottom: 4px;" title="Experimental: no reference row, no fixed zones. Splits by row OR column, whichever most improves internal agreement, recursively. Shares this same overlay - Show replaces whatever mask is currently displayed.">Bicluster (experimental, no reference row)</div>
+                                        <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                            <button id="biclusterComputeButton" style="flex: 1; min-width: 70px; height: 22px; font-size: 10px; background: #0d9488; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Compute the bicluster mask from the currently loaded alignment and overlay it">Show bicluster</button>
+                                            <button id="biclusterClearButton" style="height: 22px; font-size: 10px;" title="Remove the overlay">Clear</button>
+                                        </div>
+                                    </div>
                                     <details style="margin-top: 4px;">
                                         <summary style="font-size: 10px; color: #555; cursor: pointer;">Advanced (squint knobs)</summary>
                                         <div style="display: flex; flex-direction: column; gap: 2px; margin-top: 4px; font-size: 10px;" title="Same eight knobs the V1-V5 presets set. Move one and release to recompute the mask.">
@@ -1152,6 +1159,7 @@ B: -</pre>
     <script src="script.js?v=186"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
+    <script src="block-bicluster.js?v=1"></script>
     <script>
     // All functionality moved to script.js
     </script>
