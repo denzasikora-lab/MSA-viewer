@@ -363,6 +363,59 @@ html {
     pointer-events: auto;
 }
 
+/* Detachable panel: a dedicated drag handle (grip + title) at the top of a
+   control-group. Deliberately its own element with no other function, so
+   pressing and dragging anywhere on it can never collide with a real
+   control. See makeControlGroupDetachable() in script.js. */
+.panel-detach-handle {
+    cursor: grab;
+    user-select: none;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: bold;
+    color: #555;
+    padding: 5px 10px;
+    margin: -15px -15px 8px -15px;
+    background: #f2f4f6;
+    border-bottom: 1px solid #ddd;
+    border-radius: 3px 3px 0 0;
+}
+.panel-detach-handle:active {
+    cursor: grabbing;
+}
+.panel-detach-grip {
+    letter-spacing: -2px;
+    color: #999;
+}
+.panel-dock-btn {
+    display: none;
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: normal;
+    color: #2a6fb0;
+    cursor: pointer;
+    padding: 1px 6px;
+    border: 1px solid #bcd4ec;
+    border-radius: 3px;
+    background: #eaf2fb;
+}
+.panel-dock-btn:hover {
+    background: #dcebfa;
+}
+/* While detached, ignore the hover-driven open/close machinery entirely -
+   fixed positioning + explicit display, independent of .menu-open. */
+.control-group.detached {
+    position: fixed !important;
+    display: block !important;
+    z-index: 100000 !important;
+    max-height: 85vh;
+}
+.control-group.detached .panel-dock-btn {
+    display: inline-block;
+}
+
 /* Raise active menu above neighbours */
 #controls .menu-section.menu-open,
 .menu-section:has(.control-group:hover),

@@ -1669,6 +1669,70 @@ function openMenuSection(section) {
     section.classList.add('menu-open');
 }
 
+function makeControlGroupDetachable(sectionId, controlGroupId, handleId, dockButtonId) {
+    const section = document.getElementById(sectionId);
+    const group = document.getElementById(controlGroupId);
+    const handle = document.getElementById(handleId);
+    const dockBtn = document.getElementById(dockButtonId);
+    if (!section || !group || !handle || !dockBtn) {
+        return;
+    }
+
+    let dragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let groupStartX = 0;
+    let groupStartY = 0;
+
+    handle.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.panel-dock-btn')) {
+            return;
+        }
+        e.preventDefault();
+        if (!group.classList.contains('detached')) {
+            const rect = group.getBoundingClientRect();
+            group.classList.add('detached');
+            group.style.left = rect.left + 'px';
+            group.style.top = rect.top + 'px';
+            group.style.margin = '0';
+            section.classList.add('menu-open');
+            if (typeof clearMenuCloseDelay === 'function') {
+                clearMenuCloseDelay(section);
+            }
+        }
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        groupStartX = parseFloat(group.style.left) || 0;
+        groupStartY = parseFloat(group.style.top) || 0;
+        dragging = true;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) {
+            return;
+        }
+        const dx = e.clientX - dragStartX;
+        const dy = e.clientY - dragStartY;
+        group.style.left = Math.min(Math.max(groupStartX + dx, -group.offsetWidth + 60), window.innerWidth - 60) + 'px';
+        group.style.top = Math.min(Math.max(groupStartY + dy, 0), window.innerHeight - 30) + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        dragging = false;
+    });
+
+    dockBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        group.classList.remove('detached');
+        group.style.left = '';
+        group.style.top = '';
+        group.style.margin = '';
+        if (!section.matches(':hover')) {
+            section.classList.remove('menu-open');
+        }
+    });
+}
+
 function setupMenuStability() {
     const menuSections = document.querySelectorAll('.menu-section');
     menuSections.forEach(section => {
@@ -1715,6 +1779,7 @@ function setupMenuStability() {
             });
         }
     });
+    makeControlGroupDetachable('clustering-menu-section', 'clustering-controls', 'clusteringDetachHandle', 'clusteringDockButton');
 }
 
 function updateSliderBackground(slider) {
