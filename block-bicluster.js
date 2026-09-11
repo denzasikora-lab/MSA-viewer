@@ -15,9 +15,10 @@
  * A/C/G/T. See reference/BICLUSTER_ALGORITHM_NOTES.md for the full
  * research this implements — read it before changing the formulas below.
  *
- * Pure functions, no DOM. Mirrors reference/block_bicluster.py exactly
- * (same names in snake_case) for the parity test in
- * tests/bicluster/parity.js — change both together.
+ * Pure functions, no DOM. NOTE: reference/block_bicluster.py and
+ * tests/bicluster/parity.js do NOT exist yet (that Python mirror is a
+ * planned future step, not a current file — do not go looking for it).
+ * The only oracle right now is tests/bicluster/oracle.js.
  */
 (function (root) {
   'use strict';
@@ -29,7 +30,8 @@
     MIN_COL_COVERAGE: 3,     // a column needs >= this many covered rows to count toward coherence
     MIN_BLOCK_ROWS: 3,       // a block (or a split-off row group) smaller than this is never accepted
     MIN_BLOCK_COLS: 8,       // a block (or a split-off column range) narrower than this is never accepted
-    MIN_SPLIT_GAIN: 0.05,    // a split must improve weighted coherence by at least this much to be taken
+    MIN_SPLIT_GAIN: 0.05,    // bestRowSplit: absolute coherence gain of the accepted groups over the whole
+    MIN_VARIANCE_REDUCTION: 0.15, // bestColumnSplit: fractional reduction in column-purity variance (see its comment for why this is a different scale from MIN_SPLIT_GAIN)
     MERGE_TOLERANCE: 0.05    // two adjacent same-row leaves merge if doing so costs less than this
   };
 
@@ -208,20 +210,35 @@
       }
     }
 
-    // Build prefix sums for O(1) sub-range mean lookup
+    // Build prefix sums (count, sum, sum-of-squares) for O(1) sub-range
+    // mean AND variance lookup. NOTE ON THE GAIN METRIC: a weighted
+    // average of two partitions' means is, by definition, always close to
+    // the whole's own mean (exactly equal but for coverage-cutoff edge
+    // effects) -- "does the mean improve" is not a real split criterion
+    // for a partition of a mean and is near-zero for every candidate
+    // split. The actual criterion (same shape as CART/ANOVA recursive
+    // partitioning, and the reason Cheng-Church's own coherence score is
+    // residual/variance-based, not a plain mean) is VARIANCE REDUCTION:
+    // does separating the range into two parts make each part more
+    // internally uniform than the mixed whole was? That's a real,
+    // non-trivial quantity that a genuine boundary (like a conserved
+    // core next to a divergent flank) actually clears and noise doesn't.
     var prefixCount = new Array(width);
-    var prefixPurity = new Array(width);
-    var rc = 0, rp = 0;
+    var prefixSum = new Array(width);
+    var prefixSumSq = new Array(width);
+    var rc = 0, rp = 0, rp2 = 0;
     for (var i = 0; i < width; i++) {
-      if (qual[i]) { rc++; rp += purity[i]; }
+      if (qual[i]) { rc++; rp += purity[i]; rp2 += purity[i] * purity[i]; }
       prefixCount[i] = rc;
-      prefixPurity[i] = rp;
+      prefixSum[i] = rp;
+      prefixSumSq[i] = rp2;
     }
     var totalQual = rc;
-    var totalPurity = rp;
-
-    var wholeBlockCoherence = blockCoherence(A, rows, colStart, colEnd, spans, P);
-    if (wholeBlockCoherence === null) wholeBlockCoherence = 0;
+    var totalSum = rp;
+    var totalSumSq = rp2;
+    if (totalQual === 0) return null;
+    var wholeMean = totalSum / totalQual;
+    var wholeVariance = (totalSumSq / totalQual) - (wholeMean * wholeMean);
 
     var bestSplit = -1, bestGain = -Infinity;
     for (var s = 0; s < width - 1; s++) {
@@ -231,13 +248,19 @@
 
       var leftCount = prefixCount[s];
       var rightCount = totalQual - leftCount;
-      if (leftCount === 0 || rightCount === 0) continue; // null mean disqualifies
+      if (leftCount === 0 || rightCount === 0) continue; // a null-mean side disqualifies this split
 
-      var leftMean = prefixPurity[s] / leftCount;
-      var rightMean = (totalPurity - prefixPurity[s]) / rightCount;
+      var leftMean = prefixSum[s] / leftCount;
+      var rightMean = (totalSum - prefixSum[s]) / rightCount;
+      var leftVar = (prefixSumSq[s] / leftCount) - (leftMean * leftMean);
+      var rightVar = ((totalSumSq - prefixSumSq[s]) / rightCount) - (rightMean * rightMean);
 
-      var weightedAvg = (leftMean * leftWidth + rightMean * rightWidth) / (leftWidth + rightWidth);
-      var gain = weightedAvg - wholeBlockCoherence;
+      var weightedVar = (leftVar * leftCount + rightVar * rightCount) / totalQual;
+      // Fractional variance reduction: scale-invariant, so one threshold
+      // (P.MIN_SPLIT_GAIN, read as "reduce variance by at least this
+      // fraction") works regardless of how spread out purity happens to
+      // be in a given alignment.
+      var gain = wholeVariance > 1e-9 ? (wholeVariance - weightedVar) / wholeVariance : 0;
 
       if (gain > bestGain) {
         bestGain = gain;
@@ -245,7 +268,7 @@
       }
     }
 
-    if (bestSplit === -1 || bestGain < P.MIN_SPLIT_GAIN) return null;
+    if (bestSplit === -1 || bestGain < P.MIN_VARIANCE_REDUCTION) return null;
     return { splitCol: colStart + bestSplit, gain: bestGain };
   }
 
@@ -271,7 +294,7 @@
   // gap-clustering algorithm as clusterByValue in block-mask.js - CALL
   // THAT FUNCTION, do not reimplement it; it already takes a P object
   // with ROW_MIN_GAP_ABS / ROW_MIN_GAP_RATIO / ROW_MIN_GROUP - use
-  // P.MIN_BLOCK_ROWS as its ROW_MIN_GROUP, and reasonable defaults 0.15 /
+  // P.MIN_BLOCK_ROWS as its ROW_MIN_GROUP, and reasonable defaults 0.08 /
   // 2.5 for the other two if not present on P).
   //
   // Keep only resulting groups with length >= P.MIN_BLOCK_ROWS. If fewer
@@ -317,7 +340,14 @@
         var state = (v === GAP) ? 4 : v;
         if (state === cs.dominant) matches++;
       }
-      if (positions === 0) {
+      // A rate computed from only a handful of positions is coarse and
+      // discrete (e.g. with 3 positions the only possible values are
+      // 0, .33, .67, 1 - adjacent sorted values can differ by .33 purely
+      // from small-N discreteness, faking a "gap" the clustering mistakes
+      // for a real split). Require a minimum sample size before trusting
+      // a row's rate at all - excluded, not defaulted, same as zero
+      // positions.
+      if (positions < 5) {
         excludedRows.push(i);
       } else {
         rowRates.push({ idx: i, rate: matches / positions });
@@ -327,7 +357,7 @@
     if (rowRates.length === 0) return null;
 
     // Gap-cluster the (rowIndex, matchRate) pairs
-    var minGapAbs = (P.ROW_MIN_GAP_ABS != null) ? P.ROW_MIN_GAP_ABS : 0.15;
+    var minGapAbs = (P.ROW_MIN_GAP_ABS != null) ? P.ROW_MIN_GAP_ABS : 0.12;
     var minGapRatio = (P.ROW_MIN_GAP_RATIO != null) ? P.ROW_MIN_GAP_RATIO : 2.5;
     var minGroup = P.MIN_BLOCK_ROWS;
 
@@ -379,6 +409,20 @@
     }
 
     if (acceptedGroups.length < 2) return null;
+
+    // Reject a split where NO group holds a majority of the block's own
+    // rows: fragmenting everyone into several similarly-sized small
+    // groups (e.g. 3/4/5/4 of 16) with no dominant remainder is exactly
+    // the signature of clustering pure noise (independent random
+    // sequences getting arbitrarily bucketed) rather than finding a real
+    // "most copies share X, a genuine minority differs" structure - every
+    // real planted case in this codebase's own test fixtures leaves a
+    // clear majority group (e.g. 12 of 20, 24 of 30).
+    var largestGroup = 0;
+    for (var gi = 0; gi < acceptedGroups.length; gi++) {
+      if (acceptedGroups[gi].length > largestGroup) largestGroup = acceptedGroups[gi].length;
+    }
+    if (largestGroup < 0.4 * rows.length) return null;
 
     // Compute weighted-average coherence of accepted groups
     var wholeBlockCoherence = blockCoherence(A, rows, colStart, colEnd, spans, P);
