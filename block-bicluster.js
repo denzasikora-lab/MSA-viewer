@@ -36,7 +36,9 @@
     HAPLOTYPE_MAX_PURITY: 0.85,   // a column counts as "diagnostic" for haplotype clustering if its dominant-state purity is below this (i.e. it's genuinely polymorphic, not just noisy)
     HAPLOTYPE_MIN_INFO_COLS: 8,   // need at least this many diagnostic columns before haplotype clustering is attempted at all - fewer than this and a small row sample can always be bipartitioned to look clean on those same columns by pure look-elsewhere overfitting (measured: 4 was not enough, produced false splits on a uniform 16-row test fixture)
     HAPLOTYPE_MIN_GAIN: 0.2,      // scored against diagnostic columns ONLY (see _columnListCoherence), not the whole window, so this is NOT on the same scale as MIN_SPLIT_GAIN - measured against both a real 48-row biological split (gain 0.22) and small-sample noise on a 16-row uniform fixture (gain up to 0.19), this threshold alone sits between them but is a thin margin - HAPLOTYPE_MIN_USABLE_ROWS below is the primary noise guard, this is a secondary one
-    HAPLOTYPE_MIN_USABLE_ROWS: 20 // below this many rows with real data at the diagnostic columns, a clean-looking 2-way split is too easily found by chance (measured: small samples of ~16 rows produced gain up to 0.19 on a uniform/noise fixture; real biological structure recovered here used 48 rows) - this is the primary guard against overfitting on small blocks, not a claim that real structure can't exist in fewer rows
+    HAPLOTYPE_MIN_USABLE_ROWS: 20, // below this many rows with real data at the diagnostic columns, a clean-looking 2-way split is too easily found by chance (measured: small samples of ~16 rows produced gain up to 0.19 on a uniform/noise fixture; real biological structure recovered here used 48 rows) - this is the primary guard against overfitting on small blocks, not a claim that real structure can't exist in fewer rows
+    WINDOW_SCAN_WIDTH: 64,   // _windowedRowSplitScan: width of each sliding sub-window tried when a wide range's row-split methods find nothing - measured root cause: a wide range can carry FAR more diagnostic columns than the one real signal (e.g. 196 across a 1274-col real block vs 12 belonging to the real 66-col signal), and _haplotypeRowSplit/_diagnosticRowSplit both build their state vectors/candidates from ALL diagnostic columns in whatever range they're given, so unrelated columns elsewhere dilute/outcompete the real one. A narrower window restricts the diagnostic-column pool back down to just that window's own columns.
+    WINDOW_SCAN_MAX: 60      // cap on how many windows a single _windowedRowSplitScan call will try, so cost stays bounded - this scan only runs at all when the plain whole-range column/row splits both already failed
   };
 
   function resolveParams(params) {
@@ -967,6 +969,49 @@
   //    and return whatever leaves have been produced so far plus the
   //    remaining un-split blocks as single leaves.
   //
+  // When a wide range's row-split methods find nothing even though a real
+  // row-split signal exists somewhere narrower inside it, the cause is
+  // dilution: _haplotypeRowSplit/_diagnosticRowSplit both build their
+  // diagnostic-column pool from EVERY qualifying column in whatever range
+  // they're given, and a wide range can carry far more of those than the
+  // one real signal belongs to (measured on real data: 196 diagnostic
+  // columns across a 1274-col block that was mostly just "coherent
+  // enough on average," only 12 of which belonged to the actual 66-col
+  // haplotype split - the other 184 outcompeted/diluted it). Scan a
+  // sliding window of P.WINDOW_SCAN_WIDTH columns (P.WINDOW_SCAN_MAX
+  // windows max, 50% overlap) across the range, calling bestRowSplit on
+  // each window alone so its diagnostic-column pool is restricted back
+  // down to just that window. Returns the single best-gain result found,
+  // paired with the window it came from, or null.
+  function _windowedRowSplitScan(A, rows, colStart, colEnd, spans, P) {
+    var totalWidth = colEnd - colStart + 1;
+    var winWidth = P.WINDOW_SCAN_WIDTH;
+    if (totalWidth <= winWidth) return null; // whole range already tried by the caller
+
+    var step = Math.max(1, Math.floor(winWidth / 2));
+    var best = null, bestWinStart = -1, bestWinEnd = -1;
+    var winStart = colStart;
+    var tried = 0;
+
+    while (winStart <= colEnd && tried < P.WINDOW_SCAN_MAX) {
+      var winEnd = Math.min(winStart + winWidth - 1, colEnd);
+      if (winEnd - winStart + 1 >= P.MIN_BLOCK_COLS) {
+        var result = bestRowSplit(A, rows, winStart, winEnd, spans, P);
+        if (result && (!best || result.gain > best.gain)) {
+          best = result;
+          bestWinStart = winStart;
+          bestWinEnd = winEnd;
+        }
+      }
+      tried++;
+      if (winEnd >= colEnd) break;
+      winStart += step;
+    }
+
+    if (!best) return null;
+    return { rowSplit: best, winStart: bestWinStart, winEnd: bestWinEnd };
+  }
+
   // Return: a flat array of leaf objects, each { rows: [...], colStart,
   // colEnd, coherence }.
   function splitAndMerge(A, rows, colStart, colEnd, spans, P) {
@@ -991,8 +1036,29 @@
       rowSplit = bestRowSplit(A, rows, colStart, colEnd, spans, P);
     }
 
-    // Step 3: neither found a real split
+    // Step 3: neither found a real split at the full range - before
+    // giving up, check whether a narrower window inside this range hides
+    // a row-split signal that the full range's diagnostic-column dilution
+    // was hiding (see _windowedRowSplitScan's comment). Only tried here,
+    // not on every call, to keep the extra cost bounded to genuinely
+    // stuck cases.
     if (!colSplit && !rowSplit) {
+      var windowed = (colEnd - colStart + 1) >= 2 * P.MIN_BLOCK_COLS
+        ? _windowedRowSplitScan(A, rows, colStart, colEnd, spans, P)
+        : null;
+      if (windowed) {
+        var wLeaves = [];
+        if (windowed.winStart > colStart) {
+          wLeaves = wLeaves.concat(splitAndMerge(A, rows, colStart, windowed.winStart - 1, spans, P));
+        }
+        for (var wg = 0; wg < windowed.rowSplit.groups.length; wg++) {
+          wLeaves = wLeaves.concat(splitAndMerge(A, windowed.rowSplit.groups[wg].rows, windowed.winStart, windowed.winEnd, spans, P));
+        }
+        if (windowed.winEnd < colEnd) {
+          wLeaves = wLeaves.concat(splitAndMerge(A, rows, windowed.winEnd + 1, colEnd, spans, P));
+        }
+        return wLeaves;
+      }
       _splitLeafCount++;
       return [{ rows: rows.slice(), colStart: colStart, colEnd: colEnd, coherence: blockCoherence(A, rows, colStart, colEnd, spans, P) }];
     }

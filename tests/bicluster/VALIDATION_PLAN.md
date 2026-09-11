@@ -763,3 +763,259 @@ outliers. This matches the algorithm's own output shape for this region (a
 mix of small ~3-row groups, a couple of larger 11/12/22-row groups, and
 several `coh=null`/tiny residual leaves) - the fragmentation here is real
 substructure, not noise, confirmed independently of the algorithm's own score.
+
+
+---
+
+# Results (run 2026-09-11T22:52:59.576Z)
+
+## Results — Stage 0
+
+| nRows | len | mut | detected | nBlocks |
+|---|---|---|---|---|
+| 5 | 20 | 0 | true | 3 |
+| 5 | 20 | 0.05 | true | 2 |
+| 5 | 20 | 0.15 | true | 2 |
+| 5 | 20 | 0.3 | true | 3 |
+| 5 | 20 | 0.5 | false | 3 |
+| 5 | 60 | 0 | true | 2 |
+| 5 | 60 | 0.05 | true | 2 |
+| 5 | 60 | 0.15 | true | 2 |
+| 5 | 60 | 0.3 | true | 2 |
+| 5 | 60 | 0.5 | true | 2 |
+| 5 | 150 | 0 | true | 2 |
+| 5 | 150 | 0.05 | true | 2 |
+| 5 | 150 | 0.15 | true | 2 |
+| 5 | 150 | 0.3 | true | 2 |
+| 5 | 150 | 0.5 | true | 2 |
+| 10 | 20 | 0 | true | 2 |
+| 10 | 20 | 0.05 | true | 3 |
+| 10 | 20 | 0.15 | true | 4 |
+| 10 | 20 | 0.3 | true | 2 |
+| 10 | 20 | 0.5 | true | 2 |
+| 10 | 60 | 0 | true | 2 |
+| 10 | 60 | 0.05 | true | 2 |
+| 10 | 60 | 0.15 | true | 2 |
+| 10 | 60 | 0.3 | true | 2 |
+| 10 | 60 | 0.5 | true | 2 |
+| 10 | 150 | 0 | true | 2 |
+| 10 | 150 | 0.05 | true | 2 |
+| 10 | 150 | 0.15 | true | 2 |
+| 10 | 150 | 0.3 | true | 2 |
+| 10 | 150 | 0.5 | true | 2 |
+| 30 | 20 | 0 | false | 6 |
+| 30 | 20 | 0.05 | true | 3 |
+| 30 | 20 | 0.15 | true | 2 |
+| 30 | 20 | 0.3 | true | 3 |
+| 30 | 20 | 0.5 | true | 2 |
+| 30 | 60 | 0 | true | 2 |
+| 30 | 60 | 0.05 | true | 3 |
+| 30 | 60 | 0.15 | true | 2 |
+| 30 | 60 | 0.3 | true | 2 |
+| 30 | 60 | 0.5 | true | 2 |
+| 30 | 150 | 0 | true | 2 |
+| 30 | 150 | 0.05 | true | 2 |
+| 30 | 150 | 0.15 | true | 2 |
+| 30 | 150 | 0.3 | true | 2 |
+| 30 | 150 | 0.5 | true | 2 |
+
+### Conclusion
+
+Column separation fails at: nRows=5,len=20,mut=0.5; nRows=30,len=20,mut=0.
+
+## Results — Stage 1
+
+| nRows | subsetSize | tailLen | mut | exact | partialOverlap |
+|---|---|---|---|---|---|
+| 10 | 2 | 20 | 0 | false | 2/2 |
+| 10 | 2 | 20 | 0.05 | false | 0 |
+| 10 | 2 | 20 | 0.15 | false | 0 |
+| 10 | 2 | 20 | 0.3 | false | 0 |
+| 10 | 2 | 60 | 0 | false | 0 |
+| 10 | 2 | 60 | 0.05 | false | 0 |
+| 10 | 2 | 60 | 0.15 | false | 0 |
+| 10 | 2 | 60 | 0.3 | false | 0 |
+| 10 | 2 | 150 | 0 | false | 0 |
+| 10 | 2 | 150 | 0.05 | false | 0 |
+| 10 | 2 | 150 | 0.15 | false | 0 |
+| 10 | 2 | 150 | 0.3 | false | 2/2 |
+| 10 | 3 | 20 | 0 | true | exact |
+| 10 | 3 | 20 | 0.05 | false | 3/3 |
+| 10 | 3 | 20 | 0.15 | true | exact |
+| 10 | 3 | 20 | 0.3 | false | 3/3 |
+| 10 | 3 | 60 | 0 | true | exact |
+| 10 | 3 | 60 | 0.05 | true | exact |
+| 10 | 3 | 60 | 0.15 | true | exact |
+| 10 | 3 | 60 | 0.3 | true | exact |
+| 10 | 3 | 150 | 0 | true | exact |
+| 10 | 3 | 150 | 0.05 | true | exact |
+| 10 | 3 | 150 | 0.15 | true | exact |
+| 10 | 3 | 150 | 0.3 | true | exact |
+| 20 | 2 | 20 | 0 | false | 0 |
+| 20 | 2 | 20 | 0.05 | false | 0 |
+| 20 | 2 | 20 | 0.15 | false | 0 |
+| 20 | 2 | 20 | 0.3 | false | 0 |
+| 20 | 2 | 60 | 0 | false | 0 |
+| 20 | 2 | 60 | 0.05 | false | 0 |
+| 20 | 2 | 60 | 0.15 | false | 0 |
+| 20 | 2 | 60 | 0.3 | false | 0 |
+| 20 | 2 | 150 | 0 | false | 0 |
+| 20 | 2 | 150 | 0.05 | false | 0 |
+| 20 | 2 | 150 | 0.15 | false | 0 |
+| 20 | 2 | 150 | 0.3 | false | 0 |
+| 20 | 3 | 20 | 0 | true | exact |
+| 20 | 3 | 20 | 0.05 | true | exact |
+| 20 | 3 | 20 | 0.15 | false | 0 |
+| 20 | 3 | 20 | 0.3 | false | 0 |
+| 20 | 3 | 60 | 0 | true | exact |
+| 20 | 3 | 60 | 0.05 | true | exact |
+| 20 | 3 | 60 | 0.15 | false | 0 |
+| 20 | 3 | 60 | 0.3 | false | 0 |
+| 20 | 3 | 150 | 0 | true | exact |
+| 20 | 3 | 150 | 0.05 | true | exact |
+| 20 | 3 | 150 | 0.15 | true | exact |
+| 20 | 3 | 150 | 0.3 | false | 0 |
+| 20 | 5 | 20 | 0 | true | exact |
+| 20 | 5 | 20 | 0.05 | true | exact |
+| 20 | 5 | 20 | 0.15 | true | exact |
+| 20 | 5 | 20 | 0.3 | false | 4/5 |
+| 20 | 5 | 60 | 0 | true | exact |
+| 20 | 5 | 60 | 0.05 | true | exact |
+| 20 | 5 | 60 | 0.15 | true | exact |
+| 20 | 5 | 60 | 0.3 | false | 0 |
+| 20 | 5 | 150 | 0 | true | exact |
+| 20 | 5 | 150 | 0.05 | true | exact |
+| 20 | 5 | 150 | 0.15 | true | exact |
+| 20 | 5 | 150 | 0.3 | true | exact |
+| 50 | 2 | 20 | 0 | false | 0 |
+| 50 | 2 | 20 | 0.05 | false | 0 |
+| 50 | 2 | 20 | 0.15 | false | 0 |
+| 50 | 2 | 20 | 0.3 | false | 0 |
+| 50 | 2 | 60 | 0 | false | 0 |
+| 50 | 2 | 60 | 0.05 | false | 0 |
+| 50 | 2 | 60 | 0.15 | false | 0 |
+| 50 | 2 | 60 | 0.3 | false | 0 |
+| 50 | 2 | 150 | 0 | false | 0 |
+| 50 | 2 | 150 | 0.05 | false | 0 |
+| 50 | 2 | 150 | 0.15 | false | 0 |
+| 50 | 2 | 150 | 0.3 | false | 0 |
+| 50 | 3 | 20 | 0 | false | 0 |
+| 50 | 3 | 20 | 0.05 | false | 0 |
+| 50 | 3 | 20 | 0.15 | false | 0 |
+| 50 | 3 | 20 | 0.3 | false | 0 |
+| 50 | 3 | 60 | 0 | false | 0 |
+| 50 | 3 | 60 | 0.05 | false | 0 |
+| 50 | 3 | 60 | 0.15 | false | 0 |
+| 50 | 3 | 60 | 0.3 | false | 0 |
+| 50 | 3 | 150 | 0 | false | 0 |
+| 50 | 3 | 150 | 0.05 | false | 0 |
+| 50 | 3 | 150 | 0.15 | false | 0 |
+| 50 | 3 | 150 | 0.3 | false | 0 |
+| 50 | 5 | 20 | 0 | false | 0 |
+| 50 | 5 | 20 | 0.05 | false | 0 |
+| 50 | 5 | 20 | 0.15 | false | 0 |
+| 50 | 5 | 20 | 0.3 | false | 0 |
+| 50 | 5 | 60 | 0 | false | 0 |
+| 50 | 5 | 60 | 0.05 | false | 0 |
+| 50 | 5 | 60 | 0.15 | false | 0 |
+| 50 | 5 | 60 | 0.3 | false | 0 |
+| 50 | 5 | 150 | 0 | true | exact |
+| 50 | 5 | 150 | 0.05 | true | exact |
+| 50 | 5 | 150 | 0.15 | false | 0 |
+| 50 | 5 | 150 | 0.3 | false | 0 |
+| 50 | 10 | 20 | 0 | true | exact |
+| 50 | 10 | 20 | 0.05 | true | exact |
+| 50 | 10 | 20 | 0.15 | true | exact |
+| 50 | 10 | 20 | 0.3 | false | 0 |
+| 50 | 10 | 60 | 0 | true | exact |
+| 50 | 10 | 60 | 0.05 | true | exact |
+| 50 | 10 | 60 | 0.15 | true | exact |
+| 50 | 10 | 60 | 0.3 | false | 0 |
+| 50 | 10 | 150 | 0 | true | exact |
+| 50 | 10 | 150 | 0.05 | true | exact |
+| 50 | 10 | 150 | 0.15 | true | exact |
+| 50 | 10 | 150 | 0.3 | true | exact |
+
+### Conclusion
+
+39/108 exact recoveries. By subset size: size=2: 0/36, size=3: 17/36, size=5: 12/24, size=10: 10/12.
+
+## Results — Stage 1b (length variation)
+
+| nRows | subsetSize | trim | exact | partialOverlap |
+|---|---|---|---|---|
+| 10 | 3 | 0 | true | exact |
+| 10 | 3 | 0.15 | true | exact |
+| 10 | 3 | 0.3 | true | exact |
+| 10 | 5 | 0 | true | exact |
+| 10 | 5 | 0.15 | true | exact |
+| 10 | 5 | 0.3 | true | exact |
+| 20 | 3 | 0 | true | exact |
+| 20 | 3 | 0.15 | true | exact |
+| 20 | 3 | 0.3 | false | 0 |
+| 20 | 5 | 0 | true | exact |
+| 20 | 5 | 0.15 | true | exact |
+| 20 | 5 | 0.3 | true | exact |
+
+### Conclusion
+
+11/12 exact recoveries under independent trailing-gap trimming. Compare against Stage 1 baseline (trim=0.0 rows above) to isolate the effect of length variation alone.
+
+## Results — Stage 2a (3 groups in one zone)
+
+| sizeA | sizeB | groupA | groupB |
+|---|---|---|---|
+| 5 | 5 | missed | missed |
+| 3 | 8 | exact | exact |
+| 8 | 8 | missed | missed |
+
+### Conclusion
+
+At least one configuration failed to cleanly separate both groups — see table for which.
+
+## Results — Stage 2b (two independent zones)
+
+| zoneX | zoneY | distinctZones |
+|---|---|---|
+| exact | exact | true |
+
+### Conclusion
+
+Both independent row-subset zones recovered, at distinct non-overlapping column ranges as designed.
+
+## Sliding-window row-split scan (2026-09-12): fixes the Stage 2b / top-level dilution limitation
+
+Root cause of "the 1152-1217 haplotype split is correct in isolation but
+never surfaces from computeBiclusterMask's top-level recursion" (documented
+above) precisely diagnosed: `_haplotypeRowSplit`/`_diagnosticRowSplit` build
+their diagnostic-column pool from EVERY qualifying column in whatever range
+they're handed. At the real top-level [0,1273] range, that pool held 196
+diagnostic columns - only 12 of which belonged to the real 1152-1217 signal,
+the other 184 scattered elsewhere in a range whose AVERAGE coherence (0.92)
+still looked "fine." The unrelated columns dilute/outcompete the real signal,
+so both methods returned null on the full range despite being correct when
+handed the narrow range directly. This is the exact same mechanism as the
+Stage 2b synthetic failure, just discovered on real data first.
+
+Added `_windowedRowSplitScan`: when a range's plain column/row splits both
+fail, slide a `WINDOW_SCAN_WIDTH`-column window (default 64, 50% overlap,
+capped at `WINDOW_SCAN_MAX`=60 windows) across the range and try
+`bestRowSplit` on each window alone - restricting the diagnostic-column pool
+back down to just that window fixes the dilution. Only runs when the plain
+splits already failed, to bound the added cost to genuinely stuck cases.
+
+**Stage 2b (two independent zones), previously "missed, missed, n/a": now
+`zoneX: exact, zoneY: exact, distinctZones: true`.** Full sweep re-run shows
+Stage 0/1/1b/2a unchanged (43/45, 39/108, 11/12, same 2a pattern) - no
+regression, one real limitation fixed.
+
+Real file: cols 1152-1217 now surfaces automatically at the top level
+(`1152-1168 n=28`, `1152-1178 n=20`, matching the manually-probed split within
+a few columns) with no perceptible performance cost (whole 50x1663 file:
+~0.6s). Total leaf count on the real file rose sharply, 28 -> 74 - the window
+scan is finding many more small splits throughout, not just the one target
+region. This has NOT been independently spot-checked beyond the two regions
+already verified by eye (1152-1217, 1585-1662) - flagged for the user to
+sample a few more of the new small blocks before treating the denser output
+as reflecting real substructure everywhere rather than some accumulated false
+positives from the wider search space now being tried.
