@@ -113,6 +113,16 @@
     return { covered: covered, dominant: best, dominantCount: counts[best] };
   }
 
+  var _splitLeafCount = 0;
+
+  function sameRowSet(a, b) {
+    if (a.length !== b.length) return false;
+    var sa = a.slice().sort(function(x, y) { return x - y; });
+    var sb = b.slice().sort(function(x, y) { return x - y; });
+    for (var i = 0; i < sa.length; i++) if (sa[i] !== sb[i]) return false;
+    return true;
+  }
+
   // ==========================================================================
   // EVERYTHING BELOW THIS LINE IS TO BE IMPLEMENTED. Read
   // reference/BICLUSTER_ALGORITHM_NOTES.md first. Do not change the function
@@ -138,7 +148,15 @@
   // null (not 0, not NaN - null means "cannot be scored", a distinct case
   // from "scored as fully divergent").
   function blockCoherence(A, rows, colStart, colEnd, spans, P) {
-    throw new Error('not implemented');
+    var sumPurity = 0, count = 0;
+    for (var j = colStart; j <= colEnd; j++) {
+      var cs = columnStats(A, rows, j, spans);
+      if (cs.covered < P.MIN_COL_COVERAGE) continue;
+      sumPurity += cs.dominantCount / cs.covered;
+      count++;
+    }
+    if (count === 0) return null;
+    return sumPurity / count;
   }
 
   // Find the single best COLUMN split point for a candidate block (same
@@ -173,7 +191,62 @@
   // null if no candidate reaches P.MIN_SPLIT_GAIN, or if colEnd - colStart
   // + 1 < 2 * P.MIN_BLOCK_COLS (too narrow to split at all).
   function bestColumnSplit(A, rows, colStart, colEnd, spans, P) {
-    throw new Error('not implemented');
+    var width = colEnd - colStart + 1;
+    if (width < 2 * P.MIN_BLOCK_COLS) return null;
+
+    // Precompute per-column qualification and purity in one pass
+    var qual = new Array(width);
+    var purity = new Array(width);
+    for (var i = 0; i < width; i++) {
+      var cs = columnStats(A, rows, colStart + i, spans);
+      if (cs.covered >= P.MIN_COL_COVERAGE) {
+        qual[i] = true;
+        purity[i] = cs.dominantCount / cs.covered;
+      } else {
+        qual[i] = false;
+        purity[i] = 0;
+      }
+    }
+
+    // Build prefix sums for O(1) sub-range mean lookup
+    var prefixCount = new Array(width);
+    var prefixPurity = new Array(width);
+    var rc = 0, rp = 0;
+    for (var i = 0; i < width; i++) {
+      if (qual[i]) { rc++; rp += purity[i]; }
+      prefixCount[i] = rc;
+      prefixPurity[i] = rp;
+    }
+    var totalQual = rc;
+    var totalPurity = rp;
+
+    var wholeBlockCoherence = blockCoherence(A, rows, colStart, colEnd, spans, P);
+    if (wholeBlockCoherence === null) wholeBlockCoherence = 0;
+
+    var bestSplit = -1, bestGain = -Infinity;
+    for (var s = 0; s < width - 1; s++) {
+      var leftWidth = s + 1;
+      var rightWidth = width - leftWidth;
+      if (leftWidth < P.MIN_BLOCK_COLS || rightWidth < P.MIN_BLOCK_COLS) continue;
+
+      var leftCount = prefixCount[s];
+      var rightCount = totalQual - leftCount;
+      if (leftCount === 0 || rightCount === 0) continue; // null mean disqualifies
+
+      var leftMean = prefixPurity[s] / leftCount;
+      var rightMean = (totalPurity - prefixPurity[s]) / rightCount;
+
+      var weightedAvg = (leftMean * leftWidth + rightMean * rightWidth) / (leftWidth + rightWidth);
+      var gain = weightedAvg - wholeBlockCoherence;
+
+      if (gain > bestGain) {
+        bestGain = gain;
+        bestSplit = s;
+      }
+    }
+
+    if (bestSplit === -1 || bestGain < P.MIN_SPLIT_GAIN) return null;
+    return { splitCol: colStart + bestSplit, gain: bestGain };
   }
 
   // Find the single best ROW split for a candidate block (same column
@@ -221,7 +294,121 @@
   // omitted entirely if there are no leftover rows), or null per the
   // rejection rules above.
   function bestRowSplit(A, rows, colStart, colEnd, spans, P) {
-    throw new Error('not implemented');
+    // Precompute column stats once for all columns in range
+    var nCols = colEnd - colStart + 1;
+    var colStatsArr = new Array(nCols);
+    for (var j = 0; j < nCols; j++) {
+      colStatsArr[j] = columnStats(A, rows, colStart + j, spans);
+    }
+
+    // For each row, compute match-rate to the dominant pattern
+    var rowRates = [];
+    var excludedRows = [];
+    for (var k = 0; k < rows.length; k++) {
+      var i = rows[k];
+      var sp = spans[i];
+      var matches = 0, positions = 0;
+      for (var j = 0; j < nCols; j++) {
+        var cs = colStatsArr[j];
+        if (cs.covered < P.MIN_COL_COVERAGE) continue;
+        if (sp[0] === -1 || (colStart + j) < sp[0] || (colStart + j) > sp[1]) continue;
+        positions++;
+        var v = A[i][colStart + j];
+        var state = (v === GAP) ? 4 : v;
+        if (state === cs.dominant) matches++;
+      }
+      if (positions === 0) {
+        excludedRows.push(i);
+      } else {
+        rowRates.push({ idx: i, rate: matches / positions });
+      }
+    }
+
+    if (rowRates.length === 0) return null;
+
+    // Gap-cluster the (rowIndex, matchRate) pairs
+    var minGapAbs = (P.ROW_MIN_GAP_ABS != null) ? P.ROW_MIN_GAP_ABS : 0.15;
+    var minGapRatio = (P.ROW_MIN_GAP_RATIO != null) ? P.ROW_MIN_GAP_RATIO : 2.5;
+    var minGroup = P.MIN_BLOCK_ROWS;
+
+    var sorted = rowRates.slice().sort(function(a, b) { return a.rate - b.rate; });
+
+    var gaps = [];
+    for (var g = 0; g < sorted.length - 1; g++) {
+      gaps.push(sorted[g + 1].rate - sorted[g].rate);
+    }
+
+    var sortedGaps = gaps.slice().sort(function(a, b) { return a - b; });
+    var medianGap = sortedGaps.length > 0 ? sortedGaps[Math.floor(sortedGaps.length / 2)] : 0;
+
+    var splitPoints = [];
+    for (var g = 0; g < gaps.length; g++) {
+      if (gaps[g] >= minGapAbs && gaps[g] >= minGapRatio * medianGap) {
+        splitPoints.push(g);
+      }
+    }
+
+    // Form groups at split points
+    var groups = [];
+    var start = 0;
+    for (var s = 0; s < splitPoints.length; s++) {
+      groups.push(sorted.slice(start, splitPoints[s] + 1));
+      start = splitPoints[s] + 1;
+    }
+    groups.push(sorted.slice(start));
+
+    // Merge groups smaller than minGroup into previous group
+    var merged = [];
+    for (var g = 0; g < groups.length; g++) {
+      if (groups[g].length < minGroup && merged.length > 0) {
+        merged[merged.length - 1] = merged[merged.length - 1].concat(groups[g]);
+      } else {
+        merged.push(groups[g]);
+      }
+    }
+
+    // Keep only groups with length >= MIN_BLOCK_ROWS
+    var acceptedGroups = [];
+    var residualRows = excludedRows.slice();
+    for (var g = 0; g < merged.length; g++) {
+      if (merged[g].length >= P.MIN_BLOCK_ROWS) {
+        acceptedGroups.push(merged[g]);
+      } else {
+        for (var r = 0; r < merged[g].length; r++) residualRows.push(merged[g][r].idx);
+      }
+    }
+
+    if (acceptedGroups.length < 2) return null;
+
+    // Compute weighted-average coherence of accepted groups
+    var wholeBlockCoherence = blockCoherence(A, rows, colStart, colEnd, spans, P);
+    if (wholeBlockCoherence === null) wholeBlockCoherence = 0;
+
+    var totalWeight = 0, weightedSum = 0;
+    for (var g = 0; g < acceptedGroups.length; g++) {
+      var groupRows = acceptedGroups[g].map(function(x) { return x.idx; });
+      var coh = blockCoherence(A, groupRows, colStart, colEnd, spans, P);
+      if (coh === null) coh = 0;
+      weightedSum += groupRows.length * coh;
+      totalWeight += groupRows.length;
+    }
+
+    var weightedAvg = weightedSum / totalWeight;
+    var gain = weightedAvg - wholeBlockCoherence;
+
+    if (gain < P.MIN_SPLIT_GAIN) return null;
+
+    // Build result groups with residual
+    var resultGroups = [];
+    for (var g = 0; g < acceptedGroups.length; g++) {
+      var groupRows = acceptedGroups[g].map(function(x) { return x.idx; });
+      resultGroups.push({ rows: groupRows, residual: false });
+    }
+    if (residualRows.length > 0) {
+      resultGroups.push({ rows: residualRows, residual: true });
+    }
+
+    return { groups: resultGroups, gain: gain };
   }
 
   // Recursive split-and-merge. Given a candidate block (rows, colStart,
@@ -257,7 +444,54 @@
   // Return: a flat array of leaf objects, each { rows: [...], colStart,
   // colEnd, coherence }.
   function splitAndMerge(A, rows, colStart, colEnd, spans, P) {
-    throw new Error('not implemented');
+    // Safety cap on total leaves
+    if (_splitLeafCount >= 200) {
+      _splitLeafCount++;
+      return [{ rows: rows.slice(), colStart: colStart, colEnd: colEnd, coherence: blockCoherence(A, rows, colStart, colEnd, spans, P) }];
+    }
+
+    // Step 1: too small to split in both dimensions
+    if (rows.length < 2 * P.MIN_BLOCK_ROWS && (colEnd - colStart + 1) < 2 * P.MIN_BLOCK_COLS) {
+      _splitLeafCount++;
+      return [{ rows: rows.slice(), colStart: colStart, colEnd: colEnd, coherence: blockCoherence(A, rows, colStart, colEnd, spans, P) }];
+    }
+
+    // Step 2: try splits (only in dimensions that can support one)
+    var colSplit = null, rowSplit = null;
+    if ((colEnd - colStart + 1) >= 2 * P.MIN_BLOCK_COLS) {
+      colSplit = bestColumnSplit(A, rows, colStart, colEnd, spans, P);
+    }
+    if (rows.length >= 2 * P.MIN_BLOCK_ROWS) {
+      rowSplit = bestRowSplit(A, rows, colStart, colEnd, spans, P);
+    }
+
+    // Step 3: neither found a real split
+    if (!colSplit && !rowSplit) {
+      _splitLeafCount++;
+      return [{ rows: rows.slice(), colStart: colStart, colEnd: colEnd, coherence: blockCoherence(A, rows, colStart, colEnd, spans, P) }];
+    }
+
+    // Step 4: take whichever has the larger gain
+    var useColSplit = false;
+    if (colSplit && rowSplit) {
+      useColSplit = (colSplit.gain >= rowSplit.gain);
+    } else if (colSplit) {
+      useColSplit = true;
+    }
+
+    var leaves = [];
+    if (useColSplit) {
+      var leftLeaves = splitAndMerge(A, rows, colStart, colSplit.splitCol, spans, P);
+      var rightLeaves = splitAndMerge(A, rows, colSplit.splitCol + 1, colEnd, spans, P);
+      leaves = leftLeaves.concat(rightLeaves);
+    } else {
+      for (var g = 0; g < rowSplit.groups.length; g++) {
+        var groupLeaves = splitAndMerge(A, rowSplit.groups[g].rows, colStart, colEnd, spans, P);
+        leaves = leaves.concat(groupLeaves);
+      }
+    }
+
+    return leaves;
   }
 
   // Merge adjacent (by column range) leaves that have the EXACT SAME row
@@ -277,7 +511,43 @@
   // Return the resulting (possibly shorter) array of leaves, still sorted
   // by colStart.
   function mergeAdjacentLeaves(leaves, A, spans, P) {
-    throw new Error('not implemented');
+    var sorted = leaves.slice().sort(function(a, b) { return a.colStart - b.colStart; });
+
+    var changed = true;
+    while (changed) {
+      changed = false;
+      var i = 0;
+      while (i < sorted.length - 1) {
+        var leafA = sorted[i];
+        var leafB = sorted[i + 1];
+        if (leafA.colEnd + 1 !== leafB.colStart || !sameRowSet(leafA.rows, leafB.rows)) {
+          i++;
+          continue;
+        }
+
+        var mergedCoherence = blockCoherence(A, leafA.rows, leafA.colStart, leafB.colEnd, spans, P);
+        var minCoh = Math.min(
+          leafA.coherence === null ? 0 : leafA.coherence,
+          leafB.coherence === null ? 0 : leafB.coherence
+        );
+        var mergedCohVal = mergedCoherence === null ? 0 : mergedCoherence;
+
+        if (mergedCohVal >= minCoh - P.MERGE_TOLERANCE) {
+          var merged = {
+            rows: leafA.rows.slice(),
+            colStart: leafA.colStart,
+            colEnd: leafB.colEnd,
+            coherence: mergedCoherence
+          };
+          sorted.splice(i, 2, merged);
+          changed = true;
+        } else {
+          i++;
+        }
+      }
+    }
+
+    return sorted;
   }
 
   // Top-level entry point. Parse the alignment, run splitAndMerge from the
@@ -291,7 +561,44 @@
   // row - every row is on equal footing, including whatever the alignment
   // calls its "consensus" row if it has one; do not special-case it.
   function computeBiclusterMask(fastaText, params) {
-    throw new Error('not implemented');
+    var P = resolveParams(params);
+    var parsed = parseAln(fastaText);
+    var A = parsed.A;
+    var ncols = parsed.ncols;
+    var names = parsed.names;
+    var spans = coverageSpans(A);
+
+    var allRows = [];
+    for (var i = 0; i < A.length; i++) allRows.push(i);
+
+    _splitLeafCount = 0;
+    var leaves = splitAndMerge(A, allRows, 0, ncols - 1, spans, P);
+    leaves = mergeAdjacentLeaves(leaves, A, spans, P);
+
+    leaves.sort(function(a, b) { return a.colStart - b.colStart; });
+
+    var blocks = leaves.map(function(leaf) {
+      var sortedRows = leaf.rows.slice().sort(function(a, b) { return a - b; });
+      var isAll = sortedRows.length === A.length;
+      if (isAll) {
+        for (var i = 0; i < sortedRows.length; i++) {
+          if (sortedRows[i] !== i) { isAll = false; break; }
+        }
+      }
+      return {
+        rows: isAll ? 'all' : sortedRows,
+        col_start: leaf.colStart,
+        col_end: leaf.colEnd,
+        coherence: leaf.coherence
+      };
+    });
+
+    return {
+      n_rows: A.length,
+      n_cols: ncols,
+      row_headers: names,
+      blocks: blocks
+    };
   }
 
   var api = {
