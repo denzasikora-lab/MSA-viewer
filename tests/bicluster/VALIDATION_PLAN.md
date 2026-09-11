@@ -1,0 +1,126 @@
+# Staged validation plan for block-bicluster.js
+
+**Written before results exist — this is the plan, not the findings.**
+Findings get appended to this file (a `## Results` section per stage) as
+each stage actually runs, never overwriting an earlier stage's numbers.
+Uses directly-constructed aligned matrices (not real MAFFT output) for
+every stage below, deliberately: the point of this suite is validating the
+biclustering *logic* against a KNOWN ground truth, the same way Cheng &
+Church and later biclustering papers validate — implant a known bicluster
+in a controlled synthetic matrix with tunable noise, then check recovery.
+Testing against real MAFFT alignments (the `make_test_sets.py` fixtures)
+is a separate, already-done concern (does realignment itself look right);
+this suite assumes the matrix is already exactly as designed and asks only
+"does the algorithm find what's really there."
+
+## Stage 0 — pure 1D column separation (no row-splitting needed at all)
+
+Every row is uniform, full-length, no length variation. One conserved
+region + one divergent region, side by side. This isolates
+`blockCoherence` + `bestColumnSplit` with zero interaction from row logic.
+
+**Generator**: `toy0(nRows, coreLen, flankLen, coreMutRate, flankMutRate, seed)`
+— all rows share a `core` (mutated at `coreMutRate`) and a `flank` (each
+row's own *independent* random sequence — flankMutRate is unused, kept for
+signature symmetry with later stages / ignored, since independent-random
+IS "0% shared" by construction).
+
+**Sweep**: `nRows` in {5, 10, 30}; `coreLen`/`flankLen` in {20, 60, 150};
+`coreMutRate` in {0.0, 0.05, 0.15, 0.30, 0.50}. Record, for each
+combination: does the algorithm produce exactly 2 full-row blocks (core,
+flank) split at the true boundary ± 3 columns? At what `coreMutRate` does
+detection first fail (core no longer distinguishable from flank), and does
+that threshold move sensibly with `nRows` (more rows -> more statistical
+power -> should tolerate higher mutation before failing)?
+
+## Stage 1 — single row-subset "tail" block (the case from the mosaic_subset discussion)
+
+One conserved core (all rows), then a region where only a SUBSET of rows
+share a real sequence and the rest are independent random. This isolates
+`bestRowSplit` given a zone `bestColumnSplit` has already correctly
+carved out.
+
+**Generator**: `toy1(nRows, coreLen, tailLen, subsetSize, subsetMutRate,
+seed)` — core as in Stage 0 (fixed low mutation, e.g. 0.04, not swept
+here); tail: `subsetSize` rows share a real tail sequence (mutated at
+`subsetMutRate`), the remaining `nRows - subsetSize` rows get independent
+random tails of the SAME length (no length variation in this stage — that
+interaction is Stage 1b below).
+
+**Sweep**: `nRows` in {10, 20, 50}; `subsetSize` in {2, 3, 5, 10, nRows/2};
+`tailLen` in {20, 60, 150}; `subsetMutRate` in {0.0, 0.05, 0.15, 0.30}.
+Record: is a row-split block found at all; is its row-set exactly the
+planted subset (report false positives/negatives in membership, not just
+"a split happened"); minimum `subsetSize` at which detection starts
+working for each `tailLen`; whether `MIN_BLOCK_ROWS` (default 3) is
+actually the right floor or whether real detection stops working before
+reaching it (i.e. subsetSize=3 nominally clears the floor but may not be
+statistically distinguishable from noise at low tailLen/high mutRate —
+record where that is).
+
+## Stage 1b — subset + independent length variation
+
+Same as Stage 1, but each row's tail (both subset and background) gets
+independently right-trimmed by a random 0-30% (mirrors `make_test_sets.py`'s
+`trim_outer`, but applied here to a directly-constructed matrix by
+introducing trailing gaps rather than re-running MAFFT — the trimming
+itself is the point, not realignment). Tests whether the coverage-span
+fix (terminal-gap exclusion) holds up under the exact condition that broke
+the old zone-width approach.
+
+**Sweep**: same as Stage 1, plus trim severity in {0% (=Stage 1 baseline,
+should match those results), 15%, 30%}.
+
+## Stage 2 — multiple blocks in one alignment
+
+Two POSSIBLE configurations, both matter and are structurally different:
+
+- **2a. Sequential (non-overlapping-in-rows) blocks**: core, then a right
+  flank with 2 SEPARATE row-subsets sharing 2 DIFFERENT sequences (e.g.
+  5 rows share tail-type-A, 5 different rows share tail-type-B, remaining
+  rows independent random) — 3 groups in one zone, not 2. Tests whether
+  `bestRowSplit`'s clustering finds >2 groups when >2 real groups exist,
+  not just a binary split.
+- **2b. Two independent zones**: core, then EARLY-tail region where subset
+  X (rows 0-4) share a sequence, THEN a separate LATE-tail region (further
+  right) where a DIFFERENT subset Y (rows 10-14, no overlap with X) shares
+  a different sequence, with ordinary divergent background between and
+  around both. Tests whether two unrelated row-subset blocks at different
+  column ranges are both found independently without interfering with
+  each other, and whether the divergent gap between them stays undivided
+  full-row DIVERGENT.
+
+**Sweep**: reuse the Stage 1 parameter ranges but only at 2-3
+representative points each (this stage is about structural correctness,
+not threshold-finding — Stages 0/1/1b already characterize the
+thresholds).
+
+## Output format for every stage
+
+One CSV-like results table per stage appended under `## Results — Stage N`
+in this file: one row per parameter combination, columns = every swept
+parameter + `detected` (bool) + `row_set_correct` (bool or "n/a" for
+Stage 0) + `col_boundary_error` (integer, columns off from true boundary)
++ one-sentence note for any surprising result. End each stage with a
+`### Conclusion` paragraph: the practical threshold/limitation found, in
+plain language, that should inform the real algorithm's default
+parameters or documented limitations — this is the part that actually
+matters, the raw table is just the evidence for it.
+
+## Execution notes for whoever runs this (glm, most likely)
+
+- Build the four `toyN(...)` generators as plain functions returning
+  `{names, seqs}` (array of aligned strings, already padded to equal
+  length — no MAFFT step, construct the gaps directly per the trim
+  description above), then a FASTA-text assembler, then feed straight into
+  `BlockBicluster.computeBiclusterMask`.
+- This is a big sweep (hundreds of parameter combinations across 4
+  stages) — write it as one script per stage that loops the sweep, checks
+  recovery programmatically (compare returned blocks' row-sets/column
+  boundaries against the known planted ground truth, not by eyeballing
+  output), and appends the results table directly into this file. Do not
+  hand-run individual cases one at a time.
+- Do this ONLY after `tests/bicluster/oracle.js` passes (i.e. after
+  `block-bicluster.js`'s six stubbed functions are implemented and the
+  basic oracle is green) — there is no point sweeping parameters against
+  code that still throws.
