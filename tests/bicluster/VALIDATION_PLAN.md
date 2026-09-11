@@ -754,3 +754,12 @@ far enough to see it. All three row-split functions are confirmed correct when
 handed the correct column range directly; recovering it automatically needs
 the iterative-search fix already flagged for the Stage 2b "two independent
 zones" case.
+
+**Human verification of the 1585-1662 fragmentation** (2026-09-12): user
+inspected `scratch/cropped_1585_1662.fa` (cropped + similarity-reordered) and
+confirmed by eye: 5 nearly-empty (mostly-gap) sequences, several too short/
+incomplete to cluster reliably, two major groups, and several discordant
+outliers. This matches the algorithm's own output shape for this region (a
+mix of small ~3-row groups, a couple of larger 11/12/22-row groups, and
+several `coh=null`/tiny residual leaves) - the fragmentation here is real
+substructure, not noise, confirmed independently of the algorithm's own score.
