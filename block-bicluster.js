@@ -554,6 +554,36 @@
   //
   // Return the resulting (possibly shorter) array of leaves, still sorted
   // by colStart.
+  // Fractional variance-reduction of splitting [colStart,colEnd] at
+  // splitCol (single evaluation, not a search) - the exact same criterion
+  // bestColumnSplit uses to accept a split, reused here so merging is
+  // never allowed to undo a split that would have been worth taking in
+  // the first place. This directly replaces a mean/coherence-based merge
+  // test (removed - same mathematical flaw as the original gain formula:
+  // a coherence-tolerance check comparing the merged mean to the min of
+  // two parts is satisfied by almost any high+low combination, which is
+  // exactly why it was silently re-merging genuine splits back together).
+  function _columnSplitVarianceGain(A, rows, colStart, splitCol, colEnd, spans, P) {
+    var sum = 0, sumSq = 0, n = 0;
+    var lSum = 0, lSumSq = 0, lN = 0;
+    var rSum = 0, rSumSq = 0, rN = 0;
+    for (var j = colStart; j <= colEnd; j++) {
+      var cs = columnStats(A, rows, j, spans);
+      if (cs.covered < P.MIN_COL_COVERAGE) continue;
+      var p = cs.dominantCount / cs.covered;
+      sum += p; sumSq += p * p; n++;
+      if (j <= splitCol) { lSum += p; lSumSq += p * p; lN++; }
+      else { rSum += p; rSumSq += p * p; rN++; }
+    }
+    if (n === 0 || lN === 0 || rN === 0) return 0;
+    var wholeMean = sum / n, wholeVar = (sumSq / n) - wholeMean * wholeMean;
+    if (wholeVar <= 1e-9) return 0;
+    var lMean = lSum / lN, lVar = (lSumSq / lN) - lMean * lMean;
+    var rMean = rSum / rN, rVar = (rSumSq / rN) - rMean * rMean;
+    var weightedVar = (lVar * lN + rVar * rN) / n;
+    return (wholeVar - weightedVar) / wholeVar;
+  }
+
   function mergeAdjacentLeaves(leaves, A, spans, P) {
     var sorted = leaves.slice().sort(function(a, b) { return a.colStart - b.colStart; });
 
@@ -570,13 +600,13 @@
         }
 
         var mergedCoherence = blockCoherence(A, leafA.rows, leafA.colStart, leafB.colEnd, spans, P);
-        var minCoh = Math.min(
-          leafA.coherence === null ? 0 : leafA.coherence,
-          leafB.coherence === null ? 0 : leafB.coherence
-        );
-        var mergedCohVal = mergedCoherence === null ? 0 : mergedCoherence;
+        var splitGain = _columnSplitVarianceGain(A, leafA.rows, leafA.colStart, leafA.colEnd, leafB.colEnd, spans, P);
 
-        if (mergedCohVal >= minCoh - P.MERGE_TOLERANCE) {
+        // Only merge if splitting right back at this exact boundary
+        // would NOT have been worth doing - i.e. the two parts aren't
+        // meaningfully different regimes, just an arbitrary top-down
+        // fragment of one uniform region.
+        if (splitGain < P.MIN_VARIANCE_REDUCTION) {
           var merged = {
             rows: leafA.rows.slice(),
             colStart: leafA.colStart,

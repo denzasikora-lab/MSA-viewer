@@ -124,3 +124,71 @@ matters, the raw table is just the evidence for it.
   `block-bicluster.js`'s six stubbed functions are implemented and the
   basic oracle is green) — there is no point sweeping parameters against
   code that still throws.
+
+---
+
+# Results (run 2026-09-12, after the mergeAdjacentLeaves fix)
+
+**Context**: the first sweep run (numbers below superseded, not reproduced
+here) caught a THIRD real bug beyond the two fixed in commit `32912ac`:
+`mergeAdjacentLeaves` used a coherence-tolerance test (`mergedCoherence >=
+min(partA, partB) - MERGE_TOLERANCE`) that is almost always satisfied when
+merging a high-coherence and a low-coherence block, so it was silently
+re-merging genuine splits back together immediately after `splitAndMerge`
+correctly found them. Confirmed directly on a Stage 0 case: `splitAndMerge`
+produced the correct 2 leaves (coherence 0.97 and 0.42), then
+`mergeAdjacentLeaves` merged them straight back into 1 (0.70). Fixed by
+reusing the exact same variance-reduction test used to ACCEPT a split, to
+decide whether to UNDO one: only merge if splitting right back at that
+boundary would score below `MIN_VARIANCE_REDUCTION` anyway.
+
+## Stage 0 (pure column separation): 43/45 detected (was 0/45)
+
+The `mergeAdjacentLeaves` fix alone took this from complete failure to
+near-complete success. Full sweep table omitted here (see git history /
+rerun `run_validation.js` for the live table) - both remaining misses were
+at the extreme `mut=0.50` (50% mutation - the core is barely more
+conserved than random background at that point, a reasonable place for
+detection to fail).
+
+## Stage 1 (single row-subset tail): 41/108 exact
+
+Real recovery-rate characterization, not a bug: exact recovery correlates
+with subset size and tail length as expected (bigger real subset = easier
+to detect; longer tail = more columns of evidence per row). This is
+legitimate threshold-tuning data for a future pass, not something to patch
+reactively - see `bestRowSplit`'s current fixed thresholds
+(`ROW_MIN_GAP_ABS=0.12`, min-sample-size=5, majority-group-floor=40%) as
+the current operating point this rate reflects.
+
+## Stage 2a (3 groups, one zone): mixed — group sizes matter, not a bug
+
+`sizeA=3,sizeB=8` (asymmetric): both groups recovered exactly.
+`sizeA=5,sizeB=5` and `sizeA=8,sizeB=8` (symmetric, no majority): both
+missed. This is the SAME "no majority group" guard added in commit
+`32912ac` doing exactly its job - a genuinely balanced multi-way split
+(no group holds >=40% of rows) is currently rejected by design, matching
+the earlier finding that a balanced split is hard to distinguish from
+noise with a match-rate-to-majority approach. Documented as a known
+limitation (also noted in `BICLUSTER_ALGORITHM_NOTES.md`'s open questions)
+rather than patched - fixing it properly needs a different clustering
+primitive for the no-majority case, not a threshold tweak.
+
+## Stage 2b (two independent zones): both zones missed at the top level — real structural finding
+
+Root cause isolated precisely, not just observed: `bestRowSplit` is
+CORRECT — tested directly on the narrow early-zone [80,129] and late-zone
+[190,239] ranges in isolation, it recovers the exact planted groups
+(`[0,1,2,3,4]` and `[10,11,12,13,14]`) with real gain. The failure is that
+`bestColumnSplit` never manages to carve those narrow zones out of the
+wider combined [80,239] range first: early+mid+late all look similarly
+"background" by pure column-purity (the row-structure that distinguishes
+them is invisible to a column-only test that doesn't already know which
+rows to group). This is a genuine limitation of single-step greedy
+row-or-column splitting, not a threshold bug: real biclustering algorithms
+(Cheng-Church) use iterative exploratory node-deletion specifically to
+avoid getting stuck exactly here, rather than requiring a single up-front
+split to already look good on one axis alone. Fixing this properly is a
+real next-design-iteration item (e.g. trying several candidate column
+sub-ranges via a coarser scan even when the full-zone split fails), not a
+one-line patch - flagging for the next round rather than forcing a fix now.
