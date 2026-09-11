@@ -663,15 +663,278 @@
     return { groups: resultGroups, gain: gain };
   }
 
-  // Tries both row-split strategies and takes whichever finds a real,
+  // Diagnostic-feature evidence-accumulation row split, ported from this
+  // app's own already-shipped, already-validated ViewAlign "Cluster Now"
+  // feature (SINEClusterer.findBestGroup in cluster.js), generalized to
+  // work on a [colStart, colEnd] sub-range instead of always the whole
+  // alignment. Found to be a strictly better approach than
+  // _haplotypeRowSplit's from-scratch k-means after running the real
+  // Cluster Now feature on the same real oma_SINE16b file side by side:
+  // it independently found the same two real groups (one matching almost
+  // exactly), using a fundamentally more robust method - instead of
+  // guessing k=2 and clustering by aggregate distance, EVERY (column,
+  // state) pair is a candidate group ("these rows share this base here"),
+  // near-identical candidates across many columns are fuzzy-merged, and
+  // each merged candidate is scored by how many columns support it with
+  // few outside "leaks" - real evidence accumulation, not a fixed-k
+  // guess. It also naturally finds more than 2 groups by iterating
+  // (extract the best group, remove it, repeat), which fixes Stage 2a's
+  // "3 groups in one zone, no majority" case that _gapRowSplit's
+  // majority-guard rejects by design.
+  //
+  // Deliberately keeps gap-as-real-deletion-state semantics (state 4
+  // inside a row's own span counts as a real, poolable state, same as
+  // A/C/G/T) rather than cluster.js's "gap is never diagnostic" rule -
+  // that's this app's own established Simmons & Ochoterena-based
+  // philosophy (see coverageSpans/columnStats), cluster.js's choice was
+  // presumably fine for its own whole-alignment use case but there is no
+  // reason to import it here.
+  // One round: find the single best-supported diagnostic row group among
+  // `avail` (a subset of `rows`), restricted to columns [colStart, colEnd].
+  // Direct port of SINEClusterer.findBestGroup's algorithm (cluster.js),
+  // adapted to a column sub-range and to this app's gap-as-real-state
+  // rule. Returns { rows: [...], feats: [{col, state}] } or null.
+  function _findBestDiagnosticGroup(A, rows, avail, colStart, colEnd, spans, P, opts) {
+    var minSize = opts.minSize;
+    var minOccurrences = opts.minOccurrences;
+    var qSmall = opts.qualitySmall, qMed = opts.qualityMedium, qLarge = opts.qualityLarge;
+    var breakSM = opts.sizeSmallMedium, breakML = opts.sizeMediumLarge;
+    var upperBound = opts.relaxUpperBound ? avail.length : Math.max(minSize, Math.floor(avail.length * 0.5));
+    var availSet = {};
+    for (var a = 0; a < avail.length; a++) availSet[avail[a]] = true;
+
+    // candidates: key = sorted-avail-row-list joined by ',' -> { rows, feats }
+    var candidates = {};
+
+    for (var col = colStart; col <= colEnd; col++) {
+      // Non-diagnostic guard: a state that dominates >80% of the WHOLE
+      // block's own rows (not just avail) carries no real signal here -
+      // same rule as cluster.js's global 0.8 check, just scoped to this
+      // block's own row set instead of the whole dataset.
+      var globalCs = columnStats(A, rows, col, spans);
+      if (globalCs.covered > 0 && (globalCs.dominantCount / globalCs.covered) > 0.8) continue;
+
+      // Per-state row groups within avail, respecting spans (gap inside a
+      // row's own span = real state 4; outside = missing, excluded).
+      var byState = { 0: [], 1: [], 2: [], 3: [], 4: [] };
+      for (var k = 0; k < avail.length; k++) {
+        var i = avail[k];
+        var sp = spans[i];
+        if (sp[0] === -1 || col < sp[0] || col > sp[1]) continue;
+        var v = A[i][col];
+        var state = (v === GAP) ? 4 : v;
+        byState[state].push(i);
+      }
+      for (var s = 0; s < 5; s++) {
+        var set = byState[s];
+        if (set.length >= minSize && set.length <= upperBound) {
+          var key = set.join(',');
+          if (!candidates[key]) candidates[key] = { rows: set, feats: [] };
+          candidates[key].feats.push({ col: col, state: s });
+        }
+      }
+    }
+
+    // Fuzzy merge near-identical candidates (>=90% overlap, size diff <= 5)
+    var keys = Object.keys(candidates);
+    var done = {};
+    var merged = {};
+    for (var k1 = 0; k1 < keys.length; k1++) {
+      if (done[keys[k1]]) continue;
+      var d1 = candidates[keys[k1]];
+      var list = [d1];
+      var d1Set = {};
+      for (var x = 0; x < d1.rows.length; x++) d1Set[d1.rows[x]] = true;
+      for (var k2 = 0; k2 < keys.length; k2++) {
+        if (k1 === k2 || done[keys[k2]]) continue;
+        var d2 = candidates[keys[k2]];
+        var inter = 0;
+        for (var y = 0; y < d2.rows.length; y++) if (d1Set[d2.rows[y]]) inter++;
+        var union = d1.rows.length + d2.rows.length - inter;
+        if (inter / union >= 0.9 && Math.abs(d1.rows.length - d2.rows.length) <= 5) {
+          list.push(d2);
+          done[keys[k2]] = true;
+        }
+      }
+      var best = list[0];
+      for (var li = 1; li < list.length; li++) if (list[li].rows.length > best.rows.length) best = list[li];
+      var mergedKey = best.rows.join(',');
+      if (!merged[mergedKey]) merged[mergedKey] = { rows: best.rows, feats: [] };
+      for (var li2 = 0; li2 < list.length; li2++) {
+        for (var f = 0; f < list[li2].feats.length; f++) merged[mergedKey].feats.push(list[li2].feats[f]);
+      }
+      done[keys[k1]] = true;
+    }
+
+    // Dedup feats per merged candidate, then score
+    var bestGroup = null, bestScore = -1;
+    var mergedKeys = Object.keys(merged);
+    for (var mi = 0; mi < mergedKeys.length; mi++) {
+      var d = merged[mergedKeys[mi]];
+      var seen = {};
+      var feats = [];
+      for (var fi = 0; fi < d.feats.length; fi++) {
+        var sig = d.feats[fi].col + ':' + d.feats[fi].state;
+        if (seen[sig]) continue;
+        seen[sig] = true;
+        feats.push(d.feats[fi]);
+      }
+      if (feats.length < minOccurrences) continue;
+
+      var gsize = d.rows.length;
+      var thresh = gsize < breakSM ? qSmall : gsize < breakML ? qMed : qLarge;
+      var good = 0, score = 0;
+      var validFeats = [];
+      var gRowSet = {};
+      for (var gr = 0; gr < d.rows.length; gr++) gRowSet[d.rows[gr]] = true;
+
+      for (var ff = 0; ff < feats.length; ff++) {
+        var col2 = feats[ff].col, state2 = feats[ff].state;
+        var inside = 0;
+        for (var gr2 = 0; gr2 < d.rows.length; gr2++) {
+          var sp2 = spans[d.rows[gr2]];
+          if (sp2[0] === -1 || col2 < sp2[0] || col2 > sp2[1]) continue;
+          var v2 = A[d.rows[gr2]][col2];
+          var st2 = (v2 === GAP) ? 4 : v2;
+          if (st2 === state2) inside++;
+        }
+        var totalCs = columnStats(A, rows, col2, spans);
+        // total rows (within this whole block) at this state
+        var totalAtState = 0;
+        for (var rr = 0; rr < rows.length; rr++) {
+          var i3 = rows[rr];
+          var sp3 = spans[i3];
+          if (sp3[0] === -1 || col2 < sp3[0] || col2 > sp3[1]) continue;
+          var v3 = A[i3][col2];
+          var st3 = (v3 === GAP) ? 4 : v3;
+          if (st3 === state2) totalAtState++;
+        }
+        var outside = totalAtState - inside;
+        var outsidePoolSize = rows.length - gsize;
+        var inP = (inside / gsize) * 100;
+        var outP = outsidePoolSize > 0 ? (outside / outsidePoolSize) * 100 : 0;
+        var qual = Math.max(0, inP - outP);
+
+        if (outside === 0) {
+          good++;
+          score += (inside === gsize) ? 3 : (inside >= gsize * 0.8) ? 2 : 1.5;
+          validFeats.push(feats[ff]);
+        } else if (qual >= thresh) {
+          good++;
+          score += 1;
+          validFeats.push(feats[ff]);
+        }
+      }
+
+      if (good >= opts.minPerfect && score > bestScore) {
+        bestScore = score;
+        bestGroup = { rows: d.rows.slice(), feats: validFeats };
+      }
+    }
+
+    return bestGroup;
+  }
+
+  // Iteratively extracts diagnostic row groups from [colStart, colEnd]:
+  // find the best-supported group, remove it from the pool, repeat, same
+  // shape as SINEClusterer.clusterChunked's round loop but capped at a
+  // small number of rounds since this runs once per recursive
+  // split-and-merge call, not once for the whole alignment. Falls back to
+  // a fully relaxed search (minPerfect=1, minOccurrences=1) once very few
+  // rows remain, same as cluster.js's own "RESCUE"/"RETRY" behavior.
+  function _diagnosticRowSplit(A, rows, colStart, colEnd, spans, P) {
+    var maxRounds = 5;
+    var minSize = P.MIN_BLOCK_ROWS;
+    var groups = [];
+    var avail = rows.slice();
+
+    for (var round = 0; round < maxRounds && avail.length >= minSize; round++) {
+      var opts = {
+        minSize: minSize,
+        minPerfect: 5,
+        minOccurrences: 5,
+        qualitySmall: 90,
+        qualityMedium: 80,
+        qualityLarge: 70,
+        sizeSmallMedium: 11,
+        sizeMediumLarge: 20,
+        relaxUpperBound: false
+      };
+      if (avail.length <= 10) { opts.minPerfect = 1; opts.minOccurrences = 1; }
+
+      var group = _findBestDiagnosticGroup(A, rows, avail, colStart, colEnd, spans, P, opts);
+      if (!group) {
+        opts.relaxUpperBound = true;
+        group = _findBestDiagnosticGroup(A, rows, avail, colStart, colEnd, spans, P, opts);
+      }
+      if (!group) break;
+
+      groups.push(group.rows);
+      var removeSet = {};
+      for (var r = 0; r < group.rows.length; r++) removeSet[group.rows[r]] = true;
+      avail = avail.filter(function (i) { return !removeSet[i]; });
+    }
+
+    if (groups.length === 0) return null;
+
+    var resultGroups = [];
+    for (var g = 0; g < groups.length; g++) resultGroups.push({ rows: groups[g], residual: false });
+    if (avail.length > 0) resultGroups.push({ rows: avail, residual: true });
+
+    // Need at least 2 "real" partitions (either >=2 found groups, or 1
+    // found group + a substantial residual) to be a meaningful split at
+    // all - a single group covering everything isn't a split.
+    if (groups.length < 1 || (groups.length === 1 && avail.length === 0)) return null;
+
+    // Score gain against the block's diagnostic columns (same definition
+    // as _haplotypeRowSplit uses) rather than the whole window - same
+    // dilution reasoning as _columnListCoherence's comment explains.
+    var nCols = colEnd - colStart + 1;
+    var diagCols = [];
+    for (var j = 0; j < nCols; j++) {
+      var cs = columnStats(A, rows, colStart + j, spans);
+      if (cs.covered >= P.MIN_COL_COVERAGE && (cs.dominantCount / cs.covered) < P.HAPLOTYPE_MAX_PURITY) {
+        diagCols.push(colStart + j);
+      }
+    }
+    if (diagCols.length === 0) return null;
+
+    var wholeCoh = _columnListCoherence(A, rows, diagCols, spans, P);
+    if (wholeCoh === null) wholeCoh = 0;
+
+    var totalWeight = 0, weightedSum = 0;
+    for (var g2 = 0; g2 < resultGroups.length; g2++) {
+      var grows = resultGroups[g2].rows;
+      var coh = _columnListCoherence(A, grows, diagCols, spans, P);
+      if (coh === null) coh = 0;
+      weightedSum += grows.length * coh;
+      totalWeight += grows.length;
+    }
+    var weightedAvg = weightedSum / totalWeight;
+    var gain = weightedAvg - wholeCoh;
+
+    if (gain < P.HAPLOTYPE_MIN_GAIN) return null;
+
+    return { groups: resultGroups, gain: gain };
+  }
+
+  // Tries all row-split strategies and takes whichever finds a real,
   // higher-gain split (or the one that finds anything, if only one does).
-  // _gapRowSplit and _haplotypeRowSplit are complementary, not redundant -
-  // see each one's own comment for the structural case it covers.
+  // Complementary, not redundant - see each one's own comment for the
+  // structural case it covers. _diagnosticRowSplit (ported from this
+  // app's own proven Cluster Now feature) is generally the strongest of
+  // the three and the only one that finds >2 groups, but is left as a
+  // peer rather than a replacement since it hasn't been run through the
+  // synthetic validation sweep the other two have.
   function bestRowSplit(A, rows, colStart, colEnd, spans, P) {
     var gapResult = _gapRowSplit(A, rows, colStart, colEnd, spans, P);
     var hapResult = _haplotypeRowSplit(A, rows, colStart, colEnd, spans, P);
-    if (gapResult && hapResult) return (hapResult.gain > gapResult.gain) ? hapResult : gapResult;
-    return gapResult || hapResult || null;
+    var diagResult = _diagnosticRowSplit(A, rows, colStart, colEnd, spans, P);
+    var best = null;
+    if (gapResult && (!best || gapResult.gain > best.gain)) best = gapResult;
+    if (hapResult && (!best || hapResult.gain > best.gain)) best = hapResult;
+    if (diagResult && (!best || diagResult.gain > best.gain)) best = diagResult;
+    return best;
   }
 
   // Recursive split-and-merge. Given a candidate block (rows, colStart,

@@ -469,3 +469,288 @@ single-step-greedy blindness as the Stage 2b "two independent zones" finding
 above. `_haplotypeRowSplit` is confirmed correct when the correct column range
 is handed to it directly; recovering it automatically needs the same
 future iterative-search fix noted for Stage 2b.
+
+
+---
+
+# Results (run 2026-09-11T22:36:41.753Z)
+
+## Results — Stage 0
+
+| nRows | len | mut | detected | nBlocks |
+|---|---|---|---|---|
+| 5 | 20 | 0 | true | 3 |
+| 5 | 20 | 0.05 | true | 2 |
+| 5 | 20 | 0.15 | true | 2 |
+| 5 | 20 | 0.3 | true | 3 |
+| 5 | 20 | 0.5 | false | 3 |
+| 5 | 60 | 0 | true | 2 |
+| 5 | 60 | 0.05 | true | 2 |
+| 5 | 60 | 0.15 | true | 2 |
+| 5 | 60 | 0.3 | true | 2 |
+| 5 | 60 | 0.5 | true | 2 |
+| 5 | 150 | 0 | true | 2 |
+| 5 | 150 | 0.05 | true | 2 |
+| 5 | 150 | 0.15 | true | 2 |
+| 5 | 150 | 0.3 | true | 2 |
+| 5 | 150 | 0.5 | true | 2 |
+| 10 | 20 | 0 | true | 2 |
+| 10 | 20 | 0.05 | true | 3 |
+| 10 | 20 | 0.15 | true | 4 |
+| 10 | 20 | 0.3 | true | 2 |
+| 10 | 20 | 0.5 | true | 2 |
+| 10 | 60 | 0 | true | 2 |
+| 10 | 60 | 0.05 | true | 2 |
+| 10 | 60 | 0.15 | true | 2 |
+| 10 | 60 | 0.3 | true | 2 |
+| 10 | 60 | 0.5 | true | 2 |
+| 10 | 150 | 0 | true | 2 |
+| 10 | 150 | 0.05 | true | 2 |
+| 10 | 150 | 0.15 | true | 2 |
+| 10 | 150 | 0.3 | true | 2 |
+| 10 | 150 | 0.5 | true | 2 |
+| 30 | 20 | 0 | false | 6 |
+| 30 | 20 | 0.05 | true | 3 |
+| 30 | 20 | 0.15 | true | 2 |
+| 30 | 20 | 0.3 | true | 3 |
+| 30 | 20 | 0.5 | true | 2 |
+| 30 | 60 | 0 | true | 2 |
+| 30 | 60 | 0.05 | true | 3 |
+| 30 | 60 | 0.15 | true | 2 |
+| 30 | 60 | 0.3 | true | 2 |
+| 30 | 60 | 0.5 | true | 2 |
+| 30 | 150 | 0 | true | 2 |
+| 30 | 150 | 0.05 | true | 2 |
+| 30 | 150 | 0.15 | true | 2 |
+| 30 | 150 | 0.3 | true | 2 |
+| 30 | 150 | 0.5 | true | 2 |
+
+### Conclusion
+
+Column separation fails at: nRows=5,len=20,mut=0.5; nRows=30,len=20,mut=0.
+
+## Results — Stage 1
+
+| nRows | subsetSize | tailLen | mut | exact | partialOverlap |
+|---|---|---|---|---|---|
+| 10 | 2 | 20 | 0 | false | 2/2 |
+| 10 | 2 | 20 | 0.05 | false | 0 |
+| 10 | 2 | 20 | 0.15 | false | 0 |
+| 10 | 2 | 20 | 0.3 | false | 0 |
+| 10 | 2 | 60 | 0 | false | 0 |
+| 10 | 2 | 60 | 0.05 | false | 0 |
+| 10 | 2 | 60 | 0.15 | false | 0 |
+| 10 | 2 | 60 | 0.3 | false | 0 |
+| 10 | 2 | 150 | 0 | false | 0 |
+| 10 | 2 | 150 | 0.05 | false | 0 |
+| 10 | 2 | 150 | 0.15 | false | 0 |
+| 10 | 2 | 150 | 0.3 | false | 0 |
+| 10 | 3 | 20 | 0 | true | exact |
+| 10 | 3 | 20 | 0.05 | false | 3/3 |
+| 10 | 3 | 20 | 0.15 | true | exact |
+| 10 | 3 | 20 | 0.3 | false | 3/3 |
+| 10 | 3 | 60 | 0 | true | exact |
+| 10 | 3 | 60 | 0.05 | true | exact |
+| 10 | 3 | 60 | 0.15 | true | exact |
+| 10 | 3 | 60 | 0.3 | true | exact |
+| 10 | 3 | 150 | 0 | true | exact |
+| 10 | 3 | 150 | 0.05 | true | exact |
+| 10 | 3 | 150 | 0.15 | true | exact |
+| 10 | 3 | 150 | 0.3 | true | exact |
+| 20 | 2 | 20 | 0 | false | 0 |
+| 20 | 2 | 20 | 0.05 | false | 0 |
+| 20 | 2 | 20 | 0.15 | false | 0 |
+| 20 | 2 | 20 | 0.3 | false | 0 |
+| 20 | 2 | 60 | 0 | false | 0 |
+| 20 | 2 | 60 | 0.05 | false | 0 |
+| 20 | 2 | 60 | 0.15 | false | 0 |
+| 20 | 2 | 60 | 0.3 | false | 0 |
+| 20 | 2 | 150 | 0 | false | 0 |
+| 20 | 2 | 150 | 0.05 | false | 0 |
+| 20 | 2 | 150 | 0.15 | false | 0 |
+| 20 | 2 | 150 | 0.3 | false | 0 |
+| 20 | 3 | 20 | 0 | true | exact |
+| 20 | 3 | 20 | 0.05 | true | exact |
+| 20 | 3 | 20 | 0.15 | false | 0 |
+| 20 | 3 | 20 | 0.3 | false | 0 |
+| 20 | 3 | 60 | 0 | true | exact |
+| 20 | 3 | 60 | 0.05 | true | exact |
+| 20 | 3 | 60 | 0.15 | false | 0 |
+| 20 | 3 | 60 | 0.3 | false | 0 |
+| 20 | 3 | 150 | 0 | true | exact |
+| 20 | 3 | 150 | 0.05 | true | exact |
+| 20 | 3 | 150 | 0.15 | true | exact |
+| 20 | 3 | 150 | 0.3 | false | 0 |
+| 20 | 5 | 20 | 0 | true | exact |
+| 20 | 5 | 20 | 0.05 | true | exact |
+| 20 | 5 | 20 | 0.15 | true | exact |
+| 20 | 5 | 20 | 0.3 | false | 4/5 |
+| 20 | 5 | 60 | 0 | true | exact |
+| 20 | 5 | 60 | 0.05 | true | exact |
+| 20 | 5 | 60 | 0.15 | true | exact |
+| 20 | 5 | 60 | 0.3 | false | 0 |
+| 20 | 5 | 150 | 0 | true | exact |
+| 20 | 5 | 150 | 0.05 | true | exact |
+| 20 | 5 | 150 | 0.15 | true | exact |
+| 20 | 5 | 150 | 0.3 | true | exact |
+| 50 | 2 | 20 | 0 | false | 0 |
+| 50 | 2 | 20 | 0.05 | false | 0 |
+| 50 | 2 | 20 | 0.15 | false | 0 |
+| 50 | 2 | 20 | 0.3 | false | 0 |
+| 50 | 2 | 60 | 0 | false | 0 |
+| 50 | 2 | 60 | 0.05 | false | 0 |
+| 50 | 2 | 60 | 0.15 | false | 0 |
+| 50 | 2 | 60 | 0.3 | false | 0 |
+| 50 | 2 | 150 | 0 | false | 0 |
+| 50 | 2 | 150 | 0.05 | false | 0 |
+| 50 | 2 | 150 | 0.15 | false | 0 |
+| 50 | 2 | 150 | 0.3 | false | 0 |
+| 50 | 3 | 20 | 0 | false | 0 |
+| 50 | 3 | 20 | 0.05 | false | 0 |
+| 50 | 3 | 20 | 0.15 | false | 0 |
+| 50 | 3 | 20 | 0.3 | false | 0 |
+| 50 | 3 | 60 | 0 | false | 0 |
+| 50 | 3 | 60 | 0.05 | false | 0 |
+| 50 | 3 | 60 | 0.15 | false | 0 |
+| 50 | 3 | 60 | 0.3 | false | 0 |
+| 50 | 3 | 150 | 0 | false | 0 |
+| 50 | 3 | 150 | 0.05 | false | 0 |
+| 50 | 3 | 150 | 0.15 | false | 0 |
+| 50 | 3 | 150 | 0.3 | false | 0 |
+| 50 | 5 | 20 | 0 | false | 0 |
+| 50 | 5 | 20 | 0.05 | false | 0 |
+| 50 | 5 | 20 | 0.15 | false | 0 |
+| 50 | 5 | 20 | 0.3 | false | 0 |
+| 50 | 5 | 60 | 0 | false | 0 |
+| 50 | 5 | 60 | 0.05 | false | 0 |
+| 50 | 5 | 60 | 0.15 | false | 0 |
+| 50 | 5 | 60 | 0.3 | false | 0 |
+| 50 | 5 | 150 | 0 | true | exact |
+| 50 | 5 | 150 | 0.05 | true | exact |
+| 50 | 5 | 150 | 0.15 | false | 0 |
+| 50 | 5 | 150 | 0.3 | false | 0 |
+| 50 | 10 | 20 | 0 | true | exact |
+| 50 | 10 | 20 | 0.05 | true | exact |
+| 50 | 10 | 20 | 0.15 | true | exact |
+| 50 | 10 | 20 | 0.3 | false | 0 |
+| 50 | 10 | 60 | 0 | true | exact |
+| 50 | 10 | 60 | 0.05 | true | exact |
+| 50 | 10 | 60 | 0.15 | true | exact |
+| 50 | 10 | 60 | 0.3 | false | 0 |
+| 50 | 10 | 150 | 0 | true | exact |
+| 50 | 10 | 150 | 0.05 | true | exact |
+| 50 | 10 | 150 | 0.15 | true | exact |
+| 50 | 10 | 150 | 0.3 | true | exact |
+
+### Conclusion
+
+39/108 exact recoveries. By subset size: size=2: 0/36, size=3: 17/36, size=5: 12/24, size=10: 10/12.
+
+## Results — Stage 1b (length variation)
+
+| nRows | subsetSize | trim | exact | partialOverlap |
+|---|---|---|---|---|
+| 10 | 3 | 0 | true | exact |
+| 10 | 3 | 0.15 | true | exact |
+| 10 | 3 | 0.3 | true | exact |
+| 10 | 5 | 0 | true | exact |
+| 10 | 5 | 0.15 | true | exact |
+| 10 | 5 | 0.3 | true | exact |
+| 20 | 3 | 0 | true | exact |
+| 20 | 3 | 0.15 | true | exact |
+| 20 | 3 | 0.3 | false | 0 |
+| 20 | 5 | 0 | true | exact |
+| 20 | 5 | 0.15 | true | exact |
+| 20 | 5 | 0.3 | true | exact |
+
+### Conclusion
+
+11/12 exact recoveries under independent trailing-gap trimming. Compare against Stage 1 baseline (trim=0.0 rows above) to isolate the effect of length variation alone.
+
+## Results — Stage 2a (3 groups in one zone)
+
+| sizeA | sizeB | groupA | groupB |
+|---|---|---|---|
+| 5 | 5 | missed | missed |
+| 3 | 8 | exact | exact |
+| 8 | 8 | missed | missed |
+
+### Conclusion
+
+At least one configuration failed to cleanly separate both groups — see table for which.
+
+## Results — Stage 2b (two independent zones)
+
+| zoneX | zoneY | distinctZones |
+|---|---|---|
+| missed | missed | n/a |
+
+### Conclusion
+
+Zones were not both found at distinct column ranges — see table.
+
+
+## Real-data addendum (2026-09-12): two new row-split strategies added
+
+Found by testing the real `oma_SINE16b_realigned.aln.fa` file directly with
+the user (not a synthetic stage): `_gapRowSplit`'s per-row whole-window
+match-rate cannot detect a row split defined by several correlated diagnostic
+SNPs sitting among many invariant columns (cols 1152-1217 of that file: ~12 of
+66 columns genuinely polymorphic, splitting rows into two haplotype groups,
+confirmed by eye after cropping+reordering the region into a separate file for
+inspection).
+
+**`_haplotypeRowSplit`** (Hamming-distance k=2 clustering over just the
+diagnostic columns, deterministic farthest-pair seeding) was added first and
+found the real split (28/20 rows, gain 0.222 scored via new
+`_columnListCoherence` helper against diagnostic columns only — averaging over
+the whole window mathematically caps measurable gain regardless of split
+quality, the same dilution problem that hid the signal from `_gapRowSplit` in
+the first place). Required two empirically-found overfitting guards after the
+oracle initially failed with false splits on the uniform `clean_core.aln.fa`
+fixture: `HAPLOTYPE_MIN_INFO_COLS=8` (4 was not enough — small samples can
+always be bipartitioned to look clean on a handful of hand-picked columns) and
+`HAPLOTYPE_MIN_USABLE_ROWS=20` alongside `HAPLOTYPE_MIN_GAIN=0.2` (noise on
+16 rows reached gain 0.19, the real 48-row split reached 0.22 — a thin margin,
+flagged as needing its own synthetic sweep rather than the single-real-example
+calibration used here).
+
+**`_diagnosticRowSplit`** was added second, ported from this app's own
+already-shipped, already-validated ViewAlign "Cluster Now" feature
+(`SINEClusterer.findBestGroup` in `cluster.js`), generalized to work on a
+`[colStart, colEnd]` sub-range instead of always the whole alignment. Run
+directly (default parameters) on the real file as a sanity check before
+porting: it independently found 7 clusters, two of which closely matched
+groups already found by hand/`_haplotypeRowSplit` (a 20-seq cluster nearly
+identical to a group found in the file's second divergent flank, cols
+1274-1662; a 14-seq cluster overlapping heavily with the 1152-1217 haplotype
+group) — real triangulation across three independent methods (eye, k-means,
+evidence-accumulation), not one algorithm confirming itself. The ported
+version treats every (column, state) pair as a candidate row group,
+fuzzy-merges near-identical candidates across columns (>=90% overlap), and
+scores each merged candidate by how many columns support it with few outside
+"leaks" - real evidence accumulation rather than a fixed k, and naturally
+finds >2 groups by iterating (extract best group, remove, repeat), which is a
+better fit for Stage 2a's "3 groups, one zone" case than `_gapRowSplit`'s
+majority-of-rows guard. On direct comparison at the exact 1152-1217 range it
+found an independent 21/29 split (gain 0.214) very close to
+`_haplotypeRowSplit`'s 20/28 (gain 0.222) - `bestRowSplit` now tries all three
+row-split strategies and keeps the highest-gain result.
+
+**Regression check**: oracle passes; full four-stage synthetic sweep re-run
+shows Stage 0 (43/45), Stage 1b (11/12), and Stage 2a unchanged; Stage 1
+dropped slightly (41/108 → 39/108, within noise - the diagnostic method
+occasionally accepts/rejects a borderline case differently than the other two,
+not a directional regression). Real file's overall block count changed
+26 → 28 (broadly the same partition, a couple of extra sub-splits in the
+already-known-complex 1585-1612 region) - not independently re-verified by eye
+past the two clusters cross-checked above.
+
+**Not yet fixed** (same already-documented limitation as before, not new):
+the 1152-1217 split still isn't surfaced by `computeBiclusterMask`'s top-level
+recursion on the real file - it sits inside a wide [0,1273] range that
+`bestColumnSplit` judges coherent enough overall (0.92) before narrowing down
+far enough to see it. All three row-split functions are confirmed correct when
+handed the correct column range directly; recovering it automatically needs
+the iterative-search fix already flagged for the Stage 2b "two independent
+zones" case.
