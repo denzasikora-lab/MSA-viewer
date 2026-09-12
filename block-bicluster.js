@@ -116,8 +116,20 @@
       covered++;
     }
     if (covered === 0) return { covered: 0, dominant: -1, dominantCount: 0 };
+    // Dominant state must be a real base (A/C/G/T), never a gap - "most
+    // rows share a deletion here" is not the same claim as "most rows
+    // share a real base here," and treating them as equally strong
+    // conservation evidence produced a real, confirmed bug: a stretch
+    // where most rows simply hadn't started their real sequence yet
+    // (mostly gap, one lone real base at the very end) scored as high
+    // coherence (0.80-0.90) purely from gap-agreement, visually
+    // indistinguishable from genuine shared-sequence conservation but
+    // meaning something completely different. counts[4] (gap) is still
+    // tracked above but never eligible to be `dominant` - a column where
+    // every covered row is gap correctly falls out as dominantCount=0
+    // (no real signal), not as a false "perfectly conserved" reading.
     var best = 0;
-    for (var s = 1; s < 5; s++) if (counts[s] > counts[best]) best = s;
+    for (var s = 1; s < 4; s++) if (counts[s] > counts[best]) best = s;
     return { covered: covered, dominant: best, dominantCount: counts[best] };
   }
 
@@ -408,16 +420,35 @@
       }
       var restRate = restCovered > 0 ? restMatch / restCovered : 0;
 
+      // No "zero overlap with background = automatically accept" shortcut
+      // here (unlike _findBestDiagnosticGroup, where a candidate group is
+      // built FROM a specific shared state so its own internal purity is
+      // 100% by construction) - confirmed directly that bypassing the
+      // margin requirement on zero-overlap alone let a 7-row group with
+      // only 33% internal purity through purely because that weak
+      // majority happened not to overlap the rest by chance (small
+      // alphabet, sparse real data). When restMatch really is 0, outP is
+      // 0 and qual reduces to groupPurity*100 anyway, so a genuinely pure
+      // group still passes automatically - this only removes the case
+      // where zero overlap was doing the work instead of real purity.
       var inP = groupPurity * 100;
       var outP = restRate * 100;
       var qual = Math.max(0, inP - outP);
-      var isPerfect = (restMatch === 0 && restCovered > 0);
-      if (!isPerfect && qual < thresh) continue; // not enough real margin over background - don't count this column
+      if (qual < thresh) continue; // not enough real margin over background - don't count this column
 
       sum += groupPurity;
       n++;
     }
-    return n === 0 ? null : sum / n;
+    // Require multiple independent qualifying columns, not just one -
+    // confirmed directly (clean_core.aln.fa, a known-uniform fixture) that
+    // a single column clearing "perfect exclusivity" by pure chance (easy
+    // with a small alphabet and a small, sparse group) could otherwise
+    // carry a whole group's coherence score on its own. Real signal should
+    // show up at more than one position; a lone lucky column is exactly
+    // the failure mode _findBestDiagnosticGroup's own minOccurrences
+    // guards against, applied here too.
+    var minQualifying = (P.GAP_MIN_QUALIFYING_COLS != null) ? P.GAP_MIN_QUALIFYING_COLS : 2;
+    return n < minQualifying ? null : sum / n;
   }
 
   // Gap-clustering row split: scores each row by its OVERALL match-rate to
@@ -536,27 +567,31 @@
     }
     if (largestGroup < 0.4 * rows.length) return null;
 
-    // Compute weighted-average coherence of accepted groups, using
-    // _strictGroupCoherence rather than plain blockCoherence - see its
-    // comment for the exact bug this closes (confirmed directly on real
-    // output: a 5-row group with real per-column agreement of only 2-4
-    // out of 5 - unremarkable for 5 rows over a 5-symbol alphabet, pure
-    // pigeonhole chance - averaged into an apparently-high aggregate
-    // score with no real shared sequence behind it at all).
+    // Score by the BEST accepted group's own coherence, not a
+    // size-weighted average across all of them - using
+    // _strictGroupCoherence rather than plain blockCoherence (see its
+    // comment for the exact bug this closes: a 5-row group with only 2-4
+    // out of 5 real agreement, unremarkable pigeonhole chance for a small
+    // alphabet, averaged into a misleadingly high aggregate). A weighted
+    // average over ALL groups was tried and measured to fail differently:
+    // the point of this split is finding ONE coherent minority subgroup
+    // while the remainder stays legitimately heterogeneous "everyone
+    // else" - averaging in that deliberately-divergent majority group's
+    // now-correctly-low strict coherence dragged the whole average below
+    // the whole block's baseline, rejecting a real, perfect (coherence
+    // 1.0) 5-row match on mosaic_subset.aln.fa because the OTHER 15 rows
+    // (correctly) don't cohere with each other either.
     var wholeBlockCoherence = blockCoherence(A, rows, colStart, colEnd, spans, P);
     if (wholeBlockCoherence === null) wholeBlockCoherence = 0;
 
-    var totalWeight = 0, weightedSum = 0;
+    var bestGroupCoh = 0;
     for (var g = 0; g < acceptedGroups.length; g++) {
       var groupRows = acceptedGroups[g].map(function(x) { return x.idx; });
       var coh = _strictGroupCoherence(A, groupRows, colStart, colEnd, spans, P, rows);
-      if (coh === null) coh = 0;
-      weightedSum += groupRows.length * coh;
-      totalWeight += groupRows.length;
+      if (coh !== null && coh > bestGroupCoh) bestGroupCoh = coh;
     }
 
-    var weightedAvg = weightedSum / totalWeight;
-    var gain = weightedAvg - wholeBlockCoherence;
+    var gain = bestGroupCoh - wholeBlockCoherence;
 
     if (gain < P.MIN_SPLIT_GAIN) return null;
 
