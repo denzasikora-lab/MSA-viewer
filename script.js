@@ -6468,22 +6468,33 @@ function renderBlockMaskOverlay() {
             }
             if (!vis.length) return;
             vis.sort((a, b) => rowElByIdx.get(a).getBoundingClientRect().top - rowElByIdx.get(b).getBoundingClientRect().top);
-            const dashed = _blockMaskGroupContiguity(mb.rows) < 0.6;
-            let runStart = vis[0], prev = vis[0];
-            const flush = (a, z) => {
+            const groupDashed = _blockMaskGroupContiguity(mb.rows) < 0.6;
+            // A run of exactly 1 row is always dashed, even when the
+            // group's OVERALL contiguity score is high enough that the
+            // group as a whole wouldn't be - a single isolated row still
+            // looks exactly like its own solid one-row "cluster" without
+            // this, which is misleading regardless of how contiguous the
+            // rest of the group is (confirmed live: a mostly-contiguous
+            // multi-row group with one scattered stray row rendered that
+            // stray row as an undashed solid box, indistinguishable from
+            // a real single-row finding - user correctly rejected this,
+            // "single line cannot be a group").
+            let runStart = vis[0], prev = vis[0], runLen = 1;
+            const flush = (a, z, len) => {
                 const ya = rowTop(a), yz = rowTop(z);
                 if (ya == null || yz == null) return;
-                addRect(ya, (yz - ya) + rowH, _blockMaskOpacity, dashed);
+                addRect(ya, (yz - ya) + rowH, _blockMaskOpacity, groupDashed || len === 1);
             };
             for (let i = 1; i < vis.length; i++) {
                 const yPrev = rowElByIdx.get(prev).getBoundingClientRect().top;
                 const yCur = rowElByIdx.get(vis[i]).getBoundingClientRect().top;
-                if (Math.abs(yCur - yPrev - rowH) < rowH * 0.5) { prev = vis[i]; continue; }
-                flush(runStart, prev);
+                if (Math.abs(yCur - yPrev - rowH) < rowH * 0.5) { prev = vis[i]; runLen++; continue; }
+                flush(runStart, prev, runLen);
                 runStart = vis[i];
                 prev = vis[i];
+                runLen = 1;
             }
-            flush(runStart, prev);
+            flush(runStart, prev, runLen);
         });
 
         blockEl.appendChild(svg);
