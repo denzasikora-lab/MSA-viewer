@@ -125,9 +125,29 @@
     // coherence (0.80-0.90) purely from gap-agreement, visually
     // indistinguishable from genuine shared-sequence conservation but
     // meaning something completely different. counts[4] (gap) is still
-    // tracked above but never eligible to be `dominant` - a column where
-    // every covered row is gap correctly falls out as dominantCount=0
-    // (no real signal), not as a false "perfectly conserved" reading.
+    // tracked above but never eligible to be `dominant`.
+    //
+    // A second, opposite bug this same change first introduced and had to
+    // be caught here too: if EVERY covered row is gap (real bases sum to
+    // 0), `dominant` fell through to state 0 with dominantCount 0,
+    // reporting a fake "0% purity" column instead of "no real data here
+    // at all" - confirmed directly on real oma_SINE16b data, where a
+    // 23-row group with zero real bases at a column (all deletions)
+    // scored blockCoherence exactly 0.000 for that column, dragging the
+    // group's average coherence toward zero and fragmenting a region that
+    // should have been judged only on columns that actually carry real
+    // sequence. A fully-gapped column is UNINFORMATIVE (same as covered <
+    // MIN_COL_COVERAGE), not "0% conserved" - return covered:0 so
+    // callers' existing MIN_COL_COVERAGE check skips it. This is
+    // deliberately narrower than also excluding gap rows from `covered`
+    // when SOME real bases are present: a partial mix of a real base and
+    // genuine within-span deletions is exactly the case Simmons &
+    // Ochoterena's gap-as-real-state treatment is for (a real deletion is
+    // a different, valid state from a real base, and should count as a
+    // mismatch against the real-base majority, not be excluded) - only
+    // the all-gap degenerate case is being fixed here.
+    var realCovered = counts[0] + counts[1] + counts[2] + counts[3];
+    if (realCovered === 0) return { covered: 0, dominant: -1, dominantCount: 0 };
     var best = 0;
     for (var s = 1; s < 4; s++) if (counts[s] > counts[best]) best = s;
     return { covered: covered, dominant: best, dominantCount: counts[best] };
