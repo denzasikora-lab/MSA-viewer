@@ -1206,41 +1206,60 @@
   // sliding window of P.WINDOW_SCAN_WIDTH columns (P.WINDOW_SCAN_MAX
   // windows max, 50% overlap) across the range, calling bestRowSplit on
   // each window alone so its diagnostic-column pool is restricted back
-  // down to just that window. Returns the single best-gain result found,
-  // paired with the window it came from, or null.
+  // down to just that window. Candidates whose find row-set is a proper
+  // subset of another candidate's are dropped (a high-gain fragment of
+  // a larger block must not beat the block); among the same row-set the
+  // widest window wins, then max gain. Returns that pick, or null.
+  function _minorityFindRows(result, P) {
+    var groups = [];
+    for (var i = 0; i < result.groups.length; i++) {
+      var g = result.groups[i];
+      if (!g.residual && g.rows.length >= P.MIN_BLOCK_ROWS) groups.push(g);
+    }
+    if (!groups.length) return null;
+    var smallest = groups[0];
+    for (var j = 1; j < groups.length; j++) {
+      if (groups[j].rows.length < smallest.rows.length) smallest = groups[j];
+    }
+    return smallest.rows.slice().sort(function (a, b) { return a - b; });
+  }
+
+  function _sortedRowsSubsetOf(small, big) {
+    if (small.length >= big.length) return false;
+    var set = {};
+    for (var i = 0; i < big.length; i++) set[big[i]] = true;
+    for (var j = 0; j < small.length; j++) if (!set[small[j]]) return false;
+    return true;
+  }
+
   function _windowedRowSplitScan(A, rows, colStart, colEnd, spans, P) {
     var totalWidth = colEnd - colStart + 1;
     if (totalWidth < 2 * P.MIN_BLOCK_COLS) return null;
 
     var winWidth = P.WINDOW_SCAN_WIDTH;
     if (totalWidth <= winWidth) {
-      // Full-range bestRowSplit already failed on this exact range.
-      // A motif can still sit in a sub-window: eye-test v4 is a 16-col
-      // C-block inside the 32-col remainder after the conserved core is
-      // carved off. The previous early-return here meant this scan never
-      // ran on any range shorter than WINDOW_SCAN_WIDTH (64) — every
-      // 48-col eye-test and any cropped SINE slice. Use a 16-col window
-      // (2 * MIN_BLOCK_COLS) so the sub-window is strictly narrower than
-      // the parent and still wide enough to be a legal block.
       winWidth = 2 * P.MIN_BLOCK_COLS;
       if (winWidth >= totalWidth) return null;
     }
 
     var step = Math.max(1, Math.floor(winWidth / 2));
-    var best = null, bestWinStart = -1, bestWinEnd = -1;
+    var cands = [];
     var winStart = colStart;
     var tried = 0;
 
     while (winStart <= colEnd && tried < P.WINDOW_SCAN_MAX) {
       var winEnd = Math.min(winStart + winWidth - 1, colEnd);
       var thisWidth = winEnd - winStart + 1;
-      // Skip the full parent range — the caller already tried it.
       if (thisWidth >= P.MIN_BLOCK_COLS && !(winStart === colStart && winEnd === colEnd)) {
         var result = bestRowSplit(A, rows, winStart, winEnd, spans, P);
-        if (result && (!best || result.gain > best.gain)) {
-          best = result;
-          bestWinStart = winStart;
-          bestWinEnd = winEnd;
+        if (result) {
+          var findRows = _minorityFindRows(result, P);
+          if (findRows) {
+            cands.push({
+              rowSplit: result, winStart: winStart, winEnd: winEnd,
+              findRows: findRows, gain: result.gain, width: thisWidth
+            });
+          }
         }
       }
       tried++;
@@ -1248,8 +1267,42 @@
       winStart += step;
     }
 
-    if (!best) return null;
-    return { rowSplit: best, winStart: bestWinStart, winEnd: bestWinEnd };
+    if (!cands.length) return null;
+
+    // Measured on eye-test v5: the true 6-row C-block at cols 17-32
+    // scored gain 0.25, while an 8-col slice of 4 of those rows scored
+    // 0.64, so max-gain painted a fragment. Drop a candidate whose find
+    // row-set is a proper subset of another candidate's; among the same
+    // row-set keep the widest window.
+    var kept = [];
+    for (var i = 0; i < cands.length; i++) {
+      var dominated = false;
+      for (var j = 0; j < cands.length; j++) {
+        if (i === j) continue;
+        if (_sortedRowsSubsetOf(cands[i].findRows, cands[j].findRows)) {
+          dominated = true;
+          break;
+        }
+      }
+      if (!dominated) kept.push(cands[i]);
+    }
+    var byKey = {};
+    for (var k = 0; k < kept.length; k++) {
+      var key = kept[k].findRows.join(',');
+      var cur = byKey[key];
+      if (!cur
+          || kept[k].width > cur.width
+          || (kept[k].width === cur.width && kept[k].gain > cur.gain)) {
+        byKey[key] = kept[k];
+      }
+    }
+    var best = null;
+    var keys = Object.keys(byKey);
+    for (var ki = 0; ki < keys.length; ki++) {
+      var c = byKey[keys[ki]];
+      if (!best || c.gain > best.gain) best = c;
+    }
+    return { rowSplit: best.rowSplit, winStart: best.winStart, winEnd: best.winEnd };
   }
 
   // Return: a flat array of leaf objects, each { rows: [...], colStart,
