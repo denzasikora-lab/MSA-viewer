@@ -5049,3 +5049,28 @@ same evidence assigned to two different, competing "clusters").
 crop (was 34 and 497). Oracle passes, full synthetic sweep unchanged
 (44/45, 26/108, 11/12, same Stage 2a/2b pattern), clean_core/mosaic_subset
 ground truth intact.
+
+## Isolated undersized/null leaf found live (2026-09-12) - real gap in the earlier fix
+
+Found while trying to answer "describe the first block": a 2-row,
+coherence:null leaf at cols 0-63 of the real oma_SINE16b file survived
+both `_mergeUndersizedLeaves` and the null-coherence merge, because those
+both only merge into a SIBLING sharing the exact same column range - this
+leaf has none (its original row-split's sibling groups ended up further
+split into different column boundaries via independent recursion, so no
+other leaf happens to share [0,63] exactly). The algorithm-level fix
+cannot catch this by construction as currently written.
+
+**Interim fix (display-level backstop, script.js)**: unconditionally force
+gray any row-split block with `rows.length < 3` or `coherence == null`,
+regardless of whether a merge target existed - verified directly in a
+real browser that the specific leaf now renders DIVERGENT. Only 1 such
+case exists in the real file's current output.
+
+**Still open**: the real, algorithm-level fix - making
+`_mergeUndersizedLeaves`/`_mergeIdenticalRowSiblings` handle an isolated
+leaf with no exact-range sibling (e.g., by finding the best-overlapping
+leaf and adjusting column boundaries, or restructuring so sibling groups
+from one split are never allowed to diverge onto incompatible column
+boundaries in the first place) - not yet attempted, flagged here rather
+than left silently "fixed" by the display patch alone.

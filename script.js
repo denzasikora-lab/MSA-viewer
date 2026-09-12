@@ -6587,14 +6587,23 @@ function applyBiclusterLive() {
         group.forEach(b => { b._isMinority = (b.rows !== 'all' && b.rows.length > 1 && b.rows.length === minSize); });
     });
     raw.blocks.forEach(b => {
-        // A single-row block trivially "matches itself" at every column
-        // (coherence computed against a group of one is meaningless, not
-        // a real finding) - force it gray regardless of what its own
-        // coherence number says, rather than only excluding it from
-        // minority selection above (which alone wasn't enough: a lone
-        // row can still self-score coherence 1.0 and hit the normal
-        // ladder's CONSERVATIVE bucket on its own).
-        if (b.rows !== 'all' && b.rows.length <= 1) { b.type = 'DIVERGENT'; return; }
+        // Safety net, not the primary fix: block-bicluster.js's own
+        // _mergeUndersizedLeaves/_mergeIdenticalRowSiblings only merge an
+        // undersized or null-coherence leaf into a SIBLING sharing its
+        // exact column range - confirmed live that a leaf can be
+        // undersized/null with NO such sibling at all (an isolated
+        // 2-row, coherence:null leaf at cols 0-63 of the real
+        // oma_SINE16b file, product of an independent recursive branch
+        // whose siblings ended up at different column boundaries), which
+        // the algorithm-level fix cannot catch by construction. Force
+        // gray here unconditionally as a display-level backstop so nothing
+        // under MIN_BLOCK_ROWS-equivalent (3) or with null coherence is
+        // ever colored as a find, regardless of whether the algorithm
+        // had a merge target available - the real fix (making the
+        // algorithm itself never leave such a leaf isolated, preserving
+        // the tiling invariant) is still open, tracked in
+        // tests/bicluster/VALIDATION_PLAN.md.
+        if (b.rows !== 'all' && (b.rows.length < 3 || b.coherence == null)) { b.type = 'DIVERGENT'; return; }
         b.type = _biclusterCoherenceToType(b.coherence, !!b._isMinority);
     });
 
