@@ -6514,9 +6514,26 @@ function applyBlockMaskLive(presetOrParams) {
 // row_headers } shape. computeBiclusterMask's blocks carry `.coherence`
 // (a float or null) rather than block-mask's categorical `.type` -
 // bucket coherence into the same BLOCKMASK_COLORS keys so the existing
-// renderer needs no changes: high coherence reads as CONSERVATIVE
-// (green), medium as MOSAIC (amber), low/unscoreable as DIVERGENT (gray).
-function _biclusterCoherenceToType(coherence) {
+// renderer needs no changes.
+//
+// A row-split block (rows !== 'all') already passed the algorithm's own
+// acceptance test (it beat MIN_SPLIT_GAIN/HAPLOTYPE_MIN_GAIN over its
+// parent's coherence) - it is by definition a found signal, never
+// background. Coloring it purely by its raw coherence number was a real
+// bug, confirmed directly: after fixing gap-inflated coherence
+// (block-bicluster.js's own history), a genuine, algorithm-confirmed
+// 5-row match on mosaic_subset.aln.fa scores coherence 0.59 - just under
+// the 0.6 "MOSAIC" cutoff picked back when coherence numbers ran higher -
+// so it rendered as DIVERGENT gray, visually identical to "nothing found"
+// even though it's the one real result on the page. Row-split blocks are
+// therefore never gray; only whole-range ('all') blocks use the
+// gray/amber/green coherence ladder, since those really are meant to
+// distinguish "background" from "somewhat conserved" from "core."
+function _biclusterCoherenceToType(coherence, isRowSplit) {
+    if (isRowSplit) {
+        if (coherence == null) return 'MOSAIC';
+        return coherence >= 0.85 ? 'CONSERVATIVE' : 'MOSAIC';
+    }
     if (coherence == null) return 'DIVERGENT';
     if (coherence >= 0.85) return 'CONSERVATIVE';
     if (coherence >= 0.6) return 'MOSAIC';
@@ -6528,7 +6545,7 @@ function applyBiclusterLive() {
     if (!state.seqs || !state.seqs.length) { showMessage('Load an alignment first', 3000); return null; }
     const fasta = state.seqs.map(s => '>' + s.header + '\n' + s.seq).join('\n') + '\n';
     const raw = BlockBicluster.computeBiclusterMask(fasta, {});
-    raw.blocks.forEach(b => { b.type = _biclusterCoherenceToType(b.coherence); });
+    raw.blocks.forEach(b => { b.type = _biclusterCoherenceToType(b.coherence, b.rows !== 'all'); });
     state.blockMask = raw;
     state._blockMaskPreset = null;
     renderBlockMaskOverlay();
