@@ -1578,6 +1578,91 @@
     // mergeAdjacentLeaves left 4 (real file) / 9 (crop) pairs unfixed,
     // all at ranges mergeAdjacentLeaves had just produced.
     leaves = _mergeIdenticalRowSiblings(leaves, A, spans, P);
+    // Final evidence check: a leaf can be a MERGE product of several
+    // earlier passes (mergeAdjacentLeaves combines column-adjacent
+    // same-row-set leaves; the two passes above fold undersized/
+    // duplicate-conflicting leaves into siblings) without ever being
+    // re-validated as a single unit against the real acceptance
+    // criterion. Confirmed directly, live: a final 6-row leaf displayed
+    // with plain coherence 0.58 (computed with the diluted, unstrict
+    // formula used only for display) scored NULL under
+    // _strictGroupCoherence (the actual formula _gapRowSplit uses to
+    // accept a split) when tested against the same background in
+    // isolation - meaning this exact leaf, as it ended up, has ZERO real
+    // supporting evidence, despite having passed through a pipeline of
+    // otherwise-individually-correct merge steps. If a same-range sibling
+    // exists, fold this leaf's rows into it (same mechanism as
+    // _mergeUndersizedLeaves); otherwise, force this leaf's OWN
+    // coherence to null so the existing null-coherence display backstop
+    // (script.js) still catches it even though plain blockCoherence
+    // alone would not have flagged it.
+    (function _dropUnsupportedLeaves() {
+      var byRange = {};
+      for (var i = 0; i < leaves.length; i++) {
+        var key = leaves[i].colStart + ':' + leaves[i].colEnd;
+        if (!byRange[key]) byRange[key] = [];
+        byRange[key].push(leaves[i]);
+      }
+      var toRemove = {};
+      var keys = Object.keys(byRange);
+      for (var k = 0; k < keys.length; k++) {
+        var group = byRange[keys[k]];
+        // Background for re-validation is the union of rows across ALL
+        // sibling leaves at this exact column range - NOT the full
+        // global row set. Using the global set was tried and measured to
+        // regress a real, known-good signal (mosaic_subset.aln.fa's
+        // 5-row group): the group was originally validated against its
+        // LOCAL recursive context (whatever rows remained at that point
+        // in the recursion, often far fewer than the full alignment),
+        // and comparing against the true global population is a
+        // different, often much larger and differently-composed
+        // reference population than what justified the split in the
+        // first place. The local sibling union is the closest available
+        // approximation of that original context after merging.
+        var localBackground = [];
+        for (var gb = 0; gb < group.length; gb++) localBackground = localBackground.concat(group[gb].rows);
+        if (group.length < 2) continue; // no sibling context to validate against locally
+
+        // Check every group's own evidence, regardless of size - "this
+        // group is the biggest one here" does not mean it is real
+        // background exempt from evidence (tried exempting the largest
+        // group and measured it to still let a 6-of-9 unsupported group
+        // through as a colored find, since a near-balanced split's
+        // larger side is not automatically "everyone else"). What
+        // matters for whether to MERGE a failing group away is whether
+        // the group it would merge into ALSO lacks evidence - never
+        // merge a failing group into one that has real evidence, or a
+        // real finding gets swallowed by an unsupported one (measured:
+        // this destroyed mosaic_subset's real 5-row split entirely when
+        // tried without this restriction).
+        var strictOf = {};
+        for (var gs = 0; gs < group.length; gs++) {
+          if (group[gs].rows.length === A.length) { strictOf[gs] = 1; continue; } // 'all' leaf, not a claimed group - treat as "has evidence" so it's never a merge target/source here
+          strictOf[gs] = _strictGroupCoherence(A, group[gs].rows, group[gs].colStart, group[gs].colEnd, spans, P, localBackground);
+        }
+        for (var g = 0; g < group.length; g++) {
+          var leaf = group[g];
+          if (leaf.rows.length === A.length) continue; // whole-block 'all' leaf, not a claimed group
+          if (strictOf[g] !== null) continue; // has real evidence, leave as-is
+          var target = null;
+          for (var g2 = 0; g2 < group.length; g2++) {
+            if (g2 === g || toRemove[group[g2]._iddu]) continue;
+            if (strictOf[g2] !== null) continue; // only merge into another group that ALSO lacks evidence
+            if (!target || group[g2].rows.length > target.rows.length) target = group[g2];
+          }
+          if (target) {
+            target.rows = target.rows.concat(leaf.rows);
+            target.coherence = blockCoherence(A, target.rows, target.colStart, target.colEnd, spans, P);
+            leaf._iddu = leaf._iddu || (k + '-' + g);
+            toRemove[leaf._iddu] = true;
+            leaf._merged = true;
+          } else {
+            leaf.coherence = null;
+          }
+        }
+      }
+      leaves = leaves.filter(function(l) { return !l._merged; });
+    })();
 
     leaves.sort(function(a, b) { return a.colStart - b.colStart; });
 
