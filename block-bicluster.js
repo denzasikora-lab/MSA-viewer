@@ -1515,6 +1515,46 @@
     return leaves.filter(function(l) { return !l._merged; });
   }
 
+  // Header pattern this app's own fixtures/pipeline use:
+  // ACCESSION:START-END(strand)(strand) - two rows sharing the same
+  // ACCESSION and START are the SAME genomic locus extracted with two
+  // different end coordinates (a known artifact, not independent
+  // biological evidence), e.g. "AYEL01072234.1:54276-54551(+)(+)" and
+  // "AYEL01072234.1:54276-54620(+)(+)". Confirmed live: exactly this
+  // pair counted as 2 of 4 rows "supporting" a weak block, doubling its
+  // apparent weight. Returns the accession+start key, or null if the
+  // header doesn't match this pattern (nothing to dedup against).
+  function _duplicateLocusKey(name) {
+    var m = /^([^:]+):(\d+)-\d+/.exec(name);
+    return m ? (m[1] + ':' + m[2]) : null;
+  }
+
+  // Collapses same-locus duplicates into one representative row for
+  // CLUSTERING purposes only - every row-split/coherence computation sees
+  // at most one row per real locus, so a duplicate can never inflate a
+  // group's apparent support. The final leaf output expands each
+  // representative back out to all of its duplicate members afterward
+  // (via expandRow, built alongside this), so every original row still
+  // appears in the returned blocks, always in the same group as its
+  // duplicate(s).
+  function _dedupLocusRows(names) {
+    var keyOf = names.map(_duplicateLocusKey);
+    var repOfKey = {};
+    var repOf = new Array(names.length);
+    var membersOf = {};
+    for (var i = 0; i < names.length; i++) {
+      var key = keyOf[i];
+      if (key === null) { repOf[i] = i; membersOf[i] = [i]; continue; }
+      if (!(key in repOfKey)) { repOfKey[key] = i; membersOf[i] = []; }
+      var rep = repOfKey[key];
+      repOf[i] = rep;
+      membersOf[rep].push(i);
+    }
+    var dedupedRows = [];
+    for (var r = 0; r < names.length; r++) if (repOf[r] === r) dedupedRows.push(r);
+    return { dedupedRows: dedupedRows, membersOf: membersOf };
+  }
+
   function computeBiclusterMask(fastaText, params) {
     var P = resolveParams(params);
     var parsed = parseAln(fastaText);
@@ -1523,8 +1563,8 @@
     var names = parsed.names;
     var spans = coverageSpans(A);
 
-    var allRows = [];
-    for (var i = 0; i < A.length; i++) allRows.push(i);
+    var dedup = _dedupLocusRows(names);
+    var allRows = dedup.dedupedRows;
 
     _splitLeafCount = 0;
     var leaves = splitAndMerge(A, allRows, 0, ncols - 1, spans, P);
@@ -1542,7 +1582,17 @@
     leaves.sort(function(a, b) { return a.colStart - b.colStart; });
 
     var blocks = leaves.map(function(leaf) {
-      var sortedRows = leaf.rows.slice().sort(function(a, b) { return a - b; });
+      // Expand each representative row back out to all of its duplicate
+      // locus members (see _dedupLocusRows) - every original row must
+      // still appear in the output, always in the same group as its
+      // duplicate(s), even though only the representative took part in
+      // the actual clustering computation above.
+      var expandedRows = [];
+      for (var k = 0; k < leaf.rows.length; k++) {
+        var members = dedup.membersOf[leaf.rows[k]];
+        for (var m = 0; m < members.length; m++) expandedRows.push(members[m]);
+      }
+      var sortedRows = expandedRows.sort(function(a, b) { return a - b; });
       var isAll = sortedRows.length === A.length;
       if (isAll) {
         for (var i = 0; i < sortedRows.length; i++) {
