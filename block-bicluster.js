@@ -1358,6 +1358,16 @@
   // largest, recomputing that sibling's coherence over the merged rows,
   // rather than leaving it to exist - and be colored - as if it were a
   // group.
+  //
+  // Same treatment for a leaf whose coherence is null: that means every
+  // one of its rows is gap across the ENTIRE leaf range (no real base
+  // data anywhere in it) - confirmed live on a real 3-row leaf that read
+  // as pure gaps at every column. That is not a group that failed to
+  // reach a coherence threshold, it is a group with literally zero
+  // measurable evidence, and merging it away is the same fix as the
+  // undersized case for the same underlying reason (do not let a group
+  // exist - and be colored as a find - that mechanically cannot
+  // demonstrate anything).
   function _mergeUndersizedLeaves(leaves, A, spans, P) {
     var byRange = {};
     for (var i = 0; i < leaves.length; i++) {
@@ -1372,7 +1382,7 @@
       if (group.length < 2) continue; // no sibling to merge into
       for (var g = 0; g < group.length; g++) {
         var leaf = group[g];
-        if (leaf.rows.length >= P.MIN_BLOCK_ROWS) continue;
+        if (leaf.rows.length >= P.MIN_BLOCK_ROWS && leaf.coherence !== null) continue;
         var target = null;
         for (var g2 = 0; g2 < group.length; g2++) {
           if (g2 === g || toRemove[group[g2]._id]) continue;

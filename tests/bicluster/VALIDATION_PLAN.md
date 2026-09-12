@@ -3877,3 +3877,252 @@ dead code in practice since the algorithm no longer produces singletons).
 0 spurious splits, mosaic_subset still finds exactly its one real group,
 and a direct check on the cropped real-file region that surfaced this bug
 confirms zero singleton leaves remain anywhere in its output.
+
+
+---
+
+# Results (run 2026-09-12T00:50:58.262Z)
+
+## Results — Stage 0
+
+| nRows | len | mut | detected | nBlocks |
+|---|---|---|---|---|
+| 5 | 20 | 0 | true | 3 |
+| 5 | 20 | 0.05 | true | 2 |
+| 5 | 20 | 0.15 | true | 2 |
+| 5 | 20 | 0.3 | true | 3 |
+| 5 | 20 | 0.5 | false | 3 |
+| 5 | 60 | 0 | true | 2 |
+| 5 | 60 | 0.05 | true | 2 |
+| 5 | 60 | 0.15 | true | 2 |
+| 5 | 60 | 0.3 | true | 2 |
+| 5 | 60 | 0.5 | true | 2 |
+| 5 | 150 | 0 | true | 2 |
+| 5 | 150 | 0.05 | true | 2 |
+| 5 | 150 | 0.15 | true | 2 |
+| 5 | 150 | 0.3 | true | 2 |
+| 5 | 150 | 0.5 | true | 2 |
+| 10 | 20 | 0 | true | 2 |
+| 10 | 20 | 0.05 | true | 3 |
+| 10 | 20 | 0.15 | true | 4 |
+| 10 | 20 | 0.3 | true | 2 |
+| 10 | 20 | 0.5 | true | 2 |
+| 10 | 60 | 0 | true | 2 |
+| 10 | 60 | 0.05 | true | 2 |
+| 10 | 60 | 0.15 | true | 2 |
+| 10 | 60 | 0.3 | true | 2 |
+| 10 | 60 | 0.5 | true | 2 |
+| 10 | 150 | 0 | true | 2 |
+| 10 | 150 | 0.05 | true | 2 |
+| 10 | 150 | 0.15 | true | 2 |
+| 10 | 150 | 0.3 | true | 2 |
+| 10 | 150 | 0.5 | true | 2 |
+| 30 | 20 | 0 | true | 3 |
+| 30 | 20 | 0.05 | true | 3 |
+| 30 | 20 | 0.15 | true | 2 |
+| 30 | 20 | 0.3 | true | 3 |
+| 30 | 20 | 0.5 | true | 2 |
+| 30 | 60 | 0 | true | 2 |
+| 30 | 60 | 0.05 | true | 3 |
+| 30 | 60 | 0.15 | true | 2 |
+| 30 | 60 | 0.3 | true | 2 |
+| 30 | 60 | 0.5 | true | 2 |
+| 30 | 150 | 0 | true | 2 |
+| 30 | 150 | 0.05 | true | 2 |
+| 30 | 150 | 0.15 | true | 2 |
+| 30 | 150 | 0.3 | true | 2 |
+| 30 | 150 | 0.5 | true | 2 |
+
+### Conclusion
+
+Column separation fails at: nRows=5,len=20,mut=0.5.
+
+## Results — Stage 1
+
+| nRows | subsetSize | tailLen | mut | exact | partialOverlap |
+|---|---|---|---|---|---|
+| 10 | 2 | 20 | 0 | false | 0 |
+| 10 | 2 | 20 | 0.05 | false | 0 |
+| 10 | 2 | 20 | 0.15 | false | 0 |
+| 10 | 2 | 20 | 0.3 | false | 0 |
+| 10 | 2 | 60 | 0 | false | 0 |
+| 10 | 2 | 60 | 0.05 | false | 0 |
+| 10 | 2 | 60 | 0.15 | false | 0 |
+| 10 | 2 | 60 | 0.3 | false | 0 |
+| 10 | 2 | 150 | 0 | false | 0 |
+| 10 | 2 | 150 | 0.05 | false | 0 |
+| 10 | 2 | 150 | 0.15 | false | 0 |
+| 10 | 2 | 150 | 0.3 | false | 0 |
+| 10 | 3 | 20 | 0 | true | exact |
+| 10 | 3 | 20 | 0.05 | false | 0 |
+| 10 | 3 | 20 | 0.15 | true | exact |
+| 10 | 3 | 20 | 0.3 | false | 0 |
+| 10 | 3 | 60 | 0 | true | exact |
+| 10 | 3 | 60 | 0.05 | true | exact |
+| 10 | 3 | 60 | 0.15 | false | 0 |
+| 10 | 3 | 60 | 0.3 | true | exact |
+| 10 | 3 | 150 | 0 | true | exact |
+| 10 | 3 | 150 | 0.05 | true | exact |
+| 10 | 3 | 150 | 0.15 | true | exact |
+| 10 | 3 | 150 | 0.3 | true | exact |
+| 20 | 2 | 20 | 0 | false | 0 |
+| 20 | 2 | 20 | 0.05 | false | 0 |
+| 20 | 2 | 20 | 0.15 | false | 0 |
+| 20 | 2 | 20 | 0.3 | false | 0 |
+| 20 | 2 | 60 | 0 | false | 0 |
+| 20 | 2 | 60 | 0.05 | false | 0 |
+| 20 | 2 | 60 | 0.15 | false | 0 |
+| 20 | 2 | 60 | 0.3 | false | 0 |
+| 20 | 2 | 150 | 0 | false | 0 |
+| 20 | 2 | 150 | 0.05 | false | 0 |
+| 20 | 2 | 150 | 0.15 | false | 0 |
+| 20 | 2 | 150 | 0.3 | false | 0 |
+| 20 | 3 | 20 | 0 | false | 0 |
+| 20 | 3 | 20 | 0.05 | false | 0 |
+| 20 | 3 | 20 | 0.15 | false | 0 |
+| 20 | 3 | 20 | 0.3 | false | 0 |
+| 20 | 3 | 60 | 0 | true | exact |
+| 20 | 3 | 60 | 0.05 | true | exact |
+| 20 | 3 | 60 | 0.15 | false | 0 |
+| 20 | 3 | 60 | 0.3 | false | 0 |
+| 20 | 3 | 150 | 0 | true | exact |
+| 20 | 3 | 150 | 0.05 | true | exact |
+| 20 | 3 | 150 | 0.15 | true | exact |
+| 20 | 3 | 150 | 0.3 | false | 0 |
+| 20 | 5 | 20 | 0 | false | 0 |
+| 20 | 5 | 20 | 0.05 | true | exact |
+| 20 | 5 | 20 | 0.15 | false | 0 |
+| 20 | 5 | 20 | 0.3 | false | 0 |
+| 20 | 5 | 60 | 0 | true | exact |
+| 20 | 5 | 60 | 0.05 | false | 0 |
+| 20 | 5 | 60 | 0.15 | true | exact |
+| 20 | 5 | 60 | 0.3 | false | 0 |
+| 20 | 5 | 150 | 0 | true | exact |
+| 20 | 5 | 150 | 0.05 | true | exact |
+| 20 | 5 | 150 | 0.15 | true | exact |
+| 20 | 5 | 150 | 0.3 | true | exact |
+| 50 | 2 | 20 | 0 | false | 0 |
+| 50 | 2 | 20 | 0.05 | false | 0 |
+| 50 | 2 | 20 | 0.15 | false | 0 |
+| 50 | 2 | 20 | 0.3 | false | 0 |
+| 50 | 2 | 60 | 0 | false | 0 |
+| 50 | 2 | 60 | 0.05 | false | 0 |
+| 50 | 2 | 60 | 0.15 | false | 0 |
+| 50 | 2 | 60 | 0.3 | false | 0 |
+| 50 | 2 | 150 | 0 | false | 0 |
+| 50 | 2 | 150 | 0.05 | false | 0 |
+| 50 | 2 | 150 | 0.15 | false | 0 |
+| 50 | 2 | 150 | 0.3 | false | 0 |
+| 50 | 3 | 20 | 0 | false | 0 |
+| 50 | 3 | 20 | 0.05 | false | 0 |
+| 50 | 3 | 20 | 0.15 | false | 0 |
+| 50 | 3 | 20 | 0.3 | false | 0 |
+| 50 | 3 | 60 | 0 | false | 0 |
+| 50 | 3 | 60 | 0.05 | false | 0 |
+| 50 | 3 | 60 | 0.15 | false | 0 |
+| 50 | 3 | 60 | 0.3 | false | 0 |
+| 50 | 3 | 150 | 0 | false | 0 |
+| 50 | 3 | 150 | 0.05 | false | 0 |
+| 50 | 3 | 150 | 0.15 | false | 0 |
+| 50 | 3 | 150 | 0.3 | false | 0 |
+| 50 | 5 | 20 | 0 | false | 0 |
+| 50 | 5 | 20 | 0.05 | false | 0 |
+| 50 | 5 | 20 | 0.15 | false | 0 |
+| 50 | 5 | 20 | 0.3 | false | 0 |
+| 50 | 5 | 60 | 0 | false | 0 |
+| 50 | 5 | 60 | 0.05 | false | 0 |
+| 50 | 5 | 60 | 0.15 | false | 0 |
+| 50 | 5 | 60 | 0.3 | false | 0 |
+| 50 | 5 | 150 | 0 | true | exact |
+| 50 | 5 | 150 | 0.05 | true | exact |
+| 50 | 5 | 150 | 0.15 | false | 0 |
+| 50 | 5 | 150 | 0.3 | false | 0 |
+| 50 | 10 | 20 | 0 | false | 0 |
+| 50 | 10 | 20 | 0.05 | false | 0 |
+| 50 | 10 | 20 | 0.15 | false | 0 |
+| 50 | 10 | 20 | 0.3 | false | 0 |
+| 50 | 10 | 60 | 0 | true | exact |
+| 50 | 10 | 60 | 0.05 | false | 0 |
+| 50 | 10 | 60 | 0.15 | false | 0 |
+| 50 | 10 | 60 | 0.3 | false | 0 |
+| 50 | 10 | 150 | 0 | true | exact |
+| 50 | 10 | 150 | 0.05 | true | exact |
+| 50 | 10 | 150 | 0.15 | false | 0 |
+| 50 | 10 | 150 | 0.3 | false | 0 |
+
+### Conclusion
+
+26/108 exact recoveries. By subset size: size=2: 0/36, size=3: 14/36, size=5: 9/24, size=10: 3/12.
+
+## Results — Stage 1b (length variation)
+
+| nRows | subsetSize | trim | exact | partialOverlap |
+|---|---|---|---|---|
+| 10 | 3 | 0 | true | exact |
+| 10 | 3 | 0.15 | true | exact |
+| 10 | 3 | 0.3 | true | exact |
+| 10 | 5 | 0 | true | exact |
+| 10 | 5 | 0.15 | true | exact |
+| 10 | 5 | 0.3 | true | exact |
+| 20 | 3 | 0 | true | exact |
+| 20 | 3 | 0.15 | true | exact |
+| 20 | 3 | 0.3 | false | 0 |
+| 20 | 5 | 0 | true | exact |
+| 20 | 5 | 0.15 | true | exact |
+| 20 | 5 | 0.3 | true | exact |
+
+### Conclusion
+
+11/12 exact recoveries under independent trailing-gap trimming. Compare against Stage 1 baseline (trim=0.0 rows above) to isolate the effect of length variation alone.
+
+## Results — Stage 2a (3 groups in one zone)
+
+| sizeA | sizeB | groupA | groupB |
+|---|---|---|---|
+| 5 | 5 | missed | missed |
+| 3 | 8 | exact | exact |
+| 8 | 8 | exact | exact |
+
+### Conclusion
+
+At least one configuration failed to cleanly separate both groups — see table for which.
+
+## Results — Stage 2b (two independent zones)
+
+| zoneX | zoneY | distinctZones |
+|---|---|---|
+| exact | exact | true |
+
+### Conclusion
+
+Both independent row-subset zones recovered, at distinct non-overlapping column ranges as designed.
+
+## Null-coherence "phantom" leaves fixed (2026-09-12), same root cause as the singleton fix
+
+Asked to describe every block in `small_singleton_test.fa` by name and
+reasoning (not just trust the numbers), found a second real defect of the
+exact same shape as the singleton bug: block 4 (3 rows: oma_SINE16b,
+AYEL01089425.1, AYEL01079521.1) had `coherence: null` at cols 0-7 -
+confirmed directly, all three rows are literally gap (`--------`) at
+every one of those columns. Zero real evidence, yet it would still be
+colored as a "found" minority group in the live UI.
+
+**Fix**: extended `_mergeUndersizedLeaves` (already added for the
+singleton case) to also merge any leaf whose `coherence` is `null` into
+its largest sibling sharing the same column range - a null-coherence leaf
+mechanically has no measurable evidence, the same underlying problem as
+being under `MIN_BLOCK_ROWS`, just reached a different way (every row gap
+rather than too few rows).
+
+**Verified**: oracle passes, full synthetic sweep unchanged (44/45,
+26/108, 11/12, same Stage 2a/2b pattern), clean_core/mosaic_subset ground
+truth intact, and `small_singleton_test.fa` now has zero null-coherence
+row-splits (12 -> 10 total blocks).
+
+Also flagged but not yet acted on: block 0 of that same file (4 rows,
+coherence 0.5) includes two rows that are the same genomic locus with two
+different endpoint annotations (AYEL01072234.1:54276-54551 and
+...54276-54620) - not independent evidence, and a real question for
+duplicate-locus handling this project may want to address separately
+(deduplicating near-identical header/coordinate entries before running
+the algorithm at all, rather than a change to the algorithm itself).
