@@ -15420,6 +15420,7 @@ function initializeAppUI() {
         'blockMaskGroupButton': groupRowsByBlockMask,
         'biclusterComputeButton': computeAndShowBicluster,
         'biclusterClearButton': () => { clearBlockMask(); const s = el('blockMaskStatus'); if (s) s.textContent = ''; },
+        'biclusterGroupRowsButton': groupRowsByBlockMask,
         'savePresetButton': savePreset,
         'loadPresetButton': loadPreset,
         'snapshotCreateTopButton': createSnapshot,

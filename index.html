@@ -457,6 +457,7 @@
                                         <div style="display: flex; gap: 4px; flex-wrap: wrap;">
                                             <button id="biclusterComputeButton" style="flex: 1; min-width: 70px; height: 22px; font-size: 10px; background: #0d9488; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Compute the bicluster mask from the currently loaded alignment and overlay it">Show bicluster</button>
                                             <button id="biclusterClearButton" style="height: 22px; font-size: 10px;" title="Remove the overlay">Clear</button>
+                                            <button id="biclusterGroupRowsButton" style="flex: 1; min-width: 80px; height: 22px; font-size: 10px;" title="A colored region is only a real rectangle if its member rows are drawn next to each other - reorder rows so the first row-split zone's groups sit contiguously (rank 0, then 1..., then residual). Undoable.">Group rows</button>
                                         </div>
                                     </div>
                                     <details style="margin-top: 4px;">
@@ -1156,7 +1157,7 @@ B: -</pre>
 
     <script src="cluster.js?v=164"></script>
     <script src="bam-parser.js?v=164"></script>
-    <script src="script.js?v=192"></script>
+    <script src="script.js?v=193"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=10"></script>
