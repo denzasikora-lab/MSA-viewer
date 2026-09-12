@@ -1170,13 +1170,23 @@
   //    2*P.MIN_BLOCK_ROWS).
   // 3. If neither returned a real result (both null), return this block
   //    as a single leaf (same shape as step 1).
-  // 4. Otherwise take whichever of the two has the larger `gain` (if only
-  //    one is non-null, take that one). For a column split: recurse into
-  //    [colStart, splitCol] and [splitCol+1, colEnd], same rows both
-  //    sides; concatenate the two returned leaf-list arrays. For a row
-  //    split: for EACH group in the result (including the residual group
-  //    if present), recurse with that group's rows and the SAME colStart/
-  //    colEnd; concatenate all returned leaf-list arrays.
+  // 4. Otherwise take a column split if one exists, else the row split.
+  //    Gains are not on the same scale (column = fractional variance
+  //    reduction in [0,1]; row = coherence delta, often on diagnostic
+  //    columns only), so "larger gain" is not a meaningful comparison.
+  //    Measured on bicluster_eye_test_v2.fa: two named motifs in the
+  //    middle 16 columns produced row gain 0.49 vs column gain 0.26, so
+  //    the greedy comparison painted groupA/groupB across the conserved
+  //    ACGT and TTTT flanks that every row shares. Carving column
+  //    regimes first keeps a later row-split inside the columns where
+  //    the rows actually differ. If the true structure is only a row
+  //    split (no column regime), bestColumnSplit returns null and the
+  //    row split is taken as before. v1 (one middle motif) already
+  //    preferred the column split by a 0.001 margin; this makes that
+  //    order explicit rather than accidental. For a column split: recurse
+  //    into [colStart, splitCol] and [splitCol+1, colEnd], same rows both
+  //    sides. For a row split: for EACH group in the result (including
+  //    residual), recurse with that group's rows and the SAME col range.
   // 5. Recursion must terminate: each recursive call operates on a
   //    strictly smaller row count or column range than its parent, so
   //    plain recursion (no explicit depth limit needed) is fine - but add
@@ -1286,13 +1296,10 @@
       return [{ rows: rows.slice(), colStart: colStart, colEnd: colEnd, coherence: blockCoherence(A, rows, colStart, colEnd, spans, P) }];
     }
 
-    // Step 4: take whichever has the larger gain
-    var useColSplit = false;
-    if (colSplit && rowSplit) {
-      useColSplit = (colSplit.gain >= rowSplit.gain);
-    } else if (colSplit) {
-      useColSplit = true;
-    }
+    // Prefer a column split whenever one qualifies. See splitAndMerge
+    // docstring: row vs column gains are not comparable, and taking the
+    // row split first paints row-groups across conserved flanks.
+    var useColSplit = !!colSplit;
 
     var leaves = [];
     if (useColSplit) {
