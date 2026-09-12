@@ -6551,12 +6551,10 @@ function applyBiclusterLive() {
     const fasta = state.seqs.map(s => '>' + s.header + '\n' + s.seq).join('\n') + '\n';
     const raw = BlockBicluster.computeBiclusterMask(fasta, {});
 
-    // Assign find colors globally, not per column range. Per-range
-    // indexing made every zone's first evidenced group MOSAIC: v3's
-    // C-block (cols 17-24) and G-block (cols 25-32) both came out amber
-    // even though they are different motifs. Order by column, then by
-    // first row index, so v2 (same columns, two groups) stays amber+purple.
-    const finds = raw.blocks.filter(b => b.rows !== 'all' && b.rows.length >= 3 && b.coherence != null);
+    // Evidenced finds only: coherence >= 0.6. A leftover majority after a
+    // real split can still have a middling score (v4's 18 mixed rows at
+    // 0.43-0.46) and must not get a find color.
+    const finds = raw.blocks.filter(b => b.rows !== 'all' && b.rows.length >= 3 && b.coherence != null && b.coherence >= 0.6);
     finds.sort((a, b) => {
         if (a.col_start !== b.col_start) return a.col_start - b.col_start;
         return Math.min.apply(null, a.rows) - Math.min.apply(null, b.rows);

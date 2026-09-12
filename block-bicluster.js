@@ -1210,16 +1210,21 @@
   // paired with the window it came from, or null.
   function _windowedRowSplitScan(A, rows, colStart, colEnd, spans, P) {
     var totalWidth = colEnd - colStart + 1;
-    var winWidth = P.WINDOW_SCAN_WIDTH;
-    if (totalWidth <= winWidth) return null; // whole range already tried by the caller
+    if (totalWidth < 2 * P.MIN_BLOCK_COLS) return null;
 
-    // NOTE: an earlier version applied a stricter gain threshold here as a
-    // look-elsewhere correction. Measured directly: it broke real Stage 2b
-    // recovery without fixing the actual false-positive source (narrow
-    // ranges under WINDOW_SCAN_WIDTH bypass this scan entirely and call
-    // bestRowSplit directly - see _diagnosticRowSplit's own guards for the
-    // fix that actually mattered, on the mosaic_subset regression this was
-    // meant to address). Removed rather than kept as a no-op multiplier.
+    var winWidth = P.WINDOW_SCAN_WIDTH;
+    if (totalWidth <= winWidth) {
+      // Full-range bestRowSplit already failed on this exact range.
+      // A motif can still sit in a sub-window: eye-test v4 is a 16-col
+      // C-block inside the 32-col remainder after the conserved core is
+      // carved off. The previous early-return here meant this scan never
+      // ran on any range shorter than WINDOW_SCAN_WIDTH (64) — every
+      // 48-col eye-test and any cropped SINE slice. Use a 16-col window
+      // (2 * MIN_BLOCK_COLS) so the sub-window is strictly narrower than
+      // the parent and still wide enough to be a legal block.
+      winWidth = 2 * P.MIN_BLOCK_COLS;
+      if (winWidth >= totalWidth) return null;
+    }
 
     var step = Math.max(1, Math.floor(winWidth / 2));
     var best = null, bestWinStart = -1, bestWinEnd = -1;
@@ -1228,7 +1233,9 @@
 
     while (winStart <= colEnd && tried < P.WINDOW_SCAN_MAX) {
       var winEnd = Math.min(winStart + winWidth - 1, colEnd);
-      if (winEnd - winStart + 1 >= P.MIN_BLOCK_COLS) {
+      var thisWidth = winEnd - winStart + 1;
+      // Skip the full parent range — the caller already tried it.
+      if (thisWidth >= P.MIN_BLOCK_COLS && !(winStart === colStart && winEnd === colEnd)) {
         var result = bestRowSplit(A, rows, winStart, winEnd, spans, P);
         if (result && (!best || result.gain > best.gain)) {
           best = result;
