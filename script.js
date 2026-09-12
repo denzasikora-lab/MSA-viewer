@@ -6529,8 +6529,17 @@ function applyBlockMaskLive(presetOrParams) {
 // therefore never gray; only whole-range ('all') blocks use the
 // gray/amber/green coherence ladder, since those really are meant to
 // distinguish "background" from "somewhat conserved" from "core."
-function _biclusterCoherenceToType(coherence, isRowSplit) {
-    if (isRowSplit) {
+// isMinority: true only for the SMALLEST row-count group among the
+// sibling blocks sharing the same column range - that's the group whose
+// discovery actually drove the split's gain. The majority/"everyone
+// else" group in the same split is not a claim of anything (confirmed
+// directly: coloring it the same as the minority made a real 5-row find
+// on mosaic_subset.aln.fa visually indistinguishable from its own
+// deliberately-heterogeneous background, erasing exactly the distinction
+// the overlay exists to show) - it goes back through the normal
+// gray/amber/green coherence ladder, same as an undivided 'all' block.
+function _biclusterCoherenceToType(coherence, isMinority) {
+    if (isMinority) {
         if (coherence == null) return 'MOSAIC';
         return coherence >= 0.85 ? 'CONSERVATIVE' : 'MOSAIC';
     }
@@ -6545,7 +6554,24 @@ function applyBiclusterLive() {
     if (!state.seqs || !state.seqs.length) { showMessage('Load an alignment first', 3000); return null; }
     const fasta = state.seqs.map(s => '>' + s.header + '\n' + s.seq).join('\n') + '\n';
     const raw = BlockBicluster.computeBiclusterMask(fasta, {});
-    raw.blocks.forEach(b => { b.type = _biclusterCoherenceToType(b.coherence, b.rows !== 'all'); });
+
+    // Group sibling blocks by exact column range to find, within each
+    // split, which group is the minority (colored as a find) vs the
+    // majority (judged as its own background, not automatically colored).
+    const byRange = new Map();
+    raw.blocks.forEach(b => {
+        const key = b.col_start + ':' + b.col_end;
+        if (!byRange.has(key)) byRange.set(key, []);
+        byRange.get(key).push(b);
+    });
+    byRange.forEach(group => {
+        if (group.length < 2) return; // a lone 'all' block has no sibling to compare against
+        let minSize = Infinity;
+        group.forEach(b => { const n = b.rows === 'all' ? Infinity : b.rows.length; if (n < minSize) minSize = n; });
+        group.forEach(b => { b._isMinority = (b.rows !== 'all' && b.rows.length === minSize); });
+    });
+    raw.blocks.forEach(b => { b.type = _biclusterCoherenceToType(b.coherence, !!b._isMinority); });
+
     state.blockMask = raw;
     state._blockMaskPreset = null;
     renderBlockMaskOverlay();
