@@ -6453,6 +6453,13 @@ function renderBlockMaskOverlay() {
                     r.setAttribute('stroke-width', '1');
                     r.setAttribute('stroke-dasharray', '3 2');
                     r.setAttribute('fill-opacity', (op * 0.7).toFixed(3));
+                } else {
+                    // Solid edge so a pale fill (especially DIVERGENT gray
+                    // over mixed bases) still reads as a rectangle, not as
+                    // "no overlay in this cell."
+                    r.setAttribute('stroke', fill);
+                    r.setAttribute('stroke-width', '1');
+                    r.setAttribute('stroke-opacity', '0.9');
                 }
                 svg.appendChild(r);
             };
@@ -6549,11 +6556,15 @@ function applyBlockMaskLive(presetOrParams) {
 // deliberately-heterogeneous background, erasing exactly the distinction
 // the overlay exists to show) - it goes back through the normal
 // gray/amber/green coherence ladder, same as an undivided 'all' block.
+//
+// Minority finds are NEVER CONSERVATIVE green. That color is reserved
+// for full-height ('all') conserved stretches. Confirmed on the planted
+// 24x48 eye-test: a 6-row C-block scored 0.99 and painted the same
+// green as the two conserved flanks, so the four true rectangles
+// (left core, right end, C-group, mixed remainder) collapsed to "all
+// green." A row-subset find is MOSAIC (amber) even at high coherence.
 function _biclusterCoherenceToType(coherence, isMinority) {
-    if (isMinority) {
-        if (coherence == null) return 'MOSAIC';
-        return coherence >= 0.85 ? 'CONSERVATIVE' : 'MOSAIC';
-    }
+    if (isMinority) return 'MOSAIC';
     if (coherence == null) return 'DIVERGENT';
     if (coherence >= 0.85) return 'CONSERVATIVE';
     if (coherence >= 0.6) return 'MOSAIC';
