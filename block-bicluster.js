@@ -1083,6 +1083,66 @@
   // the three and the only one that finds >2 groups, but is left as a
   // peer rather than a replacement since it hasn't been run through the
   // synthetic validation sweep the other two have.
+  // Two rows byte-identical over [colStart, colEnd] (respecting spans -
+  // a position outside a row's own span is missing, not compared) must
+  // never end up in different groups of the same split - if they read
+  // the same, they cannot be evidence for two different, competing
+  // patterns at the same time. Confirmed as a real, reproducible bug on
+  // the real oma_SINE16b file (34 such pairs) and a cropped region of it
+  // (497 pairs): identical rows landing in separate low-coherence groups
+  // (0.33 and 0.06), each individually weak enough that neither should
+  // have been trusted, and inconsistent with each other on their face.
+  // Deliberately a DIRECT character comparison, not span-aware (unlike
+  // most of this file's other per-row logic) - confirmed as the actual
+  // fix needed: a span-aware version that distinguished "gap outside this
+  // row's span" from "gap inside it" still called two rows non-identical
+  // when both simply display as "-" at every position, which is exactly
+  // the case the user is pointing at ("if one sequence is atgc and
+  // another is also atgc, they are not different clusters") - identical
+  // means what's actually visible/comparable, not the internal
+  // real-deletion-vs-missing-data distinction that matters elsewhere in
+  // this file.
+  function _rowsIdenticalInRange(A, r1, r2, colStart, colEnd, spans) {
+    for (var c = colStart; c <= colEnd; c++) {
+      if (A[r1][c] !== A[r2][c]) return false;
+    }
+    return true;
+  }
+
+  // Merges together any groups in a row-split result that contain at
+  // least one identical-row pair (see _rowsIdenticalInRange), repeating
+  // until no more such pairs cross a group boundary. If everything
+  // collapses into a single group (the split had no real basis once this
+  // invariant is enforced), returns null.
+  function _enforceIdenticalRowsSameGroup(A, colStart, colEnd, spans, result) {
+    if (!result) return result;
+    var groups = result.groups.map(function(g) { return { rows: g.rows.slice(), residual: g.residual }; });
+    var changed = true;
+    while (changed) {
+      changed = false;
+      for (var gi = 0; gi < groups.length && !changed; gi++) {
+        if (!groups[gi].rows.length) continue;
+        for (var gj = gi + 1; gj < groups.length && !changed; gj++) {
+          if (!groups[gj].rows.length) continue;
+          for (var a = 0; a < groups[gi].rows.length && !changed; a++) {
+            for (var b = 0; b < groups[gj].rows.length; b++) {
+              if (_rowsIdenticalInRange(A, groups[gi].rows[a], groups[gj].rows[b], colStart, colEnd, spans)) {
+                groups[gi].rows = groups[gi].rows.concat(groups[gj].rows);
+                groups[gi].residual = groups[gi].residual && groups[gj].residual;
+                groups[gj].rows = [];
+                changed = true;
+                break;
+              }
+            }
+          }
+        }
+      }
+    }
+    groups = groups.filter(function(g) { return g.rows.length > 0; });
+    if (groups.length < 2) return null;
+    return { groups: groups, gain: result.gain };
+  }
+
   function bestRowSplit(A, rows, colStart, colEnd, spans, P) {
     var gapResult = _gapRowSplit(A, rows, colStart, colEnd, spans, P);
     var hapResult = _haplotypeRowSplit(A, rows, colStart, colEnd, spans, P);
@@ -1091,7 +1151,7 @@
     if (gapResult && (!best || gapResult.gain > best.gain)) best = gapResult;
     if (hapResult && (!best || hapResult.gain > best.gain)) best = hapResult;
     if (diagResult && (!best || diagResult.gain > best.gain)) best = diagResult;
-    return best;
+    return _enforceIdenticalRowsSameGroup(A, colStart, colEnd, spans, best);
   }
 
   // Recursive split-and-merge. Given a candidate block (rows, colStart,
@@ -1401,6 +1461,60 @@
     return leaves.filter(function(l) { return !l._merged; });
   }
 
+  // Global version of the identical-rows-same-group invariant
+  // (_rowsIdenticalInRange / _enforceIdenticalRowsSameGroup in
+  // bestRowSplit, which only catches this WITHIN one row-split call's
+  // own returned groups). Confirmed the narrower, within-call fix did
+  // NOT reduce the real-file counts at all (still 34 and 497 pairs) -
+  // the actual cases are two leaves produced by INDEPENDENT recursive
+  // branches (different parent row-splits, each doing its own further
+  // column-splitting) that happen to land on the exact same
+  // [colStart, colEnd] boundary later, without ever being part of the
+  // same bestRowSplit call's group list. Runs over the FINAL flat leaf
+  // list, same "group siblings by exact column range" pattern as
+  // _mergeUndersizedLeaves, merging any pair of same-range sibling
+  // leaves that share an identical-row pair.
+  function _mergeIdenticalRowSiblings(leaves, A, spans, P) {
+    var byRange = {};
+    for (var i = 0; i < leaves.length; i++) {
+      var key = leaves[i].colStart + ':' + leaves[i].colEnd;
+      if (!byRange[key]) byRange[key] = [];
+      byRange[key].push(leaves[i]);
+    }
+    var toRemove = {};
+    var keys = Object.keys(byRange);
+    for (var k = 0; k < keys.length; k++) {
+      var group = byRange[keys[k]];
+      if (group.length < 2) continue;
+      var cs = group[0].colStart, ce = group[0].colEnd;
+      var changed = true;
+      while (changed) {
+        changed = false;
+        for (var gi = 0; gi < group.length && !changed; gi++) {
+          if (toRemove[group[gi]._idr]) continue;
+          for (var gj = gi + 1; gj < group.length && !changed; gj++) {
+            if (toRemove[group[gj]._idr]) continue;
+            outer:
+            for (var a = 0; a < group[gi].rows.length; a++) {
+              for (var b = 0; b < group[gj].rows.length; b++) {
+                if (_rowsIdenticalInRange(A, group[gi].rows[a], group[gj].rows[b], cs, ce, spans)) {
+                  group[gi].rows = group[gi].rows.concat(group[gj].rows);
+                  group[gi].coherence = blockCoherence(A, group[gi].rows, cs, ce, spans, P);
+                  group[gj]._idr = group[gj]._idr || (k + '-' + gj);
+                  toRemove[group[gj]._idr] = true;
+                  group[gj]._merged = true;
+                  changed = true;
+                  break outer;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    return leaves.filter(function(l) { return !l._merged; });
+  }
+
   function computeBiclusterMask(fastaText, params) {
     var P = resolveParams(params);
     var parsed = parseAln(fastaText);
@@ -1416,6 +1530,14 @@
     var leaves = splitAndMerge(A, allRows, 0, ncols - 1, spans, P);
     leaves = _mergeUndersizedLeaves(leaves, A, spans, P);
     leaves = mergeAdjacentLeaves(leaves, A, spans, P);
+    // Run identical-row enforcement LAST: mergeAdjacentLeaves can combine
+    // column-adjacent same-row-set leaves into a wider range that
+    // coincidentally matches another leaf's range from a completely
+    // different branch, creating new identical-row conflicts that didn't
+    // exist before it ran. Confirmed directly: running this pass before
+    // mergeAdjacentLeaves left 4 (real file) / 9 (crop) pairs unfixed,
+    // all at ranges mergeAdjacentLeaves had just produced.
+    leaves = _mergeIdenticalRowSiblings(leaves, A, spans, P);
 
     leaves.sort(function(a, b) { return a.colStart - b.colStart; });
 
