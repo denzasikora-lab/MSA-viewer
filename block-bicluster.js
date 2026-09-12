@@ -1529,6 +1529,13 @@
     return m ? (m[1] + ':' + m[2]) : null;
   }
 
+  // Parses ACCESSION:START-END from a header, or null if it doesn't
+  // match this app's fixture/pipeline convention.
+  function _duplicateLocusRange(name) {
+    var m = /^([^:]+):(\d+)-(\d+)/.exec(name);
+    return m ? { accession: m[1], start: +m[2], end: +m[3] } : null;
+  }
+
   // Collapses same-locus duplicates into one representative row for
   // CLUSTERING purposes only - every row-split/coherence computation sees
   // at most one row per real locus, so a duplicate can never inflate a
@@ -1537,7 +1544,7 @@
   // (via expandRow, built alongside this), so every original row still
   // appears in the returned blocks, always in the same group as its
   // duplicate(s).
-  function _dedupLocusRows(names) {
+  function _dedupLocusRows(names, A) {
     var keyOf = names.map(_duplicateLocusKey);
     var repOfKey = {};
     var repOf = new Array(names.length);
@@ -1550,8 +1557,48 @@
       repOf[i] = rep;
       membersOf[rep].push(i);
     }
+    // Second pass: the accession+start key misses same-accession entries
+    // extracted with a DIFFERENT start but overlapping range - confirmed
+    // live that two such rows (AYEL01077556.1:1911-2265 and
+    // AYEL01077556.1:1951-2265) are byte-identical, the same
+    // double-counting problem in a different shape.
+    //
+    // Tried matching by raw sequence-content identity instead of header
+    // coordinates - measured to be a real bug two different ways: (1)
+    // simple full-width equality treated "both are gap over this narrow
+    // crop" as "identical," wrongly deduping 11 unrelated rows that share
+    // nothing but both being absent from this range; (2) even restricted
+    // to agreement on real (non-gap) bases only, it still incorrectly
+    // matched genuinely different, related copies that simply share a
+    // long conserved ancestral region - shared descent, not the same
+    // physical locus. Sequence content cannot reliably distinguish "same
+    // locus, re-extracted" from "different locus, closely related" on
+    // real biological data. Reverted to the header's own coordinates:
+    // same accession with OVERLAPPING [start,end] ranges is the specific,
+    // known artifact this app's fixtures/pipeline produce (a locus
+    // re-extracted with different flank boundaries) - content identity
+    // was never the right signal for it.
+    var repIndices = [];
+    for (var r = 0; r < names.length; r++) if (repOf[r] === r) repIndices.push(r);
+    var rangeOf = names.map(_duplicateLocusRange);
+    for (var a = 0; a < repIndices.length; a++) {
+      for (var b = a + 1; b < repIndices.length; b++) {
+        var ra = repIndices[a], rb = repIndices[b];
+        if (repOf[ra] !== ra || repOf[rb] !== rb) continue; // rb already folded into another rep
+        var rra = rangeOf[ra], rrb = rangeOf[rb];
+        var sameLocus = rra && rrb && rra.accession === rrb.accession &&
+          rra.start <= rrb.end && rrb.start <= rra.end; // overlapping ranges
+        if (sameLocus) {
+          for (var mi = 0; mi < membersOf[rb].length; mi++) {
+            repOf[membersOf[rb][mi]] = ra;
+            membersOf[ra].push(membersOf[rb][mi]);
+          }
+          delete membersOf[rb];
+        }
+      }
+    }
     var dedupedRows = [];
-    for (var r = 0; r < names.length; r++) if (repOf[r] === r) dedupedRows.push(r);
+    for (var r2 = 0; r2 < names.length; r2++) if (repOf[r2] === r2) dedupedRows.push(r2);
     return { dedupedRows: dedupedRows, membersOf: membersOf };
   }
 
@@ -1563,7 +1610,7 @@
     var names = parsed.names;
     var spans = coverageSpans(A);
 
-    var dedup = _dedupLocusRows(names);
+    var dedup = _dedupLocusRows(names, A);
     var allRows = dedup.dedupedRows;
 
     _splitLeafCount = 0;
