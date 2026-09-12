@@ -1345,6 +1345,52 @@
   // row_headers). This function has NO concept of a consensus/reference
   // row - every row is on equal footing, including whatever the alignment
   // calls its "consensus" row if it has one; do not special-case it.
+  // splitAndMerge's recursion termination ("too small to split further -
+  // return whatever's left as a leaf") does not itself enforce
+  // MIN_BLOCK_ROWS: a residual/leftover group can recurse down to a
+  // single row and still come back as its own standalone leaf, even
+  // though MIN_BLOCK_ROWS=3 is supposed to mean a group that small is
+  // never treated as meaningful. Confirmed live in the UI: a 1-row leaf
+  // rendered as its own colored block, which is not a real finding -
+  // there is nothing for one row to share a pattern WITH. Fold any leaf
+  // under MIN_BLOCK_ROWS into whichever SIBLING leaf shares its exact
+  // column range (the group it was originally split off from) and is
+  // largest, recomputing that sibling's coherence over the merged rows,
+  // rather than leaving it to exist - and be colored - as if it were a
+  // group.
+  function _mergeUndersizedLeaves(leaves, A, spans, P) {
+    var byRange = {};
+    for (var i = 0; i < leaves.length; i++) {
+      var key = leaves[i].colStart + ':' + leaves[i].colEnd;
+      if (!byRange[key]) byRange[key] = [];
+      byRange[key].push(leaves[i]);
+    }
+    var toRemove = {};
+    var keys = Object.keys(byRange);
+    for (var k = 0; k < keys.length; k++) {
+      var group = byRange[keys[k]];
+      if (group.length < 2) continue; // no sibling to merge into
+      for (var g = 0; g < group.length; g++) {
+        var leaf = group[g];
+        if (leaf.rows.length >= P.MIN_BLOCK_ROWS) continue;
+        var target = null;
+        for (var g2 = 0; g2 < group.length; g2++) {
+          if (g2 === g || toRemove[group[g2]._id]) continue;
+          if (!target || group[g2].rows.length > target.rows.length) target = group[g2];
+        }
+        if (!target) continue;
+        target.rows = target.rows.concat(leaf.rows);
+        target.coherence = blockCoherence(A, target.rows, target.colStart, target.colEnd, spans, P);
+        leaf._id = leaf._id || (k + '-' + g);
+        toRemove[leaf._id] = true;
+        // mark so a later leaf in this same group doesn't try to merge
+        // into something already merged away
+        leaf._merged = true;
+      }
+    }
+    return leaves.filter(function(l) { return !l._merged; });
+  }
+
   function computeBiclusterMask(fastaText, params) {
     var P = resolveParams(params);
     var parsed = parseAln(fastaText);
@@ -1358,6 +1404,7 @@
 
     _splitLeafCount = 0;
     var leaves = splitAndMerge(A, allRows, 0, ncols - 1, spans, P);
+    leaves = _mergeUndersizedLeaves(leaves, A, spans, P);
     leaves = mergeAdjacentLeaves(leaves, A, spans, P);
 
     leaves.sort(function(a, b) { return a.colStart - b.colStart; });

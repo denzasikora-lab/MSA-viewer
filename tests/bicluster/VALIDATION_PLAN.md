@@ -3627,3 +3627,253 @@ Oracle and full synthetic sweep unchanged (44/45, 26/108, 11/12, same
 Stage 2a/2b pattern) - the synthetic fixtures don't have enough fully-gapped
 columns to exercise this path, which is why only the real biological data
 (full of short, ragged terminal copies) surfaced it.
+
+
+---
+
+# Results (run 2026-09-12T00:42:13.443Z)
+
+## Results — Stage 0
+
+| nRows | len | mut | detected | nBlocks |
+|---|---|---|---|---|
+| 5 | 20 | 0 | true | 3 |
+| 5 | 20 | 0.05 | true | 2 |
+| 5 | 20 | 0.15 | true | 2 |
+| 5 | 20 | 0.3 | true | 3 |
+| 5 | 20 | 0.5 | false | 3 |
+| 5 | 60 | 0 | true | 2 |
+| 5 | 60 | 0.05 | true | 2 |
+| 5 | 60 | 0.15 | true | 2 |
+| 5 | 60 | 0.3 | true | 2 |
+| 5 | 60 | 0.5 | true | 2 |
+| 5 | 150 | 0 | true | 2 |
+| 5 | 150 | 0.05 | true | 2 |
+| 5 | 150 | 0.15 | true | 2 |
+| 5 | 150 | 0.3 | true | 2 |
+| 5 | 150 | 0.5 | true | 2 |
+| 10 | 20 | 0 | true | 2 |
+| 10 | 20 | 0.05 | true | 3 |
+| 10 | 20 | 0.15 | true | 4 |
+| 10 | 20 | 0.3 | true | 2 |
+| 10 | 20 | 0.5 | true | 2 |
+| 10 | 60 | 0 | true | 2 |
+| 10 | 60 | 0.05 | true | 2 |
+| 10 | 60 | 0.15 | true | 2 |
+| 10 | 60 | 0.3 | true | 2 |
+| 10 | 60 | 0.5 | true | 2 |
+| 10 | 150 | 0 | true | 2 |
+| 10 | 150 | 0.05 | true | 2 |
+| 10 | 150 | 0.15 | true | 2 |
+| 10 | 150 | 0.3 | true | 2 |
+| 10 | 150 | 0.5 | true | 2 |
+| 30 | 20 | 0 | true | 3 |
+| 30 | 20 | 0.05 | true | 3 |
+| 30 | 20 | 0.15 | true | 2 |
+| 30 | 20 | 0.3 | true | 3 |
+| 30 | 20 | 0.5 | true | 2 |
+| 30 | 60 | 0 | true | 2 |
+| 30 | 60 | 0.05 | true | 3 |
+| 30 | 60 | 0.15 | true | 2 |
+| 30 | 60 | 0.3 | true | 2 |
+| 30 | 60 | 0.5 | true | 2 |
+| 30 | 150 | 0 | true | 2 |
+| 30 | 150 | 0.05 | true | 2 |
+| 30 | 150 | 0.15 | true | 2 |
+| 30 | 150 | 0.3 | true | 2 |
+| 30 | 150 | 0.5 | true | 2 |
+
+### Conclusion
+
+Column separation fails at: nRows=5,len=20,mut=0.5.
+
+## Results — Stage 1
+
+| nRows | subsetSize | tailLen | mut | exact | partialOverlap |
+|---|---|---|---|---|---|
+| 10 | 2 | 20 | 0 | false | 0 |
+| 10 | 2 | 20 | 0.05 | false | 0 |
+| 10 | 2 | 20 | 0.15 | false | 0 |
+| 10 | 2 | 20 | 0.3 | false | 0 |
+| 10 | 2 | 60 | 0 | false | 0 |
+| 10 | 2 | 60 | 0.05 | false | 0 |
+| 10 | 2 | 60 | 0.15 | false | 0 |
+| 10 | 2 | 60 | 0.3 | false | 0 |
+| 10 | 2 | 150 | 0 | false | 0 |
+| 10 | 2 | 150 | 0.05 | false | 0 |
+| 10 | 2 | 150 | 0.15 | false | 0 |
+| 10 | 2 | 150 | 0.3 | false | 0 |
+| 10 | 3 | 20 | 0 | true | exact |
+| 10 | 3 | 20 | 0.05 | false | 0 |
+| 10 | 3 | 20 | 0.15 | true | exact |
+| 10 | 3 | 20 | 0.3 | false | 0 |
+| 10 | 3 | 60 | 0 | true | exact |
+| 10 | 3 | 60 | 0.05 | true | exact |
+| 10 | 3 | 60 | 0.15 | false | 0 |
+| 10 | 3 | 60 | 0.3 | true | exact |
+| 10 | 3 | 150 | 0 | true | exact |
+| 10 | 3 | 150 | 0.05 | true | exact |
+| 10 | 3 | 150 | 0.15 | true | exact |
+| 10 | 3 | 150 | 0.3 | true | exact |
+| 20 | 2 | 20 | 0 | false | 0 |
+| 20 | 2 | 20 | 0.05 | false | 0 |
+| 20 | 2 | 20 | 0.15 | false | 0 |
+| 20 | 2 | 20 | 0.3 | false | 0 |
+| 20 | 2 | 60 | 0 | false | 0 |
+| 20 | 2 | 60 | 0.05 | false | 0 |
+| 20 | 2 | 60 | 0.15 | false | 0 |
+| 20 | 2 | 60 | 0.3 | false | 0 |
+| 20 | 2 | 150 | 0 | false | 0 |
+| 20 | 2 | 150 | 0.05 | false | 0 |
+| 20 | 2 | 150 | 0.15 | false | 0 |
+| 20 | 2 | 150 | 0.3 | false | 0 |
+| 20 | 3 | 20 | 0 | false | 0 |
+| 20 | 3 | 20 | 0.05 | false | 0 |
+| 20 | 3 | 20 | 0.15 | false | 0 |
+| 20 | 3 | 20 | 0.3 | false | 0 |
+| 20 | 3 | 60 | 0 | true | exact |
+| 20 | 3 | 60 | 0.05 | true | exact |
+| 20 | 3 | 60 | 0.15 | false | 0 |
+| 20 | 3 | 60 | 0.3 | false | 0 |
+| 20 | 3 | 150 | 0 | true | exact |
+| 20 | 3 | 150 | 0.05 | true | exact |
+| 20 | 3 | 150 | 0.15 | true | exact |
+| 20 | 3 | 150 | 0.3 | false | 0 |
+| 20 | 5 | 20 | 0 | false | 0 |
+| 20 | 5 | 20 | 0.05 | true | exact |
+| 20 | 5 | 20 | 0.15 | false | 0 |
+| 20 | 5 | 20 | 0.3 | false | 0 |
+| 20 | 5 | 60 | 0 | true | exact |
+| 20 | 5 | 60 | 0.05 | false | 0 |
+| 20 | 5 | 60 | 0.15 | true | exact |
+| 20 | 5 | 60 | 0.3 | false | 0 |
+| 20 | 5 | 150 | 0 | true | exact |
+| 20 | 5 | 150 | 0.05 | true | exact |
+| 20 | 5 | 150 | 0.15 | true | exact |
+| 20 | 5 | 150 | 0.3 | true | exact |
+| 50 | 2 | 20 | 0 | false | 0 |
+| 50 | 2 | 20 | 0.05 | false | 0 |
+| 50 | 2 | 20 | 0.15 | false | 0 |
+| 50 | 2 | 20 | 0.3 | false | 0 |
+| 50 | 2 | 60 | 0 | false | 0 |
+| 50 | 2 | 60 | 0.05 | false | 0 |
+| 50 | 2 | 60 | 0.15 | false | 0 |
+| 50 | 2 | 60 | 0.3 | false | 0 |
+| 50 | 2 | 150 | 0 | false | 0 |
+| 50 | 2 | 150 | 0.05 | false | 0 |
+| 50 | 2 | 150 | 0.15 | false | 0 |
+| 50 | 2 | 150 | 0.3 | false | 0 |
+| 50 | 3 | 20 | 0 | false | 0 |
+| 50 | 3 | 20 | 0.05 | false | 0 |
+| 50 | 3 | 20 | 0.15 | false | 0 |
+| 50 | 3 | 20 | 0.3 | false | 0 |
+| 50 | 3 | 60 | 0 | false | 0 |
+| 50 | 3 | 60 | 0.05 | false | 0 |
+| 50 | 3 | 60 | 0.15 | false | 0 |
+| 50 | 3 | 60 | 0.3 | false | 0 |
+| 50 | 3 | 150 | 0 | false | 0 |
+| 50 | 3 | 150 | 0.05 | false | 0 |
+| 50 | 3 | 150 | 0.15 | false | 0 |
+| 50 | 3 | 150 | 0.3 | false | 0 |
+| 50 | 5 | 20 | 0 | false | 0 |
+| 50 | 5 | 20 | 0.05 | false | 0 |
+| 50 | 5 | 20 | 0.15 | false | 0 |
+| 50 | 5 | 20 | 0.3 | false | 0 |
+| 50 | 5 | 60 | 0 | false | 0 |
+| 50 | 5 | 60 | 0.05 | false | 0 |
+| 50 | 5 | 60 | 0.15 | false | 0 |
+| 50 | 5 | 60 | 0.3 | false | 0 |
+| 50 | 5 | 150 | 0 | true | exact |
+| 50 | 5 | 150 | 0.05 | true | exact |
+| 50 | 5 | 150 | 0.15 | false | 0 |
+| 50 | 5 | 150 | 0.3 | false | 0 |
+| 50 | 10 | 20 | 0 | false | 0 |
+| 50 | 10 | 20 | 0.05 | false | 0 |
+| 50 | 10 | 20 | 0.15 | false | 0 |
+| 50 | 10 | 20 | 0.3 | false | 0 |
+| 50 | 10 | 60 | 0 | true | exact |
+| 50 | 10 | 60 | 0.05 | false | 0 |
+| 50 | 10 | 60 | 0.15 | false | 0 |
+| 50 | 10 | 60 | 0.3 | false | 0 |
+| 50 | 10 | 150 | 0 | true | exact |
+| 50 | 10 | 150 | 0.05 | true | exact |
+| 50 | 10 | 150 | 0.15 | false | 0 |
+| 50 | 10 | 150 | 0.3 | false | 0 |
+
+### Conclusion
+
+26/108 exact recoveries. By subset size: size=2: 0/36, size=3: 14/36, size=5: 9/24, size=10: 3/12.
+
+## Results — Stage 1b (length variation)
+
+| nRows | subsetSize | trim | exact | partialOverlap |
+|---|---|---|---|---|
+| 10 | 3 | 0 | true | exact |
+| 10 | 3 | 0.15 | true | exact |
+| 10 | 3 | 0.3 | true | exact |
+| 10 | 5 | 0 | true | exact |
+| 10 | 5 | 0.15 | true | exact |
+| 10 | 5 | 0.3 | true | exact |
+| 20 | 3 | 0 | true | exact |
+| 20 | 3 | 0.15 | true | exact |
+| 20 | 3 | 0.3 | false | 0 |
+| 20 | 5 | 0 | true | exact |
+| 20 | 5 | 0.15 | true | exact |
+| 20 | 5 | 0.3 | true | exact |
+
+### Conclusion
+
+11/12 exact recoveries under independent trailing-gap trimming. Compare against Stage 1 baseline (trim=0.0 rows above) to isolate the effect of length variation alone.
+
+## Results — Stage 2a (3 groups in one zone)
+
+| sizeA | sizeB | groupA | groupB |
+|---|---|---|---|
+| 5 | 5 | missed | missed |
+| 3 | 8 | exact | exact |
+| 8 | 8 | exact | exact |
+
+### Conclusion
+
+At least one configuration failed to cleanly separate both groups — see table for which.
+
+## Results — Stage 2b (two independent zones)
+
+| zoneX | zoneY | distinctZones |
+|---|---|---|
+| exact | exact | true |
+
+### Conclusion
+
+Both independent row-subset zones recovered, at distinct non-overlapping column ranges as designed.
+
+## Root-cause fix for singleton "clusters" (2026-09-12), superseding a display-only patch
+
+User correctly rejected an initial fix that only forced singleton row-split
+blocks to render gray in the live UI (script.js's color-mapping) as
+treating a symptom again: "the block cannot contain 1 sequence. there
+cannot be one coloured line in any block... it's a major flaw in your
+logic," not a display detail.
+
+**Real root cause**: `splitAndMerge`'s recursion-termination step ("too
+small to split further - return whatever's left as a leaf") does not
+itself enforce `MIN_BLOCK_ROWS` - a residual/leftover group from any of
+the three row-split strategies can recurse down to a single row and still
+come back as its own standalone leaf, even though `MIN_BLOCK_ROWS=3` is
+supposed to mean a group that small is never treated as meaningful.
+Confirmed live: a real 1-row leaf existed in `computeBiclusterMask`'s
+output on a cropped real-file region.
+
+**Fix**: new `_mergeUndersizedLeaves`, run right after `splitAndMerge`
+returns (before `mergeAdjacentLeaves`) - any leaf under `MIN_BLOCK_ROWS`
+is folded into whichever SIBLING leaf shares its exact column range and
+is largest, recomputing that sibling's coherence over the merged rows.
+This is a real algorithm-level fix (block-bicluster.js), not the earlier
+script.js display-only patch (kept as harmless defense-in-depth, but now
+dead code in practice since the algorithm no longer produces singletons).
+
+**Verified**: oracle passes, full synthetic sweep unchanged (44/45,
+26/108, 11/12, same Stage 2a/2b pattern - no regression), clean_core still
+0 spurious splits, mosaic_subset still finds exactly its one real group,
+and a direct check on the cropped real-file region that surfaced this bug
+confirms zero singleton leaves remain anywhere in its output.

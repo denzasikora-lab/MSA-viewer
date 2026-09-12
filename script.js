@@ -6566,11 +6566,26 @@ function applyBiclusterLive() {
     });
     byRange.forEach(group => {
         if (group.length < 2) return; // a lone 'all' block has no sibling to compare against
+        // A single row is a leftover, not a cluster - there is nothing
+        // for it to share a pattern WITH, so it can never be the
+        // colored "minority find," no matter how the algorithm scored
+        // it (user caught this live: a lone-row block was rendering as
+        // a colored MOSAIC/CONSERVATIVE find).
         let minSize = Infinity;
-        group.forEach(b => { const n = b.rows === 'all' ? Infinity : b.rows.length; if (n < minSize) minSize = n; });
-        group.forEach(b => { b._isMinority = (b.rows !== 'all' && b.rows.length === minSize); });
+        group.forEach(b => { const n = (b.rows === 'all' || b.rows.length <= 1) ? Infinity : b.rows.length; if (n < minSize) minSize = n; });
+        group.forEach(b => { b._isMinority = (b.rows !== 'all' && b.rows.length > 1 && b.rows.length === minSize); });
     });
-    raw.blocks.forEach(b => { b.type = _biclusterCoherenceToType(b.coherence, !!b._isMinority); });
+    raw.blocks.forEach(b => {
+        // A single-row block trivially "matches itself" at every column
+        // (coherence computed against a group of one is meaningless, not
+        // a real finding) - force it gray regardless of what its own
+        // coherence number says, rather than only excluding it from
+        // minority selection above (which alone wasn't enough: a lone
+        // row can still self-score coherence 1.0 and hit the normal
+        // ladder's CONSERVATIVE bucket on its own).
+        if (b.rows !== 'all' && b.rows.length <= 1) { b.type = 'DIVERGENT'; return; }
+        b.type = _biclusterCoherenceToType(b.coherence, !!b._isMinority);
+    });
 
     state.blockMask = raw;
     state._blockMaskPreset = null;
