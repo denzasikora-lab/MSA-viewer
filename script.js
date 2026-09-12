@@ -6551,18 +6551,18 @@ function applyBiclusterLive() {
     const fasta = state.seqs.map(s => '>' + s.header + '\n' + s.seq).join('\n') + '\n';
     const raw = BlockBicluster.computeBiclusterMask(fasta, {});
 
-    const byRange = new Map();
-    raw.blocks.forEach(b => {
-        const key = b.col_start + ':' + b.col_end;
-        if (!byRange.has(key)) byRange.set(key, []);
-        byRange.get(key).push(b);
+    // Assign find colors globally, not per column range. Per-range
+    // indexing made every zone's first evidenced group MOSAIC: v3's
+    // C-block (cols 17-24) and G-block (cols 25-32) both came out amber
+    // even though they are different motifs. Order by column, then by
+    // first row index, so v2 (same columns, two groups) stays amber+purple.
+    const finds = raw.blocks.filter(b => b.rows !== 'all' && b.rows.length >= 3 && b.coherence != null);
+    finds.sort((a, b) => {
+        if (a.col_start !== b.col_start) return a.col_start - b.col_start;
+        return Math.min.apply(null, a.rows) - Math.min.apply(null, b.rows);
     });
-    byRange.forEach(group => {
-        const finds = group.filter(b => b.rows !== 'all' && b.rows.length >= 3 && b.coherence != null);
-        finds.sort((a, b) => Math.min.apply(null, a.rows) - Math.min.apply(null, b.rows));
-        finds.forEach((b, i) => {
-            b.type = BICLUSTER_FIND_TYPES[Math.min(i, BICLUSTER_FIND_TYPES.length - 1)];
-        });
+    finds.forEach((b, i) => {
+        b.type = BICLUSTER_FIND_TYPES[i % BICLUSTER_FIND_TYPES.length];
     });
     raw.blocks.forEach(b => {
         if (b.type) return;
@@ -6570,8 +6570,6 @@ function applyBiclusterLive() {
             b.type = _biclusterCoherenceToType(b.coherence);
             return;
         }
-        // Undersized or null-coherence row leaves are never a find
-        // (single line cannot be a group; no measurable evidence).
         b.type = 'DIVERGENT';
     });
 
