@@ -6530,46 +6530,20 @@ function applyBlockMaskLive(presetOrParams) {
 // above, reuses the SAME overlay renderer (renderBlockMaskOverlay) since
 // both produce the same { blocks: [{col_start,col_end,rows,...}],
 // row_headers } shape. computeBiclusterMask's blocks carry `.coherence`
-// (a float or null) rather than block-mask's categorical `.type` -
-// bucket coherence into the same BLOCKMASK_COLORS keys so the existing
-// renderer needs no changes.
-//
-// A row-split block (rows !== 'all') already passed the algorithm's own
-// acceptance test (it beat MIN_SPLIT_GAIN/HAPLOTYPE_MIN_GAIN over its
-// parent's coherence) - it is by definition a found signal, never
-// background. Coloring it purely by its raw coherence number was a real
-// bug, confirmed directly: after fixing gap-inflated coherence
-// (block-bicluster.js's own history), a genuine, algorithm-confirmed
-// 5-row match on mosaic_subset.aln.fa scores coherence 0.59 - just under
-// the 0.6 "MOSAIC" cutoff picked back when coherence numbers ran higher -
-// so it rendered as DIVERGENT gray, visually identical to "nothing found"
-// even though it's the one real result on the page. Row-split blocks are
-// therefore never gray; only whole-range ('all') blocks use the
-// gray/amber/green coherence ladder, since those really are meant to
-// distinguish "background" from "somewhat conserved" from "core."
-// isMinority: true only for the SMALLEST row-count group among the
-// sibling blocks sharing the same column range - that's the group whose
-// discovery actually drove the split's gain. The majority/"everyone
-// else" group in the same split is not a claim of anything (confirmed
-// directly: coloring it the same as the minority made a real 5-row find
-// on mosaic_subset.aln.fa visually indistinguishable from its own
-// deliberately-heterogeneous background, erasing exactly the distinction
-// the overlay exists to show) - it goes back through the normal
-// gray/amber/green coherence ladder, same as an undivided 'all' block.
-//
-// Minority finds are NEVER CONSERVATIVE green. That color is reserved
-// for full-height ('all') conserved stretches. Confirmed on the planted
-// 24x48 eye-test: a 6-row C-block scored 0.99 and painted the same
-// green as the two conserved flanks, so the four true rectangles
-// (left core, right end, C-group, mixed remainder) collapsed to "all
-// green." A row-subset find is MOSAIC (amber) even at high coherence.
-function _biclusterCoherenceToType(coherence, isMinority) {
-    if (isMinority) return 'MOSAIC';
+// (a float or null) rather than block-mask's categorical `.type`.
+// Full-height ('all') blocks use the gray/amber/green coherence ladder.
+// Evidenced row-subset finds in one column range get distinct colors
+// (amber, purple, pink) so two motifs are not painted the same. Green
+// is reserved for conserved flanks. Null-coherence / undersized leaves
+// stay gray (single line cannot be a group).
+function _biclusterCoherenceToType(coherence) {
     if (coherence == null) return 'DIVERGENT';
     if (coherence >= 0.85) return 'CONSERVATIVE';
     if (coherence >= 0.6) return 'MOSAIC';
     return 'DIVERGENT';
 }
+
+const BICLUSTER_FIND_TYPES = ['MOSAIC', 'DECAY_SLOPE', 'SIMPLE_REPEAT'];
 
 function applyBiclusterLive() {
     if (typeof BlockBicluster === 'undefined') { showMessage('block-bicluster.js not loaded', 3000); return null; }
@@ -6577,9 +6551,6 @@ function applyBiclusterLive() {
     const fasta = state.seqs.map(s => '>' + s.header + '\n' + s.seq).join('\n') + '\n';
     const raw = BlockBicluster.computeBiclusterMask(fasta, {});
 
-    // Group sibling blocks by exact column range to find, within each
-    // split, which group is the minority (colored as a find) vs the
-    // majority (judged as its own background, not automatically colored).
     const byRange = new Map();
     raw.blocks.forEach(b => {
         const key = b.col_start + ':' + b.col_end;
@@ -6587,35 +6558,21 @@ function applyBiclusterLive() {
         byRange.get(key).push(b);
     });
     byRange.forEach(group => {
-        if (group.length < 2) return; // a lone 'all' block has no sibling to compare against
-        // A single row is a leftover, not a cluster - there is nothing
-        // for it to share a pattern WITH, so it can never be the
-        // colored "minority find," no matter how the algorithm scored
-        // it (user caught this live: a lone-row block was rendering as
-        // a colored MOSAIC/CONSERVATIVE find).
-        let minSize = Infinity;
-        group.forEach(b => { const n = (b.rows === 'all' || b.rows.length <= 1) ? Infinity : b.rows.length; if (n < minSize) minSize = n; });
-        group.forEach(b => { b._isMinority = (b.rows !== 'all' && b.rows.length > 1 && b.rows.length === minSize); });
+        const finds = group.filter(b => b.rows !== 'all' && b.rows.length >= 3 && b.coherence != null);
+        finds.sort((a, b) => Math.min.apply(null, a.rows) - Math.min.apply(null, b.rows));
+        finds.forEach((b, i) => {
+            b.type = BICLUSTER_FIND_TYPES[Math.min(i, BICLUSTER_FIND_TYPES.length - 1)];
+        });
     });
     raw.blocks.forEach(b => {
-        // Safety net, not the primary fix: block-bicluster.js's own
-        // _mergeUndersizedLeaves/_mergeIdenticalRowSiblings only merge an
-        // undersized or null-coherence leaf into a SIBLING sharing its
-        // exact column range - confirmed live that a leaf can be
-        // undersized/null with NO such sibling at all (an isolated
-        // 2-row, coherence:null leaf at cols 0-63 of the real
-        // oma_SINE16b file, product of an independent recursive branch
-        // whose siblings ended up at different column boundaries), which
-        // the algorithm-level fix cannot catch by construction. Force
-        // gray here unconditionally as a display-level backstop so nothing
-        // under MIN_BLOCK_ROWS-equivalent (3) or with null coherence is
-        // ever colored as a find, regardless of whether the algorithm
-        // had a merge target available - the real fix (making the
-        // algorithm itself never leave such a leaf isolated, preserving
-        // the tiling invariant) is still open, tracked in
-        // tests/bicluster/VALIDATION_PLAN.md.
-        if (b.rows !== 'all' && (b.rows.length < 3 || b.coherence == null)) { b.type = 'DIVERGENT'; return; }
-        b.type = _biclusterCoherenceToType(b.coherence, !!b._isMinority);
+        if (b.type) return;
+        if (b.rows === 'all') {
+            b.type = _biclusterCoherenceToType(b.coherence);
+            return;
+        }
+        // Undersized or null-coherence row leaves are never a find
+        // (single line cannot be a group; no measurable evidence).
+        b.type = 'DIVERGENT';
     });
 
     state.blockMask = raw;
