@@ -6350,6 +6350,7 @@ function setBlockMaskOpacity(v) {
 }
 function clearBlockMask() {
     state.blockMask = null;
+    state._biclusterRaw = null;
     renderBlockMaskOverlay();
 }
 
@@ -6440,27 +6441,26 @@ function renderBlockMaskOverlay() {
             const w = (ce - cs + 1) * cw;
             const fill = BLOCKMASK_COLORS[mb.type] || '#999';
 
-            const addRect = (y, h, op, dashed) => {
+            const addRect = (y, h, op, dashed, localOnly) => {
                 const r = document.createElementNS(BLOCKMASK_SVGNS, 'rect');
                 r.setAttribute('x', x.toFixed(1));
                 r.setAttribute('y', y.toFixed(1));
                 r.setAttribute('width', Math.max(0.5, w).toFixed(1));
                 r.setAttribute('height', Math.max(1, h).toFixed(1));
                 r.setAttribute('fill', fill);
-                r.setAttribute('fill-opacity', op.toFixed(3));
-                if (dashed) {
-                    r.setAttribute('stroke', '#c0392b');
-                    r.setAttribute('stroke-width', '1');
-                    r.setAttribute('stroke-dasharray', '3 2');
-                    r.setAttribute('fill-opacity', (op * 0.7).toFixed(3));
+                r.setAttribute('fill-opacity', (localOnly ? op * 0.35 : op).toFixed(3));
+                if (dashed || localOnly) {
+                    r.setAttribute('stroke', localOnly ? fill : '#c0392b');
+                    r.setAttribute('stroke-width', localOnly ? '2' : '1');
+                    r.setAttribute('stroke-dasharray', localOnly ? '4 3' : '3 2');
+                    r.setAttribute('stroke-opacity', '0.95');
+                    if (!localOnly) r.setAttribute('fill-opacity', (op * 0.7).toFixed(3));
                 } else {
-                    // Solid edge so a pale fill (especially DIVERGENT gray
-                    // over mixed bases) still reads as a rectangle, not as
-                    // "no overlay in this cell."
                     r.setAttribute('stroke', fill);
                     r.setAttribute('stroke-width', '1');
                     r.setAttribute('stroke-opacity', '0.9');
                 }
+                if (localOnly) r.setAttribute('data-local-only', '1');
                 svg.appendChild(r);
             };
 
@@ -6475,22 +6475,13 @@ function renderBlockMaskOverlay() {
             }
             if (!vis.length) return;
             vis.sort((a, b) => rowElByIdx.get(a).getBoundingClientRect().top - rowElByIdx.get(b).getBoundingClientRect().top);
-            const groupDashed = _blockMaskGroupContiguity(mb.rows) < 0.6;
-            // A run of exactly 1 row is always dashed, even when the
-            // group's OVERALL contiguity score is high enough that the
-            // group as a whole wouldn't be - a single isolated row still
-            // looks exactly like its own solid one-row "cluster" without
-            // this, which is misleading regardless of how contiguous the
-            // rest of the group is (confirmed live: a mostly-contiguous
-            // multi-row group with one scattered stray row rendered that
-            // stray row as an undashed solid box, indistinguishable from
-            // a real single-row finding - user correctly rejected this,
-            // "single line cannot be a group").
+            const localOnly = !!mb.localOnly;
+            const groupDashed = !localOnly && _blockMaskGroupContiguity(mb.rows) < 0.6;
             let runStart = vis[0], prev = vis[0], runLen = 1;
             const flush = (a, z, len) => {
                 const ya = rowTop(a), yz = rowTop(z);
                 if (ya == null || yz == null) return;
-                addRect(ya, (yz - ya) + rowH, _blockMaskOpacity, groupDashed || len === 1);
+                addRect(ya, (yz - ya) + rowH, _blockMaskOpacity, groupDashed || (!localOnly && len === 1), localOnly);
             };
             for (let i = 1; i < vis.length; i++) {
                 const yPrev = rowElByIdx.get(prev).getBoundingClientRect().top;
@@ -6545,36 +6536,101 @@ function _biclusterCoherenceToType(coherence) {
 
 const BICLUSTER_FIND_TYPES = ['MOSAIC', 'DECAY_SLOPE', 'SIMPLE_REPEAT'];
 
-function applyBiclusterLive() {
-    if (typeof BlockBicluster === 'undefined') { showMessage('block-bicluster.js not loaded', 3000); return null; }
-    if (!state.seqs || !state.seqs.length) { showMessage('Load an alignment first', 3000); return null; }
-    const fasta = state.seqs.map(s => '>' + s.header + '\n' + s.seq).join('\n') + '\n';
-    const raw = BlockBicluster.computeBiclusterMask(fasta, {});
+function _rowContiguousRuns(rows) {
+    const s = [...rows].sort((a, b) => a - b);
+    const runs = [];
+    for (const r of s) {
+        const last = runs[runs.length - 1];
+        if (last && r === last[last.length - 1] + 1) last.push(r);
+        else runs.push([r]);
+    }
+    return runs;
+}
 
-    // Evidenced finds only: coherence >= 0.6. A leftover majority after a
-    // real split can still have a middling score (v4's 18 mixed rows at
-    // 0.43-0.46) and must not get a find color.
-    const finds = raw.blocks.filter(b => b.rows !== 'all' && b.rows.length >= 3 && b.coherence != null && b.coherence >= 0.6);
+function _longestRowRun(rows) {
+    const runs = _rowContiguousRuns(rows);
+    if (!runs.length) return [];
+    return runs.reduce((a, b) => a.length >= b.length ? a : b);
+}
+
+function _biclusterPaintMode() {
+    return el('biclusterPaintMode')?.value || 'local_one';
+}
+
+function _paintBiclusterBlocks(raw) {
+    if (!raw || !Array.isArray(raw.blocks)) return raw;
+    const mode = _biclusterPaintMode();
+    const painted = [];
+    for (const b of raw.blocks) {
+        const isFind = b.kind !== 'conserved' && b.rows !== 'all' && Array.isArray(b.rows) && b.rows.length >= 2;
+        if (!isFind) {
+            painted.push({ ...b, localOnly: false });
+            continue;
+        }
+        const longest = _longestRowRun(b.rows);
+        const orphan = b.rows.filter(i => !longest.includes(i));
+        if (mode === 'strict') {
+            if (longest.length >= 2) painted.push({ ...b, rows: longest, localOnly: false });
+            continue;
+        }
+        if (mode === 'local_two' && orphan.length && longest.length >= 2) {
+            painted.push({ ...b, rows: longest, localOnly: false });
+            painted.push({ ...b, rows: orphan, localOnly: true });
+            continue;
+        }
+        painted.push({ ...b, localOnly: false });
+    }
+    const finds = painted.filter(b => b.kind !== 'conserved' && b.rows !== 'all' && Array.isArray(b.rows));
     finds.sort((a, b) => {
         if (a.col_start !== b.col_start) return a.col_start - b.col_start;
-        return Math.min.apply(null, a.rows) - Math.min.apply(null, b.rows);
+        const ra = Math.min.apply(null, a.rows), rb = Math.min.apply(null, b.rows);
+        return ra - rb;
     });
-    finds.forEach((b, i) => {
-        b.type = BICLUSTER_FIND_TYPES[i % BICLUSTER_FIND_TYPES.length];
+    let fi = 0;
+    const typeOf = new Map();
+    finds.forEach((b) => {
+        if (b.localOnly) return;
+        const key = b.col_start + ':' + b.col_end + ':' + [...b.rows].sort((x,y)=>x-y).join(',');
+        if (!typeOf.has(key)) typeOf.set(key, BICLUSTER_FIND_TYPES[fi++ % BICLUSTER_FIND_TYPES.length]);
+        b.type = typeOf.get(key);
     });
-    raw.blocks.forEach(b => {
+    finds.forEach((b) => {
+        if (!b.localOnly) return;
+        const parent = painted.find(p => !p.localOnly && p.kind === b.kind && p.col_start === b.col_start && p.col_end === b.col_end && p.type);
+        b.type = parent ? parent.type : 'MOSAIC';
+    });
+    painted.forEach(b => {
         if (b.type) return;
-        if (b.rows === 'all') {
-            b.type = _biclusterCoherenceToType(b.coherence);
+        if (b.kind === 'conserved' || b.rows === 'all') {
+            b.type = 'CONSERVATIVE';
             return;
         }
         b.type = 'DIVERGENT';
     });
+    return { ...raw, blocks: painted, paint_mode: mode };
+}
 
-    state.blockMask = raw;
+function applyBiclusterLive() {
+    if (typeof BlockBicluster === 'undefined') { showMessage('block-bicluster.js not loaded', 3000); return null; }
+    if (!state.seqs || !state.seqs.length) { showMessage('Load an alignment first', 3000); return null; }
+    const fasta = state.seqs.map(s => '>' + s.header + '\n' + s.seq).join('\n') + '\n';
+    const knobs = (typeof getClusteringParameters === 'function') ? getClusteringParameters() : {};
+    const raw = BlockBicluster.computeBiclusterMask(fasta, knobs);
+    state._biclusterRaw = raw;
+    state.blockMask = _paintBiclusterBlocks(raw);
     state._blockMaskPreset = null;
     renderBlockMaskOverlay();
     return state.blockMask;
+}
+
+function reapplyBiclusterPaintMode() {
+    if (!state._biclusterRaw) {
+        if (state.seqs && state.seqs.length) applyBiclusterLive();
+        return;
+    }
+    state.blockMask = _paintBiclusterBlocks(state._biclusterRaw);
+    renderBlockMaskOverlay();
+    _blockMaskStatusFrom(state.blockMask);
 }
 
 function computeAndShowBicluster() {
@@ -6619,10 +6675,26 @@ function _blockMaskStatusFrom(mask) {
     const status = el('blockMaskStatus');
     if (!status) return;
     if (!mask) { status.textContent = 'no mask (load an alignment first)'; return; }
-    const splits = mask.blocks.filter(b => b.rows !== 'all');
-    const scattered = splits.filter(b => Array.isArray(b.rows) && _blockMaskGroupContiguity(b.rows) < 0.6).length;
-    status.textContent = `${mask.blocks.length} blocks, ${splits.length} row-split`
-        + (scattered ? `, ${scattered} scattered (dashed)` : '');
+    const blocks = mask.blocks || [];
+    if (!blocks.length) {
+        status.textContent = '0 rectangles (thresholds too tight for this alignment)';
+        return;
+    }
+    const b = blocks[0];
+    const c1 = b.col_start + 1, c2 = b.col_end + 1;
+    const nRows = b.rows === 'all' ? mask.n_rows : (Array.isArray(b.rows) ? b.rows.length : 0);
+    const who = b.rows === 'all' ? 'all rows' : nRows + ' rows';
+    const names = (b.rows !== 'all' && Array.isArray(b.rows))
+        ? b.rows.map(k => mask.row_headers[k]).slice(0, 8).join(', ') + (b.rows.length > 8 ? '…' : '')
+        : '';
+    const bases = b.supporting_bases || '';
+    const more = blocks.length > 1 ? `; +${blocks.length - 1} more` : '';
+    const mode = mask.paint_mode;
+    const modeNote = mode === 'strict' ? ' [strict]' : mode === 'local_two' ? ' [local two-layer]' : mode === 'local_one' ? ' [local one-box]' : '';
+    status.textContent = `${blocks.length} rectangle${blocks.length === 1 ? '' : 's'}${modeNote}. First: cols ${c1}–${c2}, ${who}`
+        + (names ? ` (${names})` : '')
+        + (bases ? `, bases ${bases}` : '')
+        + more;
 }
 
 function computeAndShowBlockMask() {
@@ -6665,6 +6737,13 @@ function initBlockMaskPanel() {
     }
     // seed slider readouts + values from the current preset selection
     if (sel) _blockMaskSyncSlidersToPreset(sel.value);
+    const paint = el('biclusterPaintMode');
+    if (paint && !paint._bmBound) {
+        paint._bmBound = true;
+        paint.addEventListener('change', () => {
+            if (state._biclusterRaw || state.blockMask) reapplyBiclusterPaintMode();
+        });
+    }
 }
 
 function groupRowsByBlockMask() {

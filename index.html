@@ -454,7 +454,12 @@
                                     <div id="blockMaskStatus" style="font-size: 10px; color: #555; margin-top: 4px; min-height: 12px;"></div>
                                     <div style="border-top: 1px dashed #ccc; margin-top: 8px; padding-top: 6px;">
                                         <div style="font-size: 10px; font-weight: bold; color: #555; margin-bottom: 4px;" title="Experimental: no reference row, no fixed zones. Splits by row OR column, whichever most improves internal agreement, recursively. Shares this same overlay - Show replaces whatever mask is currently displayed.">Bicluster (experimental, no reference row)</div>
-                                        <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                        <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center;">
+                                            <select id="biclusterPaintMode" style="flex: 1; min-width: 120px; height: 22px; font-size: 10px;" title="How to paint same-type copies that are not sitting with the contiguous stack. Alignment order is never changed.">
+                                                <option value="local_one">Local: one box (dashed orphans)</option>
+                                                <option value="local_two">Local: two layers (stack + orphans)</option>
+                                                <option value="strict">Strict: contiguous stack only</option>
+                                            </select>
                                             <button id="biclusterComputeButton" style="flex: 1; min-width: 70px; height: 22px; font-size: 10px; background: #0d9488; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Compute the bicluster mask from the currently loaded alignment and overlay it">Show bicluster</button>
                                             <button id="biclusterClearButton" style="height: 22px; font-size: 10px;" title="Remove the overlay">Clear</button>
                                             <button id="biclusterGroupRowsButton" style="flex: 1; min-width: 80px; height: 22px; font-size: 10px;" title="A colored region is only a real rectangle if its member rows are drawn next to each other - reorder rows so the first row-split zone's groups sit contiguously (rank 0, then 1..., then residual). Undoable.">Group rows</button>
@@ -1157,10 +1162,10 @@ B: -</pre>
 
     <script src="cluster.js?v=164"></script>
     <script src="bam-parser.js?v=164"></script>
-    <script src="script.js?v=197"></script>
+    <script src="script.js?v=201"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
-    <script src="block-bicluster.js?v=13"></script>
+    <script src="block-bicluster.js?v=16"></script>
     <script>
     // All functionality moved to script.js
     </script>

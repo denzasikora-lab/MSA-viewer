@@ -1,8 +1,8 @@
 # Block-mask algorithm: research notes for the next implementation pass
 
-**Status: research only. No code changed by this document.** Written to be
-read fresh in a later session before writing the next version of the
-block-mask algorithm — do not re-derive this, read it.
+**Status: research only. The shipped 2D path is extractive rectangles
+(Cluster Now + column extent), documented in `BICLUSTER_TASK.md` §7.
+This file is the partition attempt — do not re-implement it.**
 
 ## The problem, restated generally
 
