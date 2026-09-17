@@ -347,6 +347,7 @@ const APP_VERSION = '1e8580e';
 
 const state = {
     seqs: [],
+    ab1Traces: {},
     selectedRows: new Set(),
     selectedColumns: new Set(),
     selectedNucs: new Map(),
@@ -4585,6 +4586,28 @@ function _normalizeSequenceLengths(seqs) {
             s.gaplessPositions = calculateGaplessPositions(s.seq);
         }
     }
+}
+
+/**
+ * Read a File that may be plain FASTA/MSF text or a binary AB1 chromatogram.
+ * AB1 files are converted to a single-record FASTA block and their trace
+ * data is stashed in state.ab1Traces keyed by the FASTA header, so a
+ * "View Chromatogram" action can retrieve it later.
+ * Returns { text, header } where header is null for non-AB1 files.
+ */
+async function readSequenceFile(file) {
+    const looksAb1ByName = /\.ab1$/i.test(file.name);
+    const buf = await file.arrayBuffer();
+    if (looksAb1ByName || (typeof AB1Parser !== 'undefined' && AB1Parser.looksLikeAb1(buf))) {
+        const parsed = typeof AB1Parser !== 'undefined' ? AB1Parser.parse(buf) : null;
+        if (parsed && parsed.sequence) {
+            const header = file.name.replace(/\.ab1$/i, '');
+            state.ab1Traces[header] = parsed;
+            return { text: `>${header}\n${parsed.sequence}\n`, header };
+        }
+    }
+    const decoder = new TextDecoder('utf-8');
+    return { text: decoder.decode(buf), header: null };
 }
 
 function parseFasta(text) {
@@ -13777,7 +13800,7 @@ function initAddSeqBrowse() {
         let allContent = textarea.value.trim();
         for (const file of files) {
             try {
-                const text = await file.text();
+                const { text } = await readSequenceFile(file);
                 const trimmed = text.trim();
                 if (allContent) allContent += '\n' + trimmed;
                 else allContent = trimmed;
@@ -14756,6 +14779,22 @@ function showContextMenu(e, index) {
         contextMenu.appendChild(copySameColorUngapped);
     }
 
+    // AB1 chromatogram viewer, if this sequence came from an AB1 file
+    if (state.ab1Traces && state.ab1Traces[seqName]) {
+        const sepAb1 = document.createElement('div');
+        sepAb1.style.borderTop = '1px solid #ccc';
+        sepAb1.style.margin = '4px 0';
+        contextMenu.appendChild(sepAb1);
+
+        const viewChromatogram = document.createElement('div');
+        viewChromatogram.textContent = 'View Chromatogram...';
+        viewChromatogram.addEventListener('click', () => {
+            if (typeof ChromatogramViewer !== 'undefined') ChromatogramViewer.open(seqName);
+            closeContextMenu();
+        });
+        contextMenu.appendChild(viewChromatogram);
+    }
+
     // ---- Edit section ----
     const sepEdit = document.createElement('div');
     sepEdit.style.borderTop = '1px solid #ccc';
@@ -15329,16 +15368,15 @@ function initializeAppUI() {
                 } catch (err) { /* unsupported or denied - fall back silently */ }
             }
 
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                fastaInput.value = e.target.result;
+            try {
+                const { text } = await readSequenceFile(file);
+                fastaInput.value = text;
                 parseAndRender(true);
-            };
-            reader.onerror = () => {
+            } catch (err) {
+                console.error('Error reading file:', err);
                 alignmentContainer.innerHTML = '<div class="error-message">Error:Error reading file.</div>';
                 showMessage("Error reading file.", 5000);
-            };
-            reader.readAsText(file);
+            }
         });
         dropZone.addEventListener('click', async (e) => {
             if (window.getSelection().toString()) return;
@@ -15353,7 +15391,7 @@ function initializeAppUI() {
                         handleBamFile({ target: { files: [file], value: '' } });
                         return;
                     }
-                    fastaInput.value = await file.text();
+                    fastaInput.value = (await readSequenceFile(file)).text;
                     parseAndRender(true);
                 } catch (err) {
                     if (err && err.name === 'AbortError') return; // user cancelled the picker
@@ -15384,16 +15422,14 @@ function initializeAppUI() {
             return;
         }
 
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-            fastaInput.value = evt.target.result;
+        readSequenceFile(file).then(({ text }) => {
+            fastaInput.value = text;
             parseAndRender(true);
-        };
-        reader.onerror = () => {
+        }).catch((err) => {
+            console.error('Error reading file:', err);
             alignmentContainer.innerHTML = '<div class="error-message">Error:Error reading file.</div>';
             showMessage("Error reading file.", 5000);
-        };
-        reader.readAsText(file);
+        });
     });
 
     fastaInput?.addEventListener('paste', () => {
