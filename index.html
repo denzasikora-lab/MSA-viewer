@@ -446,7 +446,7 @@
                                         </select>
                                         <button id="blockMaskComputeButton" style="flex: 1; min-width: 70px; height: 22px; font-size: 10px; background: #8b5cf6; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Compute the block mask from the currently loaded alignment and overlay it">Show mask</button>
                                         <button id="blockMaskClearButton" style="height: 22px; font-size: 10px;" title="Remove the block-mask overlay">Clear</button>
-                                        <button id="blockMaskGroupButton" style="flex: 1; min-width: 80px; height: 22px; font-size: 10px;" title="Reorder rows so the first row-split zone's groups sit contiguously (rank 0, then 1..., then residual). Undoable.">Group rows</button>
+                                        <button id="blockMaskGroupButton" style="flex: 1; min-width: 80px; height: 22px; font-size: 10px;" title="Does not pick a type for you. Click a colored rectangle on the alignment to stack that type (all members, including orphans). Undoable.">Group rows</button>
                                     </div>
                                     <label style="font-size: 10px; display: flex; align-items: center; gap: 4px;" title="Overlay opacity">Opacity
                                         <input type="range" id="blockMaskOpacity" min="0.1" max="0.9" step="0.05" value="0.45" style="flex: 1;">
@@ -462,7 +462,7 @@
                                             </select>
                                             <button id="biclusterComputeButton" style="flex: 1; min-width: 70px; height: 22px; font-size: 10px; background: #0d9488; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Compute the bicluster mask from the currently loaded alignment and overlay it">Show bicluster</button>
                                             <button id="biclusterClearButton" style="height: 22px; font-size: 10px;" title="Remove the overlay">Clear</button>
-                                            <button id="biclusterGroupRowsButton" style="flex: 1; min-width: 80px; height: 22px; font-size: 10px;" title="A colored region is only a real rectangle if its member rows are drawn next to each other - reorder rows so the first row-split zone's groups sit contiguously (rank 0, then 1..., then residual). Undoable.">Group rows</button>
+                                            <button id="biclusterGroupRowsButton" style="flex: 1; min-width: 80px; height: 22px; font-size: 10px;" title="Does not pick a type for you. Click a colored rectangle on the alignment to stack that type (all members, including orphans). Undoable.">Group rows</button>
                                         </div>
                                     </div>
                                     <details style="margin-top: 4px;">
@@ -605,7 +605,7 @@
                             <div class="button-group">
                                 <button id="realignAllButton" title="Realign all sequences with default settings">Realign All</button>
                                 <button id="realignSelectedButton" title="Realign only selected sequences (keeps others unchanged)">Realign Selected</button>
-                                <button id="realignBlockButton" title="Realign selected columns block (Ctrl+Shift+R)">Realign Block</button>
+                                <button id="realignBlockButton" title="Realign selected column span(s) with MAFFT and splice back. Honours Adjust direction / Reorder / Reorder only (Ctrl+Shift+R)">Realign Block</button>
                                 <button id="addSequencesButton" title="Add new sequences and align with existing">Add Seqs & Align</button>
                                 <button id="degapBlockLeftButton" title="Degap selected continuous column block and compact residues to LEFT">Degap Block <-</button>
                                 <button id="degapBlockRightButton" title="Degap selected continuous column block and compact residues to RIGHT">Degap Block -></button>
@@ -647,8 +647,26 @@
                                 </div>
                                 <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
                                     <label style="font-size: 11px; min-width: 55px; text-align: right;"></label>
-                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer;" title="Reorder output sequences by similarity (guide-tree order) instead of input order">
+                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer;" title="Reorder output sequences by similarity (guide-tree order) instead of input order. With Realign Block, you are asked whether to apply that order to the whole MSA (default No).">
                                         <input type="checkbox" id="mafftReorder"> Reorder by similarity
+                                    </label>
+                                </div>
+                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
+                                    <label style="font-size: 11px; min-width: 55px; text-align: right;"></label>
+                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer;" title="Do not align. Only compute a 6-mer guide-tree order. Realign All applies it to the whole MSA. Realign Block orders rows by the selected region and asks before applying (default No).">
+                                        <input type="checkbox" id="mafftReorderOnly"> Reorder only (no alignment)
+                                    </label>
+                                </div>
+                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
+                                    <label style="font-size: 11px; min-width: 55px; text-align: right;"></label>
+                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer;" title="Skip the Realign Block prompt about reverse-complementing full sequences (stored default: Yes). Uncheck to be asked each time.">
+                                        <input type="checkbox" id="mafftDontAskAdjust"> Don't ask (full-seq RC)
+                                    </label>
+                                </div>
+                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
+                                    <label style="font-size: 11px; min-width: 55px; text-align: right;"></label>
+                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer;" title="Skip the Realign Block prompt about applying region order to the whole MSA (stored default: No). Uncheck to be asked each time.">
+                                        <input type="checkbox" id="mafftDontAskReorder"> Don't ask (apply order)
                                     </label>
                                 </div>
                                 <!-- Offset (-e) omitted: disttbfast treats -e as a boolean flag, not a value-taking option -->
@@ -1160,14 +1178,15 @@ B: -</pre>
     <!-- Recent Files Dropdown -->
     <div id="recentDropdown" style="display:none;position:fixed;top:140px;right:20px;width:360px;max-height:400px;overflow-y:auto;background:white;border:1px solid #ccc;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.2);z-index:10003;font-family:-apple-system,BlinkMacSystemFont,sans-serif;"></div>
 
-    <script src="cluster.js?v=164"></script>
+    <script src="cluster.js?v=166"></script>
     <script src="bam-parser.js?v=164"></script>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
-    <script src="script.js?v=201"></script>
+    <script src="realign-region.js?v=2"></script>
+    <script src="script.js?v=205"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
-    <script src="block-bicluster.js?v=16"></script>
+    <script src="block-bicluster.js?v=17"></script>
     <script>
     // All functionality moved to script.js
     </script>

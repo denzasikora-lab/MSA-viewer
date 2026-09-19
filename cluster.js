@@ -61,11 +61,13 @@ class SINEClusterer {
 
         let upperBound = availableSeqs.length;
         
-        // Upper bound: cap cluster size at 50% of available sequences.
+        // Upper bound: cap cluster size at 50% of available sequences, but
+        // never below minSize — otherwise leftover of size 2*minSize-1 cannot
+        // produce any candidate (floor(5*0.5)=2 < minSize 3).
         // Prevent degenerate "everything" clusters while allowing large legitimate subfamilies
         // (e.g. a dominant Alu subfamily can be 30-40% of many SINE datasets).
         if (!options.relaxUpperBound) {
-            upperBound = Math.floor(availableSeqs.length * 0.50);
+            upperBound = Math.max(minSize, Math.floor(availableSeqs.length * 0.50));
         }
 
         const _shouldCancel = options.shouldCancel || (() => false);
@@ -317,11 +319,13 @@ class SINEClusterer {
 
         let upperBound = availableSeqs.length;
 
-        // Upper bound: cap cluster size at 50% of available sequences.
+        // Upper bound: cap cluster size at 50% of available sequences, but
+        // never below minSize — otherwise leftover of size 2*minSize-1 cannot
+        // produce any candidate (floor(5*0.5)=2 < minSize 3).
         // Prevent degenerate "everything" clusters while allowing large legitimate subfamilies
         // (e.g. a dominant Alu subfamily can be 30-40% of many SINE datasets).
         if (!options.relaxUpperBound) {
-            upperBound = Math.floor(availableSeqs.length * 0.50);
+            upperBound = Math.max(minSize, Math.floor(availableSeqs.length * 0.50));
         }
 
         const candidates = new Map();
@@ -566,7 +570,10 @@ class SINEClusterer {
         while (avail.length >= o.minSize && it < o.maxIterations) {
             it++;
             const step = await this._clusterIteration(avail, clusters, o, it);
-            if (!step.group) break;
+            // A miss this round is not the end: later rounds relax minPerfect /
+            // quality. Stopping here made Max Iter a no-op whenever round 1
+            // found nothing (the svk 600-consensus case).
+            if (!step.group) continue;
             clusters.push(step.group);
             avail = step.avail;
             onProgress(`Cluster ${clusters.length}: ${step.group.size} seqs, ${clusters.reduce((a,c)=>a+c.size,0)} assigned, ${avail.length} remaining`);
@@ -580,7 +587,10 @@ class SINEClusterer {
     async _clusterIteration(avail, clusters, o, it) {
             const prog = it / o.maxIterations;
 
-            const curMinP = Math.max(1, Math.round(o.minPerfect * (1 - prog * 0.75)));
+            // Later rounds may ease Min Features, but never down to 1–2:
+            // that harvested noise triplets on uniform alignments (clean_core).
+            const minPFloor = Math.min(3, o.minPerfect);
+            const curMinP = Math.max(minPFloor, Math.round(o.minPerfect * (1 - prog * 0.5)));
             const curMinO = avail.length <= 20 ? 1 : o.minOccurrences;
             const curQS = Math.max(25, o.qualitySmall - prog*50);
             const curQM = Math.max(20, o.qualityMedium - prog*50);
@@ -606,18 +616,32 @@ class SINEClusterer {
             };
 
             if (avail.length <= 10) {
-                console.log(`[RESCUE] ${avail.length} left → ultra relaxed`);
-                go.minPerfect = 1;
+                // Tiny leftover: still require a real diagnostic column, not a forced fit.
                 go.minOccurrences = 1;
             }
 
             let group = await this.findBestGroup(avail, go);
 
-            // Retry with relaxed upper bound if strict search fails
+            // Retry with relaxed upper bound if strict search fails — but do NOT
+            // also relax Min Features. A leftover clump with 1–4 weak columns is
+            // how this used to report a fake "cluster" of hundreds of sequences
+            // (svk 600-consensus). A real majority subfamily still passes because
+            // it has the original number of diagnostic positions.
             if (!group && avail.length >= o.minSize && !(o.shouldCancel && o.shouldCancel())) {
                 console.log(`[RETRY] No group found. Retrying with relaxed upper bound...`);
                 go.relaxUpperBound = true;
+                go.minPerfect = o.minPerfect;
+                go.minOccurrences = o.minOccurrences;
                 group = await this.findBestGroup(avail, go);
+                // All-of-remaining with too few *perfect* (outside=0) columns is
+                // the leftover pile. Quality-passing imperfect columns are shared
+                // ancestral noise (svk mixed sisters had 64 such and only 3
+                // perfect). A real last type has minPerfect exclusive columns
+                // (planted B: 8 T's that the extracted A's lack).
+                if (group && group.size >= avail.length) {
+                    const nPerf = (this.getFeaturesByQuality(group).perfectFeatures || []).length;
+                    if (nPerf < o.minPerfect) group = null;
+                }
             }
 
             if (group) {
@@ -649,7 +673,7 @@ class SINEClusterer {
             await yieldNow();
             if (shouldCancel()) { cancelled = true; break; }
             const step = await this._clusterIteration(avail, clusters, o, it);
-            if (!step.group) break;
+            if (!step.group) continue;
             clusters.push(step.group);
             avail = step.avail;
         }

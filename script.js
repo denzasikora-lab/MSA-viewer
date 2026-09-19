@@ -6464,6 +6464,10 @@ function renderBlockMaskOverlay() {
             const w = (ce - cs + 1) * cw;
             const fill = BLOCKMASK_COLORS[mb.type] || '#999';
 
+            const typeRows = (Array.isArray(mb.sourceRows) && mb.sourceRows.length >= 2)
+                ? mb.sourceRows
+                : (Array.isArray(mb.rows) && mb.rows.length >= 2 ? mb.rows : null);
+
             const addRect = (y, h, op, dashed, localOnly) => {
                 const r = document.createElementNS(BLOCKMASK_SVGNS, 'rect');
                 r.setAttribute('x', x.toFixed(1));
@@ -6484,6 +6488,17 @@ function renderBlockMaskOverlay() {
                     r.setAttribute('stroke-opacity', '0.9');
                 }
                 if (localOnly) r.setAttribute('data-local-only', '1');
+                if (typeRows) {
+                    r.style.pointerEvents = 'auto';
+                    r.style.cursor = 'pointer';
+                    r.setAttribute('data-type-rows', typeRows.join(','));
+                    r.setAttribute('title', 'Click to stack this type (all members, including orphans). Undoable.');
+                    r.addEventListener('click', (ev) => {
+                        ev.preventDefault();
+                        ev.stopPropagation();
+                        groupRowsByType(typeRows);
+                    });
+                }
                 svg.appendChild(r);
             };
 
@@ -6499,7 +6514,7 @@ function renderBlockMaskOverlay() {
             if (!vis.length) return;
             vis.sort((a, b) => rowElByIdx.get(a).getBoundingClientRect().top - rowElByIdx.get(b).getBoundingClientRect().top);
             const localOnly = !!mb.localOnly;
-            const groupDashed = !localOnly && _blockMaskGroupContiguity(mb.rows) < 0.6;
+            const groupDashed = !localOnly && _blockMaskGroupContiguity(vis) < 0.6;
             let runStart = vis[0], prev = vis[0], runLen = 1;
             const flush = (a, z, len) => {
                 const ya = rowTop(a), yz = rowTop(z);
@@ -6586,6 +6601,7 @@ function _paintBiclusterBlocks(raw) {
     const painted = [];
     for (const b of raw.blocks) {
         const isFind = b.kind !== 'conserved' && b.rows !== 'all' && Array.isArray(b.rows) && b.rows.length >= 2;
+        const origRows = Array.isArray(b.rows) ? b.rows.slice() : null;
         if (!isFind) {
             painted.push({ ...b, localOnly: false });
             continue;
@@ -6593,15 +6609,15 @@ function _paintBiclusterBlocks(raw) {
         const longest = _longestRowRun(b.rows);
         const orphan = b.rows.filter(i => !longest.includes(i));
         if (mode === 'strict') {
-            if (longest.length >= 2) painted.push({ ...b, rows: longest, localOnly: false });
+            if (longest.length >= 2) painted.push({ ...b, rows: longest, localOnly: false, sourceRows: origRows });
             continue;
         }
         if (mode === 'local_two' && orphan.length && longest.length >= 2) {
-            painted.push({ ...b, rows: longest, localOnly: false });
-            painted.push({ ...b, rows: orphan, localOnly: true });
+            painted.push({ ...b, rows: longest, localOnly: false, sourceRows: origRows });
+            painted.push({ ...b, rows: orphan, localOnly: true, sourceRows: origRows });
             continue;
         }
-        painted.push({ ...b, localOnly: false });
+        painted.push({ ...b, localOnly: false, sourceRows: origRows });
     }
     const finds = painted.filter(b => b.kind !== 'conserved' && b.rows !== 'all' && Array.isArray(b.rows));
     finds.sort((a, b) => {
@@ -6769,43 +6785,42 @@ function initBlockMaskPanel() {
     }
 }
 
-function groupRowsByBlockMask() {
-    if (!state.blockMask || !state.blockMask.blocks || state.blockMask.blocks.length === 0) {
-        showMessage('No block mask - click "Show mask" first', 3000);
+function groupRowsByType(rowIdxs) {
+    if (!state.seqs || !state.seqs.length) {
+        showMessage('Load an alignment first', 3000);
         return;
     }
-    const rowSplitBlocks = state.blockMask.blocks.filter(b => Array.isArray(b.rows));
-    if (rowSplitBlocks.length === 0) {
-        showMessage('No row-split groups to order by', 3000);
+    const mask = state.blockMask;
+    const headers = [];
+    const src = Array.isArray(rowIdxs) ? rowIdxs : [];
+    for (const k of src) {
+        const h = mask && Array.isArray(mask.row_headers) ? mask.row_headers[k] : state.seqs[k] && state.seqs[k].header;
+        if (h && !headers.includes(h)) headers.push(h);
+    }
+    if (headers.length < 2) {
+        showMessage('That type has fewer than 2 sequences', 3000);
         return;
     }
-    const zoneKey = rowSplitBlocks[0].col_start + ':' + rowSplitBlocks[0].col_end;
-    const zoneBlocks = rowSplitBlocks.filter(b => (b.col_start + ':' + b.col_end) === zoneKey);
-    zoneBlocks.sort((a, b) => {
-        if (a.group_rank === 'residual' && b.group_rank !== 'residual') return 1;
-        if (b.group_rank === 'residual' && a.group_rank !== 'residual') return -1;
-        return a.group_rank - b.group_rank;
-    });
-    const headList = [];
-    for (const block of zoneBlocks) {
-        for (const k of block.rows) {
-            const h = state.blockMask.row_headers[k];
-            if (!headList.includes(h)) headList.push(h);
-        }
-    }
-    const orderMap = new Map(headList.map((h, i) => [h, i]));
+    const want = new Set(headers);
     const matched = [];
     const rest = [];
     for (const s of state.seqs) {
-        if (orderMap.has(s.header)) matched.push(s);
+        if (want.has(s.header)) matched.push(s);
         else rest.push(s);
     }
-    matched.sort((a, b) => orderMap.get(a.header) - orderMap.get(b.header));
     pushUndo();
     state.seqs = [...matched, ...rest];
     state.lastAction = 'sort';
     renderAlignment();
-    showMessage('Rows grouped by block mask (' + matched.length + ' moved)', 2500);
+    showMessage('Stacked ' + matched.length + ' sequences of that type', 2500);
+}
+
+function groupRowsByBlockMask() {
+    if (!state.blockMask || !state.blockMask.blocks || state.blockMask.blocks.length === 0) {
+        showMessage('Show bicluster first, then click a colored rectangle to stack that type', 4000);
+        return;
+    }
+    showMessage('Click a colored rectangle on the alignment to stack that type (orphans included). Undoable.', 4000);
 }
 
 window.applyBlockMaskLive = applyBlockMaskLive;
@@ -6814,6 +6829,7 @@ window.setBlockMaskOpacity = setBlockMaskOpacity;
 window.clearBlockMask = clearBlockMask;
 window.computeAndShowBlockMask = computeAndShowBlockMask;
 window.groupRowsByBlockMask = groupRowsByBlockMask;
+window.groupRowsByType = groupRowsByType;
 
 // Unified source info updater so counts stay accurate after deletions/insertions
 function updateSourceInfo() {
@@ -12460,8 +12476,7 @@ function displayClusteringResults(results) {
             Groups of fewer than <strong>Min Size ${p.minSize}</strong> are discarded, as are groups with fewer than
             <strong>Min Features ${p.minPerfect}</strong> diagnostic positions, or below the
             <strong>Quality Thresholds</strong> of ${p.qualitySmall}/${p.qualityMedium}/${p.qualityLarge}%.` : ''}
-            Lowering <strong>Min Size</strong> is usually what admits small groups: at Min Size 3, sequences that pair up
-            two at a time are all rejected.
+            Lowering <strong>Min Features</strong> (default 5) is usually what admits groups on a fairly homogeneous alignment. <strong>Max Iter</strong> relaxes those thresholds on later rounds. Lowering <strong>Min Size</strong> helps when sequences only pair up two at a time.
         </div>
         `;
     }
@@ -12586,8 +12601,112 @@ function getMafftExtraArgs() {
 
     const adjustDir = !!el('mafftAdjustDir')?.checked;
     const reorder = !!el('mafftReorder')?.checked;
+    const reorderOnly = !!el('mafftReorderOnly')?.checked;
 
-    return { args, seqType: seqType || '2', adjustDir, reorder };
+    return { args, seqType: seqType || '2', adjustDir, reorder, reorderOnly };
+}
+
+const MAFFT_ASK_ADJUST = 'msaviewer_mafft_dontAsk_applyAdjustFull';
+const MAFFT_DEF_ADJUST = 'msaviewer_mafft_default_applyAdjustFull';
+const MAFFT_ASK_REORDER = 'msaviewer_mafft_dontAsk_applyReorder';
+const MAFFT_DEF_REORDER = 'msaviewer_mafft_default_applyReorder';
+
+function _mafftPrefBool(key, fallback) {
+    try {
+        const v = localStorage.getItem(key);
+        if (v === null || v === undefined) return fallback;
+        if (v === '1' || v === 'true') return true;
+        if (v === '0' || v === 'false') return false;
+        return fallback;
+    } catch (e) {
+        return fallback;
+    }
+}
+
+function _mafftPrefSet(key, val) {
+    try { localStorage.setItem(key, val ? '1' : '0'); } catch (e) { /* ignore */ }
+}
+
+function _initMafftAskPrefs() {
+    const adj = el('mafftDontAskAdjust');
+    const reo = el('mafftDontAskReorder');
+    if (adj) {
+        adj.checked = _mafftPrefBool(MAFFT_ASK_ADJUST, false);
+        adj.addEventListener('change', () => {
+            _mafftPrefSet(MAFFT_ASK_ADJUST, adj.checked);
+            if (adj.checked && localStorage.getItem(MAFFT_DEF_ADJUST) === null) {
+                _mafftPrefSet(MAFFT_DEF_ADJUST, true);
+            }
+        });
+    }
+    if (reo) {
+        reo.checked = _mafftPrefBool(MAFFT_ASK_REORDER, false);
+        reo.addEventListener('change', () => {
+            _mafftPrefSet(MAFFT_ASK_REORDER, reo.checked);
+            if (reo.checked && localStorage.getItem(MAFFT_DEF_REORDER) === null) {
+                _mafftPrefSet(MAFFT_DEF_REORDER, false);
+            }
+        });
+    }
+}
+
+/**
+ * Yes/No prompt (not inverted confirm). skipPrompt and forced skip the dialog.
+ * defaultYes is the recommended answer used when Don't-ask has no stored value.
+ */
+function _mafftAskYesNo({ message, defaultYes, dontAskKey, defaultKey, skipPrompt, forced }) {
+    if (forced !== undefined && forced !== null) return Promise.resolve(!!forced);
+    if (skipPrompt) return Promise.resolve(!!defaultYes);
+    if (_mafftPrefBool(dontAskKey, false)) {
+        return Promise.resolve(_mafftPrefBool(defaultKey, defaultYes));
+    }
+    if (typeof document === 'undefined') return Promise.resolve(!!defaultYes);
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:10050;display:flex;align-items:center;justify-content:center;';
+        const box = document.createElement('div');
+        box.style.cssText = 'background:#fff;padding:16px 18px;max-width:440px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);font-size:13px;line-height:1.45;';
+        const msg = document.createElement('div');
+        msg.style.cssText = 'margin-bottom:12px;white-space:pre-wrap;';
+        msg.textContent = message;
+        const lab = document.createElement('label');
+        lab.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;color:#444;margin-bottom:12px;cursor:pointer;';
+        const dont = document.createElement('input');
+        dont.type = 'checkbox';
+        dont.className = 'mafft-ask-dont';
+        lab.appendChild(dont);
+        lab.appendChild(document.createTextNode(" Don't ask again"));
+        const row = document.createElement('div');
+        row.style.cssText = 'display:flex;justify-content:flex-end;gap:8px;';
+        const noBtn = document.createElement('button');
+        noBtn.type = 'button';
+        noBtn.textContent = 'No';
+        noBtn.style.cssText = 'padding:4px 14px;';
+        const yesBtn = document.createElement('button');
+        yesBtn.type = 'button';
+        yesBtn.textContent = 'Yes';
+        yesBtn.style.cssText = 'padding:4px 14px;background:#4CAF50;color:#fff;border:none;border-radius:4px;cursor:pointer;';
+        row.appendChild(noBtn);
+        row.appendChild(yesBtn);
+        box.appendChild(msg);
+        box.appendChild(lab);
+        box.appendChild(row);
+        overlay.appendChild(box);
+        const finish = (val) => {
+            if (dont.checked) {
+                _mafftPrefSet(dontAskKey, true);
+                _mafftPrefSet(defaultKey, val);
+                const panel = dontAskKey === MAFFT_ASK_ADJUST ? el('mafftDontAskAdjust') : el('mafftDontAskReorder');
+                if (panel) panel.checked = true;
+            }
+            overlay.remove();
+            resolve(val);
+        };
+        yesBtn.onclick = () => finish(true);
+        noBtn.onclick = () => finish(false);
+        document.body.appendChild(overlay);
+        (defaultYes ? yesBtn : noBtn).focus();
+    });
 }
 
 /**
@@ -13549,78 +13668,98 @@ async function _mafftAlignWithUi(fasta, extraArgs, label) {
     }
 }
 
-function realignSelectedBlock() {
+async function realignSelectedBlock(opts) {
+    opts = opts || {};
     if (state.seqs.length === 0) {
         showMessage("No sequences loaded.", 2000);
         return;
     }
-    if (state.selectedColumns.size < 2) {
-        showMessage("Select at least 2 columns to realign.", 3000);
+    if (typeof RealignRegion === 'undefined') {
+        showMessage("Region realign module not loaded.", 3000);
+        return;
+    }
+    const runs = RealignRegion.columnRuns(state.selectedColumns);
+    if (!runs.length) {
+        showMessage("Select at least one span of 2+ columns to realign.", 3000);
         return;
     }
 
-    const cols = Array.from(state.selectedColumns).sort((a, b) => a - b);
-    const minCol = cols[0];
-    const maxCol = cols[cols.length - 1];
+    const extra = getMafftExtraArgs();
+    const extraArgs = extra.args.slice();
+    if (extra.seqType !== '2') extraArgs.push('-E', extra.seqType);
 
-    // Save undo state
-    pushUndo('realign-block');
+    let applyAdjustFull = opts.applyAdjustFull;
+    let applyReorder = opts.applyReorder;
 
-    // Extract block sub-sequences as FASTA. originalCaseByHeader keeps the
-    // pre-MAFFT ungapped text (case intact) per sequence so the realigned
-    // result can have original case remapped back onto it -- MAFFT's WASM
-    // build outputs bases in a fixed case regardless of input case (found
-    // 2026-09-19, see _remapCaseOntoAligned), so parseMafftOutput's result
-    // cannot be trusted for case and must be corrected here.
-    let blockFasta = '';
-    const originalCaseByHeader = new Map();
-    for (const s of state.seqs) {
-        const block = s.seq.substring(minCol, maxCol + 1);
-        const ungapped = block.replace(/[-.]/g, '');
-        blockFasta += `>${s.header}\n${ungapped}\n`;
-        originalCaseByHeader.set(s.header, ungapped);
+    if (extra.adjustDir && extra.seqType === '2' && applyAdjustFull === undefined) {
+        applyAdjustFull = await _mafftAskYesNo({
+            message: 'Adjust direction: reverse-complement the full sequences that look reversed in the selected region?\n\nYes = full sequences (recommended)\nNo = selected region only',
+            defaultYes: true,
+            dontAskKey: MAFFT_ASK_ADJUST,
+            defaultKey: MAFFT_DEF_ADJUST,
+            skipPrompt: opts.skipPrompt
+        });
+    }
+    if ((extra.reorder || extra.reorderOnly) && applyReorder === undefined) {
+        applyReorder = await _mafftAskYesNo({
+            message: 'Apply the region similarity order to the whole MSA?\n\nYes = reorder all rows\nNo = keep current row order (recommended)',
+            defaultYes: false,
+            dontAskKey: MAFFT_ASK_REORDER,
+            defaultKey: MAFFT_DEF_REORDER,
+            skipPrompt: opts.skipPrompt
+        });
     }
 
-    const { args: extraArgs, seqType } = getMafftExtraArgs();
-    if (seqType !== '2') extraArgs.push('-E', seqType);
+    if (extra.reorderOnly && !applyReorder) {
+        showMessage('Reorder only: row order not applied. Nothing to do.', 3000);
+        return;
+    }
 
-    _mafftAlignWithUi(blockFasta, extraArgs, 'Realigning block with MAFFT...').then(result => {
-        if (!result) return;
-        const aligned = parseMafftOutput(result);
-        if (aligned.length !== state.seqs.length) {
-            showMessage("Error: MAFFT returned different number of sequences.", 3000);
+    try {
+        const result = await RealignRegion.run(state.seqs, state.selectedColumns, {
+            adjustDir: extra.adjustDir && extra.seqType === '2',
+            reorder: extra.reorder,
+            reorderOnly: extra.reorderOnly,
+            applyAdjustFull: applyAdjustFull !== false,
+            applyReorder: !!applyReorder,
+            extraArgs,
+            mafftAlign: (fa, args) => _mafftAlignWithUi(fa, args, extra.reorderOnly ? 'Reordering by selected region…' : 'Realigning region with MAFFT...'),
+            parseFasta: parseMafftOutput,
+            adjustDirection: (fa) => _adjustDirection(fa),
+            reorderByGuideTree: (fa) => _reorderByGuideTree(fa),
+            reverseComplement: _reverseComplement
+        });
+        if (result.cancelled) {
+            showMessage('Region realign cancelled.', 2500);
+            return;
+        }
+        if (result.noop && !result.aligned && !result.orderApplied && !(result.flipped && result.flipped.length)) {
+            showMessage(result.message || 'Nothing to do.', 2500);
             return;
         }
 
-        // Find max length of realigned block
-        const maxLen = Math.max(...aligned.map(a => a.seq.length));
-
-        // Splice realigned block back into each sequence
-        for (let i = 0; i < state.seqs.length; i++) {
-            const match = aligned.find(a => a.name === state.seqs[i].header);
-            if (!match) continue;
-            const origCase = originalCaseByHeader.get(state.seqs[i].header);
-            const recased = origCase ? _remapCaseOntoAligned(origCase, match.seq) : match.seq;
-            const padded = recased.padEnd(maxLen, '-');
-            const left = state.seqs[i].seq.substring(0, minCol);
-            const right = state.seqs[i].seq.substring(maxCol + 1);
-            state.seqs[i].seq = left + padded + right;
-            state.seqs[i].gaplessPositions = calculateGaplessPositions(state.seqs[i].seq);
-        }
-
-        // Pad all sequences to same length
-        const totalMax = Math.max(...state.seqs.map(s => s.seq.length));
-        for (const s of state.seqs) {
-            s.seq = s.seq.padEnd(totalMax, '-');
-        }
-
+        pushUndo('realign-block');
+        state.seqs = result.seqs.map(r => {
+            const orig = state.seqs.find(s => s.header === r.header || s.fullHeader === r.fullHeader);
+            return {
+                header: orig ? orig.header : r.header,
+                fullHeader: orig ? orig.fullHeader : (r.fullHeader || r.header),
+                seq: r.seq,
+                gaplessPositions: calculateGaplessPositions(r.seq)
+            };
+        });
         state.selectedColumns.clear();
         renderAlignment();
-        showMessage("Block realigned successfully!", 2000);
-    }).catch(err => {
+        const bits = [];
+        if (result.aligned) bits.push('Region realigned');
+        else if (result.orderApplied) bits.push('Rows reordered (no alignment)');
+        if (result.orderApplied && result.aligned) bits.push('rows reordered');
+        if (result.flipped && result.flipped.length) bits.push("RC'd: " + result.flipped.join(', '));
+        showMessage((bits.join('; ') || result.message || 'Done') + '.', 3500);
+    } catch (err) {
         showMessage("Realign block error: " + err.message, 4000);
         console.error("Realign block error:", err);
-    });
+    }
 }
 
 /**
@@ -13641,7 +13780,7 @@ async function realignAll() {
         fasta += `>${s.fullHeader || s.header}\n${s.seq.replace(/[-.]/g, '')}\n`;
     }
 
-    const { args: extraArgs, seqType, adjustDir, reorder } = getMafftExtraArgs();
+    const { args: extraArgs, seqType, adjustDir, reorder, reorderOnly } = getMafftExtraArgs();
     if (seqType !== '2') extraArgs.push('-E', seqType);
 
     // Pre-alignment: adjust direction if requested
@@ -13653,6 +13792,38 @@ async function realignAll() {
         if (flippedNames.size > 0) {
             console.log('Adjust direction: reverse-complemented', [...flippedNames]);
         }
+    }
+
+    // Reorder only: skip MAFFT. Apply RC to gapped rows if needed, then permute.
+    if (reorderOnly) {
+        if (flippedNames.size > 0) {
+            for (const s of state.seqs) {
+                if (flippedNames.has(s.header) || flippedNames.has(s.fullHeader)) {
+                    s.seq = _reverseComplement(s.seq);
+                    s.gaplessPositions = calculateGaplessPositions(s.seq);
+                }
+            }
+        }
+        const reordered = _reorderByGuideTree(fasta);
+        const byFull = new Map(state.seqs.map(s => [s.fullHeader || s.header, s]));
+        const byHdr = new Map(state.seqs.map(s => [s.header, s]));
+        const newSeqs = [];
+        const used = new Set();
+        for (const hdr of reordered.order) {
+            const s = byFull.get(hdr) || byHdr.get(hdr) || byHdr.get(String(hdr).split(/\s+/)[0]);
+            if (s && !used.has(s)) {
+                newSeqs.push(s);
+                used.add(s);
+            }
+        }
+        for (const s of state.seqs) if (!used.has(s)) newSeqs.push(s);
+        state.seqs = newSeqs;
+        state.selectedColumns.clear();
+        renderAlignment();
+        const msgs = [`Reordered ${state.seqs.length} sequences (no alignment).`];
+        if (flippedNames.size > 0) msgs.push(`RC'd: ${[...flippedNames].join(', ')}`);
+        showMessage(msgs.join(' '), flippedNames.size > 0 ? 5000 : 2000);
+        return;
     }
 
     // originalCaseByHeader captures case from the fasta TEXT actually sent to
@@ -15340,6 +15511,7 @@ function initializeAppUI() {
     // This function is called once the DOM is fully loaded.
 
     updateVersionIndicator();
+    _initMafftAskPrefs();
     checkSshServer();
 
     // SSH fetch: Enter key and button

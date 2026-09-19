@@ -878,6 +878,10 @@
         var state = (v === GAP) ? 4 : v;
         byState[state].push(i);
       }
+      // Gap-as-state may *seed* a row group (a shared internal deletion, or
+      // a motif whose nucleotide columns are not exclusive). The emit path
+      // still requires minPerfect real-base columns, so ragged-flank gap
+      // haplotypes on clean_core do not become rectangles.
       for (var s = 0; s < 5; s++) {
         var set = byState[s];
         if (set.length >= minSize && set.length <= upperBound) {
@@ -1036,7 +1040,9 @@
       var group = _findBestDiagnosticGroup(A, rows, avail, colStart, colEnd, spans, P, opts);
       if (!group) {
         opts.relaxUpperBound = true;
+        opts.minPerfect = 5;
         group = _findBestDiagnosticGroup(A, rows, avail, colStart, colEnd, spans, P, opts);
+        if (group && group.rows.length >= Math.ceil(avail.length * 0.8) && group.good < 5) group = null;
       }
       if (!group) break;
 
@@ -1838,7 +1844,7 @@
       qualityLarge: P.qualityLarge != null ? P.qualityLarge : 60,
       sizeSmallMedium: P.sizeSmallMedium || 11,
       sizeMediumLarge: P.sizeMediumLarge || 20,
-      relaxUpperBound: true,
+      relaxUpperBound: false,
       returnAll: false
     };
     if (extra) for (var k in extra) if (extra.hasOwnProperty(k)) o[k] = extra[k];
@@ -1854,13 +1860,15 @@
     var key = _rowKey(rows) + ':' + colStart + '-' + colEnd;
     if (seen[key]) return;
     seen[key] = true;
+    var coh = blockCoherence(A, rows, colStart, colEnd, spans, P);
+    if (kind !== 'conserved' && (coh == null || coh < 0.7)) return;
     rects.push({
       rows: _sortedRows(rows),
       colStart: colStart,
       colEnd: colEnd,
       kind: kind,
       feats: feats || [],
-      coherence: blockCoherence(A, rows, colStart, colEnd, spans, P),
+      coherence: coh,
       supporting_bases: _dominantLetters(A, rows, colStart, colEnd, spans)
     });
   }
@@ -1871,8 +1879,12 @@
     var opts = _clusterOptsFrom(P);
     var nCols = A[0].length;
     var feats = _expandGroupFeatures(A, group, 0, nCols - 1, spans, allRows, opts);
-    if (feats.length < minW) return;
-    var ranges = _growFeatureRanges(feats, minW, bridge);
+    var nuc = [];
+    for (var fi = 0; fi < feats.length; fi++) {
+      if (feats[fi].state !== GAP && feats[fi].state !== 4) nuc.push(feats[fi]);
+    }
+    if (nuc.length < minW) return;
+    var ranges = _growFeatureRanges(nuc, minW, bridge);
     for (var i = 0; i < ranges.length; i++) {
       _addRect(rects, seen, A, group.rows, ranges[i].colStart, ranges[i].colEnd, spans, P, kind, ranges[i].feats);
     }
@@ -1920,13 +1932,24 @@
 
     function collectFrom(rowPool, colStart, colEnd, kind) {
       if (rowPool.length < minH || colEnd - colStart + 1 < minW) return;
-      var opts = _clusterOptsFrom(P, { returnAll: true, relaxUpperBound: true });
-      var groups = _findBestDiagnosticGroup(A, allRows, rowPool, colStart, colEnd, spans, P, opts) || [];
-      for (var g = 0; g < groups.length; g++) {
-        var group = _pruneDiagnosticGroup(A, groups[g], allRows, spans, opts);
-        if (!group || group.rows.length < minH) continue;
-        if (group.rows.length === allRows.length) continue;
+      var avail = rowPool.slice();
+      var opts = _clusterOptsFrom(P, { returnAll: false, relaxUpperBound: false });
+      for (var round = 0; round < maxIter && avail.length >= minH; round++) {
+        var group = _findBestDiagnosticGroup(A, allRows, avail, colStart, colEnd, spans, P, opts);
+        if (!group) break;
+        group = _pruneDiagnosticGroup(A, group, allRows, spans, opts);
+        if (!group || group.rows.length < minH) break;
+        if (group.rows.length === allRows.length) break;
+        if (group.rows.length >= Math.ceil(allRows.length * 0.8)) break;
+        if (group.rows.length >= avail.length) {
+          if ((group.good || 0) < (P.minPerfect || 5)) break;
+          _emitGroupRanges(rects, seen, A, group, spans, P, kind, allRows);
+          break;
+        }
         _emitGroupRanges(rects, seen, A, group, spans, P, kind, allRows);
+        var drop = {};
+        for (var d = 0; d < group.rows.length; d++) drop[group.rows[d]] = true;
+        avail = avail.filter(function (idx) { return !drop[idx]; });
       }
     }
 
@@ -1980,8 +2003,8 @@
       var prog = (it + 1) / maxIter;
       var base = _clusterOptsFrom(P, {
         returnAll: false,
-        relaxUpperBound: true,
-        minPerfect: Math.max(2, Math.round((P.minPerfect || 5) * (1 - prog * 0.5))),
+        relaxUpperBound: false,
+        minPerfect: Math.max(3, Math.round((P.minPerfect || 5) * (1 - prog * 0.5))),
         qualitySmall: Math.max(40, (_clusterOptsFrom(P).qualitySmall) - prog * 25),
         qualityMedium: Math.max(35, (_clusterOptsFrom(P).qualityMedium) - prog * 25),
         qualityLarge: Math.max(30, (_clusterOptsFrom(P).qualityLarge) - prog * 25)
@@ -1989,11 +2012,15 @@
       var leftover = _findBestDiagnosticGroup(A, allRows, avail, 0, nCols - 1, spans, P, base);
       if (!leftover) {
         base.relaxUpperBound = true;
+        base.minPerfect = P.minPerfect || 5;
         leftover = _findBestDiagnosticGroup(A, allRows, avail, 0, nCols - 1, spans, P, base);
       }
-      if (!leftover) break;
+      if (!leftover) continue;
       leftover = _pruneDiagnosticGroup(A, leftover, allRows, spans, base);
-      if (!leftover || leftover.rows.length < minH || leftover.rows.length === allRows.length) break;
+      if (!leftover || leftover.rows.length < minH) continue;
+      if (leftover.rows.length === allRows.length) continue;
+      if (leftover.rows.length >= Math.ceil(allRows.length * 0.8)) continue;
+      if (leftover.rows.length >= avail.length && (leftover.good || 0) < (P.minPerfect || 5)) continue;
       var before = rects.length;
       _emitGroupRanges(rects, seen, A, leftover, spans, P, 'leftover', allRows);
       if (rects.length === before) break;

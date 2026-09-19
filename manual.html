@@ -188,6 +188,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <div class="side-sub">
       <a href="#al-real-time">3.1 Real-Time Alignment</a>
       <a href="#al-advanced">3.2 Advanced MAFFT Options</a>
+      <a href="#al-realign-block">3.2.1 Realign Block</a>
       <a href="#al-addseq">3.3 Adding Sequences</a>
       <a href="#al-blast">3.4 BLAST Search</a>
       <a href="#al-blast-db">3.5 BLAST DB Management</a>
@@ -518,7 +519,9 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
 
   <h3 id="al-real-time">3.1 Real-Time Alignment</h3>
   <p>
-    Two alignment engines are available:
+    Two alignment engines are available. The Alignment menu's <strong>Realign All</strong>,
+    <strong>Realign Selected</strong>, and <strong>Realign Block</strong> buttons all honour
+    the options in §3.2, including <em>Reorder only (no alignment)</em>.
   </p>
   <ul>
     <li>
@@ -543,7 +546,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </ul>
 
   <h3 id="al-advanced">3.2 Advanced MAFFT Options</h3>
-  <p>The server-based MAFFT supports fine-grained control:</p>
+  <p>The Alignment menu options below apply to in-browser MAFFT WASM. Strategy names in the first rows remain available when the Node.js server is running.</p>
   <table>
     <tr><th>Option</th><th>Effect</th></tr>
     <tr><td>Strategy</td><td>auto, FFT-NS-2, G-INS-i, L-INS-i, E-INS-i</td></tr>
@@ -551,7 +554,28 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>Gap extension penalty</td><td>Controls the cost of extending an existing gap</td></tr>
     <tr><td>Max iterations</td><td>Number of iterative refinement passes</td></tr>
     <tr><td>Add-keep-length</td><td>When adding sequences: keep existing alignment length (no re-alignment)</td></tr>
+    <tr><td>Adjust direction</td><td>Detect sequences whose orientation disagrees with the first (6-mer voting, nucleotide only) and reverse-complement them before aligning. With Realign Block, you are asked whether to apply that to the <em>full</em> sequences (default Yes; suppressible)</td></tr>
+    <tr><td>Reorder by similarity</td><td>Order rows by a 6-mer UPGMA guide tree (the viewer's analogue of MAFFT <code>--reorder</code>, not a MAFFT flag during WASM alignment). Realign All applies this to the whole MSA. Realign Block computes the tree from the selected region and asks before applying it to all rows (default No; suppressible)</td></tr>
+    <tr><td>Reorder only (no alignment)</td><td>Skip MAFFT. Realign All permutes the loaded rows by the whole-MSA tree. Realign Block permutes by the selected region and still asks before applying (if you answer No, nothing changes)</td></tr>
+    <tr><td>Don't ask (full-seq RC)</td><td>Remember the full-sequence reverse-complement answer for Realign Block (stored default: Yes)</td></tr>
+    <tr><td>Don't ask (apply order)</td><td>Remember whether region order is applied to the whole MSA (stored default: No)</td></tr>
   </table>
+
+  <h3 id="al-realign-block">3.2.1 Realign Block</h3>
+  <p>
+    <strong>Realign Block</strong> (<kbd>Ctrl+Shift+R</kbd>) realigns only the selected
+    columns and splices the result back, leaving unselected columns unchanged. Each
+    contiguous run of two or more selected columns is extracted, degapped, sent to MAFFT
+    independently, and written back in one rebuild, so selecting several disjoint blocks
+    does not pull the intervening columns into the alignment and later blocks are not
+    shifted by earlier inserts.
+  </p>
+  <ul>
+    <li>A run of a single isolated column is ignored. You need at least one span of two or more columns.</li>
+    <li><strong>Adjust direction</strong> votes on the concatenated selected residues. Yes (recommended) reverse-complements each flagged <em>row</em> and remaps the selected columns to the mirrored positions on that row; No reverse-complements only the selected slices and keeps the original flanks.</li>
+    <li><strong>Reorder by similarity</strong> builds the guide tree from the selected region (after any strand correction, before MAFFT). Applying that order to the whole MSA is off unless you say Yes.</li>
+    <li>This is not clustering's local-only paint: when you accept the order prompt, Realign Block <em>does</em> write a new row order.</li>
+  </ul>
 
   <h3 id="al-addseq">3.3 Adding Sequences</h3>
   <p>
@@ -1123,11 +1147,12 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><th>Action</th><th>Shortcut</th><th>Description</th></tr>
     <tr><td>Copy columns</td><td><kbd>Ctrl+Shift+V</kbd></td><td>Copy selected columns as FASTA block</td></tr>
     <tr><td>Delete columns</td><td><kbd>Ctrl+Shift+D</kbd></td><td>Remove selected columns from all sequences (undoable)</td></tr>
-    <tr><td>Realign block</td><td><kbd>Ctrl+Shift+R</kbd></td><td>Realign selected columns with MAFFT (in-browser WASM; needs at least 2 columns selected, otherwise the browser's hard-refresh applies)</td></tr>
+    <tr><td>Realign block</td><td><kbd>Ctrl+Shift+R</kbd></td><td>Realign each selected column span with MAFFT and splice back (in-browser WASM). Isolated single columns are skipped; need at least one span of 2+ columns, otherwise the browser's hard-refresh applies. Honours Adjust direction, Reorder, and Reorder only — see §3.2.1</td></tr>
   </table>
   <p>
     <strong>Select columns</strong> by <kbd>Ctrl+Click</kbd> on any residue.
-    Drag to select column ranges. Selected columns appear with a green background.
+    Drag to select column ranges. <kbd>Ctrl</kbd>-click additional residues to add
+    disjoint spans. Selected columns appear with a green background.
   </p>
 
   <h3 id="ed-editmode">8.3 GeneDoc-Style Edit Mode</h3>

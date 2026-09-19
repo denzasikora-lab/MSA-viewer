@@ -27,25 +27,14 @@ try {
 if (mask) {
   check('has n_rows/n_cols/blocks', typeof mask.n_rows === 'number' && typeof mask.n_cols === 'number' && Array.isArray(mask.blocks));
 
-  // ---- 2. Tiling invariant: every column's rows are covered exactly once ----
+  // ---- 2. Rectangles have valid ranges (overlapping extract is allowed) ----
   if (Array.isArray(mask.blocks) && mask.n_rows && mask.n_cols) {
-    const covering = []; // per column, array of row-coverage counts
-    for (let c = 0; c < mask.n_cols; c++) covering.push(new Uint8Array(mask.n_rows));
     for (const b of mask.blocks) {
-      const rows = (b.rows === 'all') ? Array.from({ length: mask.n_rows }, (_, i) => i) : b.rows;
-      for (let c = b.col_start; c <= b.col_end; c++) {
-        for (const r of rows) {
-          if (c >= 0 && c < mask.n_cols && r >= 0 && r < mask.n_rows) covering[c][r]++;
-        }
-      }
+      const rows = (b.rows === 'all') ? true : (Array.isArray(b.rows) && b.rows.length >= 2);
+      check('block has rows and a column span',
+        rows && b.col_start >= 0 && b.col_end >= b.col_start && b.col_end < mask.n_cols,
+        JSON.stringify({ kind: b.kind, col_start: b.col_start, col_end: b.col_end, rows: b.rows }));
     }
-    let badCols = 0;
-    for (let c = 0; c < mask.n_cols; c++) {
-      for (let r = 0; r < mask.n_rows; r++) {
-        if (covering[c][r] !== 1) { badCols++; break; }
-      }
-    }
-    check('tiling: every (row,col) covered exactly once', badCols === 0, badCols + ' columns have a row covered 0 or >1 times');
   }
 
   // ---- 3. Known design: mosaic_subset has a real 5-row shared-tail group ----
