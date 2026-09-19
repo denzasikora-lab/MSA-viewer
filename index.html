@@ -356,86 +356,123 @@
                                     <button id="clearSoftTrimButton" style="flex: 1; min-width: 60px; height: 22px; font-size: 10px; display: none;" title="Clear soft trim boundaries (restore all columns for clustering)">Clear Soft</button>
                                 </div>
                             </div>
-                            <!-- Clustering Parameters Section -->
+                            <div id="clusteringInstrumentStatus" style="font-size: 10px; color: #555; margin: 0 0 8px; min-height: 14px; line-height: 1.35;">No types yet. Group by k-mer tree for overall bands, or find diagnostic types from exclusive positions.</div>
+
+                            <!-- 1. k-mer reorder groups -->
                             <div style="border-bottom: 1px solid #ddd; padding-bottom: 8px; margin-bottom: 8px;">
-                                <div style="font-weight: bold; font-size: 11px; margin-bottom: 6px;">Basic Parameters</div>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px;">
-                                    <div>
-                                        <label for="clusterMinSizeInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Minimum sequences a group needs to be considered a cluster">Min Size:</label>
-                                        <input type="number" id="clusterMinSizeInput" min="2" max="20" value="3" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Groups smaller than this are discarded">
-                                    </div>
-                                    <div>
-                                        <label for="clusterMinPerfectInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Minimum number of diagnostic positions a cluster must have">Min Features:</label>
-                                        <input type="number" id="clusterMinPerfectInput" min="1" max="50" value="5" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Clusters with fewer unique diagnostic positions are discarded">
-                                    </div>
-                                    <div>
-                                        <label for="clusterMaxIterationsInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="How many rounds of clustering with progressively relaxed thresholds">Max Iter:</label>
-                                        <input type="number" id="clusterMaxIterationsInput" min="1" max="20" value="10" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="More iterations = more clusters found (threshold relaxes each round)">
-                                    </div>
-                                </div>
-                                <!-- Quality Thresholds -->
-                                <div style="font-weight: bold; font-size: 11px; margin-bottom: 6px;">Quality Thresholds (%)</div>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px;">
-                                    <div>
-                                        <label for="qualitySmallInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Min % of members sharing a feature in clusters of 10 or fewer sequences">Small &lt;11:</label>
-                                        <input type="number" id="qualitySmallInput" min="0" max="100" value="80" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Higher = stricter, fewer but cleaner clusters">
-                                    </div>
-                                    <div>
-                                        <label for="qualityMediumInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Quality threshold for medium clusters (11-19 sequences)">Medium 11-19:</label>
-                                        <input type="number" id="qualityMediumInput" min="0" max="100" value="70" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Higher = stricter, fewer but cleaner clusters">
-                                    </div>
-                                    <div>
-                                        <label for="qualityLargeInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Quality threshold for large clusters (20+ sequences)">Large >=20:</label>
-                                        <input type="number" id="qualityLargeInput" min="0" max="100" value="60" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Higher = stricter, fewer but cleaner clusters">
-                                    </div>
-                                </div>
-                                <!-- Size Breakpoints -->
-                                <div style="font-weight: bold; font-size: 11px; margin-bottom: 6px;">Size Breakpoints</div>
-                                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px;">
-                                    <div>
-                                        <label for="sizeSmallMediumInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Sequence count at which clusters transition from small to medium quality tier">Small->Med:</label>
-                                        <input type="number" id="sizeSmallMediumInput" min="1" max="50" value="11" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Groups below this size use the Small quality threshold">
-                                    </div>
-                                    <div>
-                                        <label for="sizeMediumLargeInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Sequence count at which clusters transition from medium to large quality tier">Med->Large:</label>
-                                        <input type="number" id="sizeMediumLargeInput" min="1" max="50" value="20" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Groups at or above this size use the Large quality threshold">
-                                    </div>
-                                    <div>
-                                        <label for="minOccurrencesInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Minimum positions where a feature pattern must appear to be considered a cluster signal">Min Occur:</label>
-                                        <input type="number" id="minOccurrencesInput" min="1" max="20" value="3" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Minimum number of diagnostic positions (features) required to form a cluster">
-                                    </div>
-                                </div>
-                                <div style="display: flex; gap: 4px; flex-wrap: wrap;">
-                                    <button id="clusterNowButton" style="flex: 1; min-width: 70px; height: 24px; font-size: 11px; background: #4CAF50; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Run clustering with current parameters - results shown below">Cluster Now</button>
-                                </div>
-                                <div id="clusteringStatus" style="font-size: 10px; color: #555; margin: 6px 0; min-height: 14px;"></div>
-                            </div>
-                            <!-- Presets Section -->
-                            <div style="padding-bottom: 0;">
-                                <div style="font-weight: bold; font-size: 11px; margin-bottom: 6px;">Presets</div>
-                                <div style="margin-bottom: 6px;">
-                                    <label for="presetNameInput" style="font-size: 11px; display: block; margin-bottom: 2px;" title="Name to save current clustering parameters under">Preset Name:</label>
-                                    <input type="text" id="presetNameInput" placeholder="e.g. strict_clustering" style="width: 100%; max-width: 150px; height: 22px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Enter a name then click Save to store current settings">
-                                </div>
-                                <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px;">
-                                    <button id="clusteringSavePresetButton" style="flex: 1; min-width: 60px; height: 22px; font-size: 10px;" title="Save current parameters as a named preset">Save</button>
-                                    <button id="clusteringLoadPresetButton" style="flex: 1; min-width: 60px; height: 22px; font-size: 10px;" title="Load parameters from the selected preset">Load</button>
-                                    <button id="clusteringOptimalPresetButton" style="flex: 1; min-width: 70px; height: 22px; font-size: 10px;" title="Restore the standard starting parameters (Min Size 3, Min Features 5, quality 80/70/60, Min Occurrences 3). These are the values already loaded by default; nothing is tuned to your data.">Defaults</button>
-                                </div>
-                                <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px;">
-                                    <button id="clusteringProbeButton" style="flex: 1; height: 22px; font-size: 10px;" title="Run clustering across a range of settings to see whether this alignment clusters at all, and which parameters change the outcome">Clusterability</button>
-                                </div>
-                                <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin-bottom: 6px;">
-                                    <button id="clusterGuideTreeButton" style="flex: 1; height: 22px; font-size: 10px;" title="Colour rows by overall similarity using the same 6-mer tree as Reorder by similarity. Number of groups is chosen from the tree unless you type one. Then paints exclusive and cloudy character bases on the alignment.">Group by similarity</button>
+                                <div style="font-weight: bold; font-size: 11px;">k-mer reorder groups</div>
+                                <div style="font-size: 10px; color: #555; margin: 2px 0 6px;">Same UPGMA tree as Reorder by similarity. Every sequence is assigned, then exclusive and cloudy characters of those types are painted.</div>
+                                <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+                                    <button id="clusterGuideTreeButton" style="flex: 1; min-width: 110px; height: 24px; font-size: 11px; background: #2563eb; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Cut the k-mer similarity tree into types. Leave Groups empty to let the tree choose. Then paints character bases.">Group by k-mer tree</button>
+                                    <label style="font-size: 10px; white-space: nowrap;" title="k-mer length used for the similarity tree (same k as Reorder by similarity). 6 is the default.">k:
+                                        <input type="number" id="guideTreeK" min="3" max="12" value="6" step="1" style="width: 36px; height: 20px; font-size: 11px;" title="k-mer length, 3–12. Default 6.">
+                                    </label>
                                     <label style="font-size: 10px; white-space: nowrap;" title="Leave empty to let the tree choose how many groups. Type a number only to force a coarser or finer split.">Groups:
                                         <input type="number" id="guideTreeGroups" min="2" max="50" step="1" placeholder="auto" style="width: 52px; height: 20px; font-size: 11px;" title="Empty = automatic. You do not have to know this number.">
                                     </label>
                                 </div>
-                                <select id="clusteringPresetList" style="width: 100%; max-width: 150px; height: 24px; font-size: 11px;" title="Select a saved parameter preset to load">
-                                    <option value="">-- Select preset --</option>
-                                </select>
-                                <div style="border-top: 1px solid #ddd; margin-top: 8px; padding-top: 6px;">
-                                    <div style="font-size: 10px; font-weight: bold; color: #555; margin-bottom: 4px;" title="Coarse structural summary drawn as a translucent rectangle mask over the alignment: conserved core, mosaic (subset-only) regions, decay slopes, divergent flanks. Row-split rectangles cover only their member rows; a group scattered in MAFFT order gets a dashed warning stroke.">2D block mask (squint view)</div>
+                            </div>
+
+                            <!-- 2. Diagnostic positions -->
+                            <div style="border-bottom: 1px solid #ddd; padding-bottom: 8px; margin-bottom: 8px;">
+                                <div style="font-weight: bold; font-size: 11px;">Diagnostic positions</div>
+                                <div style="font-size: 10px; color: #555; margin: 2px 0 6px;">Types from exclusive SNP columns. Leftovers stay unassigned. Check Split current types to look for diagnostic subtypes inside k-mer groups.</div>
+                                <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center;">
+                                    <button id="clusterNowButton" style="flex: 1; min-width: 110px; height: 24px; font-size: 11px; background: #4CAF50; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Find types from exclusive diagnostic positions. Optionally split types already set by the k-mer tree.">Find diagnostic types</button>
+                                    <label style="font-size: 10px; display: flex; align-items: center; gap: 4px;" title="If types already exist, search for exclusive SNPs inside each type instead of scanning the whole alignment. Types that do not split are kept.">
+                                        <input type="checkbox" id="clusterWithinTypes" style="margin: 0;"> Split current types
+                                    </label>
+                                </div>
+                                <div id="clusteringStatus" style="font-size: 10px; color: #555; margin: 6px 0 0; min-height: 14px;"></div>
+                                <details style="margin-top: 6px;">
+                                    <summary style="font-size: 10px; color: #555; cursor: pointer;">Diagnostic thresholds</summary>
+                                    <div style="font-weight: bold; font-size: 11px; margin: 6px 0;">Basic</div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px;">
+                                        <div>
+                                            <label for="clusterMinSizeInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Minimum sequences a group needs to be considered a cluster">Min Size:</label>
+                                            <input type="number" id="clusterMinSizeInput" min="2" max="20" value="3" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Groups smaller than this are discarded">
+                                        </div>
+                                        <div>
+                                            <label for="clusterMinPerfectInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Minimum number of diagnostic positions a cluster must have">Min Features:</label>
+                                            <input type="number" id="clusterMinPerfectInput" min="1" max="50" value="5" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Clusters with fewer unique diagnostic positions are discarded">
+                                        </div>
+                                        <div>
+                                            <label for="clusterMaxIterationsInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="How many rounds of clustering with progressively relaxed thresholds">Max Iter:</label>
+                                            <input type="number" id="clusterMaxIterationsInput" min="1" max="20" value="10" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="More iterations = more clusters found (threshold relaxes each round)">
+                                        </div>
+                                    </div>
+                                    <div style="font-weight: bold; font-size: 11px; margin-bottom: 6px;">Quality Thresholds (%)</div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px;">
+                                        <div>
+                                            <label for="qualitySmallInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Min % of members sharing a feature in clusters of 10 or fewer sequences">Small &lt;11:</label>
+                                            <input type="number" id="qualitySmallInput" min="0" max="100" value="80" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Higher = stricter, fewer but cleaner clusters">
+                                        </div>
+                                        <div>
+                                            <label for="qualityMediumInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Quality threshold for medium clusters (11-19 sequences)">Medium 11-19:</label>
+                                            <input type="number" id="qualityMediumInput" min="0" max="100" value="70" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Higher = stricter, fewer but cleaner clusters">
+                                        </div>
+                                        <div>
+                                            <label for="qualityLargeInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Quality threshold for large clusters (20+ sequences)">Large >=20:</label>
+                                            <input type="number" id="qualityLargeInput" min="0" max="100" value="60" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Higher = stricter, fewer but cleaner clusters">
+                                        </div>
+                                    </div>
+                                    <div style="font-weight: bold; font-size: 11px; margin-bottom: 6px;">Size Breakpoints</div>
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-bottom: 8px;">
+                                        <div>
+                                            <label for="sizeSmallMediumInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Sequence count at which clusters transition from small to medium quality tier">Small->Med:</label>
+                                            <input type="number" id="sizeSmallMediumInput" min="1" max="50" value="11" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Groups below this size use the Small quality threshold">
+                                        </div>
+                                        <div>
+                                            <label for="sizeMediumLargeInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Sequence count at which clusters transition from medium to large quality tier">Med->Large:</label>
+                                            <input type="number" id="sizeMediumLargeInput" min="1" max="50" value="20" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Groups at or above this size use the Large quality threshold">
+                                        </div>
+                                        <div>
+                                            <label for="minOccurrencesInput" style="font-size: 10px; display: block; margin-bottom: 1px; white-space: nowrap;" title="Minimum positions where a feature pattern must appear to be considered a cluster signal">Min Occur:</label>
+                                            <input type="number" id="minOccurrencesInput" min="1" max="20" value="3" step="1" style="width: 100%; height: 20px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Minimum number of diagnostic positions (features) required to form a cluster">
+                                        </div>
+                                    </div>
+                                </details>
+                                <details style="margin-top: 4px;">
+                                    <summary style="font-size: 10px; color: #555; cursor: pointer;">Presets and clusterability</summary>
+                                    <div style="margin: 6px 0;">
+                                        <label for="presetNameInput" style="font-size: 11px; display: block; margin-bottom: 2px;" title="Name to save current clustering parameters under">Preset Name:</label>
+                                        <input type="text" id="presetNameInput" placeholder="e.g. strict_clustering" style="width: 100%; max-width: 150px; height: 22px; padding: 2px; font-size: 11px; box-sizing: border-box;" title="Enter a name then click Save to store current settings">
+                                    </div>
+                                    <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px;">
+                                        <button id="clusteringSavePresetButton" style="flex: 1; min-width: 60px; height: 22px; font-size: 10px;" title="Save current parameters as a named preset">Save</button>
+                                        <button id="clusteringLoadPresetButton" style="flex: 1; min-width: 60px; height: 22px; font-size: 10px;" title="Load parameters from the selected preset">Load</button>
+                                        <button id="clusteringOptimalPresetButton" style="flex: 1; min-width: 70px; height: 22px; font-size: 10px;" title="Restore the standard starting parameters (Min Size 3, Min Features 5, quality 80/70/60, Min Occurrences 3). These are the values already loaded by default; nothing is tuned to your data.">Defaults</button>
+                                    </div>
+                                    <div style="display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 6px;">
+                                        <button id="clusteringProbeButton" style="flex: 1; height: 22px; font-size: 10px;" title="Run diagnostic clustering across a range of settings to see whether this alignment has exclusive SNP types, and which parameters change the outcome">Clusterability</button>
+                                    </div>
+                                    <select id="clusteringPresetList" style="width: 100%; max-width: 150px; height: 24px; font-size: 11px;" title="Select a saved parameter preset to load">
+                                        <option value="">-- Select preset --</option>
+                                    </select>
+                                </details>
+                            </div>
+
+                            <!-- 3. 2D analysis -->
+                            <div style="padding-bottom: 0;">
+                                <div style="font-weight: bold; font-size: 11px;">2D analysis</div>
+                                <div style="font-size: 10px; color: #555; margin: 2px 0 6px;">Row × column rectangles. If types exist, each rectangle is tagged supporting / inside / discordant. Paint never changes order; Group rows does.</div>
+                                <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-bottom: 4px;">
+                                    <select id="biclusterPaintMode" style="flex: 1; min-width: 120px; height: 22px; font-size: 10px;" title="How to paint same-type copies that are not sitting with the contiguous stack. Alignment order is never changed.">
+                                        <option value="local_one">Local: one box (dashed orphans)</option>
+                                        <option value="local_two">Local: two layers (stack + orphans)</option>
+                                        <option value="strict">Strict: contiguous stack only</option>
+                                    </select>
+                                    <button id="biclusterComputeButton" style="flex: 1; min-width: 90px; height: 24px; font-size: 11px; background: #0d9488; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Draw row × column rectangles. Tags them against current types if any.">Show 2D analysis</button>
+                                    <button id="biclusterClearButton" style="height: 22px; font-size: 10px;" title="Remove the overlay">Clear</button>
+                                    <button id="biclusterGroupRowsButton" style="flex: 1; min-width: 80px; height: 22px; font-size: 10px;" title="Click a colored rectangle on the alignment to stack that type (all members, including orphans). Undoable. Does not pick a type for you.">Group rows</button>
+                                </div>
+                                <label style="font-size: 10px; display: flex; align-items: center; gap: 4px;" title="Overlay opacity">Opacity
+                                    <input type="range" id="blockMaskOpacity" min="0.1" max="0.9" step="0.05" value="0.45" style="flex: 1;">
+                                </label>
+                                <div id="blockMaskStatus" style="font-size: 10px; color: #555; margin-top: 4px; min-height: 12px;"></div>
+                                <details style="margin-top: 6px;">
+                                    <summary style="font-size: 10px; color: #555; cursor: pointer;">Legacy squint mask</summary>
+                                    <div style="font-size: 10px; color: #555; margin: 4px 0;">Older reference-row overlay. Shares the same layer as 2D analysis — showing it replaces the current rectangles.</div>
                                     <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap; margin-bottom: 4px;">
                                         <select id="blockMaskPreset" style="flex: 1; min-width: 90px; height: 22px; font-size: 10px;" title="Squint coarseness: V1 = few big blocks, V5 = many fine blocks">
                                             <option value="V1_coarsest">V1 coarsest</option>
@@ -446,27 +483,10 @@
                                         </select>
                                         <button id="blockMaskComputeButton" style="flex: 1; min-width: 70px; height: 22px; font-size: 10px; background: #8b5cf6; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Compute the block mask from the currently loaded alignment and overlay it">Show mask</button>
                                         <button id="blockMaskClearButton" style="height: 22px; font-size: 10px;" title="Remove the block-mask overlay">Clear</button>
-                                        <button id="blockMaskGroupButton" style="flex: 1; min-width: 80px; height: 22px; font-size: 10px;" title="Does not pick a type for you. Click a colored rectangle on the alignment to stack that type (all members, including orphans). Undoable.">Group rows</button>
-                                    </div>
-                                    <label style="font-size: 10px; display: flex; align-items: center; gap: 4px;" title="Overlay opacity">Opacity
-                                        <input type="range" id="blockMaskOpacity" min="0.1" max="0.9" step="0.05" value="0.45" style="flex: 1;">
-                                    </label>
-                                    <div id="blockMaskStatus" style="font-size: 10px; color: #555; margin-top: 4px; min-height: 12px;"></div>
-                                    <div style="border-top: 1px dashed #ccc; margin-top: 8px; padding-top: 6px;">
-                                        <div style="font-size: 10px; font-weight: bold; color: #555; margin-bottom: 4px;" title="Experimental: no reference row, no fixed zones. Splits by row OR column, whichever most improves internal agreement, recursively. Shares this same overlay - Show replaces whatever mask is currently displayed.">Bicluster (experimental, no reference row)</div>
-                                        <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center;">
-                                            <select id="biclusterPaintMode" style="flex: 1; min-width: 120px; height: 22px; font-size: 10px;" title="How to paint same-type copies that are not sitting with the contiguous stack. Alignment order is never changed.">
-                                                <option value="local_one">Local: one box (dashed orphans)</option>
-                                                <option value="local_two">Local: two layers (stack + orphans)</option>
-                                                <option value="strict">Strict: contiguous stack only</option>
-                                            </select>
-                                            <button id="biclusterComputeButton" style="flex: 1; min-width: 70px; height: 22px; font-size: 10px; background: #0d9488; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Compute the bicluster mask from the currently loaded alignment and overlay it">Show bicluster</button>
-                                            <button id="biclusterClearButton" style="height: 22px; font-size: 10px;" title="Remove the overlay">Clear</button>
-                                            <button id="biclusterGroupRowsButton" style="flex: 1; min-width: 80px; height: 22px; font-size: 10px;" title="Does not pick a type for you. Click a colored rectangle on the alignment to stack that type (all members, including orphans). Undoable.">Group rows</button>
-                                        </div>
+                                        <button id="blockMaskGroupButton" style="flex: 1; min-width: 80px; height: 22px; font-size: 10px;" title="Click a colored rectangle on the alignment to stack that type (all members, including orphans). Undoable.">Group rows</button>
                                     </div>
                                     <details style="margin-top: 4px;">
-                                        <summary style="font-size: 10px; color: #555; cursor: pointer;">Advanced (squint knobs)</summary>
+                                        <summary style="font-size: 10px; color: #555; cursor: pointer;">Squint knobs</summary>
                                         <div style="display: flex; flex-direction: column; gap: 2px; margin-top: 4px; font-size: 10px;" title="Same eight knobs the V1-V5 presets set. Move one and release to recompute the mask.">
                                             <label style="display: flex; align-items: center; gap: 4px;">WIN <input type="range" id="bmKnobWIN" min="8" max="48" step="2" value="20" style="flex: 1;"><span id="bmKnobWINVal" style="width: 34px; text-align: right;">20</span></label>
                                             <label style="display: flex; align-items: center; gap: 4px;">MOSAIC_STD <input type="range" id="bmKnobMOSAIC_STD" min="0.06" max="0.20" step="0.01" value="0.12" style="flex: 1;"><span id="bmKnobMOSAIC_STDVal" style="width: 34px; text-align: right;">0.12</span></label>
@@ -478,7 +498,7 @@
                                             <label style="display: flex; align-items: center; gap: 4px;">MIN_BLOCK_W <input type="range" id="bmKnobMIN_BLOCK_W" min="5" max="45" step="1" value="15" style="flex: 1;"><span id="bmKnobMIN_BLOCK_WVal" style="width: 34px; text-align: right;">15</span></label>
                                         </div>
                                     </details>
-                                </div>
+                                </details>
                             </div>
                         </div>
                     </div>
@@ -908,7 +928,7 @@
     <!-- Clustering Results Modal -->
     <div id="clusteringModal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 2px solid #333; border-radius: 4px; max-width: 700px; width: 95%; max-height: 80vh; overflow: hidden; z-index: 10000; box-shadow: 0 4px 6px rgba(0,0,0,0.3); flex-direction: column;">
         <div id="clusteringModalHeader" style="background: #f5f5f5; padding: 12px; border-bottom: 1px solid #ccc; display: flex; justify-content: space-between; align-items: center; cursor: move; flex-shrink: 0;">
-            <h3 style="margin: 0; font-size: 14px;">Sequence Clustering Results</h3>
+            <h3 style="margin: 0; font-size: 14px;">Type results</h3>
             <button title="Close this dialog" onclick="document.getElementById('clusteringModal').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px;">x</button>
         </div>
         <div id="clusteringContent" style="padding: 12px; font-size: 11px; overflow-y: auto; flex: 1;">
@@ -1183,7 +1203,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=207"></script>
+    <script src="script.js?v=208"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

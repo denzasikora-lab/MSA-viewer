@@ -736,7 +736,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <div class="note">
     <strong>Note:</strong> Clusterability only surveys - it reads your parameters and leaves them
     exactly as they were. Nothing is applied. Choose the settings you want and press
-    <strong>Cluster Now</strong>. A full survey takes tens of seconds on a large alignment, and the
+    <strong>Find diagnostic types</strong>. A full survey takes tens of seconds on a large alignment, and the
     table fills in row by row as each run finishes.
   </div>
 
@@ -746,7 +746,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li>Adjust clustering parameters or load a preset</li>
     <li>If unsure whether the alignment can cluster, or if a run returns nothing, press
       <strong>Clusterability</strong> to see which settings are worth trying</li>
-    <li>Click <strong>Cluster Now</strong></li>
+    <li>Click <strong>Find diagnostic types</strong></li>
     <li>Review results (cluster sizes, diagnostic features, feature tables)</li>
     <li>Use Actions -> <em>Colour by Cluster</em> to visualise groups</li>
     <li>Compute Group Consensus for selected clusters</li>
@@ -777,19 +777,22 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li><em>Group Consensus</em> (Consensus menu) computes and inserts a consensus row for any selected cluster</li>
   </ul>
   <p>
-    Three instruments answer different questions and then share state.
-    <strong>Guide-tree groups</strong> / <strong>Group by similarity</strong> cuts the same 6-mer UPGMA tree used to
-    reorder rows after alignment (MAFFT-like overall similarity) and assigns
+    Three instruments answer different questions and then share type state.
+    <strong>k-mer reorder groups</strong> cuts the same k-mer UPGMA tree used to
+    reorder rows after alignment (default 6-mer, same as Reorder by similarity) and assigns
     every sequence to a type. The number of groups is taken from the largest
     jump in that tree unless you type one.
-    <strong>Cluster Now</strong> discovers types from exclusive diagnostic
+    <strong>Diagnostic positions</strong> discovers types from exclusive SNP
     columns only &mdash; it does not form groups from leaky characters.
+    Check <em>Split current types</em> to search for those SNPs inside existing
+    k-mer groups instead of the whole alignment; unsplit groups are kept.
     After either grouping, exclusive (solid) and <em>cloudy</em> (faint)
     characters of those types are highlighted: cloudy columns are enriched
     in a type even when they leak into others.
-    <strong>Show bicluster</strong> draws independent row&times;column
+    <strong>2D analysis</strong> draws independent row&times;column
     rectangles; when types already exist, each rectangle is tagged as
-    supporting a type, a stack inside a type, or discordant.
+    supporting a type, a stack inside a type, or discordant. Running a new
+    grouping retags a live 2D overlay.
   </p>
 
   <h3 id="cl-blockmask">4.7 2D Block Mask (squint view)</h3>

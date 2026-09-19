@@ -565,8 +565,8 @@ class SINEClusterer {
 
     /**
      * Given a row partition (types), score every column as a character of each
-     * type. Discovery is inverted: groups are already known (guide-tree or
-     * Cluster Now); this only asks which columns characterize them.
+     * type. Discovery is inverted: groups are already known (k-mer tree or
+     * diagnostic positions); this only asks which columns characterize them.
      * Strict = exclusive (outside 0). Cloudy = enriched in the type but leaky.
      */
     characterizeGroups(groupIndexLists, options) {

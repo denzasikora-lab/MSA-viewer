@@ -151,6 +151,8 @@ function _clearClusterTrimState() {
     state.clusterResults = null;
     state.clusterMap = null;
     state._clusterCharMap = null;
+    state.clusterSource = null;
+    state.clusterSourceLabel = null;
     state.softTrimBoundaries = null;
     state.trimBoundaries = null;
     state.trimBackup = null;
@@ -6428,6 +6430,7 @@ function clearBlockMask() {
     state.blockMask = null;
     state._biclusterRaw = null;
     renderBlockMaskOverlay();
+    if (typeof _updateInstrumentStatus === 'function') _updateInstrumentStatus();
 }
 
 // Longest run of consecutive indices / group size, in the ORIGINAL mask row
@@ -6773,10 +6776,12 @@ function reapplyBiclusterPaintMode() {
     state.blockMask = _tagBiclusterAgainstTypes(_paintBiclusterBlocks(state._biclusterRaw));
     renderBlockMaskOverlay();
     _blockMaskStatusFrom(state.blockMask);
+    if (typeof _updateInstrumentStatus === 'function') _updateInstrumentStatus();
 }
 
 function computeAndShowBicluster() {
     _blockMaskStatusFrom(applyBiclusterLive());
+    if (typeof _updateInstrumentStatus === 'function') _updateInstrumentStatus();
 }
 
 // Panel action: compute from the loaded alignment using the selected preset
@@ -6924,7 +6929,7 @@ function groupRowsByType(rowIdxs) {
 
 function groupRowsByBlockMask() {
     if (!state.blockMask || !state.blockMask.blocks || state.blockMask.blocks.length === 0) {
-        showMessage('Show bicluster first, then click a colored rectangle to stack that type', 4000);
+        showMessage('Show 2D analysis first, then click a colored rectangle to stack that type', 4000);
         return;
     }
     showMessage('Click a colored rectangle on the alignment to stack that type (orphans included). Undoable.', 4000);
@@ -11804,6 +11809,165 @@ function getSeqsForClustering() {
     });
 }
 
+function _guideTreeK() {
+    const v = parseInt(el('guideTreeK')?.value, 10);
+    return (Number.isFinite(v) && v >= 3 && v <= 12) ? v : 6;
+}
+
+function _updateInstrumentStatus() {
+    const node = el('clusteringInstrumentStatus');
+    if (!node) return;
+    const clusters = state.clusterResults && state.clusterResults.clusters;
+    const n = clusters ? clusters.length : 0;
+    if (!n) {
+        node.textContent = 'No types yet. Group by k-mer tree for overall bands, or find diagnostic types from exclusive positions.';
+        return;
+    }
+    let nEx = 0, nCl = 0;
+    clusters.forEach(c => {
+        nEx += (c.perfectFeatures || []).length;
+        nCl += (c.cloudyFeatures || []).length;
+    });
+    const src = state.clusterSourceLabel || 'types';
+    let extra = '';
+    if (state._biclusterRaw && state.blockMask && state.blockMask.typeAgreementSummary) {
+        const a = state.blockMask.typeAgreementSummary;
+        extra = ` · 2D: ${a.supporting} support, ${a.inside} inside, ${a.discordant} discordant`;
+    } else if (state._biclusterRaw) {
+        extra = ' · 2D overlay on';
+    }
+    node.textContent = `Types from ${src}: ${n} type${n === 1 ? '' : 's'}, ${nEx} exclusive / ${nCl} cloudy${extra}`;
+}
+
+function _commitTypeResults(clusterResults, source, sourceLabel) {
+    state.clusterSource = source;
+    state.clusterSourceLabel = sourceLabel;
+    state.clusterResults = clusterResults;
+    const colors = SINEClusterer.getClusterColors();
+    state.clusterMap = {};
+    state.clusterTypeRows = [];
+    (clusterResults.clusters || []).forEach((c, idx) => {
+        const color = colors[idx % colors.length];
+        const name = c._typeName || (source === 'kmers' ? ('Group ' + (idx + 1)) : ('Type ' + (idx + 1)));
+        (c.sequences || []).forEach(seq => {
+            state.clusterMap[seq.id] = { cluster: idx, color, name };
+        });
+        state.clusterTypeRows.push({ name, headers: (c.sequences || []).map(s => s.id) });
+    });
+    (clusterResults.unassigned || []).forEach(seq => {
+        state.clusterMap[seq.id] = { cluster: -1, color: '#cccccc', name: 'Unassigned' };
+    });
+    _rebuildClusterCharMap();
+    renderAlignment();
+    if (state._biclusterRaw) reapplyBiclusterPaintMode();
+    else _updateInstrumentStatus();
+}
+
+function _clusterFromIndices(allSeqs, indices, name) {
+    return {
+        size: indices.length,
+        nPerfect: 0,
+        perfectFeatures: [],
+        cloudyFeatures: [],
+        motifRuns: [],
+        _typeName: name,
+        sequences: indices.map(i => ({ index: i, id: allSeqs[i].id, seq: allSeqs[i].seq }))
+    };
+}
+
+function _parentTypeBuckets(seqs) {
+    const buckets = [];
+    const byKey = new Map();
+    seqs.forEach((s, i) => {
+        const info = state.clusterMap && state.clusterMap[s.id];
+        if (!info || info.cluster < 0) return;
+        if (!byKey.has(info.cluster)) {
+            const b = { name: info.name || ('Group ' + (info.cluster + 1)), indices: [] };
+            byKey.set(info.cluster, b);
+            buckets.push(b);
+        }
+        byKey.get(info.cluster).indices.push(i);
+    });
+    return buckets;
+}
+
+async function _clusterDiagnosticWithinTypes(allSeqs, clusterParams, update) {
+    const buckets = _parentTypeBuckets(allSeqs);
+    if (!buckets.length) {
+        showMessage('Group by k-mer tree first, then Find diagnostic types can split those groups.', 4000);
+        return null;
+    }
+    const chunkOpts = {
+        shouldCancel: () => state.clusterCancelled,
+        minSize: clusterParams.minSize,
+        minPerfect: clusterParams.minPerfect,
+        maxIterations: clusterParams.maxIterations,
+        qualitySmall: clusterParams.qualitySmall,
+        qualityMedium: clusterParams.qualityMedium,
+        qualityLarge: clusterParams.qualityLarge,
+        sizeSmallMedium: clusterParams.sizeSmallMedium,
+        sizeMediumLarge: clusterParams.sizeMediumLarge,
+        minOccurrences: clusterParams.minOccurrences
+    };
+    const merged = [];
+    const unassigned = [];
+    for (let bi = 0; bi < buckets.length; bi++) {
+        const b = buckets[bi];
+        if (state.clusterCancelled) break;
+        if (update) update('Splitting ' + b.name + ' (' + (bi + 1) + '/' + buckets.length + ')');
+        if (b.indices.length < (clusterParams.minSize || 3)) {
+            merged.push(_clusterFromIndices(allSeqs, b.indices, b.name));
+            continue;
+        }
+        const subset = b.indices.map(i => allSeqs[i]);
+        const sub = new SINEClusterer(subset);
+        const subResults = await sub.clusterChunked({
+            ...chunkOpts,
+            onProgress: (msg) => {
+                updateClusteringStatus(b.name + ': ' + msg);
+                if (update) update(b.name + ': ' + msg);
+            }
+        });
+        if (!subResults.summary.nClusters) {
+            merged.push(_clusterFromIndices(allSeqs, b.indices, b.name));
+            continue;
+        }
+        subResults.clusters.forEach((c, ti) => {
+            const sequences = (c.sequences || []).map(s => {
+                const gi = b.indices[s.index];
+                return { index: gi, id: allSeqs[gi].id, seq: allSeqs[gi].seq };
+            });
+            merged.push(Object.assign({}, c, {
+                sequences,
+                size: sequences.length,
+                _typeName: b.name + ' / type ' + (ti + 1)
+            }));
+        });
+        const rest = (subResults.unassigned || []).map(s => b.indices[s.index]);
+        if (rest.length >= (clusterParams.minSize || 3)) {
+            merged.push(_clusterFromIndices(allSeqs, rest, b.name + ' remainder'));
+        } else {
+            rest.forEach(i => unassigned.push({ index: i, id: allSeqs[i].id, seq: allSeqs[i].seq }));
+        }
+    }
+    const used = new Set();
+    merged.forEach(c => (c.sequences || []).forEach(s => used.add(s.index)));
+    unassigned.forEach(s => used.add(s.index));
+    allSeqs.forEach((s, i) => {
+        if (!used.has(i)) unassigned.push({ index: i, id: s.id, seq: s.seq });
+    });
+    return {
+        clusters: merged,
+        unassigned,
+        summary: {
+            nClusters: merged.length,
+            nAssigned: merged.reduce((a, c) => a + c.size, 0),
+            nUnassigned: unassigned.length,
+            nTotal: allSeqs.length
+        }
+    };
+}
+
 function _motifRunsHtml(runs) {
     if (!runs || !runs.length) return '<em>None</em>';
     return runs.map(r => {
@@ -11825,41 +11989,28 @@ async function clusterByGuideTree() {
     const raw = el('guideTreeGroups')?.value;
     const parsed = parseInt(raw, 10);
     const groupsArg = (raw === '' || raw == null || Number.isNaN(parsed)) ? 'auto' : parsed;
-    return runWithProgress('Grouping by similarity...', () => {
+    const k = _guideTreeK();
+    return runWithProgress('Grouping by k-mer tree...', () => {
         const seqs = getSeqsForClustering();
         const t0 = performance.now();
-        const cut = cutGuideTree(seqs, groupsArg);
+        const cut = cutGuideTree(seqs, groupsArg, k);
         const ms = performance.now() - t0;
 
-        const colors = SINEClusterer.getClusterColors();
-        state.clusterMap = {};
-        const clusters = cut.groups.map((members, idx) => {
-            const color = colors[idx % colors.length];
-            members.forEach(i => {
-                state.clusterMap[seqs[i].id] = { cluster: idx, color, name: `Group ${idx + 1}` };
-            });
-            return {
-                size: members.length,
-                nPerfect: 0,
-                perfectFeatures: [],
-                cloudyFeatures: [],
-                motifRuns: [],
-                sequences: members.map(i => ({ id: seqs[i].id, index: i, seq: seqs[i].seq }))
-            };
-        });
+        const clusters = cut.groups.map((members, idx) => ({
+            size: members.length,
+            nPerfect: 0,
+            perfectFeatures: [],
+            cloudyFeatures: [],
+            motifRuns: [],
+            sequences: members.map(i => ({ id: seqs[i].id, index: i, seq: seqs[i].seq }))
+        }));
         const clusterer = new SINEClusterer(seqs);
         clusterer.attachCharacterization(clusters);
-        state.clusterTypeRows = clusters.map((c, idx) => ({
-            name: `Group ${idx + 1}`,
-            headers: c.sequences.map(s => s.id)
-        }));
-        state.clusterResults = {
+        _commitTypeResults({
             clusters,
             unassigned: [],
             summary: { nClusters: clusters.length, nAssigned: state.seqs.length, nUnassigned: 0, nTotal: state.seqs.length }
-        };
-        _rebuildClusterCharMap();
-        renderAlignment();
+        }, 'kmers', k + '-mer groups');
         _renderGuideTreeGroups(clusters, cut, ms);
         const modal = el('clusteringModal');
         if (modal) modal.style.display = 'block';
@@ -11875,15 +12026,16 @@ function _renderGuideTreeGroups(clusters, cut, ms) {
         : '';
     let html = `
         <div style="margin-bottom: 14px; padding: 10px; background: #eef4fb; border: 1px solid #c5d8ee; border-radius: 4px; font-size: 12px; line-height: 1.5;">
-            <div style="font-size: 13px; margin-bottom: 4px;">Group by similarity</div>
+            <div style="font-size: 13px; margin-bottom: 4px;">k-mer reorder groups</div>
             <strong>${clusters.length} groups</strong> covering all ${state.seqs.length} sequences, in ${ms.toFixed(0)} ms.
             ${cut.auto
                 ? `The number of groups was chosen from the tree (largest jump in overall similarity) — you do not have to pick it. Type a number in Groups only to force a coarser or finer split.`
                 : `Split into ${cut.target} groups as requested. Leave Groups empty for an automatic split.`}
-            Cut at 6-mer distance ${cut.cutHeight.toFixed(3)}. ${sep}
+            Cut at ${cut.k || 6}-mer distance ${cut.cutHeight.toFixed(3)}. ${sep}
             <div style="margin-top: 6px; color: #6b6b6b;">
-                Same similarity tree as MAFFT reorder / Reorder by similarity: sequences that look alike overall sit in the same type.
+                Same k-mer UPGMA tree as Reorder by similarity: sequences that look alike overall sit in the same type.
                 Character bases of those types are coloured on the alignment (solid = exclusive to the type, tint = cloudy / leaky).
+                Find diagnostic types with Split current types to look for exclusive SNPs inside these groups. Show 2D analysis to draw rectangles tagged against them.
             </div>
         </div>`;
     clusters.forEach((c, idx) => {
@@ -12052,7 +12204,7 @@ function _renderClusterabilityReport(rows, base, nSeqs, progress) {
     html += `</table>
         <div style="margin-top: 8px; font-size: 11px; color: #6b6b6b;">
             Each row varies one setting from your current values; the last row loosens everything at once.
-            This is a survey only - nothing has been changed. Set the parameters you want and press Run Clustering.
+            This is a survey only - nothing has been changed. Set the parameters you want and press Find diagnostic types.
         </div>`;
     content.innerHTML = html;
 }
@@ -12071,117 +12223,52 @@ async function clusterSequences() {
         return;
     }
     state.clusterCancelled = false;
-    return runWithProgress('Clustering...',
+    return runWithProgress('Finding diagnostic types...',
         (update) => _clusterSequencesNow(update),
         `${state.seqs.length} sequences`,
         () => { state.clusterCancelled = true; });
 }
 
 async function _clusterSequencesNow(update) {
-    updateClusteringStatus('Running clustering algorithm...');
+    updateClusteringStatus('Finding diagnostic types...');
 
     const seqsForClustering = getSeqsForClustering();
-
-    // Get clustering parameters from UI
     const clusterParams = getClusteringParameters();
-
-    // Run clustering. clusterChunked yields between rounds, so the indicator can update
-    // and Stop can take effect; a round in progress still runs to completion.
+    const within = !!el('clusterWithinTypes')?.checked;
     const clusterer = new SINEClusterer(seqsForClustering);
-    const clusterResults = await clusterer.clusterChunked({
-        onProgress: (msg) => { updateClusteringStatus(msg); if (update) update(msg); },
-        shouldCancel: () => state.clusterCancelled,
-        minSize: clusterParams.minSize,
-        minPerfect: clusterParams.minPerfect,
-        maxIterations: clusterParams.maxIterations,
-        qualitySmall: clusterParams.qualitySmall,
-        qualityMedium: clusterParams.qualityMedium,
-        qualityLarge: clusterParams.qualityLarge,
-        sizeSmallMedium: clusterParams.sizeSmallMedium,
-        sizeMediumLarge: clusterParams.sizeMediumLarge,
-        minOccurrences: clusterParams.minOccurrences
-    });
+    let clusterResults;
+    let source = 'diagnostics';
+    let sourceLabel = 'diagnostic positions';
 
-    clusterer.attachCharacterization(clusterResults.clusters, { unionCloudy: true });
-    state.clusterTypeRows = clusterResults.clusters.map((c, idx) => ({
-        name: `Cluster ${idx + 1}`,
-        headers: c.sequences.map(s => s.id)
-    }));
-
-    // Store results in state
-    state.clusterResults = clusterResults;
-
-    // Log to console
-    console.log('=== CLUSTERING RESULTS ===');
-    debugLog(`Parameters: minSize=${clusterParams.minSize}, minPerfect=${clusterParams.minPerfect}, maxIterations=${clusterParams.maxIterations}`);
-    debugLog(`Quality Thresholds: small=${clusterParams.qualitySmall}%, medium=${clusterParams.qualityMedium}%, large=${clusterParams.qualityLarge}%`);
-    debugLog(`Size Breakpoints: small-medium=${clusterParams.sizeSmallMedium}, medium-large=${clusterParams.sizeMediumLarge}`);
-    debugLog(`Min Occurrences: ${clusterParams.minOccurrences}`);
-    debugLog(`Total sequences: ${clusterResults.summary.nTotal}`);
-    debugLog(`Clusters found: ${clusterResults.summary.nClusters}`);
-    debugLog(`Assigned: ${clusterResults.summary.nAssigned}`);
-    debugLog(`Unassigned: ${clusterResults.summary.nUnassigned}`);
-    console.log('');
-
-    const colors = SINEClusterer.getClusterColors();
-
-    // Create cluster name map
-    state.clusterMap = {};
-
-    clusterResults.clusters.forEach((cluster, idx) => {
-        const color = colors[idx % colors.length];
-        debugLog(`\n--- CLUSTER ${idx + 1} ---`);
-        debugLog(`Size: ${cluster.size} sequences`);
-        debugLog(`Diagnostic features: ${cluster.nPerfect} (${cluster.nReliable || cluster.nPerfect} reliable)`);
-        if (cluster.nFiltered) {
-            debugLog(`WARN:  Filtered (high-leakage): ${cluster.nFiltered} features`);
+    if (within) {
+        clusterResults = await _clusterDiagnosticWithinTypes(seqsForClustering, clusterParams, update);
+        if (!clusterResults) {
+            updateClusteringStatus('');
+            return;
         }
-        debugLog(`Color: ${color}`);
-        console.log('Sequences:');
-
-        cluster.sequences.forEach(seq => {
-            debugLog(`  - ${seq.id} (index ${seq.index})`);
-            state.clusterMap[seq.id] = {
-                cluster: idx,
-                color: color,
-                name: `Cluster ${idx + 1}`
-            };
-        });
-
-        if (cluster.perfectFeatures.length > 0) {
-            debugLog(`Perfect features (${cluster.perfectFeatures.length} reliable):`);
-            cluster.perfectFeatures.slice(0, 5).forEach(f => {
-                debugLog(`  Pos ${f.pos}: ${f.char}`);
-            });
-        }
-
-        if (cluster.imperfectFeatures && cluster.imperfectFeatures.length > 0) {
-            debugLog(`Imperfect features (${cluster.imperfectFeatures.length} reliable):`);
-            cluster.imperfectFeatures.slice(0, 5).forEach(f => {
-                debugLog(`  Pos ${f.pos}: ${f.char} (leaks to ${f.countOutside})`);
-            });
-        }
-    });
-
-    if (clusterResults.unassigned.length > 0) {
-        debugLog(`\n--- UNASSIGNED (${clusterResults.unassigned.length} sequences) ---`);
-        clusterResults.unassigned.forEach(seq => {
-            debugLog(`  - ${seq.id} (index ${seq.index})`);
-            state.clusterMap[seq.id] = {
-                cluster: -1,
-                color: '#cccccc',
-                name: 'Unassigned'
-            };
+        source = 'diagnostics-within';
+        sourceLabel = 'diagnostic split of current types';
+    } else {
+        clusterResults = await clusterer.clusterChunked({
+            onProgress: (msg) => { updateClusteringStatus(msg); if (update) update(msg); },
+            shouldCancel: () => state.clusterCancelled,
+            minSize: clusterParams.minSize,
+            minPerfect: clusterParams.minPerfect,
+            maxIterations: clusterParams.maxIterations,
+            qualitySmall: clusterParams.qualitySmall,
+            qualityMedium: clusterParams.qualityMedium,
+            qualityLarge: clusterParams.qualityLarge,
+            sizeSmallMedium: clusterParams.sizeSmallMedium,
+            sizeMediumLarge: clusterParams.sizeMediumLarge,
+            minOccurrences: clusterParams.minOccurrences
         });
     }
 
-    console.log('\n=== END CLUSTERING ===\n');
-
-    _rebuildClusterCharMap();
-    renderAlignment();
+    clusterer.attachCharacterization(clusterResults.clusters, { unionCloudy: true });
+    debugLog(`Diagnostic types: ${clusterResults.summary.nClusters} found, ${clusterResults.summary.nAssigned} assigned, ${clusterResults.summary.nUnassigned} unassigned`);
+    _commitTypeResults(clusterResults, source, sourceLabel);
     displayClusteringResults(clusterResults);
-
-    updateClusteringStatus(`Clustering complete: ${clusterResults.summary.nClusters} clusters found`);
+    updateClusteringStatus(`Diagnostic types: ${clusterResults.summary.nClusters} found`);
 }
 
 function colorSequencesByCluster() {
@@ -12654,7 +12741,8 @@ function displayClusteringResults(results) {
 
     let html = `
         <div style="margin-bottom: 16px; padding: 8px; background: #e8f4f8; border-radius: 4px;">
-            <strong>Summary:</strong> ${results.summary.nClusters} cluster${results.summary.nClusters !== 1 ? 's' : ''} |
+            <div style="font-size: 13px; margin-bottom: 4px;">${state.clusterSourceLabel || 'Diagnostic positions'}</div>
+            <strong>Summary:</strong> ${results.summary.nClusters} type${results.summary.nClusters !== 1 ? 's' : ''} |
             ${results.summary.nAssigned} sequences assigned | ${results.summary.nUnassigned} unassigned
         </div>
     `;
@@ -12681,7 +12769,7 @@ function displayClusteringResults(results) {
         html += `
             <div style="margin-bottom: 12px; padding: 8px; border: 1px solid #ddd; border-left: 4px solid ${color}; border-radius: 2px;">
                 <div style="cursor: pointer; font-weight: bold; user-select: none; margin-bottom: 4px;" onclick="document.getElementById('cluster${idx}').style.display = document.getElementById('cluster${idx}').style.display === 'none' ? 'block' : 'none';">
-                    > Cluster ${idx + 1}: ${cluster.size} sequences, ${cluster.nPerfect} exclusive / ${(cluster.cloudyFeatures || []).length} cloudy
+                    > ${cluster._typeName || ('Type ' + (idx + 1))}: ${cluster.size} sequences, ${cluster.nPerfect} exclusive / ${(cluster.cloudyFeatures || []).length} cloudy
                 </div>
                 <div id="cluster${idx}" style="display: none; margin-left: 8px; margin-top: 8px;">
                     <div style="margin-bottom: 8px;">
@@ -12984,9 +13072,9 @@ function _adjustDirection(fasta) {
 // Shared by _reorderByGuideTree and clusterByGuideTree, so the order a user sees and the
 // grouping they get always come from the same tree.
 // seqs: [{ header, seq }]  ->  { order: leafIndices, merges: [{ i, j, d }] }
-function _kmerGuideTree(seqs) {
+function _kmerGuideTree(seqs, k) {
     const n = seqs.length;
-    const K = 6;
+    const K = (Number.isFinite(k) && k >= 3 && k <= 12) ? (k | 0) : 6;
     const merges = [];
 
     // Build k-mer frequency vectors for each sequence
@@ -13074,7 +13162,7 @@ function _kmerGuideTree(seqs) {
 
     // Find the last active cluster - its leaf order is the guide tree order
     const finalCluster = clusters.find((_, i) => active[i]) || clusters[0];
-    return { order: finalCluster, merges };
+    return { order: finalCluster, merges, k: K };
 }
 
 function _reorderByGuideTree(fasta) {
@@ -13091,7 +13179,7 @@ function _reorderByGuideTree(fasta) {
     if (cur) seqs.push(cur);
     if (seqs.length <= 2) return { fasta, order: seqs.map(s => s.header) };
 
-    const order = _kmerGuideTree(seqs).order;
+    const order = _kmerGuideTree(seqs, (typeof _guideTreeK === 'function') ? _guideTreeK() : 6).order;
 
     // Build reordered FASTA
     const reordered = order.map(i => `${seqs[i].fullLine}\n${seqs[i].seq}`).join('\n');
@@ -13103,9 +13191,10 @@ function _reorderByGuideTree(fasta) {
 // Cut the guide tree into groups. UPGMA performs n-1 merges, so applying the first
 // (n - groups) of them leaves exactly `groups` clusters - no threshold to guess at, and
 // the cut height is reported so the separation can be judged.
-function cutGuideTree(seqs, groups) {
+function cutGuideTree(seqs, groups, k) {
     const n = seqs.length;
-    const { merges } = _kmerGuideTree(seqs);
+    const tree = _kmerGuideTree(seqs, k);
+    const merges = tree.merges;
     let auto = false;
     let target;
     if (groups == null || groups === 'auto') {
@@ -13136,7 +13225,7 @@ function cutGuideTree(seqs, groups) {
         byRoot.get(r).push(i);
     }
     const groupsOut = [...byRoot.values()].sort((a, b) => b.length - a.length);
-    return { groups: groupsOut, cutHeight, nextHeight, auto, target };
+    return { groups: groupsOut, cutHeight, nextHeight, auto, target, k: tree.k };
 }
 
 function _treeIsBase(char) {
