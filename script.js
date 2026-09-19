@@ -155,6 +155,8 @@ function _clearClusterTrimState() {
     state.clusterSourceLabel = null;
     state.softTrimBoundaries = null;
     state.trimBoundaries = null;
+    state.trimManualLeft = false;
+    state.trimManualRight = false;
     state.trimBackup = null;
 }
 
@@ -455,6 +457,8 @@ const state = {
         started: false
     },
     trimBoundaries: null,
+    trimManualLeft: false,
+    trimManualRight: false,
     trimBackup: null,
     softTrimBoundaries: null, // { leftTrimEnd, rightTrimStart } - excluded from clustering only
     groupConsensusCount: 0,
@@ -7619,6 +7623,10 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
             if (state._diffColumns && state._diffColumns.has(pos)) {
                 cls += ' diff-highlight';
             }
+            if (state.trimBoundaries) {
+                if (pos <= state.trimBoundaries.leftTrimEnd) cls += ' trim-left';
+                else if (pos >= state.trimBoundaries.rightTrimStart) cls += ' trim-right';
+            }
 
             const colSelected = selectedCols.has(pos) ? ' column-selected' : '';
             const tsdDisplay = getTsdMarkDisplay(index, pos);
@@ -7737,10 +7745,12 @@ function addConsensusLine(parent, consensus, start, end, nameLen, stickyNames, b
         // Apply trim region coloring
         if (pos <= leftTrimEnd) {
             span.classList.add('trim-left');
-            span.title = 'Trimmed (left)';
+            if (pos === leftTrimEnd) span.classList.add('trim-edge-left');
+            span.title = 'Will be removed (left end). Drag to move this border.';
         } else if (pos >= rightTrimStart) {
             span.classList.add('trim-right');
-            span.title = 'Trimmed (right)';
+            if (pos === rightTrimStart) span.classList.add('trim-edge-right');
+            span.title = 'Will be removed (right end). Drag to move this border.';
         }
         // Soft trim visual: dim columns excluded from clustering
         if (state.softTrimBoundaries && !state.trimBoundaries) {
@@ -9079,6 +9089,10 @@ function toggleRowSelection(index) {
     updateRowSelections();
 }
 function handleMouseMove(e) {
+    if (_trimDragSide) {
+        _onTrimDragMove(e);
+        return;
+    }
     if (!state.isDragging) return;
     if (state.dragMode === 'row') {
         if (document.getElementById('modeCanvas')?.checked) {
@@ -9159,6 +9173,7 @@ function handleMouseMove(e) {
     e.preventDefault();
 }
 function handleMouseUp() {
+    _endTrimDrag();
     if (state.dragMode === 'nuc') {
         // If we have a pending start, this was either a simple click or a drag
         // The drag selection is already handled in mousemove
@@ -11684,13 +11699,190 @@ function getTrimParameters() {
     };
 }
 
+function _trimAlnLen() {
+    return (state.seqs && state.seqs[0] && state.seqs[0].seq) ? state.seqs[0].seq.length : 0;
+}
+
+function _trimKeepRange(b, len) {
+    const leftEnd = (b && b.leftTrimEnd != null) ? b.leftTrimEnd : -1;
+    const rightStart = (b && b.rightTrimStart != null) ? b.rightTrimStart : len;
+    return {
+        from: leftEnd < 0 ? 1 : leftEnd + 2,
+        to: rightStart >= len ? len : rightStart
+    };
+}
+
+function _gapOnlyColumnCount() {
+    if (!state.seqs.length) return 0;
+    const len = _trimAlnLen();
+    let n = 0;
+    for (let pos = 0; pos < len; pos++) {
+        let allGap = true;
+        for (let i = 0; i < state.seqs.length; i++) {
+            const ch = state.seqs[i].seq[pos] || (typeof GENEDOC_FILLER !== 'undefined' ? GENEDOC_FILLER : '-');
+            if (typeof isGeneDocGapChar === 'function') {
+                if (!isGeneDocGapChar(ch)) { allGap = false; break; }
+            } else if (ch !== '-' && ch !== '.') {
+                allGap = false;
+                break;
+            }
+        }
+        if (allGap) n++;
+    }
+    return n;
+}
+
+function _trimPreviewNote(b, params) {
+    const len = _trimAlnLen();
+    const leftN = b.leftTrimEnd + 1;
+    const rightN = Math.max(0, len - b.rightTrimStart);
+    const lp = Math.round((params.leftGapThresh || 0) * 100);
+    const rp = Math.round((params.rightGapThresh || 0) * 100);
+    const w = params.edgeWindow;
+    const whyL = state.trimManualLeft ? 'moved by hand' : ('≥' + lp + '% gaps, window ' + w);
+    const whyR = state.trimManualRight ? 'moved by hand' : ('≥' + rp + '% gaps, window ' + w);
+    const parts = [];
+    if (leftN > 0) parts.push('left cols 1–' + leftN + ' (' + whyL + ')');
+    if (rightN > 0) parts.push('right cols ' + (b.rightTrimStart + 1) + '–' + len + ' (' + whyR + ')');
+    let text;
+    if (!parts.length) text = 'Ends are already below the gap %. Nothing to cut.';
+    else text = 'Will remove ' + parts.join('; ') + '. Edit Keep or drag the coloured Consensus edges, then Trim.';
+    const gaps = _gapOnlyColumnCount();
+    if (gaps > 0) text += ' ' + gaps + ' all-gap column' + (gaps === 1 ? '' : 's') + ' remain — Empty cols drops them.';
+    return text;
+}
+
+function _syncTrimKeepInputs() {
+    const fromEl = el('trimKeepFrom');
+    const toEl = el('trimKeepTo');
+    const note = el('trimPreviewNote');
+    const len = _trimAlnLen();
+    const b = state.trimBoundaries;
+    if (!fromEl || !toEl) return;
+    if (!b || !len) {
+        if (!fromEl.matches(':focus')) fromEl.value = '';
+        if (!toEl.matches(':focus')) toEl.value = '';
+        if (note) note.textContent = '';
+        return;
+    }
+    const { from, to } = _trimKeepRange(b, len);
+    if (!fromEl.matches(':focus')) fromEl.value = String(from);
+    if (!toEl.matches(':focus')) toEl.value = String(to);
+    if (note) note.textContent = _trimPreviewNote(b, getTrimParameters());
+}
+
+function _clampTrimBounds(leftTrimEnd, rightTrimStart, len) {
+    let L = Math.max(-1, Math.min(leftTrimEnd, len - 2));
+    let R = Math.max(1, Math.min(rightTrimStart, len));
+    if (L + 1 >= R) {
+        if (L >= 0) L = R - 2;
+        if (L + 1 >= R) R = L + 2;
+    }
+    return { leftTrimEnd: L, rightTrimStart: R };
+}
+
+function _setTrimBounds(leftTrimEnd, rightTrimStart, side) {
+    const len = _trimAlnLen();
+    if (!len) return;
+    state.trimBoundaries = _clampTrimBounds(leftTrimEnd, rightTrimStart, len);
+    if (side === 'left' || side === true) state.trimManualLeft = true;
+    if (side === 'right' || side === true) state.trimManualRight = true;
+    _paintTrimClassesLive();
+    _syncTrimKeepInputs();
+}
+
+function _applyKeepColsFromInputs() {
+    const len = _trimAlnLen();
+    if (!len) return;
+    const from = parseInt(el('trimKeepFrom')?.value, 10);
+    const to = parseInt(el('trimKeepTo')?.value, 10);
+    if (!Number.isFinite(from) || !Number.isFinite(to)) return;
+    const f = Math.max(1, Math.min(from, len));
+    const t = Math.max(f, Math.min(to, len));
+    const prev = state.trimBoundaries ? _trimKeepRange(state.trimBoundaries, len) : null;
+    let side = true;
+    if (prev) {
+        if (f !== prev.from && t === prev.to) side = 'left';
+        else if (t !== prev.to && f === prev.from) side = 'right';
+    }
+    _setTrimBounds(f === 1 ? -1 : f - 2, t, side);
+}
+
+function _paintTrimClassesLive() {
+    const b = state.trimBoundaries;
+    const len = _trimAlnLen();
+    if (!b || !len) return;
+    document.querySelectorAll('.consensus-line .seq-data span[data-pos]').forEach(span => {
+        const pos = parseInt(span.dataset.pos, 10);
+        if (Number.isNaN(pos)) return;
+        const left = pos <= b.leftTrimEnd;
+        const right = pos >= b.rightTrimStart;
+        span.classList.toggle('trim-left', left);
+        span.classList.toggle('trim-right', right);
+        span.classList.toggle('trim-edge-left', pos === b.leftTrimEnd && b.leftTrimEnd >= 0);
+        span.classList.toggle('trim-edge-right', pos === b.rightTrimStart && b.rightTrimStart < len);
+        if (left) span.title = 'Will be removed (left end). Drag to move this border.';
+        else if (right) span.title = 'Will be removed (right end). Drag to move this border.';
+        else span.removeAttribute('title');
+    });
+}
+
+function _ensureConsensusVisible() {
+    const cb = el('showConsensus');
+    if (cb && !cb.checked) cb.checked = true;
+}
+
+function _clearTrimPreview() {
+    state.trimBoundaries = null;
+    state.trimManualLeft = false;
+    state.trimManualRight = false;
+    _syncTrimKeepInputs();
+}
+
+let _trimDragSide = null;
+
+function handleTrimEdgeMouseDown(e) {
+    if (e.button !== 0) return false;
+    if (!state.trimBoundaries) return false;
+    const span = closestFromEvent(e, '.consensus-line .seq-data span[data-pos]');
+    if (!span) return false;
+    const painted = span.classList.contains('trim-left') || span.classList.contains('trim-right')
+        || span.classList.contains('trim-edge-left') || span.classList.contains('trim-edge-right');
+    if (!painted) return false;
+    _trimDragSide = (span.classList.contains('trim-left') || span.classList.contains('trim-edge-left')) ? 'left' : 'right';
+    e.preventDefault();
+    e.stopPropagation();
+    if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    document.body.style.cursor = 'ew-resize';
+    document.body.style.userSelect = 'none';
+    return true;
+}
+
+function _onTrimDragMove(e) {
+    if (!_trimDragSide || !state.trimBoundaries) return;
+    const hit = document.elementFromPoint(e.clientX, e.clientY);
+    const span = hit && hit.closest && hit.closest('.seq-data span[data-pos]');
+    if (!span) return;
+    const pos = parseInt(span.dataset.pos, 10);
+    if (Number.isNaN(pos)) return;
+    const b = state.trimBoundaries;
+    if (_trimDragSide === 'left') _setTrimBounds(pos, b.rightTrimStart, 'left');
+    else _setTrimBounds(b.leftTrimEnd, pos, 'right');
+}
+
+function _endTrimDrag() {
+    if (!_trimDragSide) return;
+    _trimDragSide = null;
+    document.body.style.cursor = '';
+    document.body.style.userSelect = '';
+    debounceRender();
+}
+
 function previewTrimming() {
     if (state.seqs.length < 1) {
         showMessage("No sequences loaded.", 3000);
         return;
     }
-
-    updateClusteringStatus('Analyzing trim boundaries...');
 
     const sequences = state.seqs.map((seq, idx) => ({
         id: seq.header || `Seq${idx+1}`,
@@ -11699,16 +11891,13 @@ function previewTrimming() {
 
     const params = getTrimParameters();
     const trimBounds = getTrimBoundaries(sequences, params);
-
     state.trimBoundaries = trimBounds;
-
-    const leftRemove = trimBounds.leftTrimEnd + 1;
-    const rightRemove = state.seqs[0].seq.length - trimBounds.rightTrimStart;
-    const status = `Preview: ${leftRemove} left + ${rightRemove} right would be removed`;
-
-    updateClusteringStatus(status);
+    state.trimManualLeft = false;
+    state.trimManualRight = false;
+    _ensureConsensusVisible();
+    _syncTrimKeepInputs();
     debounceRender();
-    showMessage(status, 3000);
+    showMessage('Preview on Consensus: coloured columns will be removed. Drag edges or edit Keep.', 3500);
 }
 
 function executeTrimming() {
@@ -11738,7 +11927,7 @@ function executeTrimming() {
         const status = `[OK] Soft trim: ${leftRemoved}L + ${rightRemoved}R marked for clustering. Alignment unchanged.`;
         updateClusteringStatus(status);
         showMessage(status, 3000);
-        state.trimBoundaries = null;
+        _clearTrimPreview();
         debounceRender();
         return;
     }
@@ -11765,7 +11954,7 @@ function executeTrimming() {
     const status = `[OK] Hard trim: ${leftRemoved}L + ${rightRemoved}R = ${leftRemoved + rightRemoved} cols. New length: ${newLen}`;
     updateClusteringStatus(status);
     showMessage(status, 3000);
-    state.trimBoundaries = null;
+    _clearTrimPreview();
     debounceRender();
 }
 
@@ -11786,8 +11975,8 @@ function undoTrimming() {
 
     state.seqs = state.trimBackup.map(seq => ({...seq}));
     state.trimBackup = null;
-    state.trimBoundaries = null;
     state.softTrimBoundaries = null;
+    _clearTrimPreview();
 
     updateClusteringStatus('[OK] Trimming reverted');
     showMessage('Trimming reverted - original alignment restored', 3000);
@@ -16053,6 +16242,7 @@ function initializeAppUI() {
         'previewTrimButton': previewTrimming,
         'executeTrimButton': executeTrimming,
         'undoTrimButton': undoTrimming,
+        'trimDropEmptyButton': removeGapColumns,
         'clearSoftTrimButton': clearSoftTrimming,
         'clusteringSavePresetButton': saveClusteringPreset,
         'clusteringLoadPresetButton': loadClusteringPreset,
@@ -16096,6 +16286,17 @@ function initializeAppUI() {
     for (const id in buttonActions) {
         el(id)?.addEventListener('click', buttonActions[id]);
     }
+
+    ['trimKeepFrom', 'trimKeepTo'].forEach(id => {
+        const box = el(id);
+        if (!box) return;
+        box.addEventListener('change', () => { _applyKeepColsFromInputs(); debounceRender(); });
+        box.addEventListener('input', (e) => {
+            if (e.inputType === 'insertText' || e.inputType === 'deleteContentBackward' || e.inputType === 'deleteContentForward') return;
+            _applyKeepColsFromInputs();
+            debounceRender();
+        });
+    });
 
     // Hotkeys icon hover tooltip
     const hotkeysBtn = el('hotkeysIconBtn');
@@ -16674,6 +16875,7 @@ function attachUIListeners() {
             const container = document.getElementById('alignmentContainer');
             if (!container || !container.contains(domEventTarget(e))) return;
             // Capture-phase chain: column (Ctrl+Alt) -> row name (Ctrl/Shift) -> nucleotide (Ctrl) -> edit
+            if (handleTrimEdgeMouseDown(e)) return;
             if (handleColumnSelectMouseDown(e)) return;
             if (handleRowSelectMouseDown(e)) return;
             if (handleNucleotideSelectMouseDown(e)) return;
@@ -18019,6 +18221,7 @@ function removeGapColumns() {
     });
     state.selectedColumns.clear();
     refreshAllGaplessPositions();
+    if (state.trimBoundaries) _clearTrimPreview();
     renderAlignment();
     showMessage(`${colsToRemove.length} gap columns removed!`, 2000);
 }
