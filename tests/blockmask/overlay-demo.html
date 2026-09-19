@@ -1,0 +1,230 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>block-mask overlay demo</title>
+<style>
+  :root {
+    --con: #16a34a; --mos: #f59e0b; --dec: #8b5cf6; --div: #cbd5e1; --rep: #ec4899;
+    --bg: #faf9f6; --fg: #22201c; --line: #d9d4c8;
+  }
+  body { background: var(--bg); color: var(--fg); font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; margin: 0; padding: 18px; }
+  h1 { font-size: 15px; margin: 0 0 4px; }
+  .sub { color: #6b6455; margin-bottom: 14px; }
+  .controls { display: flex; flex-wrap: wrap; gap: 14px 22px; align-items: center;
+    background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; margin-bottom: 14px; }
+  .controls label { display: flex; align-items: center; gap: 6px; }
+  .controls input[type=range] { width: 130px; }
+  .controls input[type=color] { width: 34px; height: 22px; padding: 0; border: 1px solid var(--line); }
+  .stat { color: #6b6455; }
+  #wrap { position: relative; overflow: auto; border: 1px solid var(--line); background: #fff;
+    max-height: 72vh; }
+  #grid { position: relative; }
+  .grid-row { white-space: pre; height: 14px; }
+  .grid-row .rn { display: inline-block; width: 210px; color: #8a8474; overflow: hidden;
+    text-overflow: ellipsis; vertical-align: top; }
+  #overlay { position: absolute; top: 0; left: 0; pointer-events: none; }
+  .res-a { color: #1a7f37; } .res-c { color: #0969da; } .res-g { color: #bc4c00; }
+  .res-t { color: #cf222e; } .res-gap { color: #c8c3b4; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; margin-right: 14px; }
+  .legend i { width: 12px; height: 12px; border-radius: 2px; display: inline-block; }
+</style>
+</head>
+<body>
+<h1>block-mask overlay demo &mdash; stage 1</h1>
+<div class="sub">Live <code>computeBlockMask()</code> on <code>oma_SINE16b.aln.fa</code>, rendered as a rectangle mask over the residue grid. Standalone &mdash; no <code>script.js</code>.</div>
+
+<div class="controls">
+  <label>preset
+    <select id="preset">
+      <option>V1_coarsest</option><option>V2_coarse</option>
+      <option selected>V3_medium</option><option>V4_fine</option><option>V5_finest</option>
+    </select>
+  </label>
+  <label>opacity <input type="range" id="opacity" min="0.1" max="0.9" step="0.05" value="0.55"><span id="opv">0.55</span></label>
+  <label><i style="background:var(--con)"></i>cons <input type="color" id="c-con" value="#16a34a"></label>
+  <label><i style="background:var(--mos)"></i>mosaic <input type="color" id="c-mos" value="#f59e0b"></label>
+  <label><i style="background:var(--dec)"></i>decay <input type="color" id="c-dec" value="#8b5cf6"></label>
+  <label><i style="background:var(--div)"></i>diverg <input type="color" id="c-div" value="#cbd5e1"></label>
+  <label><input type="checkbox" id="reorder" checked> group split rows</label>
+  <label><input type="checkbox" id="showmask" checked> show mask</label>
+</div>
+<div class="stat" id="stat"></div>
+
+<div id="wrap"><div id="grid"></div><svg id="overlay" xmlns="http://www.w3.org/2000/svg"></svg></div>
+
+<p class="legend" style="margin-top:12px">
+  <span><i style="background:#16a34a"></i>Conservative</span>
+  <span><i style="background:#f59e0b"></i>Mosaic (subset rows only)</span>
+  <span><i style="background:#8b5cf6"></i>Decay slope</span>
+  <span><i style="background:#cbd5e1"></i>Divergent / flank</span>
+</p>
+
+<script src="../../block-mask.js"></script>
+<script>
+var CW = 7.2;   // char width px (monospace, must match .grid-row font)
+var RH = 14;    // row height px
+var NAME_W = 210;
+
+var PRESETS, FASTA, PARSED, ROWHDR, MASK;
+
+function esc(s){return s.replace(/[&<>]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+
+function residueSpan(ch){
+  var u = ch.toUpperCase();
+  var cls = u==='A'?'res-a':u==='C'?'res-c':u==='G'?'res-g':u==='T'?'res-t':'res-gap';
+  return '<span class="'+cls+'">'+esc(ch)+'</span>';
+}
+
+function renderGrid(order){
+  var rows = PARSED.rows;  // [{name, seq}]
+  var frag = [];
+  for (var oi=0; oi<order.length; oi++){
+    var r = rows[order[oi]];
+    var cells = '';
+    for (var j=0;j<r.seq.length;j++) cells += residueSpan(r.seq[j]);
+    frag.push('<div class="grid-row"><span class="rn">'+esc(r.name)+'</span>'+cells+'</div>');
+  }
+  var g = document.getElementById('grid');
+  g.innerHTML = frag.join('');
+  g.style.width = (NAME_W + PARSED.ncols*CW) + 'px';
+}
+
+// map header -> current visual row index given an order array (order[i] = original idx)
+function buildRowPos(order){
+  var pos = {};
+  for (var i=0;i<order.length;i++) pos[order[i]] = i;
+  return pos;
+}
+
+function computeOrder(mask, doReorder){
+  var n = mask.n_rows;
+  var base = []; for (var i=0;i<n;i++) base.push(i);
+  if (!doReorder) return base;
+  // order = members of the first split zone (rank 0, then other ranks, then residual),
+  // then everyone else in original order
+  var seen = {};
+  var head = [];
+  var splitBlocks = mask.blocks.filter(function(b){return b.rows!=='all';});
+  // group by zone (col_start,col_end), keep first zone encountered
+  if (splitBlocks.length){
+    var z0 = splitBlocks[0].col_start + ':' + splitBlocks[0].col_end;
+    var zoneBlocks = splitBlocks.filter(function(b){return (b.col_start+':'+b.col_end)===z0;});
+    zoneBlocks.sort(function(a,b){
+      var ra = a.group_rank==='residual'?999:a.group_rank;
+      var rb = b.group_rank==='residual'?999:b.group_rank;
+      return ra-rb;
+    });
+    zoneBlocks.forEach(function(b){ b.rows.forEach(function(r){ if(!seen[r]){seen[r]=1;head.push(r);} }); });
+  }
+  var tail = [];
+  for (var i=0;i<mask.n_rows;i++) if(!seen[i]) tail.push(i);
+  return head.concat(tail);
+}
+
+function contiguousRuns(sortedRows, rowPos){
+  // map original row indices -> visual positions, then split into contiguous runs
+  var vis = sortedRows.map(function(r){return rowPos[r];}).sort(function(a,b){return a-b;});
+  var runs = [], s = vis[0], p = vis[0];
+  for (var i=1;i<vis.length;i++){
+    if (vis[i] === p+1){ p = vis[i]; continue; }
+    runs.push([s,p]); s = vis[i]; p = vis[i];
+  }
+  if (vis.length) runs.push([s,p]);
+  return runs;
+}
+
+function renderOverlay(mask, order){
+  var svg = document.getElementById('overlay');
+  var show = document.getElementById('showmask').checked;
+  var op = parseFloat(document.getElementById('opacity').value);
+  var col = {
+    CONSERVATIVE: document.getElementById('c-con').value,
+    MOSAIC: document.getElementById('c-mos').value,
+    DECAY_SLOPE: document.getElementById('c-dec').value,
+    DIVERGENT: document.getElementById('c-div').value,
+    SIMPLE_REPEAT: '#ec4899'
+  };
+  var W = NAME_W + mask.n_cols*CW;
+  var H = mask.n_rows*RH;
+  svg.setAttribute('width', W); svg.setAttribute('height', H);
+  svg.style.width = W+'px'; svg.style.height = H+'px';
+  if (!show){ svg.innerHTML=''; return; }
+  var rowPos = buildRowPos(order);
+  var parts = [];
+  mask.blocks.forEach(function(b){
+    var x = NAME_W + b.col_start*CW;
+    var w = (b.col_end - b.col_start + 1)*CW;
+    var fill = col[b.type] || '#999';
+    if (b.rows === 'all'){
+      parts.push('<rect x="'+x.toFixed(1)+'" y="0" width="'+w.toFixed(1)+'" height="'+H+
+                 '" fill="'+fill+'" fill-opacity="'+(op*0.9).toFixed(3)+'"/>');
+    } else {
+      contiguousRuns(b.rows, rowPos).forEach(function(run){
+        var y = run[0]*RH;
+        var h = (run[1]-run[0]+1)*RH;
+        parts.push('<rect x="'+x.toFixed(1)+'" y="'+y+'" width="'+w.toFixed(1)+'" height="'+h+
+                   '" fill="'+fill+'" fill-opacity="'+op.toFixed(3)+'" stroke="#fff" stroke-width="0.5"/>');
+      });
+    }
+  });
+  svg.innerHTML = parts.join('');
+}
+
+function recompute(){
+  var presetName = document.getElementById('preset').value;
+  var P = PRESETS[presetName];
+  MASK = BlockMask.computeBlockMask(FASTA, P, {alignmentId:'oma_SINE16b', preset:presetName});
+  var order = computeOrder(MASK, document.getElementById('reorder').checked);
+  renderGrid(order);
+  renderOverlay(MASK, order);
+  var splits = MASK.blocks.filter(function(b){return b.rows!=='all';}).length;
+  document.getElementById('stat').textContent =
+    presetName + ' — ' + MASK.blocks.length + ' blocks, ' + splits +
+    ' row-split rectangles, ' + MASK.n_rows + ' rows × ' + MASK.n_cols + ' cols';
+}
+
+function rerenderOnly(){
+  var order = computeOrder(MASK, document.getElementById('reorder').checked);
+  renderGrid(order);
+  renderOverlay(MASK, order);
+}
+
+Promise.all([
+  fetch('../fixtures/blockmask/oma_SINE16b.aln.fa').then(function(r){return r.text();}),
+  fetch('../../reference/granularity_presets.json').then(function(r){return r.json();})
+]).then(function(res){
+  FASTA = res[0]; PRESETS = res[1];
+  // parse rows for the grid (keep consensus row too, for display)
+  var names=[], seqs=[], cur=null;
+  FASTA.split(/\r?\n/).forEach(function(ln){
+    ln = ln.replace(/\s+$/,'');
+    if (ln[0]==='>'){ names.push(ln.slice(1)); cur=[]; seqs.push(cur); }
+    else if (cur) cur.push(ln);
+  });
+  var rows = names.map(function(nm,i){return {name:nm, seq:seqs[i].join('')};});
+  var ncols = rows.reduce(function(m,r){return Math.max(m,r.seq.length);},0);
+  // computeBlockMask drops the consensus row; the grid demo shows only the
+  // non-consensus rows so row indices line up with the mask.
+  var ci = 0;
+  for (var i=0;i<names.length;i++) if (names[i].toUpperCase().indexOf('CONSENSUS')!==-1){ ci=i; break; }
+  rows.splice(ci,1);
+  PARSED = { rows: rows, ncols: ncols };
+
+  document.getElementById('preset').addEventListener('change', recompute);
+  document.getElementById('reorder').addEventListener('change', rerenderOnly);
+  document.getElementById('showmask').addEventListener('change', function(){ renderOverlay(MASK, computeOrder(MASK, document.getElementById('reorder').checked)); });
+  document.getElementById('opacity').addEventListener('input', function(){
+    document.getElementById('opv').textContent = this.value;
+    renderOverlay(MASK, computeOrder(MASK, document.getElementById('reorder').checked));
+  });
+  ['c-con','c-mos','c-dec','c-div'].forEach(function(id){
+    document.getElementById(id).addEventListener('input', function(){
+      renderOverlay(MASK, computeOrder(MASK, document.getElementById('reorder').checked));
+    });
+  });
+  recompute();
+});
+</script>
+</body>
+</html>

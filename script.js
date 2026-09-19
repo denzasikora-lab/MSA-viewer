@@ -347,6 +347,7 @@ const APP_VERSION = '1e8580e';
 
 const state = {
     seqs: [],
+    ab1Traces: {},
     selectedRows: new Set(),
     selectedColumns: new Set(),
     selectedNucs: new Map(),
@@ -361,6 +362,7 @@ const state = {
     conservationDataCache: null,
     alignmentIndex: null, // { nSeqs, maxLen, totalResidues, mode, flags } from pre-parse scan
     _needsWindowedDom: false, // computed in renderAlignment from TOTAL_RESIDUES directly
+    blockMask: null, // 2D block-mask overlay JSON (see renderBlockMaskOverlay)
     deletedHistory: [],
     redoHistory: [],
     currentFilename: '',
@@ -1668,6 +1670,70 @@ function openMenuSection(section) {
     section.classList.add('menu-open');
 }
 
+function makeControlGroupDetachable(sectionId, controlGroupId, handleId, dockButtonId) {
+    const section = document.getElementById(sectionId);
+    const group = document.getElementById(controlGroupId);
+    const handle = document.getElementById(handleId);
+    const dockBtn = document.getElementById(dockButtonId);
+    if (!section || !group || !handle || !dockBtn) {
+        return;
+    }
+
+    let dragging = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let groupStartX = 0;
+    let groupStartY = 0;
+
+    handle.addEventListener('mousedown', (e) => {
+        if (e.target.closest('.panel-dock-btn')) {
+            return;
+        }
+        e.preventDefault();
+        if (!group.classList.contains('detached')) {
+            const rect = group.getBoundingClientRect();
+            group.classList.add('detached');
+            group.style.left = rect.left + 'px';
+            group.style.top = rect.top + 'px';
+            group.style.margin = '0';
+            section.classList.add('menu-open');
+            if (typeof clearMenuCloseDelay === 'function') {
+                clearMenuCloseDelay(section);
+            }
+        }
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        groupStartX = parseFloat(group.style.left) || 0;
+        groupStartY = parseFloat(group.style.top) || 0;
+        dragging = true;
+    });
+
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) {
+            return;
+        }
+        const dx = e.clientX - dragStartX;
+        const dy = e.clientY - dragStartY;
+        group.style.left = Math.min(Math.max(groupStartX + dx, -group.offsetWidth + 60), window.innerWidth - 60) + 'px';
+        group.style.top = Math.min(Math.max(groupStartY + dy, 0), window.innerHeight - 30) + 'px';
+    });
+
+    document.addEventListener('mouseup', () => {
+        dragging = false;
+    });
+
+    dockBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        group.classList.remove('detached');
+        group.style.left = '';
+        group.style.top = '';
+        group.style.margin = '';
+        if (!section.matches(':hover')) {
+            section.classList.remove('menu-open');
+        }
+    });
+}
+
 function setupMenuStability() {
     const menuSections = document.querySelectorAll('.menu-section');
     menuSections.forEach(section => {
@@ -1714,6 +1780,7 @@ function setupMenuStability() {
             });
         }
     });
+    makeControlGroupDetachable('clustering-menu-section', 'clustering-controls', 'clusteringDetachHandle', 'clusteringDockButton');
 }
 
 function updateSliderBackground(slider) {
@@ -4521,6 +4588,28 @@ function _normalizeSequenceLengths(seqs) {
     }
 }
 
+/**
+ * Read a File that may be plain FASTA/MSF text or a binary AB1 chromatogram.
+ * AB1 files are converted to a single-record FASTA block and their trace
+ * data is stashed in state.ab1Traces keyed by the FASTA header, so a
+ * "View Chromatogram" action can retrieve it later.
+ * Returns { text, header } where header is null for non-AB1 files.
+ */
+async function readSequenceFile(file) {
+    const looksAb1ByName = /\.ab1$/i.test(file.name);
+    const buf = await file.arrayBuffer();
+    if (looksAb1ByName || (typeof AB1Parser !== 'undefined' && AB1Parser.looksLikeAb1(buf))) {
+        const parsed = typeof AB1Parser !== 'undefined' ? AB1Parser.parse(buf) : null;
+        if (parsed && parsed.sequence) {
+            const header = file.name.replace(/\.ab1$/i, '');
+            state.ab1Traces[header] = parsed;
+            return { text: `>${header}\n${parsed.sequence}\n`, header };
+        }
+    }
+    const decoder = new TextDecoder('utf-8');
+    return { text: decoder.decode(buf), header: null };
+}
+
 function parseFasta(text) {
     if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1); // strip BOM
     const lines = text.split(/\r\n|\r|\n/);
@@ -6245,7 +6334,486 @@ function renderAlignment(options = {}) {
         });
     }
     syncCodonModePanel();
+    renderBlockMaskOverlay();
 }
+
+// ==== 2D block-mask overlay ==============================================
+// Draws a block mask (from block-mask.js's computeBlockMask, or a supplied
+// JSON via ?mask=) as a translucent rectangle layer over the rendered
+// alignment. Reuses the viewer's own .block-block DOM and its residue spans
+// for geometry rather than re-deriving char/row metrics. Called at the end
+// of renderAlignment so it stays in sync with reorder / mode / zoom changes.
+//
+// Mask JSON: { row_headers:[...], blocks:[{type, col_start, col_end,
+//              rows:"all"|[k...], group_rank?}] }
+// where col_* are 0-based inclusive alignment columns and each k indexes
+// row_headers (the non-consensus sequences in the order the mask was built).
+
+const BLOCKMASK_COLORS = {
+    CONSERVATIVE: '#16a34a', MOSAIC: '#f59e0b', DECAY_SLOPE: '#8b5cf6',
+    DIVERGENT: '#cbd5e1', SIMPLE_REPEAT: '#ec4899'
+};
+const BLOCKMASK_SVGNS = 'http://www.w3.org/2000/svg';
+let _blockMaskOpacity = 0.45;
+
+// "Squint" granularity presets, coarsest -> finest. Mirrors
+// reference/granularity_presets.json so the panel works on the deployed
+// (static) site with no fetch. See block-mask.js for what each key does.
+const BLOCKMASK_PRESETS = {
+    V1_coarsest: { WIN: 44, MOSAIC_STD: 0.16, BG_MARGIN: 0.12, MIN_ZONE_W: 40, ZONE_BRIDGE: 6, ROW_MIN_GROUP: 6, ROW_MIN_GAP_ABS: 0.22, MIN_BLOCK_W: 40 },
+    V2_coarse:   { WIN: 32, MOSAIC_STD: 0.14, BG_MARGIN: 0.11, MIN_ZONE_W: 30, ZONE_BRIDGE: 5, ROW_MIN_GROUP: 5, ROW_MIN_GAP_ABS: 0.19, MIN_BLOCK_W: 25 },
+    V3_medium:   { WIN: 20, MOSAIC_STD: 0.12, BG_MARGIN: 0.10, MIN_ZONE_W: 18, ZONE_BRIDGE: 4, ROW_MIN_GROUP: 4, ROW_MIN_GAP_ABS: 0.15, MIN_BLOCK_W: 15 },
+    V4_fine:     { WIN: 14, MOSAIC_STD: 0.11, BG_MARGIN: 0.09, MIN_ZONE_W: 12, ZONE_BRIDGE: 3, ROW_MIN_GROUP: 3, ROW_MIN_GAP_ABS: 0.12, MIN_BLOCK_W: 9 },
+    V5_finest:   { WIN: 10, MOSAIC_STD: 0.10, BG_MARGIN: 0.08, MIN_ZONE_W: 8,  ZONE_BRIDGE: 2, ROW_MIN_GROUP: 3, ROW_MIN_GAP_ABS: 0.10, MIN_BLOCK_W: 5 }
+};
+
+function setBlockMaskOpacity(v) {
+    _blockMaskOpacity = Math.max(0, Math.min(1, +v));
+    renderBlockMaskOverlay();
+}
+function clearBlockMask() {
+    state.blockMask = null;
+    state._biclusterRaw = null;
+    renderBlockMaskOverlay();
+}
+
+// Longest run of consecutive indices / group size, in the ORIGINAL mask row
+// order (which mirrors MAFFT's similarity ordering). A low value means the
+// group crosscuts that ordering - real localized mosaic, or noise - and is
+// drawn with a dashed warning stroke rather than a clean rectangle.
+function _blockMaskGroupContiguity(rows) {
+    if (!rows || rows.length < 2) return 1;
+    const s = rows.slice().sort((a, b) => a - b);
+    let best = 1, run = 1;
+    for (let i = 1; i < s.length; i++) {
+        if (s[i] === s[i - 1] + 1) { run++; if (run > best) best = run; }
+        else run = 1;
+    }
+    return best / s.length;
+}
+
+function renderBlockMaskOverlay() {
+    document.querySelectorAll('.block-mask-layer').forEach(el => el.remove());
+    const mask = state.blockMask;
+    if (!mask || !Array.isArray(mask.blocks) || !Array.isArray(mask.row_headers)) return;
+    if (document.getElementById('modeCanvas')?.checked) return;   // Canvas: unsupported
+    if (state._needsWindowedDom) return;                          // windowed DOM: unsupported yet
+    const container = document.getElementById('alignmentContainer');
+    if (!container) return;
+    const blockEls = container.querySelectorAll('.block-block');
+    if (!blockEls.length) return;
+
+    // mask row k -> current visual index in state.seqs (by header string)
+    const headerToIdx = new Map();
+    for (let i = 0; i < state.seqs.length; i++) {
+        const h = state.seqs[i].header;
+        if (!headerToIdx.has(h)) headerToIdx.set(h, i);
+    }
+    const rowVis = mask.row_headers.map(h => headerToIdx.has(h) ? headerToIdx.get(h) : -1);
+
+    blockEls.forEach(blockEl => {
+        // :not(.consensus-line) -- ViewAlign's own displayed Consensus row
+        // carries data-seq-index="-1" too (see addConsensusLine /
+        // CONSENSUS_ROW_INDEX); it must never be treated as a mask row or
+        // used as the top/bottom edge of a full-height rectangle.
+        const dataRows = blockEl.querySelectorAll('.seq-line[data-seq-index]:not(.consensus-line)');
+        if (!dataRows.length) return;
+        const firstData = dataRows[0].querySelector('.seq-data');
+        const spans = firstData ? firstData.querySelectorAll('span[data-pos]') : [];
+        if (spans.length < 2) return;
+        const colStart = parseInt(spans[0].dataset.pos, 10);
+        const colEnd = parseInt(spans[spans.length - 1].dataset.pos, 10);
+        const bRect = blockEl.getBoundingClientRect();
+        if (getComputedStyle(blockEl).position === 'static') blockEl.style.position = 'relative';
+
+        const sp0L = spans[0].getBoundingClientRect().left;
+        const cw = spans[1].getBoundingClientRect().left - sp0L;
+        const x0 = sp0L - bRect.left + blockEl.scrollLeft;
+        const colX = (P) => {
+            const sp = firstData.querySelector('span[data-pos="' + P + '"]');
+            if (sp) return sp.getBoundingClientRect().left - bRect.left + blockEl.scrollLeft;
+            return x0 + (P - colStart) * cw;
+        };
+
+        const rowElByIdx = new Map();
+        dataRows.forEach(r => rowElByIdx.set(parseInt(r.dataset.seqIndex, 10), r));
+        const rowH = dataRows[0].getBoundingClientRect().height;
+        const rowTop = (seqIdx) => {
+            const r = rowElByIdx.get(seqIdx);
+            return r ? (r.getBoundingClientRect().top - bRect.top + blockEl.scrollTop) : null;
+        };
+        const firstY = dataRows[0].getBoundingClientRect().top - bRect.top + blockEl.scrollTop;
+        const lastY = dataRows[dataRows.length - 1].getBoundingClientRect().top - bRect.top + blockEl.scrollTop + rowH;
+
+        const svg = document.createElementNS(BLOCKMASK_SVGNS, 'svg');
+        svg.setAttribute('class', 'block-mask-layer');
+        svg.style.position = 'absolute';
+        svg.style.left = '0';
+        svg.style.top = '0';
+        svg.style.pointerEvents = 'none';
+        svg.style.overflow = 'visible';
+        svg.style.zIndex = '4';
+        svg.setAttribute('width', blockEl.scrollWidth);
+        svg.setAttribute('height', blockEl.scrollHeight);
+
+        mask.blocks.forEach(mb => {
+            if (mb.col_end < colStart || mb.col_start > colEnd) return;
+            const cs = Math.max(mb.col_start, colStart);
+            const ce = Math.min(mb.col_end, colEnd);
+            const x = colX(cs);
+            const w = (ce - cs + 1) * cw;
+            const fill = BLOCKMASK_COLORS[mb.type] || '#999';
+
+            const addRect = (y, h, op, dashed, localOnly) => {
+                const r = document.createElementNS(BLOCKMASK_SVGNS, 'rect');
+                r.setAttribute('x', x.toFixed(1));
+                r.setAttribute('y', y.toFixed(1));
+                r.setAttribute('width', Math.max(0.5, w).toFixed(1));
+                r.setAttribute('height', Math.max(1, h).toFixed(1));
+                r.setAttribute('fill', fill);
+                r.setAttribute('fill-opacity', (localOnly ? op * 0.35 : op).toFixed(3));
+                if (dashed || localOnly) {
+                    r.setAttribute('stroke', localOnly ? fill : '#c0392b');
+                    r.setAttribute('stroke-width', localOnly ? '2' : '1');
+                    r.setAttribute('stroke-dasharray', localOnly ? '4 3' : '3 2');
+                    r.setAttribute('stroke-opacity', '0.95');
+                    if (!localOnly) r.setAttribute('fill-opacity', (op * 0.7).toFixed(3));
+                } else {
+                    r.setAttribute('stroke', fill);
+                    r.setAttribute('stroke-width', '1');
+                    r.setAttribute('stroke-opacity', '0.9');
+                }
+                if (localOnly) r.setAttribute('data-local-only', '1');
+                svg.appendChild(r);
+            };
+
+            if (mb.rows === 'all') {
+                addRect(firstY, lastY - firstY, _blockMaskOpacity * 0.8, false);
+                return;
+            }
+            const vis = [];
+            for (const k of mb.rows) {
+                const si = rowVis[k];
+                if (si >= 0 && rowElByIdx.has(si)) vis.push(si);
+            }
+            if (!vis.length) return;
+            vis.sort((a, b) => rowElByIdx.get(a).getBoundingClientRect().top - rowElByIdx.get(b).getBoundingClientRect().top);
+            const localOnly = !!mb.localOnly;
+            const groupDashed = !localOnly && _blockMaskGroupContiguity(mb.rows) < 0.6;
+            let runStart = vis[0], prev = vis[0], runLen = 1;
+            const flush = (a, z, len) => {
+                const ya = rowTop(a), yz = rowTop(z);
+                if (ya == null || yz == null) return;
+                addRect(ya, (yz - ya) + rowH, _blockMaskOpacity, groupDashed || (!localOnly && len === 1), localOnly);
+            };
+            for (let i = 1; i < vis.length; i++) {
+                const yPrev = rowElByIdx.get(prev).getBoundingClientRect().top;
+                const yCur = rowElByIdx.get(vis[i]).getBoundingClientRect().top;
+                if (Math.abs(yCur - yPrev - rowH) < rowH * 0.5) { prev = vis[i]; runLen++; continue; }
+                flush(runStart, prev, runLen);
+                runStart = vis[i];
+                prev = vis[i];
+                runLen = 1;
+            }
+            flush(runStart, prev, runLen);
+        });
+
+        blockEl.appendChild(svg);
+    });
+}
+
+// Compute a mask live from the loaded alignment + a granularity preset object
+// (window.__BLOCKMASK_PRESETS[name]) or an explicit params object.
+function applyBlockMaskLive(presetOrParams) {
+    if (typeof BlockMask === 'undefined') { showMessage('block-mask.js not loaded', 3000); return null; }
+    if (!state.seqs || !state.seqs.length) { showMessage('Load an alignment first', 3000); return null; }
+    const fasta = state.seqs.map(s => '>' + s.header + '\n' + s.seq).join('\n') + '\n';
+    let params = presetOrParams;
+    if (typeof presetOrParams === 'string') {
+        params = BLOCKMASK_PRESETS[presetOrParams] || (window.__BLOCKMASK_PRESETS || {})[presetOrParams];
+        if (!params) { showMessage('Unknown block-mask preset: ' + presetOrParams, 3000); return null; }
+    }
+    state._blockMaskPreset = (typeof presetOrParams === 'string') ? presetOrParams : null;
+    state.blockMask = BlockMask.computeBlockMask(fasta, params || {}, {});
+    renderBlockMaskOverlay();
+    return state.blockMask;
+}
+
+// Live compute for the new row/column-symmetric biclustering algorithm
+// (block-bicluster.js) - separate from the reference-row block-mask
+// above, reuses the SAME overlay renderer (renderBlockMaskOverlay) since
+// both produce the same { blocks: [{col_start,col_end,rows,...}],
+// row_headers } shape. computeBiclusterMask's blocks carry `.coherence`
+// (a float or null) rather than block-mask's categorical `.type`.
+// Full-height ('all') blocks use the gray/amber/green coherence ladder.
+// Evidenced row-subset finds in one column range get distinct colors
+// (amber, purple, pink) so two motifs are not painted the same. Green
+// is reserved for conserved flanks. Null-coherence / undersized leaves
+// stay gray (single line cannot be a group).
+function _biclusterCoherenceToType(coherence) {
+    if (coherence == null) return 'DIVERGENT';
+    if (coherence >= 0.85) return 'CONSERVATIVE';
+    if (coherence >= 0.6) return 'MOSAIC';
+    return 'DIVERGENT';
+}
+
+const BICLUSTER_FIND_TYPES = ['MOSAIC', 'DECAY_SLOPE', 'SIMPLE_REPEAT'];
+
+function _rowContiguousRuns(rows) {
+    const s = [...rows].sort((a, b) => a - b);
+    const runs = [];
+    for (const r of s) {
+        const last = runs[runs.length - 1];
+        if (last && r === last[last.length - 1] + 1) last.push(r);
+        else runs.push([r]);
+    }
+    return runs;
+}
+
+function _longestRowRun(rows) {
+    const runs = _rowContiguousRuns(rows);
+    if (!runs.length) return [];
+    return runs.reduce((a, b) => a.length >= b.length ? a : b);
+}
+
+function _biclusterPaintMode() {
+    return el('biclusterPaintMode')?.value || 'local_one';
+}
+
+function _paintBiclusterBlocks(raw) {
+    if (!raw || !Array.isArray(raw.blocks)) return raw;
+    const mode = _biclusterPaintMode();
+    const painted = [];
+    for (const b of raw.blocks) {
+        const isFind = b.kind !== 'conserved' && b.rows !== 'all' && Array.isArray(b.rows) && b.rows.length >= 2;
+        if (!isFind) {
+            painted.push({ ...b, localOnly: false });
+            continue;
+        }
+        const longest = _longestRowRun(b.rows);
+        const orphan = b.rows.filter(i => !longest.includes(i));
+        if (mode === 'strict') {
+            if (longest.length >= 2) painted.push({ ...b, rows: longest, localOnly: false });
+            continue;
+        }
+        if (mode === 'local_two' && orphan.length && longest.length >= 2) {
+            painted.push({ ...b, rows: longest, localOnly: false });
+            painted.push({ ...b, rows: orphan, localOnly: true });
+            continue;
+        }
+        painted.push({ ...b, localOnly: false });
+    }
+    const finds = painted.filter(b => b.kind !== 'conserved' && b.rows !== 'all' && Array.isArray(b.rows));
+    finds.sort((a, b) => {
+        if (a.col_start !== b.col_start) return a.col_start - b.col_start;
+        const ra = Math.min.apply(null, a.rows), rb = Math.min.apply(null, b.rows);
+        return ra - rb;
+    });
+    let fi = 0;
+    const typeOf = new Map();
+    finds.forEach((b) => {
+        if (b.localOnly) return;
+        const key = b.col_start + ':' + b.col_end + ':' + [...b.rows].sort((x,y)=>x-y).join(',');
+        if (!typeOf.has(key)) typeOf.set(key, BICLUSTER_FIND_TYPES[fi++ % BICLUSTER_FIND_TYPES.length]);
+        b.type = typeOf.get(key);
+    });
+    finds.forEach((b) => {
+        if (!b.localOnly) return;
+        const parent = painted.find(p => !p.localOnly && p.kind === b.kind && p.col_start === b.col_start && p.col_end === b.col_end && p.type);
+        b.type = parent ? parent.type : 'MOSAIC';
+    });
+    painted.forEach(b => {
+        if (b.type) return;
+        if (b.kind === 'conserved' || b.rows === 'all') {
+            b.type = 'CONSERVATIVE';
+            return;
+        }
+        b.type = 'DIVERGENT';
+    });
+    return { ...raw, blocks: painted, paint_mode: mode };
+}
+
+function applyBiclusterLive() {
+    if (typeof BlockBicluster === 'undefined') { showMessage('block-bicluster.js not loaded', 3000); return null; }
+    if (!state.seqs || !state.seqs.length) { showMessage('Load an alignment first', 3000); return null; }
+    const fasta = state.seqs.map(s => '>' + s.header + '\n' + s.seq).join('\n') + '\n';
+    const knobs = (typeof getClusteringParameters === 'function') ? getClusteringParameters() : {};
+    const raw = BlockBicluster.computeBiclusterMask(fasta, knobs);
+    state._biclusterRaw = raw;
+    state.blockMask = _paintBiclusterBlocks(raw);
+    state._blockMaskPreset = null;
+    renderBlockMaskOverlay();
+    return state.blockMask;
+}
+
+function reapplyBiclusterPaintMode() {
+    if (!state._biclusterRaw) {
+        if (state.seqs && state.seqs.length) applyBiclusterLive();
+        return;
+    }
+    state.blockMask = _paintBiclusterBlocks(state._biclusterRaw);
+    renderBlockMaskOverlay();
+    _blockMaskStatusFrom(state.blockMask);
+}
+
+function computeAndShowBicluster() {
+    _blockMaskStatusFrom(applyBiclusterLive());
+}
+
+// Panel action: compute from the loaded alignment using the selected preset
+// and report a short summary (block count, split zones, any scattered groups).
+// The eight "squint" knobs, with the panel slider id for each. The sliders
+// are optional markup (see index.html #clustering-controls); everything here
+// no-ops gracefully when they are absent.
+const BLOCKMASK_KNOBS = [
+    ['WIN', 'bmKnobWIN'], ['MOSAIC_STD', 'bmKnobMOSAIC_STD'],
+    ['BG_MARGIN', 'bmKnobBG_MARGIN'], ['MIN_ZONE_W', 'bmKnobMIN_ZONE_W'],
+    ['ZONE_BRIDGE', 'bmKnobZONE_BRIDGE'], ['ROW_MIN_GROUP', 'bmKnobROW_MIN_GROUP'],
+    ['ROW_MIN_GAP_ABS', 'bmKnobROW_MIN_GAP_ABS'], ['MIN_BLOCK_W', 'bmKnobMIN_BLOCK_W']
+];
+
+function _blockMaskParamsFromSliders() {
+    const p = {};
+    let any = false;
+    for (const [key, id] of BLOCKMASK_KNOBS) {
+        const s = el(id);
+        if (s) { const v = parseFloat(s.value); if (!Number.isNaN(v)) { p[key] = v; any = true; } }
+    }
+    return any ? p : null;
+}
+
+function _blockMaskSyncSlidersToPreset(name) {
+    const preset = BLOCKMASK_PRESETS[name];
+    if (!preset) return;
+    for (const [key, id] of BLOCKMASK_KNOBS) {
+        const s = el(id);
+        if (!s || preset[key] == null) continue;
+        s.value = preset[key];
+        const out = el(id + 'Val');
+        if (out) out.textContent = preset[key];
+    }
+}
+
+function _blockMaskStatusFrom(mask) {
+    const status = el('blockMaskStatus');
+    if (!status) return;
+    if (!mask) { status.textContent = 'no mask (load an alignment first)'; return; }
+    const blocks = mask.blocks || [];
+    if (!blocks.length) {
+        status.textContent = '0 rectangles (thresholds too tight for this alignment)';
+        return;
+    }
+    const b = blocks[0];
+    const c1 = b.col_start + 1, c2 = b.col_end + 1;
+    const nRows = b.rows === 'all' ? mask.n_rows : (Array.isArray(b.rows) ? b.rows.length : 0);
+    const who = b.rows === 'all' ? 'all rows' : nRows + ' rows';
+    const names = (b.rows !== 'all' && Array.isArray(b.rows))
+        ? b.rows.map(k => mask.row_headers[k]).slice(0, 8).join(', ') + (b.rows.length > 8 ? '…' : '')
+        : '';
+    const bases = b.supporting_bases || '';
+    const more = blocks.length > 1 ? `; +${blocks.length - 1} more` : '';
+    const mode = mask.paint_mode;
+    const modeNote = mode === 'strict' ? ' [strict]' : mode === 'local_two' ? ' [local two-layer]' : mode === 'local_one' ? ' [local one-box]' : '';
+    status.textContent = `${blocks.length} rectangle${blocks.length === 1 ? '' : 's'}${modeNote}. First: cols ${c1}–${c2}, ${who}`
+        + (names ? ` (${names})` : '')
+        + (bases ? `, bases ${bases}` : '')
+        + more;
+}
+
+function computeAndShowBlockMask() {
+    const sel = el('blockMaskPreset');
+    const preset = sel ? sel.value : 'V3_medium';
+    _blockMaskSyncSlidersToPreset(preset);
+    _blockMaskStatusFrom(applyBlockMaskLive(preset));
+}
+
+// Recompute from whatever the sliders currently say (used on slider release).
+function recomputeBlockMaskFromSliders() {
+    const params = _blockMaskParamsFromSliders();
+    if (!params) { computeAndShowBlockMask(); return; }
+    _blockMaskStatusFrom(applyBlockMaskLive(params));
+}
+
+function initBlockMaskPanel() {
+    const op = el('blockMaskOpacity');
+    if (op && !op._bmBound) {
+        op._bmBound = true;
+        op.addEventListener('input', () => setBlockMaskOpacity(op.value));
+    }
+    const sel = el('blockMaskPreset');
+    if (sel && !sel._bmBound) {
+        sel._bmBound = true;
+        sel.addEventListener('change', () => {
+            _blockMaskSyncSlidersToPreset(sel.value);
+            if (state.blockMask) computeAndShowBlockMask();
+        });
+    }
+    for (const [, id] of BLOCKMASK_KNOBS) {
+        const s = el(id);
+        if (!s || s._bmBound) continue;
+        s._bmBound = true;
+        s.addEventListener('input', () => {
+            const out = el(id + 'Val');
+            if (out) out.textContent = s.value;
+        });
+        s.addEventListener('change', () => { if (state.blockMask) recomputeBlockMaskFromSliders(); });
+    }
+    // seed slider readouts + values from the current preset selection
+    if (sel) _blockMaskSyncSlidersToPreset(sel.value);
+    const paint = el('biclusterPaintMode');
+    if (paint && !paint._bmBound) {
+        paint._bmBound = true;
+        paint.addEventListener('change', () => {
+            if (state._biclusterRaw || state.blockMask) reapplyBiclusterPaintMode();
+        });
+    }
+}
+
+function groupRowsByBlockMask() {
+    if (!state.blockMask || !state.blockMask.blocks || state.blockMask.blocks.length === 0) {
+        showMessage('No block mask - click "Show mask" first', 3000);
+        return;
+    }
+    const rowSplitBlocks = state.blockMask.blocks.filter(b => Array.isArray(b.rows));
+    if (rowSplitBlocks.length === 0) {
+        showMessage('No row-split groups to order by', 3000);
+        return;
+    }
+    const zoneKey = rowSplitBlocks[0].col_start + ':' + rowSplitBlocks[0].col_end;
+    const zoneBlocks = rowSplitBlocks.filter(b => (b.col_start + ':' + b.col_end) === zoneKey);
+    zoneBlocks.sort((a, b) => {
+        if (a.group_rank === 'residual' && b.group_rank !== 'residual') return 1;
+        if (b.group_rank === 'residual' && a.group_rank !== 'residual') return -1;
+        return a.group_rank - b.group_rank;
+    });
+    const headList = [];
+    for (const block of zoneBlocks) {
+        for (const k of block.rows) {
+            const h = state.blockMask.row_headers[k];
+            if (!headList.includes(h)) headList.push(h);
+        }
+    }
+    const orderMap = new Map(headList.map((h, i) => [h, i]));
+    const matched = [];
+    const rest = [];
+    for (const s of state.seqs) {
+        if (orderMap.has(s.header)) matched.push(s);
+        else rest.push(s);
+    }
+    matched.sort((a, b) => orderMap.get(a.header) - orderMap.get(b.header));
+    pushUndo();
+    state.seqs = [...matched, ...rest];
+    state.lastAction = 'sort';
+    renderAlignment();
+    showMessage('Rows grouped by block mask (' + matched.length + ' moved)', 2500);
+}
+
+window.applyBlockMaskLive = applyBlockMaskLive;
+window.renderBlockMaskOverlay = renderBlockMaskOverlay;
+window.setBlockMaskOpacity = setBlockMaskOpacity;
+window.clearBlockMask = clearBlockMask;
+window.computeAndShowBlockMask = computeAndShowBlockMask;
+window.groupRowsByBlockMask = groupRowsByBlockMask;
 
 // Unified source info updater so counts stay accurate after deletions/insertions
 function updateSourceInfo() {
@@ -13241,7 +13809,7 @@ function initAddSeqBrowse() {
         let allContent = textarea.value.trim();
         for (const file of files) {
             try {
-                const text = await file.text();
+                const { text } = await readSequenceFile(file);
                 const trimmed = text.trim();
                 if (allContent) allContent += '\n' + trimmed;
                 else allContent = trimmed;
@@ -14220,6 +14788,22 @@ function showContextMenu(e, index) {
         contextMenu.appendChild(copySameColorUngapped);
     }
 
+    // AB1 chromatogram viewer, if this sequence came from an AB1 file
+    if (state.ab1Traces && state.ab1Traces[seqName]) {
+        const sepAb1 = document.createElement('div');
+        sepAb1.style.borderTop = '1px solid #ccc';
+        sepAb1.style.margin = '4px 0';
+        contextMenu.appendChild(sepAb1);
+
+        const viewChromatogram = document.createElement('div');
+        viewChromatogram.textContent = 'View Chromatogram...';
+        viewChromatogram.addEventListener('click', () => {
+            if (typeof ChromatogramViewer !== 'undefined') ChromatogramViewer.open(seqName);
+            closeContextMenu();
+        });
+        contextMenu.appendChild(viewChromatogram);
+    }
+
     // ---- Edit section ----
     const sepEdit = document.createElement('div');
     sepEdit.style.borderTop = '1px solid #ccc';
@@ -14793,16 +15377,15 @@ function initializeAppUI() {
                 } catch (err) { /* unsupported or denied - fall back silently */ }
             }
 
-            const reader = new FileReader();
-            reader.onload = function(e) {
-                fastaInput.value = e.target.result;
+            try {
+                const { text } = await readSequenceFile(file);
+                fastaInput.value = text;
                 parseAndRender(true);
-            };
-            reader.onerror = () => {
+            } catch (err) {
+                console.error('Error reading file:', err);
                 alignmentContainer.innerHTML = '<div class="error-message">Error:Error reading file.</div>';
                 showMessage("Error reading file.", 5000);
-            };
-            reader.readAsText(file);
+            }
         });
         dropZone.addEventListener('click', async (e) => {
             if (window.getSelection().toString()) return;
@@ -14817,7 +15400,7 @@ function initializeAppUI() {
                         handleBamFile({ target: { files: [file], value: '' } });
                         return;
                     }
-                    fastaInput.value = await file.text();
+                    fastaInput.value = (await readSequenceFile(file)).text;
                     parseAndRender(true);
                 } catch (err) {
                     if (err && err.name === 'AbortError') return; // user cancelled the picker
@@ -14848,16 +15431,14 @@ function initializeAppUI() {
             return;
         }
 
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-            fastaInput.value = evt.target.result;
+        readSequenceFile(file).then(({ text }) => {
+            fastaInput.value = text;
             parseAndRender(true);
-        };
-        reader.onerror = () => {
+        }).catch((err) => {
+            console.error('Error reading file:', err);
             alignmentContainer.innerHTML = '<div class="error-message">Error:Error reading file.</div>';
             showMessage("Error reading file.", 5000);
-        };
-        reader.readAsText(file);
+        });
     });
 
     fastaInput?.addEventListener('paste', () => {
@@ -14922,6 +15503,12 @@ function initializeAppUI() {
         'clusteringOptimalPresetButton': createOptimalPreset,
         'clusteringProbeButton': analyzeClusterability,
         'clusterGuideTreeButton': clusterByGuideTree,
+        'blockMaskComputeButton': computeAndShowBlockMask,
+        'blockMaskClearButton': () => { clearBlockMask(); const s = el('blockMaskStatus'); if (s) s.textContent = ''; },
+        'blockMaskGroupButton': groupRowsByBlockMask,
+        'biclusterComputeButton': computeAndShowBicluster,
+        'biclusterClearButton': () => { clearBlockMask(); const s = el('blockMaskStatus'); if (s) s.textContent = ''; },
+        'biclusterGroupRowsButton': groupRowsByBlockMask,
         'savePresetButton': savePreset,
         'loadPresetButton': loadPreset,
         'snapshotCreateTopButton': createSnapshot,
@@ -15155,12 +15742,22 @@ function initializeAppUI() {
     //   ?url=<relative_or_absolute_url>   - fetch FASTA/MSF from URL
     //   ?data=<base64_encoded_text>        - decode inline data
     //   ?title=<text>                      - optional display title
+    //   ?mask=<url>                        - fetch a 2D block-mask JSON and overlay it
     const urlParams = new URLSearchParams(window.location.search);
     const autoSnapshot = urlParams.get('snapshot');
     const autoSnapshotFile = urlParams.get('snapshotFile');
     const autoUrl   = urlParams.get('url');
     const autoData  = urlParams.get('data');
     const autoTitle = urlParams.get('title');
+    const autoMask  = urlParams.get('mask');
+    const _loadBlockMaskFromUrl = (u) => fetch(u)
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+        .then(j => {
+            if (!j || !Array.isArray(j.blocks) || !Array.isArray(j.row_headers)) throw new Error('not a block-mask JSON');
+            state.blockMask = j;
+            if (typeof renderBlockMaskOverlay === 'function') renderBlockMaskOverlay();
+        })
+        .catch(err => { console.warn('[blockmask] ?mask= load failed:', err.message); });
 
     if (autoSnapshotFile) {
         showMessage('Loading snapshot file...', 0);
@@ -15198,8 +15795,10 @@ function initializeAppUI() {
                 const fastaInputEl = el('fastaInput');
                 if (fastaInputEl) fastaInputEl.value = text;
                 state.currentFilename = autoTitle || autoUrl.split('/').pop() || 'URL';
-                parseAndRender(true);
-                showMessage('Alignment loaded from URL', 2000);
+                return Promise.resolve(parseAndRender(true)).then(() => {
+                    showMessage('Alignment loaded from URL', 2000);
+                    if (autoMask) return _loadBlockMaskFromUrl(autoMask);
+                });
             })
             .catch(err => {
                 console.error('URL auto-load failed:', err);
@@ -15211,8 +15810,10 @@ function initializeAppUI() {
             const fastaInputEl = el('fastaInput');
             if (fastaInputEl) fastaInputEl.value = text;
             state.currentFilename = autoTitle || 'Inline data';
-            parseAndRender(true);
-            showMessage('Alignment loaded from inline data', 2000);
+            Promise.resolve(parseAndRender(true)).then(() => {
+                showMessage('Alignment loaded from inline data', 2000);
+                if (autoMask) return _loadBlockMaskFromUrl(autoMask);
+            });
         } catch (err) {
             console.error('Inline data decode failed:', err);
             showMessage(`Failed to decode data: ${err.message}`, 5000);
@@ -15223,6 +15824,7 @@ function initializeAppUI() {
     initStatsTabs();
     initTreeBuilderControls();
     initResEnzymeSearch();
+    initBlockMaskPanel();
     updateBamButtonVisibility();
 }
 
