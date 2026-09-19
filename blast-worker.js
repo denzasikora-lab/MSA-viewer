@@ -193,10 +193,21 @@ function smithWatermanAffine(query, subject) {
     // together these were the actual bottleneck (measured ~30ms for a 200x320
     // window before this change; the earlier per-cell overhead, not the DP
     // itself, dominated).
+    // Uppercase for the CODE ARRAYS ONLY -- comparison must be case-insensitive
+    // (real sequence data mixes upper/lowercase: soft-masked bases, and this
+    // toolchain's own convention of lowercase flanking bases around an
+    // uppercase element body). `query`/`subject` themselves stay original-case
+    // below, since the traceback reads characters from THEM for display.
+    // Bug found 2026-09-19: a lowercase query against this worker's own
+    // (uppercase) bundled databases scored every position as a mismatch and
+    // silently returned 0 hits with no error -- confirmed by identical scores
+    // for uppercase-vs-uppercase and lowercase-vs-lowercase, null only for
+    // the mixed-case combination.
+    const queryUC = query.toUpperCase(), subjectUC = subject.toUpperCase();
     const qCodes = new Uint16Array(m);
-    for (let k = 0; k < m; k++) qCodes[k] = query.charCodeAt(k);
+    for (let k = 0; k < m; k++) qCodes[k] = queryUC.charCodeAt(k);
     const sCodes = new Uint16Array(n);
-    for (let k = 0; k < n; k++) sCodes[k] = subject.charCodeAt(k);
+    for (let k = 0; k < n; k++) sCodes[k] = subjectUC.charCodeAt(k);
 
     for (let i = 1; i <= m; i++) {
         const rowBase = i * W, prevRowBase = (i - 1) * W;
@@ -253,7 +264,7 @@ function smithWatermanAffine(query, subject) {
 
     let identity = 0, gaps = 0, midline = '';
     for (let k = 0; k < alignQ.length; k++) {
-        if (alignQ[k] !== '-' && alignQ[k] === alignS[k]) { identity++; midline += '|'; }
+        if (alignQ[k] !== '-' && alignQ[k].toUpperCase() === alignS[k].toUpperCase()) { identity++; midline += '|'; }
         else if (alignQ[k] === '-' || alignS[k] === '-')  { gaps++;     midline += ' '; }
         else                                               {             midline += '.'; }
     }
@@ -314,10 +325,13 @@ function smithWatermanAffineBanded(query, subject, bandDiag, bandHalf) {
 
     let maxScore = 0, maxI = 0, maxJ = 0, maxState = 1;
 
+    // Case-insensitive comparison, original-case strings preserved for
+    // traceback -- see the matching comment/fix in smithWatermanAffine above.
+    const queryUC = query.toUpperCase(), subjectUC = subject.toUpperCase();
     const qCodes = new Uint16Array(m);
-    for (let k = 0; k < m; k++) qCodes[k] = query.charCodeAt(k);
+    for (let k = 0; k < m; k++) qCodes[k] = queryUC.charCodeAt(k);
     const sCodes = new Uint16Array(n);
-    for (let k = 0; k < n; k++) sCodes[k] = subject.charCodeAt(k);
+    for (let k = 0; k < n; k++) sCodes[k] = subjectUC.charCodeAt(k);
 
     // Per-row in-band column range; band centred on j - i = bandDiag. Row 0 is
     // the local-alignment boundary (M=0) and is NOT iterated, but the diagonal
@@ -404,7 +418,7 @@ function smithWatermanAffineBanded(query, subject, bandDiag, bandHalf) {
 
     let identity = 0, gaps = 0, midline = '';
     for (let k = 0; k < alignQ.length; k++) {
-        if (alignQ[k] !== '-' && alignQ[k] === alignS[k]) { identity++; midline += '|'; }
+        if (alignQ[k] !== '-' && alignQ[k].toUpperCase() === alignS[k].toUpperCase()) { identity++; midline += '|'; }
         else if (alignQ[k] === '-' || alignS[k] === '-')  { gaps++;     midline += ' '; }
         else                                               {             midline += '.'; }
     }
