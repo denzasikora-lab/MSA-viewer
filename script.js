@@ -18260,6 +18260,49 @@ function _blastScoreTierColor(bitScore) {
     return `rgb(${stops[stops.length - 1].rgb.join(',')})`; // unreachable, defensive
 }
 
+// Per-base identity gradient for one hit's bar, built from the real aligned
+// querySeq/hitSeq (not just an overall score tier) -- user-requested
+// 2026-09-19: the bar should visibly show WHERE along the hit it diverges,
+// not render as one uniform color end to end.
+//
+// Walks only alignment columns that consume a QUERY position (querySeq[k] !=
+// '-'), since the bar's left/width are laid out in query coordinates -- an
+// insertion-in-subject column (gap in querySeq) takes zero query-axis width
+// and is skipped rather than drawn. A deletion-in-subject column (gap in
+// hitSeq) still consumes one query base and renders as its own 'gap' tier,
+// distinct from mismatch. Consecutive same-state columns are collapsed into
+// one gradient stop pair instead of one per base, keeping the CSS string
+// short even for long alignments.
+//
+// Case-insensitive match comparison -- matches the fix to the search
+// scoring itself (2026-09-19): querySeq/hitSeq can carry either case
+// (this toolchain's own convention lowercases flanking bases), and a
+// same-base-different-case column must count as identity here too, not
+// display as a false mismatch.
+function _buildHitIdentityGradient(hsp) {
+    const q = hsp.querySeq, s = hsp.hitSeq;
+    if (!q || !s || q.length !== s.length) return null;
+    const TIER_COLOR = { match: '#1b7a1b', mismatch: '#d1483a', gap: '#c9c9c9' };
+    const states = [];
+    for (let k = 0; k < q.length; k++) {
+        if (q[k] === '-') continue; // insertion in subject: no query-axis width
+        if (s[k] === '-') states.push('gap');
+        else states.push(q[k].toUpperCase() === s[k].toUpperCase() ? 'match' : 'mismatch');
+    }
+    const n = states.length;
+    if (n === 0) return null;
+    const stops = [];
+    let i = 0;
+    while (i < n) {
+        let j = i;
+        while (j < n && states[j] === states[i]) j++;
+        const color = TIER_COLOR[states[i]];
+        stops.push(`${color} ${(i / n * 100).toFixed(2)}%`, `${color} ${(j / n * 100).toFixed(2)}%`);
+        i = j;
+    }
+    return `linear-gradient(to right, ${stops.join(', ')})`;
+}
+
 // Graphical hit-distribution diagram: one thin horizontal bar per hit,
 // positioned/sized by its query span, colored by score tier, on a ruler
 // spanning the full query length — the one genuinely "graphical" element
@@ -18352,7 +18395,10 @@ function buildHitDistributionDiagram(hits, queryLen, onHitClick) {
         bar.className = 'blast-hitdist-bar';
         bar.style.left = leftPct + '%';
         bar.style.width = widthPct + '%';
-        bar.style.background = _blastScoreTierColor(hsp.bitScore);
+        // Per-base identity gradient where the alignment strings allow it
+        // (the normal case); falls back to the flat score-tier color for
+        // any hit missing querySeq/hitSeq rather than rendering blank.
+        bar.style.background = _buildHitIdentityGradient(hsp) || _blastScoreTierColor(hsp.bitScore);
         bar.tabIndex = 0;
         bar.setAttribute('role', 'button');
         bar.setAttribute('aria-label', `Hit ${hi + 1}: ${hit.id}, score ${hsp.bitScore} bits, e-value ${hsp.evalue}`);
