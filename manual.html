@@ -777,22 +777,14 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li><em>Group Consensus</em> (Consensus menu) computes and inserts a consensus row for any selected cluster</li>
   </ul>
   <p>
-    Three instruments answer different questions and then share type state.
-    <strong>k-mer reorder groups</strong> cuts the same k-mer UPGMA tree used to
-    reorder rows after alignment (default 6-mer, same as Reorder by similarity) and assigns
-    every sequence to a type. The number of groups is taken from the largest
-    jump in that tree unless you type one.
-    <strong>Diagnostic positions</strong> discovers types from exclusive SNP
-    columns only &mdash; it does not form groups from leaky characters.
-    Check <em>Split current types</em> to search for those SNPs inside existing
-    k-mer groups instead of the whole alignment; unsplit groups are kept.
-    After either grouping, exclusive (solid) and <em>cloudy</em> (faint)
-    characters of those types are highlighted: cloudy columns are enriched
-    in a type even when they leak into others.
-    <strong>2D analysis</strong> draws independent row&times;column
-    rectangles; when types already exist, each rectangle is tagged as
-    supporting a type, a stack inside a type, or discordant. Running a new
-    grouping retags a live 2D overlay.
+    Three instruments answer different questions. They do not all paint the same layer.
+    <strong>k-mer reorder groups</strong> and <strong>diagnostic positions</strong> share one
+    type layer: sequence-name colours plus exclusive/cloudy letters. The later run
+    replaces the earlier one, unless <em>Split current types</em> is checked (diagnostics
+    then split inside the current groups). <strong>Clear types</strong> removes that layer.
+    <strong>2D analysis</strong> is a separate rectangle overlay and can sit on top of type
+    colours; <strong>Clear 2D</strong> removes only the overlay. When types exist, rectangles
+    are tagged supporting / inside / discordant, and a new grouping retags a live overlay.
   </p>
 
   <h3 id="cl-blockmask">4.7 2D Block Mask (squint view)</h3>

@@ -356,12 +356,15 @@
                                     <button id="clearSoftTrimButton" style="flex: 1; min-width: 60px; height: 22px; font-size: 10px; display: none;" title="Clear soft trim boundaries (restore all columns for clustering)">Clear Soft</button>
                                 </div>
                             </div>
-                            <div id="clusteringInstrumentStatus" style="font-size: 10px; color: #555; margin: 0 0 8px; min-height: 14px; line-height: 1.35;">No types yet. Group by k-mer tree for overall bands, or find diagnostic types from exclusive positions.</div>
+                            <div style="display: flex; gap: 4px; align-items: flex-start; margin: 0 0 8px;">
+                                <div id="clusteringInstrumentStatus" style="flex: 1; font-size: 10px; color: #555; min-height: 14px; line-height: 1.35;">No types yet. Group by k-mer tree for overall bands, or find diagnostic types from exclusive positions. 2D analysis is a separate overlay.</div>
+                                <button id="clusterClearTypesButton" style="height: 22px; font-size: 10px; white-space: nowrap;" title="Remove type colours from sequence names and diagnostic letters. Does not change row order. 2D rectangles stay until you Clear 2D.">Clear types</button>
+                            </div>
 
                             <!-- 1. k-mer reorder groups -->
                             <div style="border-bottom: 1px solid #ddd; padding-bottom: 8px; margin-bottom: 8px;">
                                 <div style="font-weight: bold; font-size: 11px;">k-mer reorder groups</div>
-                                <div style="font-size: 10px; color: #555; margin: 2px 0 6px;">Same UPGMA tree as Reorder by similarity. Every sequence is assigned, then exclusive and cloudy characters of those types are painted.</div>
+                                <div style="font-size: 10px; color: #555; margin: 2px 0 6px;">Same UPGMA tree as Reorder by similarity. Every sequence is assigned. Shares name and letter colours with diagnostic types — the later run replaces the earlier one.</div>
                                 <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
                                     <button id="clusterGuideTreeButton" style="flex: 1; min-width: 110px; height: 24px; font-size: 11px; background: #2563eb; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Cut the k-mer similarity tree into types. Leave Groups empty to let the tree choose. Then paints character bases.">Group by k-mer tree</button>
                                     <label style="font-size: 10px; white-space: nowrap;" title="k-mer length used for the similarity tree (same k as Reorder by similarity). 6 is the default.">k:
@@ -376,7 +379,7 @@
                             <!-- 2. Diagnostic positions -->
                             <div style="border-bottom: 1px solid #ddd; padding-bottom: 8px; margin-bottom: 8px;">
                                 <div style="font-weight: bold; font-size: 11px;">Diagnostic positions</div>
-                                <div style="font-size: 10px; color: #555; margin: 2px 0 6px;">Types from exclusive SNP columns. Leftovers stay unassigned. Check Split current types to look for diagnostic subtypes inside k-mer groups.</div>
+                                <div style="font-size: 10px; color: #555; margin: 2px 0 6px;">Types from exclusive SNP columns. Leftovers stay unassigned. Replaces k-mer colours unless Split current types is checked (then it splits inside those groups). Clear types removes the colours.</div>
                                 <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center;">
                                     <button id="clusterNowButton" style="flex: 1; min-width: 110px; height: 24px; font-size: 11px; background: #4CAF50; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Find types from exclusive diagnostic positions. Optionally split types already set by the k-mer tree.">Find diagnostic types</button>
                                     <label style="font-size: 10px; display: flex; align-items: center; gap: 4px;" title="If types already exist, search for exclusive SNPs inside each type instead of scanning the whole alignment. Types that do not split are kept.">
@@ -455,7 +458,7 @@
                             <!-- 3. 2D analysis -->
                             <div style="padding-bottom: 0;">
                                 <div style="font-weight: bold; font-size: 11px;">2D analysis</div>
-                                <div style="font-size: 10px; color: #555; margin: 2px 0 6px;">Row × column rectangles. If types exist, each rectangle is tagged supporting / inside / discordant. Paint never changes order; Group rows does.</div>
+                                <div style="font-size: 10px; color: #555; margin: 2px 0 6px;">Separate overlay: row × column rectangles. Can sit on top of type colours. If types exist, rectangles are tagged supporting / inside / discordant. Paint never changes order; Group rows does. Clear 2D removes only the overlay.</div>
                                 <div style="display: flex; gap: 4px; flex-wrap: wrap; align-items: center; margin-bottom: 4px;">
                                     <select id="biclusterPaintMode" style="flex: 1; min-width: 120px; height: 22px; font-size: 10px;" title="How to paint same-type copies that are not sitting with the contiguous stack. Alignment order is never changed.">
                                         <option value="local_one">Local: one box (dashed orphans)</option>
@@ -463,7 +466,7 @@
                                         <option value="strict">Strict: contiguous stack only</option>
                                     </select>
                                     <button id="biclusterComputeButton" style="flex: 1; min-width: 90px; height: 24px; font-size: 11px; background: #0d9488; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Draw row × column rectangles. Tags them against current types if any.">Show 2D analysis</button>
-                                    <button id="biclusterClearButton" style="height: 22px; font-size: 10px;" title="Remove the overlay">Clear</button>
+                                    <button id="biclusterClearButton" style="height: 22px; font-size: 10px;" title="Remove the 2D rectangle overlay. Type colours stay until you Clear types.">Clear 2D</button>
                                     <button id="biclusterGroupRowsButton" style="flex: 1; min-width: 80px; height: 22px; font-size: 10px;" title="Click a colored rectangle on the alignment to stack that type (all members, including orphans). Undoable. Does not pick a type for you.">Group rows</button>
                                 </div>
                                 <label style="font-size: 10px; display: flex; align-items: center; gap: 4px;" title="Overlay opacity">Opacity
@@ -1203,7 +1206,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=208"></script>
+    <script src="script.js?v=209"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

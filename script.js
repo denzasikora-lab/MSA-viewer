@@ -11820,7 +11820,7 @@ function _updateInstrumentStatus() {
     const clusters = state.clusterResults && state.clusterResults.clusters;
     const n = clusters ? clusters.length : 0;
     if (!n) {
-        node.textContent = 'No types yet. Group by k-mer tree for overall bands, or find diagnostic types from exclusive positions.';
+        node.textContent = 'No types yet. Group by k-mer tree or find diagnostic types. 2D analysis is a separate overlay (Clear 2D).';
         return;
     }
     let nEx = 0, nCl = 0;
@@ -11837,6 +11837,20 @@ function _updateInstrumentStatus() {
         extra = ' · 2D overlay on';
     }
     node.textContent = `Types from ${src}: ${n} type${n === 1 ? '' : 's'}, ${nEx} exclusive / ${nCl} cloudy${extra}`;
+}
+
+function clearTypePaint() {
+    state.clusterResults = null;
+    state.clusterMap = null;
+    state._clusterCharMap = null;
+    state.clusterSource = null;
+    state.clusterSourceLabel = null;
+    state.clusterTypeRows = null;
+    updateClusteringStatus('');
+    renderAlignment();
+    if (state._biclusterRaw) reapplyBiclusterPaintMode();
+    else _updateInstrumentStatus();
+    showMessage('Type colours cleared (names and letters). 2D overlay unchanged.', 2500);
 }
 
 function _commitTypeResults(clusterResults, source, sourceLabel) {
@@ -16035,6 +16049,7 @@ function initializeAppUI() {
         'clusteringOptimalPresetButton': createOptimalPreset,
         'clusteringProbeButton': analyzeClusterability,
         'clusterGuideTreeButton': clusterByGuideTree,
+        'clusterClearTypesButton': clearTypePaint,
         'blockMaskComputeButton': computeAndShowBlockMask,
         'blockMaskClearButton': () => { clearBlockMask(); const s = el('blockMaskStatus'); if (s) s.textContent = ''; },
         'blockMaskGroupButton': groupRowsByBlockMask,
