@@ -464,6 +464,10 @@ html {
 
 .control-group input[type="number"] {
     width: 60px;
+    height: 24px;
+    box-sizing: border-box;
+    padding-top: 0;
+    padding-bottom: 0;
 }
 
 /* Action sections organization */
@@ -1009,10 +1013,86 @@ input[type="range"].normal-slider::-moz-range-thumb {
 }
 input[type="number"] {
     width: 32px;
-    height: 18px;
-    padding: 0;
+    height: 24px !important;
+    min-height: 24px !important;
+    padding: 0 2px;
     text-align: center;
     font-size: 12px;
+    line-height: 22px;
+    box-sizing: border-box;
+    vertical-align: middle;
+    overflow: hidden;
+}
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+    height: 20px;
+    margin: 2px 0;
+    opacity: 1;
+}
+
+#clustering-controls {
+    min-width: 320px;
+    max-width: 360px;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+.cluster-panel {
+    padding: 2px 0 0;
+}
+.cluster-block {
+    border-bottom: 1px solid #ddd;
+    padding: 8px 0;
+}
+.cluster-block:first-child {
+    padding-top: 0;
+}
+.cluster-block-title {
+    font-weight: bold;
+    font-size: 11px;
+    margin: 0 0 6px;
+    color: #222;
+}
+.cluster-actions {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+.cluster-actions + .cluster-actions {
+    margin-top: 6px;
+}
+.cluster-actions button {
+    height: 24px;
+    font-size: 11px;
+    line-height: 22px;
+    box-sizing: border-box;
+    white-space: nowrap;
+    padding: 0 8px;
+}
+.cluster-progress:empty {
+    display: none;
+}
+.cluster-live-status {
+    display: flex;
+    gap: 6px;
+    align-items: flex-start;
+    margin-top: 8px;
+    padding: 6px 8px;
+    background: #f4f6f8;
+    border: 1px solid #e0e4e8;
+    border-radius: 3px;
+    font-size: 10px;
+    color: #444;
+    line-height: 1.35;
+}
+.cluster-live-status[hidden] {
+    display: none !important;
+}
+.cluster-live-status button {
+    height: 22px;
+    font-size: 10px;
+    white-space: nowrap;
+    flex: 0 0 auto;
 }
 .block-block {
     margin-bottom: 24px;

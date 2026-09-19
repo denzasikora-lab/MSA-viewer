@@ -11816,11 +11816,28 @@ function _guideTreeK() {
 
 function _updateInstrumentStatus() {
     const node = el('clusteringInstrumentStatus');
-    if (!node) return;
+    const wrap = el('clusterLiveStatus');
+    const clearBtn = el('clusterClearTypesButton');
     const clusters = state.clusterResults && state.clusterResults.clusters;
     const n = clusters ? clusters.length : 0;
+    const has2d = !!(state._biclusterRaw);
+    if (!n && !has2d) {
+        if (node) node.textContent = '';
+        if (wrap) wrap.hidden = true;
+        return;
+    }
+    if (wrap) wrap.hidden = false;
+    if (clearBtn) clearBtn.style.display = n ? '' : 'none';
+    let extra = '';
+    if (has2d && state.blockMask && state.blockMask.typeAgreementSummary) {
+        const a = state.blockMask.typeAgreementSummary;
+        extra = ` · 2D: ${a.supporting} support, ${a.inside} inside, ${a.discordant} discordant`;
+    } else if (has2d) {
+        extra = ' · 2D overlay on';
+    }
+    if (!node) return;
     if (!n) {
-        node.textContent = 'No types yet. Group by k-mer tree or find diagnostic types. 2D analysis is a separate overlay (Clear 2D).';
+        node.textContent = extra.replace(/^ · /, '') || '2D overlay on';
         return;
     }
     let nEx = 0, nCl = 0;
@@ -11828,15 +11845,8 @@ function _updateInstrumentStatus() {
         nEx += (c.perfectFeatures || []).length;
         nCl += (c.cloudyFeatures || []).length;
     });
-    const src = state.clusterSourceLabel || 'types';
-    let extra = '';
-    if (state._biclusterRaw && state.blockMask && state.blockMask.typeAgreementSummary) {
-        const a = state.blockMask.typeAgreementSummary;
-        extra = ` · 2D: ${a.supporting} support, ${a.inside} inside, ${a.discordant} discordant`;
-    } else if (state._biclusterRaw) {
-        extra = ' · 2D overlay on';
-    }
-    node.textContent = `Types from ${src}: ${n} type${n === 1 ? '' : 's'}, ${nEx} exclusive / ${nCl} cloudy${extra}`;
+    const src = state.clusterSourceLabel || 'groups';
+    node.textContent = `${src}: ${n} group${n === 1 ? '' : 's'}, ${nEx} exclusive / ${nCl} cloudy${extra}`;
 }
 
 function clearTypePaint() {
@@ -11850,7 +11860,7 @@ function clearTypePaint() {
     renderAlignment();
     if (state._biclusterRaw) reapplyBiclusterPaintMode();
     else _updateInstrumentStatus();
-    showMessage('Type colours cleared (names and letters). 2D overlay unchanged.', 2500);
+    showMessage('Group colours cleared. 2D overlay unchanged.', 2500);
 }
 
 function _commitTypeResults(clusterResults, source, sourceLabel) {
@@ -12218,7 +12228,7 @@ function _renderClusterabilityReport(rows, base, nSeqs, progress) {
     html += `</table>
         <div style="margin-top: 8px; font-size: 11px; color: #6b6b6b;">
             Each row varies one setting from your current values; the last row loosens everything at once.
-            This is a survey only - nothing has been changed. Set the parameters you want and press Find diagnostic types.
+            This is a survey only - nothing has been changed. Set the parameters you want and press Find SNP groups.
         </div>`;
     content.innerHTML = html;
 }
