@@ -150,6 +150,7 @@ function _clusterAlignmentColumnOffset() {
 function _clearClusterTrimState() {
     state.clusterResults = null;
     state.clusterMap = null;
+    state._clusterCharMap = null;
     state.softTrimBoundaries = null;
     state.trimBoundaries = null;
     state.trimBackup = null;
@@ -263,6 +264,58 @@ function reapplySearchHighlights() {
         }
         _paintSearchEntryOnAlignment(entry);
     });
+}
+
+function _rebuildClusterCharMap() {
+    state._clusterCharMap = null;
+    if (!state.clusterResults || !state.clusterResults.clusters) return;
+    const colOffset = _clusterAlignmentColumnOffset();
+    const colors = (typeof SINEClusterer !== 'undefined' && SINEClusterer.getClusterColors)
+        ? SINEClusterer.getClusterColors() : ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00'];
+    const map = Object.create(null);
+    state.clusterResults.clusters.forEach((cluster, clusterIdx) => {
+        const color = colors[clusterIdx % colors.length];
+        const headers = new Set((cluster.sequences || []).map(s => s.id));
+        const firstId = cluster.sequences && cluster.sequences[0] && cluster.sequences[0].id;
+        const name = (firstId && state.clusterMap && state.clusterMap[firstId] && state.clusterMap[firstId].name)
+            || ('Group ' + (clusterIdx + 1));
+        const addFeats = (feats, isPerfect, isCloudy) => {
+            (feats || []).forEach(feature => {
+                const pos0 = feature.pos - 1 + colOffset;
+                if (!map[pos0]) map[pos0] = [];
+                map[pos0].push({
+                    color, char: feature.char, headers, isPerfect, isCloudy, clusterName: name
+                });
+            });
+        };
+        addFeats(cluster.perfectFeatures, true, false);
+        addFeats(cluster.cloudyFeatures, false, true);
+        addFeats(cluster.imperfectFeatures, false, false);
+    });
+    state._clusterCharMap = map;
+}
+
+function _clusterCharPaint(header, pos, base) {
+    const list = state._clusterCharMap && state._clusterCharMap[pos];
+    if (!list || !list.length) return null;
+    const bu = String(base || '').toUpperCase();
+    if (!bu || bu === '-' || bu === '.') return null;
+    let diag = null;
+    for (let i = 0; i < list.length; i++) {
+        const d = list[i];
+        if (!d.headers.has(header)) continue;
+        if (String(d.char || '').toUpperCase() !== bu) continue;
+        if (!diag || (d.isPerfect && !diag.isPerfect)) diag = d;
+    }
+    if (!diag) return null;
+    const rgb = hexToRgb(diag.color);
+    const alpha = diag.isPerfect ? 1 : 0.72;
+    const fg = diag.isPerfect ? '#fff' : '#111';
+    const weight = diag.isPerfect ? 'bold' : '600';
+    const kind = diag.isPerfect ? 'diagnostic' : (diag.isCloudy ? 'cloudy' : 'partial');
+    const title = `${diag.clusterName}: ${kind} ${diag.char}`;
+    const style = `background-color:rgba(${rgb.r},${rgb.g},${rgb.b},${alpha}) !important;color:${fg} !important;font-weight:${weight} !important;`;
+    return { style, title, isPerfect: diag.isPerfect };
 }
 
 function applyClusterVisualsFromState() {
@@ -6492,7 +6545,12 @@ function renderBlockMaskOverlay() {
                     r.style.pointerEvents = 'auto';
                     r.style.cursor = 'pointer';
                     r.setAttribute('data-type-rows', typeRows.join(','));
-                    r.setAttribute('title', 'Click to stack this type (all members, including orphans). Undoable.');
+                    let title = 'Click to stack this type (all members, including orphans). Undoable.';
+                    const agr = mb.typeAgreement;
+                    if (agr && agr.kind === 'inside') title = 'Stack inside ' + (agr.typeName || 'type') + '. ' + title;
+                    else if (agr && agr.kind === 'supports') title = 'Supports ' + (agr.typeName || 'type') + '. ' + title;
+                    else if (agr && agr.kind === 'discordant') title = 'Discordant with current types. ' + title;
+                    r.setAttribute('title', title);
                     r.addEventListener('click', (ev) => {
                         ev.preventDefault();
                         ev.stopPropagation();
@@ -6649,6 +6707,51 @@ function _paintBiclusterBlocks(raw) {
     return { ...raw, blocks: painted, paint_mode: mode };
 }
 
+function _typeHeaderListsFromClusterMap() {
+    if (!state.clusterMap) return { lists: [], names: [] };
+    const byType = new Map();
+    Object.keys(state.clusterMap).forEach(id => {
+        const info = state.clusterMap[id];
+        if (!info || info.cluster < 0) return;
+        if (!byType.has(info.cluster)) byType.set(info.cluster, []);
+        byType.get(info.cluster).push(id);
+    });
+    const keys = Array.from(byType.keys()).sort((a, b) => a - b);
+    const lists = [];
+    const names = [];
+    keys.forEach(k => {
+        lists.push(byType.get(k));
+        const sample = byType.get(k)[0];
+        names.push((state.clusterMap[sample] && state.clusterMap[sample].name) || ('Group ' + (k + 1)));
+    });
+    return { lists, names };
+}
+
+function _tagBiclusterAgainstTypes(mask) {
+    if (!mask || !Array.isArray(mask.blocks) || typeof SINEClusterer === 'undefined') return mask;
+    const { lists, names } = _typeHeaderListsFromClusterMap();
+    if (!lists.length) {
+        mask.typeAgreementSummary = { supporting: 0, inside: 0, discordant: 0 };
+        return mask;
+    }
+    let supporting = 0, inside = 0, discordant = 0;
+    mask.blocks.forEach(b => {
+        if (b.kind === 'conserved' || b.rows === 'all' || !Array.isArray(b.rows)) {
+            b.typeAgreement = { kind: 'none', typeIdx: -1, jaccard: 0 };
+            return;
+        }
+        const ids = b.rows.map(k => mask.row_headers[k]).filter(Boolean);
+        const tag = SINEClusterer.tagRectangleAgainstTypes(ids, lists);
+        if (tag.typeIdx >= 0) tag.typeName = names[tag.typeIdx];
+        b.typeAgreement = tag;
+        if (tag.kind === 'supports') supporting++;
+        else if (tag.kind === 'inside') inside++;
+        else if (tag.kind === 'discordant') discordant++;
+    });
+    mask.typeAgreementSummary = { supporting, inside, discordant };
+    return mask;
+}
+
 function applyBiclusterLive() {
     if (typeof BlockBicluster === 'undefined') { showMessage('block-bicluster.js not loaded', 3000); return null; }
     if (!state.seqs || !state.seqs.length) { showMessage('Load an alignment first', 3000); return null; }
@@ -6656,7 +6759,7 @@ function applyBiclusterLive() {
     const knobs = (typeof getClusteringParameters === 'function') ? getClusteringParameters() : {};
     const raw = BlockBicluster.computeBiclusterMask(fasta, knobs);
     state._biclusterRaw = raw;
-    state.blockMask = _paintBiclusterBlocks(raw);
+    state.blockMask = _tagBiclusterAgainstTypes(_paintBiclusterBlocks(raw));
     state._blockMaskPreset = null;
     renderBlockMaskOverlay();
     return state.blockMask;
@@ -6667,7 +6770,7 @@ function reapplyBiclusterPaintMode() {
         if (state.seqs && state.seqs.length) applyBiclusterLive();
         return;
     }
-    state.blockMask = _paintBiclusterBlocks(state._biclusterRaw);
+    state.blockMask = _tagBiclusterAgainstTypes(_paintBiclusterBlocks(state._biclusterRaw));
     renderBlockMaskOverlay();
     _blockMaskStatusFrom(state.blockMask);
 }
@@ -6734,6 +6837,10 @@ function _blockMaskStatusFrom(mask) {
         + (names ? ` (${names})` : '')
         + (bases ? `, bases ${bases}` : '')
         + more;
+    const agr = mask.typeAgreementSummary;
+    if (agr && (agr.supporting || agr.inside || agr.discordant)) {
+        status.textContent += `. Types: ${agr.supporting} supporting, ${agr.inside} inside, ${agr.discordant} discordant`;
+    }
 }
 
 function computeAndShowBlockMask() {
@@ -7511,7 +7618,17 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
             const colSelected = selectedCols.has(pos) ? ' column-selected' : '';
             const tsdDisplay = getTsdMarkDisplay(index, pos);
             const finalClass = `${cls}${baseClass ? ' ' + baseClass : ''}${colSelected}${tsdDisplay.className}`;
-            htmlParts.push(`<span class="${finalClass}" data-pos="${pos}"${tsdDisplay.style}>${base}</span>`);
+            const charPaint = _clusterCharPaint(state.seqs[index].header, pos, base);
+            let extraAttr = tsdDisplay.style || '';
+            if (charPaint) {
+                const titleEsc = _escapeHtml(charPaint.title);
+                if (extraAttr && extraAttr.indexOf('style="') >= 0) {
+                    extraAttr = extraAttr.replace(/"$/, charPaint.style + '"') + ` title="${titleEsc}"`;
+                } else {
+                    extraAttr = ` style="${charPaint.style}" title="${titleEsc}"`;
+                }
+            }
+            htmlParts.push(`<span class="${finalClass}${charPaint ? ' diagnostic-mutation' : ''}" data-pos="${pos}"${extraAttr}>${base}</span>`);
         }
     // Add sequence length at the end (only for last block)
     if (showLength) {
@@ -11687,6 +11804,15 @@ function getSeqsForClustering() {
     });
 }
 
+function _motifRunsHtml(runs) {
+    if (!runs || !runs.length) return '<em>None</em>';
+    return runs.map(r => {
+        const grade = r.nCloudy && r.nStrict ? 'mixed' : (r.nStrict ? 'strict' : 'cloudy');
+        const span = r.start === r.end ? ('Pos ' + r.start) : ('Pos ' + r.start + '\u2013' + r.end);
+        return `<div style="font-family:monospace;font-size:10px;">${span} ${r.motif} <span style="color:#666">(${grade})</span></div>`;
+    }).join('');
+}
+
 // Fast grouping by cutting the k-mer guide tree. Where the diagnostic-position clusterer
 // searches for shared discriminating columns - thorough, but its cost grows far faster
 // than the alignment - this simply cuts the tree the aligner already uses for ordering.
@@ -11696,11 +11822,13 @@ async function clusterByGuideTree() {
         showMessage('Need at least 3 sequences to group.', 3000);
         return;
     }
-    const groups = Math.max(2, Math.min(50, parseInt(el('guideTreeGroups')?.value, 10) || 5));
-    return runWithProgress('Grouping by guide tree...', () => {
+    const raw = el('guideTreeGroups')?.value;
+    const parsed = parseInt(raw, 10);
+    const groupsArg = (raw === '' || raw == null || Number.isNaN(parsed)) ? 'auto' : parsed;
+    return runWithProgress('Grouping by similarity...', () => {
         const seqs = getSeqsForClustering();
         const t0 = performance.now();
-        const cut = cutGuideTree(seqs, groups);
+        const cut = cutGuideTree(seqs, groupsArg);
         const ms = performance.now() - t0;
 
         const colors = SINEClusterer.getClusterColors();
@@ -11714,19 +11842,28 @@ async function clusterByGuideTree() {
                 size: members.length,
                 nPerfect: 0,
                 perfectFeatures: [],
-                sequences: members.map(i => ({ id: seqs[i].id, index: i }))
+                cloudyFeatures: [],
+                motifRuns: [],
+                sequences: members.map(i => ({ id: seqs[i].id, index: i, seq: seqs[i].seq }))
             };
         });
+        const clusterer = new SINEClusterer(seqs);
+        clusterer.attachCharacterization(clusters);
+        state.clusterTypeRows = clusters.map((c, idx) => ({
+            name: `Group ${idx + 1}`,
+            headers: c.sequences.map(s => s.id)
+        }));
         state.clusterResults = {
             clusters,
             unassigned: [],
             summary: { nClusters: clusters.length, nAssigned: state.seqs.length, nUnassigned: 0, nTotal: state.seqs.length }
         };
+        _rebuildClusterCharMap();
+        renderAlignment();
         _renderGuideTreeGroups(clusters, cut, ms);
-        applyClusterVisualsFromState();
         const modal = el('clusteringModal');
         if (modal) modal.style.display = 'block';
-    }, `${state.seqs.length} sequences into ${groups} groups`);
+    }, `${state.seqs.length} sequences`);
 }
 
 function _renderGuideTreeGroups(clusters, cut, ms) {
@@ -11738,24 +11875,31 @@ function _renderGuideTreeGroups(clusters, cut, ms) {
         : '';
     let html = `
         <div style="margin-bottom: 14px; padding: 10px; background: #eef4fb; border: 1px solid #c5d8ee; border-radius: 4px; font-size: 12px; line-height: 1.5;">
-            <div style="font-size: 13px; margin-bottom: 4px;">Guide-tree groups</div>
+            <div style="font-size: 13px; margin-bottom: 4px;">Group by similarity</div>
             <strong>${clusters.length} groups</strong> covering all ${state.seqs.length} sequences, in ${ms.toFixed(0)} ms.
+            ${cut.auto
+                ? `The number of groups was chosen from the tree (largest jump in overall similarity) — you do not have to pick it. Type a number in Groups only to force a coarser or finer split.`
+                : `Split into ${cut.target} groups as requested. Leave Groups empty for an automatic split.`}
             Cut at 6-mer distance ${cut.cutHeight.toFixed(3)}. ${sep}
             <div style="margin-top: 6px; color: #6b6b6b;">
-                This groups by overall sequence similarity. It does not identify diagnostic positions -
-                use Cluster Now for that.
+                Same similarity tree as MAFFT reorder / Reorder by similarity: sequences that look alike overall sit in the same type.
+                Character bases of those types are coloured on the alignment (solid = exclusive to the type, tint = cloudy / leaky).
             </div>
         </div>`;
     clusters.forEach((c, idx) => {
         const color = colors[idx % colors.length];
+        const nStrict = (c.perfectFeatures || []).length;
+        const nCloudy = (c.cloudyFeatures || []).length;
         html += `
             <div style="margin-bottom: 10px; padding: 8px; border: 1px solid #ddd; border-left: 4px solid ${color}; border-radius: 2px;">
                 <div style="cursor:pointer;font-weight:bold;user-select:none;margin-bottom:4px;"
                      onclick="var e=document.getElementById('gtg${idx}');e.style.display=e.style.display==='none'?'block':'none';">
-                    &gt; Group ${idx + 1}: ${c.size} sequence${c.size !== 1 ? 's' : ''}
+                    &gt; Group ${idx + 1}: ${c.size} sequence${c.size !== 1 ? 's' : ''}, ${nStrict} exclusive / ${nCloudy} cloudy
                 </div>
                 <div id="gtg${idx}" style="display:none;margin-left:8px;">
                     ${c.sequences.map(s => `<div style="font-family:monospace;font-size:10px;">- ${s.id}</div>`).join('')}
+                    <div style="margin-top:6px;"><strong>Characters (motif runs):</strong></div>
+                    ${_motifRunsHtml(c.motifRuns)}
                 </div>
             </div>`;
     });
@@ -11958,6 +12102,12 @@ async function _clusterSequencesNow(update) {
         minOccurrences: clusterParams.minOccurrences
     });
 
+    clusterer.attachCharacterization(clusterResults.clusters, { unionCloudy: true });
+    state.clusterTypeRows = clusterResults.clusters.map((c, idx) => ({
+        name: `Cluster ${idx + 1}`,
+        headers: c.sequences.map(s => s.id)
+    }));
+
     // Store results in state
     state.clusterResults = clusterResults;
 
@@ -12027,8 +12177,8 @@ async function _clusterSequencesNow(update) {
 
     console.log('\n=== END CLUSTERING ===\n');
 
-    // Color the sequence names in UI
-    colorSequencesByCluster();
+    _rebuildClusterCharMap();
+    renderAlignment();
     displayClusteringResults(clusterResults);
 
     updateClusteringStatus(`Clustering complete: ${clusterResults.summary.nClusters} clusters found`);
@@ -12172,6 +12322,48 @@ function highlightDiagnosticMutations() {
                         clusterName: `Cluster ${clusterIdx + 1}`,
                         seqHeaders: new Set(cluster.sequences.map(s => s.id)),
                         isPerfect: false,
+                        isCloudy: false,
+                        interClusterLeakage: {
+                            count: leakageCount,
+                            total: totalOtherClusterSeqs,
+                            percent: leakagePercent
+                        }
+                    });
+                });
+            }
+
+            if (cluster.cloudyFeatures) {
+                cluster.cloudyFeatures.forEach(feature => {
+                    const pos = feature.pos - 1 + colOffset;
+
+                    if (!diagnosticMap[pos]) {
+                        diagnosticMap[pos] = [];
+                    }
+
+                    let leakageCount = 0;
+                    let totalOtherClusterSeqs = 0;
+                    state.clusterResults.clusters.forEach((otherCluster, otherIdx) => {
+                        if (otherIdx !== clusterIdx) {
+                            totalOtherClusterSeqs += otherCluster.sequences.length;
+                            otherCluster.sequences.forEach(seq => {
+                                if (seq.seq && seq.seq[pos] === feature.char) {
+                                    leakageCount++;
+                                }
+                            });
+                        }
+                    });
+
+                    const leakagePercent = totalOtherClusterSeqs > 0 ? Math.round((leakageCount / totalOtherClusterSeqs) * 100) : 0;
+
+                    diagnosticMap[pos].push({
+                        clusterIdx,
+                        color,
+                        char: feature.char,
+                        countOutside: feature.countOutside,
+                        clusterName: `Cluster ${clusterIdx + 1}`,
+                        seqHeaders: new Set(cluster.sequences.map(s => s.id)),
+                        isPerfect: false,
+                        isCloudy: true,
                         interClusterLeakage: {
                             count: leakageCount,
                             total: totalOtherClusterSeqs,
@@ -12217,8 +12409,8 @@ function highlightDiagnosticMutations() {
 
                     // Only highlight if the base matches the diagnostic character
                     const baseChar = span.textContent;
-                    if (baseChar === diag.char) {
-                        const alpha = diag.isPerfect ? 1.0 : 0.4; // Perfect = full opacity, Imperfect = 40% opacity
+                    if (baseChar.toUpperCase() === String(diag.char || '').toUpperCase()) {
+                        const alpha = diag.isPerfect ? 1.0 : 0.72;
 
                         // Convert hex color to RGB with alpha
                         const rgb = hexToRgb(diag.color);
@@ -12230,11 +12422,13 @@ function highlightDiagnosticMutations() {
                         span.style.setProperty('font-weight', diag.isPerfect ? 'bold' : 'normal', 'important');
 
                         // Create enhanced tooltip showing inter-cluster leakage
-                        let title = `${diag.clusterName}: ${diag.isPerfect ? 'diagnostic' : 'partial'} ${diag.char}`;
+                        let title = `${diag.clusterName}: ${diag.isPerfect ? 'diagnostic' : (diag.isCloudy ? 'cloudy' : 'partial')} ${diag.char}`;
 
                         // If this feature has inter-cluster leakage info, show it
                         if (diag.interClusterLeakage) {
-                            title += ` [leaks to ${diag.interClusterLeakage.count}/${diag.interClusterLeakage.total} in other clusters (${diag.interClusterLeakage.percent}%)]`;
+                            title += diag.isCloudy
+                                ? ` [leaks to ${diag.interClusterLeakage.count}/${diag.interClusterLeakage.total} in other clusters (${diag.interClusterLeakage.percent}%)]`
+                                : ` [leaks to ${diag.interClusterLeakage.count}/${diag.interClusterLeakage.total} in other clusters (${diag.interClusterLeakage.percent}%)]`;
                         } else if (diag.countOutside !== undefined) {
                             title += ` (found in ${diag.countOutside} outside)`;
                         }
@@ -12487,7 +12681,7 @@ function displayClusteringResults(results) {
         html += `
             <div style="margin-bottom: 12px; padding: 8px; border: 1px solid #ddd; border-left: 4px solid ${color}; border-radius: 2px;">
                 <div style="cursor: pointer; font-weight: bold; user-select: none; margin-bottom: 4px;" onclick="document.getElementById('cluster${idx}').style.display = document.getElementById('cluster${idx}').style.display === 'none' ? 'block' : 'none';">
-                    > Cluster ${idx + 1}: ${cluster.size} sequences, ${cluster.nPerfect} diagnostic features
+                    > Cluster ${idx + 1}: ${cluster.size} sequences, ${cluster.nPerfect} exclusive / ${(cluster.cloudyFeatures || []).length} cloudy
                 </div>
                 <div id="cluster${idx}" style="display: none; margin-left: 8px; margin-top: 8px;">
                     <div style="margin-bottom: 8px;">
@@ -12497,9 +12691,15 @@ function displayClusteringResults(results) {
                         </div>
                     </div>
                     <div style="margin-bottom: 8px;">
-                        <strong>Diagnostic Features (first 20):</strong>
+                        <strong>Exclusive characters (first 20):</strong>
                         <div style="margin: 4px 0; padding: 4px; background: #f9f9f9; border-radius: 2px; max-height: 150px; overflow-y: auto;">
-                            ${cluster.perfectFeatures.length > 0 ? cluster.perfectFeatures.map(f => `<div style="font-family: monospace; font-size: 10px;">Pos ${f.pos}: ${f.char}</div>`).join('') : '<em>None</em>'}
+                            ${cluster.perfectFeatures.length > 0 ? cluster.perfectFeatures.slice(0, 20).map(f => `<div style="font-family: monospace; font-size: 10px;">Pos ${f.pos}: ${f.char}</div>`).join('') : '<em>None</em>'}
+                        </div>
+                    </div>
+                    <div style="margin-bottom: 8px;">
+                        <strong>Cloudy characters (motif runs):</strong>
+                        <div style="margin: 4px 0; padding: 4px; background: #f9f9f9; border-radius: 2px; max-height: 150px; overflow-y: auto;">
+                            ${_motifRunsHtml(cluster.motifRuns)}
                         </div>
                     </div>
                     <button onclick="highlightCluster(${idx})" style="padding: 4px 8px; font-size: 11px; background: ${color}; color: white; border: none; border-radius: 2px; cursor: pointer;">Highlight in alignment</button>
@@ -12905,8 +13105,17 @@ function _reorderByGuideTree(fasta) {
 // the cut height is reported so the separation can be judged.
 function cutGuideTree(seqs, groups) {
     const n = seqs.length;
-    const target = Math.max(1, Math.min(groups, n));
     const { merges } = _kmerGuideTree(seqs);
+    let auto = false;
+    let target;
+    if (groups == null || groups === 'auto') {
+        auto = true;
+        target = (typeof SINEClusterer !== 'undefined' && SINEClusterer.suggestGroupCount)
+            ? SINEClusterer.suggestGroupCount(merges.map(m => m.d), n)
+            : Math.min(4, Math.max(2, n - 1));
+    } else {
+        target = Math.max(1, Math.min(groups, n));
+    }
     const parent = Array.from({ length: n }, (_, i) => i);
     const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
 
@@ -12927,7 +13136,7 @@ function cutGuideTree(seqs, groups) {
         byRoot.get(r).push(i);
     }
     const groupsOut = [...byRoot.values()].sort((a, b) => b.length - a.length);
-    return { groups: groupsOut, cutHeight, nextHeight };
+    return { groups: groupsOut, cutHeight, nextHeight, auto, target };
 }
 
 function _treeIsBase(char) {

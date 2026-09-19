@@ -87,6 +87,73 @@ function ok(name, cond, detail) {
     ok('a diagnostic rectangle is one type', typed.some(t => t.n >= 7 && t.purity >= 0.8),
         JSON.stringify(typed.slice(0, 8)));
 
+    const labeled = [[], [], [], [], []];
+    sub.forEach((s, i) => { const t = truth(s.id); if (t) labeled[t].push(i); });
+    const kGroups = [labeled[1], labeled[2], labeled[3], labeled[4]];
+    const charer = new cctx.SINEClusterer(sub.map(s => ({ id: s.id, seq: s.seq })));
+    const chars = charer.characterizeGroups(kGroups);
+    const k3 = chars[2];
+    const k3pos = new Set();
+    (k3.perfectFeatures || []).forEach(f => k3pos.add(f.pos));
+    (k3.cloudyFeatures || []).forEach(f => k3pos.add(f.pos));
+    const k3motif = (k3.motifRuns || []).map(r => r.start + '-' + r.end + ':' + r.motif).join(' | ');
+    console.log('K3 characters', k3pos.size, 'runs', k3motif);
+    ok('K3 paints CTCCCAGG distinctive CTC (ungapped ~58, aln 128-130)',
+        k3pos.has(128) && k3pos.has(129) && k3pos.has(130),
+        'missing ' + [128, 129, 130].filter(p => !k3pos.has(p)).join(',') + ' runs ' + k3motif);
+    ok('K3 CTCCCAGG starts with exclusive C vs consensus G (aln 128)',
+        (k3.perfectFeatures || []).some(f => f.pos === 128 && f.char === 'C'),
+        JSON.stringify((k3.perfectFeatures || []).filter(f => f.pos >= 128 && f.pos <= 135)));
+    ok('conserved ccagg tail of CTCCCAGG is not claimed (aln 131-132, 134-135)',
+        !k3pos.has(131) && !k3pos.has(132) && !k3pos.has(134) && !k3pos.has(135),
+        'claimed ' + [131, 132, 134, 135].filter(p => k3pos.has(p)).join(','));
+    const consPos = [];
+    const L = sub[0].seq.length;
+    for (let p = 0; p < L; p++) {
+        const counts = {};
+        let n = 0;
+        sub.forEach(s => {
+            const ch = s.seq[p];
+            if (!ch || ch === '-' || ch === '.') return;
+            counts[ch] = (counts[ch] || 0) + 1;
+            n++;
+        });
+        let max = 0;
+        Object.keys(counts).forEach(k => { if (counts[k] > max) max = counts[k]; });
+        if (n && max / sub.length > 0.8) consPos.push(p + 1);
+    }
+    const claimedCore = consPos.filter(p => {
+        if (!k3pos.has(p)) return false;
+        const counts = {};
+        sub.forEach(s => {
+            const ch = s.seq[p - 1];
+            if (!ch || ch === '-' || ch === '.') return;
+            counts[ch] = (counts[ch] || 0) + 1;
+        });
+        let maxch = null, max = 0;
+        Object.keys(counts).forEach(k => { if (counts[k] > max) { max = counts[k]; maxch = k; } });
+        const feat = [...(k3.perfectFeatures || []), ...(k3.cloudyFeatures || [])].find(f => f.pos === p);
+        return feat && feat.char === maxch;
+    });
+    ok('K3 does not claim globally conserved consensus bases', claimedCore.length === 0,
+        'claimed ' + claimedCore.join(','));
+
+    const typeHeaders = kGroups.map(g => g.map(i => sub[i].id));
+    const tagged = diag.map(b => {
+        const headers = (b.rows || []).map(ri => sub[ri].id);
+        return cctx.SINEClusterer.tagRectangleAgainstTypes(headers, typeHeaders);
+    });
+    ok('a diagnostic rectangle tags as inside or supports a labeled type',
+        tagged.some(t => t.kind === 'inside' || t.kind === 'supports'),
+        JSON.stringify(tagged.slice(0, 8)));
+
+    const auto4 = cctx.SINEClusterer.suggestGroupCount(
+        [0.01, 0.01, 0.02, 0.02, 0.03, 0.04, 0.20, 0.21, 0.22], 10);
+    ok('suggestGroupCount cuts at the similarity jump (k=4)', auto4 === 4, 'k=' + auto4);
+    const autoFine = cctx.SINEClusterer.suggestGroupCount(
+        [0.01, 0.02, 0.03, 0.18, 0.19, 0.20, 0.38, 0.39, 0.40], 10);
+    ok('suggestGroupCount prefers the finer of two prominent jumps', autoFine >= 4, 'k=' + autoFine);
+
     if (failed) {
         console.log(failed + ' failed');
         process.exit(1);

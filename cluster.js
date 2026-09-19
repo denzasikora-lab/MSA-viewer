@@ -542,6 +542,248 @@ class SINEClusterer {
         return {perfectFeatures: perfect, imperfectFeatures: imperfect};
     }
 
+    _ensureColumnCharCounts() {
+        if (this._columnCharCounts) return;
+        this._columnCharCounts = new Map();
+        for (let pos = 0; pos < this.alnLen; pos++) {
+            const counts = new Map();
+            for (let i = 0; i < this.nSeqs; i++) {
+                const ch = this.matrix[i][pos];
+                if (ch !== '-' && ch !== '.') {
+                    counts.set(ch, (counts.get(ch) || 0) + 1);
+                }
+            }
+            this._columnCharCounts.set(pos, counts);
+        }
+    }
+
+    _seqIndex(x) {
+        if (typeof x === 'number' && x >= 0) return x;
+        if (x && typeof x.index === 'number') return x.index;
+        return -1;
+    }
+
+    /**
+     * Given a row partition (types), score every column as a character of each
+     * type. Discovery is inverted: groups are already known (guide-tree or
+     * Cluster Now); this only asks which columns characterize them.
+     * Strict = exclusive (outside 0). Cloudy = enriched in the type but leaky.
+     */
+    characterizeGroups(groupIndexLists, options) {
+        options = options || {};
+        const minSize = options.minSize || 3;
+        const inMin = options.cloudyInFreq != null ? options.cloudyInFreq : 0.55;
+        const outMax = options.cloudyOutFreq != null ? options.cloudyOutFreq : 0.40;
+        const deltaMin = options.cloudyDelta != null ? options.cloudyDelta : 0.35;
+        const consGate = 0.8;
+        this._ensureColumnCharCounts();
+
+        const lists = Array.isArray(groupIndexLists) ? groupIndexLists : [];
+        const results = [];
+        for (let gi = 0; gi < lists.length; gi++) {
+            const members = [];
+            const raw = lists[gi] || [];
+            for (let k = 0; k < raw.length; k++) {
+                const idx = this._seqIndex(raw[k]);
+                if (idx >= 0 && idx < this.nSeqs) members.push(idx);
+            }
+            const gsize = members.length;
+            const outsideN = this.nSeqs - gsize;
+            const strict = [];
+            const cloudy = [];
+            if (gsize < minSize) {
+                results.push({ perfectFeatures: strict, cloudyFeatures: cloudy, motifRuns: [] });
+                continue;
+            }
+            for (let pos = 0; pos < this.alnLen; pos++) {
+                const gcounts = this._columnCharCounts.get(pos);
+                let maxGlobal = 0;
+                let globChar = null;
+                if (gcounts) {
+                    gcounts.forEach(function (v, ch) {
+                        if (v > maxGlobal) { maxGlobal = v; globChar = ch; }
+                    });
+                }
+
+                const counts = new Map();
+                let insideCovered = 0;
+                for (let m = 0; m < members.length; m++) {
+                    const ch = this.matrix[members[m]][pos];
+                    if (!ch || ch === '-' || ch === '.') continue;
+                    counts.set(ch, (counts.get(ch) || 0) + 1);
+                    insideCovered++;
+                }
+                if (insideCovered < minSize) continue;
+
+                let b = null, bCount = 0;
+                counts.forEach(function (n, ch) {
+                    if (n > bCount) { b = ch; bCount = n; }
+                });
+                if (!b) continue;
+
+                // Skip the shared conserved core only when this type agrees with
+                // it. A minority apomorphy in an otherwise 80%+ column (K3 C vs
+                // consensus G at CTCCCAGG) is a type character, not core.
+                if (this.nSeqs > 0 && maxGlobal / this.nSeqs > consGate && b === globChar) continue;
+
+                const inside = bCount;
+                const totalAtPos = (gcounts && gcounts.get(b)) || 0;
+                const outside = Math.max(0, totalAtPos - inside);
+                const inFreq = inside / gsize;
+                const outFreq = outsideN > 0 ? outside / outsideN : 0;
+
+                if (outside === 0 && inside >= minSize) {
+                    strict.push({ pos: pos + 1, char: b, countOutside: 0, inFreq: inFreq, outFreq: outFreq });
+                } else if (inside >= minSize && inFreq >= inMin && outFreq <= outMax && (inFreq - outFreq) >= deltaMin) {
+                    cloudy.push({ pos: pos + 1, char: b, countOutside: outside, inFreq: inFreq, outFreq: outFreq });
+                }
+            }
+            results.push({
+                perfectFeatures: strict,
+                cloudyFeatures: cloudy,
+                motifRuns: SINEClusterer.mergeMotifRuns(strict, cloudy)
+            });
+        }
+        return results;
+    }
+
+    attachCharacterization(clusters, options) {
+        options = options || {};
+        const lists = (clusters || []).map(c => c.sequences || []);
+        const chars = this.characterizeGroups(lists, options);
+        for (let i = 0; i < (clusters || []).length; i++) {
+            SINEClusterer.applyCharacterization(clusters[i], chars[i], !!options.unionCloudy);
+        }
+        return chars;
+    }
+
+    static applyCharacterization(cluster, char, unionCloudy) {
+        if (!cluster || !char) return cluster;
+        if (!unionCloudy) {
+            cluster.perfectFeatures = char.perfectFeatures || [];
+            cluster.cloudyFeatures = char.cloudyFeatures || [];
+            cluster.motifRuns = char.motifRuns || [];
+            cluster.nPerfect = cluster.perfectFeatures.length;
+            return cluster;
+        }
+        if (!cluster.perfectFeatures) cluster.perfectFeatures = [];
+        const seen = new Set(cluster.perfectFeatures.map(f => f.pos + ':' + f.char));
+        const extra = char.perfectFeatures || [];
+        for (let i = 0; i < extra.length; i++) {
+            const f = extra[i];
+            const k = f.pos + ':' + f.char;
+            if (!seen.has(k)) {
+                cluster.perfectFeatures.push(f);
+                seen.add(k);
+            }
+        }
+        cluster.cloudyFeatures = (char.cloudyFeatures || []).filter(f => !seen.has(f.pos + ':' + f.char));
+        cluster.motifRuns = char.motifRuns || [];
+        cluster.nPerfect = cluster.perfectFeatures.length;
+        return cluster;
+    }
+
+    static mergeMotifRuns(strict, cloudy) {
+        const byPos = new Map();
+        (strict || []).forEach(f => byPos.set(f.pos, { pos: f.pos, char: f.char, grade: 'strict' }));
+        (cloudy || []).forEach(f => {
+            if (!byPos.has(f.pos)) byPos.set(f.pos, { pos: f.pos, char: f.char, grade: 'cloudy' });
+        });
+        const poss = Array.from(byPos.keys()).sort((a, b) => a - b);
+        const runs = [];
+        let run = null;
+        for (let i = 0; i < poss.length; i++) {
+            const p = poss[i];
+            const f = byPos.get(p);
+            if (run && p === run.end + 1) {
+                run.end = p;
+                run.motif += f.char;
+                if (f.grade === 'strict') run.nStrict++;
+                else run.nCloudy++;
+            } else {
+                if (run) runs.push(run);
+                run = {
+                    start: p,
+                    end: p,
+                    motif: f.char,
+                    nStrict: f.grade === 'strict' ? 1 : 0,
+                    nCloudy: f.grade === 'cloudy' ? 1 : 0
+                };
+            }
+        }
+        if (run) runs.push(run);
+        return runs;
+    }
+
+    /**
+     * How many groups to cut an UPGMA guide tree into. mergeDistances[i] is
+     * the distance of the i-th closest merge (first merge = 0). The cut is
+     * the largest jump in that series; if several jumps are close, the
+     * finer split (more groups) is kept so visual bands are not collapsed.
+     */
+    static suggestGroupCount(mergeDistances, n) {
+        const dists = mergeDistances || [];
+        const maxK = Math.min(15, Math.max(2, (n || 0) - 1));
+        if (!n || n < 3 || !dists.length) return Math.min(4, Math.max(2, n || 2));
+        const candidates = [];
+        for (let m = 0; m < dists.length; m++) {
+            const kAfter = n - (m + 1);
+            if (kAfter < 2 || kAfter > maxK) continue;
+            const d0 = dists[m];
+            const d1 = m + 1 < dists.length ? dists[m + 1] : d0;
+            candidates.push({ k: kAfter, gap: d1 - d0 });
+        }
+        if (!candidates.length) return Math.min(4, maxK);
+        let maxGap = 0;
+        for (let i = 0; i < candidates.length; i++) {
+            if (candidates[i].gap > maxGap) maxGap = candidates[i].gap;
+        }
+        if (maxGap <= 0) return Math.min(4, maxK);
+        const prominent = candidates.filter(c => c.gap >= maxGap * 0.5);
+        prominent.sort((a, b) => b.k - a.k);
+        return prominent[0].k;
+    }
+
+    /**
+     * Tag a bicluster rectangle's row-ids against type id-lists (same id space:
+     * sequence indices or headers). inside = all rect rows subset of one type;
+     * supports = Jaccard >= 0.5 but not a subset; discordant = mixed types.
+     */
+    static tagRectangleAgainstTypes(rectIds, typeIdLists) {
+        if (!rectIds || rectIds === 'all' || !rectIds.length) {
+            return { kind: 'none', typeIdx: -1, jaccard: 0 };
+        }
+        const R = new Set(rectIds);
+        let bestInside = null;
+        let bestSupport = null;
+        let typesHit = 0;
+        const lists = typeIdLists || [];
+        for (let t = 0; t < lists.length; t++) {
+            const T = new Set(lists[t] || []);
+            if (!T.size) continue;
+            let inter = 0;
+            R.forEach(function (id) { if (T.has(id)) inter++; });
+            if (inter === 0) continue;
+            typesHit++;
+            const union = R.size + T.size - inter;
+            const jaccard = union ? inter / union : 0;
+            const subset = inter === R.size && R.size >= 2;
+            if (subset) {
+                if (!bestInside || jaccard > bestInside.jaccard) {
+                    bestInside = { kind: 'inside', typeIdx: t, jaccard: jaccard };
+                }
+            } else if (jaccard >= 0.5) {
+                if (!bestSupport || jaccard > bestSupport.jaccard) {
+                    bestSupport = { kind: 'supports', typeIdx: t, jaccard: jaccard };
+                }
+            }
+        }
+        if (bestInside) return bestInside;
+        if (bestSupport) return bestSupport;
+        if (typesHit >= 2) return { kind: 'discordant', typeIdx: -1, jaccard: 0 };
+        return { kind: 'none', typeIdx: -1, jaccard: 0 };
+    }
+
     _makeOptions(opts = {}) {
         return {
             minSize: 3,

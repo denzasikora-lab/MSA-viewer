@@ -776,6 +776,21 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li><em>Colour by Cluster</em> (Actions menu) assigns persistent background colours to sequence names by cluster membership</li>
     <li><em>Group Consensus</em> (Consensus menu) computes and inserts a consensus row for any selected cluster</li>
   </ul>
+  <p>
+    Three instruments answer different questions and then share state.
+    <strong>Guide-tree groups</strong> / <strong>Group by similarity</strong> cuts the same 6-mer UPGMA tree used to
+    reorder rows after alignment (MAFFT-like overall similarity) and assigns
+    every sequence to a type. The number of groups is taken from the largest
+    jump in that tree unless you type one.
+    <strong>Cluster Now</strong> discovers types from exclusive diagnostic
+    columns only &mdash; it does not form groups from leaky characters.
+    After either grouping, exclusive (solid) and <em>cloudy</em> (faint)
+    characters of those types are highlighted: cloudy columns are enriched
+    in a type even when they leak into others.
+    <strong>Show bicluster</strong> draws independent row&times;column
+    rectangles; when types already exist, each rectangle is tagged as
+    supporting a type, a stack inside a type, or discordant.
+  </p>
 
   <h3 id="cl-blockmask">4.7 2D Block Mask (squint view)</h3>
   <p>
