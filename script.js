@@ -13566,11 +13566,19 @@ function realignSelectedBlock() {
     // Save undo state
     pushUndo('realign-block');
 
-    // Extract block sub-sequences as FASTA
+    // Extract block sub-sequences as FASTA. originalCaseByHeader keeps the
+    // pre-MAFFT ungapped text (case intact) per sequence so the realigned
+    // result can have original case remapped back onto it -- MAFFT's WASM
+    // build outputs bases in a fixed case regardless of input case (found
+    // 2026-09-19, see _remapCaseOntoAligned), so parseMafftOutput's result
+    // cannot be trusted for case and must be corrected here.
     let blockFasta = '';
+    const originalCaseByHeader = new Map();
     for (const s of state.seqs) {
         const block = s.seq.substring(minCol, maxCol + 1);
-        blockFasta += `>${s.header}\n${block.replace(/[-.]/g, '')}\n`;
+        const ungapped = block.replace(/[-.]/g, '');
+        blockFasta += `>${s.header}\n${ungapped}\n`;
+        originalCaseByHeader.set(s.header, ungapped);
     }
 
     const { args: extraArgs, seqType } = getMafftExtraArgs();
@@ -13591,7 +13599,9 @@ function realignSelectedBlock() {
         for (let i = 0; i < state.seqs.length; i++) {
             const match = aligned.find(a => a.name === state.seqs[i].header);
             if (!match) continue;
-            const padded = match.seq.padEnd(maxLen, '-');
+            const origCase = originalCaseByHeader.get(state.seqs[i].header);
+            const recased = origCase ? _remapCaseOntoAligned(origCase, match.seq) : match.seq;
+            const padded = recased.padEnd(maxLen, '-');
             const left = state.seqs[i].seq.substring(0, minCol);
             const right = state.seqs[i].seq.substring(maxCol + 1);
             state.seqs[i].seq = left + padded + right;
@@ -14190,6 +14200,25 @@ function addSequencesAndAlign() {
     });
 }
 
+// Remaps original per-base case onto a gapped MAFFT-realigned sequence.
+// MAFFT's WASM build outputs a fixed case for every base regardless of the
+// input's case (confirmed 2026-09-19: an all-lowercase-flank/uppercase-body
+// test alignment came back entirely lowercase after realigning). Since
+// realigning only inserts gaps -- it never reorders or substitutes bases --
+// walking `aligned` and consuming one character of `original` per non-gap
+// position recovers the correct per-base case exactly.
+function _remapCaseOntoAligned(original, aligned) {
+    let oi = 0;
+    let out = '';
+    for (let k = 0; k < aligned.length; k++) {
+        const c = aligned[k];
+        if (c === '-' || c === '.') { out += c; continue; }
+        const orig = original[oi++];
+        out += (orig !== undefined && orig === orig.toLowerCase()) ? c.toLowerCase() : c.toUpperCase();
+    }
+    return out;
+}
+
 /**
  * Parse MAFFT FASTA output into array of {name, seq} objects.
  */
@@ -14204,7 +14233,15 @@ function parseMafftOutput(fastaStr) {
             if (current) result.push(current);
             current = { name: trimmed.substring(1).trim(), seq: '' };
         } else if (current) {
-            current.seq += trimmed.toUpperCase();
+            // Preserve MAFFT's original-case output (2026-08-21 TODO, root
+            // cause found 2026-09-19: this used to force .toUpperCase() here,
+            // destroying lowercase flanking bases on every realign
+            // round-trip -- an extra transformation added in this parsing
+            // layer, not something MAFFT itself requires or any of this
+            // function's 5 callers need. They all just splice the result
+            // back into state.seqs[i].seq for display/storage, which already
+            // supports mixed-case sequences (lowercase flanks) elsewhere.
+            current.seq += trimmed;
         }
     }
     if (current) result.push(current);
