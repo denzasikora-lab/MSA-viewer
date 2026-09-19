@@ -7779,7 +7779,20 @@ function addConsensusLine(parent, consensus, start, end, nameLen, stickyNames, b
                 .filter(([b,_]) => b !== '-' && b !== '.')
                 .sort((a,b) => b[1]-a[1]);
             const colorMap = { A:'#27ae60', C:'#2980b9', G:'#d35400', T:'#c0392b', N:'#7f8c8d' };
-            let html = `<div class="cov-row">Coverage: <strong>${coveragePct}%</strong> (${nonGaps.length}/${totalSeqs})</div>`;
+            const consChar = consensus[pos] || '-';
+            const consGap = consChar === '-' || consChar === '.' || consChar === ' ';
+            let ungapped = 0;
+            for (let i = 0; i <= pos && i < consensus.length; i++) {
+                const c = consensus[i];
+                if (c && c !== '-' && c !== '.' && c !== ' ') ungapped++;
+            }
+            const ungappedHtml = consGap
+                ? (ungapped > 0
+                    ? `<strong>—</strong> <span class="raw">(gap after ${ungapped})</span>`
+                    : `<strong>—</strong> <span class="raw">(leading gap)</span>`)
+                : `<strong>${ungapped}</strong>`;
+            let html = `<div class="coord-row">aln <strong>${pos + 1}</strong> · ungapped ${ungappedHtml}</div>`;
+            html += `<div class="cov-row">Coverage: <strong>${coveragePct}%</strong> (${nonGaps.length}/${totalSeqs})</div>`;
             if (entries.length === 0) {
                 html += '<div class="freq-row"><em>No bases</em></div>';
             } else {
@@ -11732,43 +11745,51 @@ function _gapOnlyColumnCount() {
     return n;
 }
 
-function _trimPreviewNote(b, params) {
+function _trimVar(x) {
+    return '<span class="trim-var">' + x + '</span>';
+}
+
+function _trimButtonTooltipHtml() {
+    const general = 'Apply the Keep range. Hard deletes those end columns; Soft only hides them from grouping.';
+    const b = state.trimBoundaries;
     const len = _trimAlnLen();
+    if (!b || !len) {
+        return '<div class="trim-tip-gen">' + general + '</div>'
+            + '<div class="trim-tip-dyn">Run Preview first, or type Keep / drag the coloured Consensus edges.</div>';
+    }
+    const params = getTrimParameters();
     const leftN = b.leftTrimEnd + 1;
     const rightN = Math.max(0, len - b.rightTrimStart);
     const lp = Math.round((params.leftGapThresh || 0) * 100);
     const rp = Math.round((params.rightGapThresh || 0) * 100);
     const w = params.edgeWindow;
-    const whyL = state.trimManualLeft ? 'moved by hand' : ('≥' + lp + '% gaps, window ' + w);
-    const whyR = state.trimManualRight ? 'moved by hand' : ('≥' + rp + '% gaps, window ' + w);
+    const whyL = state.trimManualLeft ? 'moved by hand' : ('≥' + _trimVar(lp + '%') + ' gaps, window ' + _trimVar(w));
+    const whyR = state.trimManualRight ? 'moved by hand' : ('≥' + _trimVar(rp + '%') + ' gaps, window ' + _trimVar(w));
     const parts = [];
-    if (leftN > 0) parts.push('left cols 1–' + leftN + ' (' + whyL + ')');
-    if (rightN > 0) parts.push('right cols ' + (b.rightTrimStart + 1) + '–' + len + ' (' + whyR + ')');
-    let text;
-    if (!parts.length) text = 'Ends are already below the gap %. Nothing to cut.';
-    else text = 'Will remove ' + parts.join('; ') + '. Edit Keep or drag the coloured Consensus edges, then Trim.';
+    if (leftN > 0) parts.push('left cols ' + _trimVar('1') + '–' + _trimVar(String(leftN)) + ' (' + whyL + ')');
+    if (rightN > 0) parts.push('right cols ' + _trimVar(String(b.rightTrimStart + 1)) + '–' + _trimVar(String(len)) + ' (' + whyR + ')');
+    let dyn;
+    if (!parts.length) dyn = 'Ends are already below the gap %. Nothing to cut.';
+    else dyn = 'Will remove ' + parts.join('; ') + '.';
     const gaps = _gapOnlyColumnCount();
-    if (gaps > 0) text += ' ' + gaps + ' all-gap column' + (gaps === 1 ? '' : 's') + ' remain — Empty cols drops them.';
-    return text;
+    if (gaps > 0) dyn += ' ' + _trimVar(String(gaps)) + ' all-gap column' + (gaps === 1 ? '' : 's') + ' remain — Empty cols drops them.';
+    return '<div class="trim-tip-gen">' + general + '</div><div class="trim-tip-dyn">' + dyn + '</div>';
 }
 
 function _syncTrimKeepInputs() {
     const fromEl = el('trimKeepFrom');
     const toEl = el('trimKeepTo');
-    const note = el('trimPreviewNote');
     const len = _trimAlnLen();
     const b = state.trimBoundaries;
     if (!fromEl || !toEl) return;
     if (!b || !len) {
         if (!fromEl.matches(':focus')) fromEl.value = '';
         if (!toEl.matches(':focus')) toEl.value = '';
-        if (note) note.textContent = '';
         return;
     }
     const { from, to } = _trimKeepRange(b, len);
     if (!fromEl.matches(':focus')) fromEl.value = String(from);
     if (!toEl.matches(':focus')) toEl.value = String(to);
-    if (note) note.textContent = _trimPreviewNote(b, getTrimParameters());
 }
 
 function _clampTrimBounds(leftTrimEnd, rightTrimStart, len) {
@@ -11924,8 +11945,7 @@ function executeTrimming() {
         state.trimBackup = null;
         const clearBtn = document.getElementById('clearSoftTrimButton');
         if (clearBtn) clearBtn.style.display = '';
-        const status = `[OK] Soft trim: ${leftRemoved}L + ${rightRemoved}R marked for clustering. Alignment unchanged.`;
-        updateClusteringStatus(status);
+        const status = `Soft trim: ${leftRemoved} left + ${rightRemoved} right marked for clustering. Alignment unchanged.`;
         showMessage(status, 3000);
         _clearTrimPreview();
         debounceRender();
@@ -11951,8 +11971,7 @@ function executeTrimming() {
     }
 
     const newLen = trimEnd - trimStart;
-    const status = `[OK] Hard trim: ${leftRemoved}L + ${rightRemoved}R = ${leftRemoved + rightRemoved} cols. New length: ${newLen}`;
-    updateClusteringStatus(status);
+    const status = `Hard trim: ${leftRemoved} left + ${rightRemoved} right = ${leftRemoved + rightRemoved} cols. New length: ${newLen}`;
     showMessage(status, 3000);
     _clearTrimPreview();
     debounceRender();
@@ -11962,7 +11981,6 @@ function clearSoftTrimming() {
     state.softTrimBoundaries = null;
     const clearBtn = document.getElementById('clearSoftTrimButton');
     if (clearBtn) clearBtn.style.display = 'none';
-    updateClusteringStatus('Soft trim cleared');
     showMessage('Soft trim boundaries removed.', 2000);
     debounceRender();
 }
@@ -11978,7 +11996,6 @@ function undoTrimming() {
     state.softTrimBoundaries = null;
     _clearTrimPreview();
 
-    updateClusteringStatus('[OK] Trimming reverted');
     showMessage('Trimming reverted - original alignment restored', 3000);
     debounceRender();
 }
@@ -16297,6 +16314,18 @@ function initializeAppUI() {
             debounceRender();
         });
     });
+
+    const trimBtn = el('executeTrimButton');
+    if (trimBtn) {
+        trimBtn.addEventListener('mouseenter', () => {
+            showTooltipAt(_trimButtonTooltipHtml(), trimBtn, { html: true, className: 'trim-tip' });
+        });
+        trimBtn.addEventListener('mouseleave', hideTooltip);
+        trimBtn.addEventListener('focus', () => {
+            showTooltipAt(_trimButtonTooltipHtml(), trimBtn, { html: true, className: 'trim-tip' });
+        });
+        trimBtn.addEventListener('blur', hideTooltip);
+    }
 
     // Hotkeys icon hover tooltip
     const hotkeysBtn = el('hotkeysIconBtn');

@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=121">
+    <link rel="stylesheet" href="styles.css?v=122">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -329,26 +329,23 @@
                         <div class="cluster-panel">
                             <div class="cluster-block">
                                 <div class="cluster-block-title" title="Cut gappy alignment ends. Left/Right % and Window choose the automatic cut. Preview paints those columns on Consensus; then you can type Keep columns or drag the coloured edges. Hard deletes; Soft hides them from grouping only.">Trimming</div>
-                                <div style="margin-bottom: 6px; display: flex; gap: 10px;">
-                                    <div>
-                                        <label for="leftGapInput" style="font-size: 11px; display: block; margin-bottom: 2px;" title="Trim the left end while a sliding window is at least this % gaps">Left %:</label>
-                                        <input type="number" id="leftGapInput" min="0" max="100" value="50" step="5" style="width: 55px; font-size: 11px;" title="Left-end gap % that still counts as ragged. Preview turns this into a column cut.">
-                                    </div>
-                                    <div>
-                                        <label for="rightGapInput" style="font-size: 11px; display: block; margin-bottom: 2px;" title="Trim the right end while a sliding window is at least this % gaps">Right %:</label>
-                                        <input type="number" id="rightGapInput" min="0" max="100" value="80" step="5" style="width: 55px; font-size: 11px;" title="Right-end gap % that still counts as ragged. Preview turns this into a column cut.">
-                                    </div>
-                                    <div>
-                                        <label for="edgeWindowInput" style="font-size: 11px; display: block; margin-bottom: 2px;" title="How many columns are averaged when measuring end gap %">Window:</label>
-                                        <input type="number" id="edgeWindowInput" min="1" max="50" value="15" step="1" style="width: 50px; font-size: 11px;" title="Sliding-window width at each end.">
-                                    </div>
-                                </div>
-                                <div class="cluster-actions" style="margin-bottom: 6px;">
-                                    <span style="font-size: 11px; white-space: nowrap;" title="1-based columns that will be kept. Filled by Preview from Left/Right %. You can type new values or drag the coloured Consensus edges.">Keep
-                                        <input type="number" id="trimKeepFrom" min="1" step="1" placeholder="from" style="width: 48px; font-size: 11px;" title="First column to keep (1-based).">
-                                        –
-                                        <input type="number" id="trimKeepTo" min="1" step="1" placeholder="to" style="width: 48px; font-size: 11px;" title="Last column to keep (1-based).">
-                                    </span>
+                                <div class="cluster-trim-row">
+                                    <label for="leftGapInput" title="Trim the left end while a sliding window is at least this % gaps">Left %
+                                        <input type="number" id="leftGapInput" min="0" max="100" value="50" step="5" title="Left-end gap % that still counts as ragged. Preview turns this into a column cut.">
+                                    </label>
+                                    <label for="rightGapInput" title="Trim the right end while a sliding window is at least this % gaps">Right %
+                                        <input type="number" id="rightGapInput" min="0" max="100" value="80" step="5" title="Right-end gap % that still counts as ragged. Preview turns this into a column cut.">
+                                    </label>
+                                    <label for="edgeWindowInput" title="How many columns are averaged when measuring end gap %">Window
+                                        <input type="number" id="edgeWindowInput" min="1" max="50" value="15" step="1" title="Sliding-window width at each end.">
+                                    </label>
+                                    <label class="cluster-trim-keep" title="1-based columns that will be kept. Filled by Preview from Left/Right %. Type new values or drag the coloured Consensus edges.">Keep
+                                        <span class="cluster-trim-keep-inputs">
+                                            <input type="number" id="trimKeepFrom" min="1" step="1" placeholder="from" title="First column to keep (1-based).">
+                                            <span>–</span>
+                                            <input type="number" id="trimKeepTo" min="1" step="1" placeholder="to" title="Last column to keep (1-based).">
+                                        </span>
+                                    </label>
                                 </div>
                                 <div style="margin-bottom: 6px; display: flex; gap: 8px; align-items: center;">
                                     <span style="font-size: 11px; font-weight: bold;">Mode:</span>
@@ -357,12 +354,11 @@
                                 </div>
                                 <div class="cluster-actions">
                                     <button id="previewTrimButton" title="Measure gappy ends with Left/Right % and Window, fill Keep, and paint those columns on Consensus (drag the edges to adjust).">Preview</button>
-                                    <button id="executeTrimButton" title="Apply the Keep range. Hard deletes those end columns; Soft only hides them from grouping.">Trim</button>
+                                    <button id="executeTrimButton">Trim</button>
                                     <button id="undoTrimButton" title="Undo the last hard trim">Undo</button>
                                     <button id="trimDropEmptyButton" title="Delete columns that are a gap in every sequence">Empty cols</button>
                                     <button id="clearSoftTrimButton" style="display: none;" title="Clear soft trim boundaries">Clear Soft</button>
                                 </div>
-                                <div id="trimPreviewNote" class="cluster-progress" style="font-size: 10px; color: #555; margin-top: 6px; line-height: 1.35;"></div>
                             </div>
 
                             <div class="cluster-block">
@@ -1211,7 +1207,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=213"></script>
+    <script src="script.js?v=214"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>
