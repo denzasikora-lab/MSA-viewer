@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=124">
+    <link rel="stylesheet" href="styles.css?v=125">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -935,13 +935,20 @@
         </div>
     </div>
 
-    <!-- Clustering Results Modal -->
-    <div id="clusteringModal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 2px solid #333; border-radius: 4px; max-width: 700px; width: 95%; max-height: 80vh; overflow: hidden; z-index: 10000; box-shadow: 0 4px 6px rgba(0,0,0,0.3); flex-direction: column;">
-        <div id="clusteringModalHeader" style="background: #f5f5f5; padding: 12px; border-bottom: 1px solid #ccc; display: flex; justify-content: space-between; align-items: center; cursor: move; flex-shrink: 0;">
-            <h3 style="margin: 0; font-size: 14px;">Type results</h3>
-            <button title="Close this dialog" onclick="document.getElementById('clusteringModal').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px;">x</button>
+    <!-- Group explorer -->
+    <div id="clusteringModal" class="group-explorer" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10000;">
+        <div id="clusteringModalHeader" class="ge-header">
+            <h3>Group explorer</h3>
+            <div class="ge-window-btns">
+                <button type="button" id="clusteringModalClose" class="ge-win-btn" title="Close" onclick="document.getElementById('clusteringModal').style.display='none'">×</button>
+            </div>
         </div>
-        <div id="clusteringContent" style="padding: 12px; font-size: 11px; overflow-y: auto; flex: 1;">
+        <div class="ge-toolbar" id="geToolbar">
+            <input type="search" id="geSearch" placeholder="Find a sequence…" autocomplete="off" spellcheck="false" title="Type part of a sequence name to see which group it belongs to">
+            <span id="geSearchHit" class="ge-search-hit"></span>
+        </div>
+        <div id="geSummary" class="ge-summary"></div>
+        <div id="clusteringContent" class="ge-body">
             <!-- Populated by JavaScript -->
         </div>
     </div>
@@ -1213,7 +1220,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=216"></script>
+    <script src="script.js?v=217"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

@@ -278,11 +278,12 @@ function _rebuildClusterCharMap() {
         ? SINEClusterer.getClusterColors() : ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00'];
     const map = Object.create(null);
     state.clusterResults.clusters.forEach((cluster, clusterIdx) => {
-        const color = colors[clusterIdx % colors.length];
+        if (cluster.paintOff) return;
+        const color = cluster.color || colors[clusterIdx % colors.length];
         const headers = new Set((cluster.sequences || []).map(s => s.id));
         const firstId = cluster.sequences && cluster.sequences[0] && cluster.sequences[0].id;
         const name = (firstId && state.clusterMap && state.clusterMap[firstId] && state.clusterMap[firstId].name)
-            || ('Group ' + (clusterIdx + 1));
+            || cluster._typeName || ('Group ' + (clusterIdx + 1));
         const addFeats = (feats, isPerfect, isCloudy) => {
             (feats || []).forEach(feature => {
                 const pos0 = feature.pos - 1 + colOffset;
@@ -331,7 +332,15 @@ function applyClusterVisualsFromState() {
         if (!Number.isInteger(seqIdx) || seqIdx < 0 || seqIdx >= state.seqs.length) return;
         const header = state.seqs[seqIdx].header;
         if (state.clusterMap[header] === undefined) return;
-        const { color, name } = state.clusterMap[header];
+        const { color, name, paintOff } = state.clusterMap[header];
+        if (paintOff) {
+            nameEl.style.removeProperty('background-color');
+            nameEl.style.removeProperty('color');
+            nameEl.style.removeProperty('font-weight');
+            nameEl.classList.remove('cluster-colored');
+            nameEl.title = name ? (name + ' (paint off)') : '';
+            return;
+        }
         nameEl.style.setProperty('background-color', color, 'important');
         nameEl.style.setProperty('color', '#000000', 'important');
         nameEl.style.setProperty('font-weight', 'bold', 'important');
@@ -1575,27 +1584,38 @@ function makeModalDraggableResizable(modalId, headerId, contentId) {
 
     // Minimize button - collapses to just the header bar
     const minBtn = document.createElement('button');
+    minBtn.type = 'button';
     minBtn.title = 'Minimize';
-    minBtn.textContent = '–'; // en dash, reads as a minimize glyph
-    minBtn.style.cssText = 'background:none;border:none;font-size:16px;cursor:pointer;padding:0 6px;font-weight:bold;';
+    minBtn.textContent = '\u2013';
+    const btnWrap = header.querySelector('.ge-window-btns');
     const closeBtn = header.querySelector('button');
-    if (closeBtn) header.insertBefore(minBtn, closeBtn); else header.appendChild(minBtn);
+    if (btnWrap) {
+        minBtn.className = 'ge-win-btn';
+        const close = btnWrap.querySelector('button');
+        btnWrap.insertBefore(minBtn, close || null);
+    } else {
+        minBtn.style.cssText = 'background:none;border:none;font-size:16px;cursor:pointer;padding:0 6px;font-weight:bold;line-height:1;height:22px;width:22px;';
+        if (closeBtn) header.insertBefore(minBtn, closeBtn); else header.appendChild(minBtn);
+    }
 
     let minimized = false;
     let preMinimizeHeight = null;
     minBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const content = document.getElementById(contentId);
+        const extras = modal.querySelectorAll('.ge-toolbar, .ge-summary');
         minimized = !minimized;
         if (minimized) {
             pinCurrentPosition();
             preMinimizeHeight = modal.style.height || modal.getBoundingClientRect().height + 'px';
             if (content) content.style.display = 'none';
+            extras.forEach(n => { n.style.display = 'none'; });
             handle.style.display = 'none';
             modal.style.height = 'auto';
             modal.style.maxHeight = 'none';
         } else {
             if (content) content.style.display = '';
+            extras.forEach(n => { n.style.display = ''; });
             handle.style.display = '';
             if (preMinimizeHeight) modal.style.height = preMinimizeHeight;
         }
@@ -12082,29 +12102,53 @@ function clearTypePaint() {
     _updateSplitHint();
 }
 
+let _geExpanded = new Set();
+let _geExplorerBound = false;
+let _geDragFrom = null;
+
 function _commitTypeResults(clusterResults, source, sourceLabel) {
     state.clusterSource = source;
     state.clusterSourceLabel = sourceLabel;
     state.clusterResults = clusterResults;
     const colors = SINEClusterer.getClusterColors();
-    state.clusterMap = {};
-    state.clusterTypeRows = [];
     (clusterResults.clusters || []).forEach((c, idx) => {
-        const color = colors[idx % colors.length];
-        const name = c._typeName || (source === 'kmers' ? ('Group ' + (idx + 1)) : ('Type ' + (idx + 1)));
-        (c.sequences || []).forEach(seq => {
-            state.clusterMap[seq.id] = { cluster: idx, color, name };
-        });
-        state.clusterTypeRows.push({ name, headers: (c.sequences || []).map(s => s.id) });
+        if (!c.color) c.color = colors[idx % colors.length];
+        if (c.paintOff == null) c.paintOff = false;
+        if (!c._typeName) c._typeName = source === 'kmers' ? ('Group ' + (idx + 1)) : ('Group ' + (idx + 1));
     });
-    (clusterResults.unassigned || []).forEach(seq => {
-        state.clusterMap[seq.id] = { cluster: -1, color: '#cccccc', name: 'Unassigned' };
-    });
-    _rebuildClusterCharMap();
+    state.clusterUnassignedPaintOff = false;
+    state._geNote = null;
+    _geExpanded = new Set();
+    _geSyncMapFromResults();
     renderAlignment();
     if (state._biclusterRaw) reapplyBiclusterPaintMode();
     else _updateInstrumentStatus();
     _updateSplitHint();
+}
+
+function _geSyncMapFromResults() {
+    const clusterResults = state.clusterResults;
+    if (!clusterResults) return;
+    const colors = (typeof SINEClusterer !== 'undefined' && SINEClusterer.getClusterColors)
+        ? SINEClusterer.getClusterColors() : ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00'];
+    state.clusterMap = {};
+    state.clusterTypeRows = [];
+    (clusterResults.clusters || []).forEach((c, idx) => {
+        const color = c.color || colors[idx % colors.length];
+        c.color = color;
+        const name = c._typeName || ('Group ' + (idx + 1));
+        c._typeName = name;
+        (c.sequences || []).forEach(seq => {
+            state.clusterMap[seq.id] = { cluster: idx, color, name, paintOff: !!c.paintOff };
+        });
+        state.clusterTypeRows.push({ name, headers: (c.sequences || []).map(s => s.id) });
+    });
+    const unColor = state.clusterUnassignedColor || '#cccccc';
+    const unPaint = !!state.clusterUnassignedPaintOff;
+    (clusterResults.unassigned || []).forEach(seq => {
+        state.clusterMap[seq.id] = { cluster: -1, color: unColor, name: 'Unassigned', paintOff: unPaint };
+    });
+    _rebuildClusterCharMap();
 }
 
 function _clusterFromIndices(allSeqs, indices, name) {
@@ -12310,51 +12354,17 @@ async function clusterByGuideTree() {
             unassigned: [],
             summary: { nClusters: clusters.length, nAssigned: state.seqs.length, nUnassigned: 0, nTotal: state.seqs.length }
         }, 'kmers', k + '-mer groups');
-        _renderGuideTreeGroups(clusters, cut, ms);
-        const modal = el('clusteringModal');
-        if (modal) modal.style.display = 'block';
+        const autoBit = cut.auto
+            ? 'Groups chosen from the tree (largest similarity jump).'
+            : ('Split into ' + cut.target + ' groups as requested.');
+        state._geNote = clusters.length + ' groups covering all ' + state.seqs.length + ' sequences, in ' + ms.toFixed(0) + ' ms. '
+            + autoBit + ' Cut at ' + (cut.k || 6) + '-mer distance ' + cut.cutHeight.toFixed(3) + '.';
+        displayClusteringResults(state.clusterResults);
     }, `${state.seqs.length} sequences`);
 }
 
-function _renderGuideTreeGroups(clusters, cut, ms) {
-    const content = el('clusteringContent');
-    if (!content) return;
-    const colors = SINEClusterer.getClusterColors();
-    const sep = cut.nextHeight !== null && cut.nextHeight > 0
-        ? `The next merge would have joined groups at distance ${cut.nextHeight.toFixed(3)}, so a larger number of groups splits them further.`
-        : '';
-    let html = `
-        <div style="margin-bottom: 14px; padding: 10px; background: #eef4fb; border: 1px solid #c5d8ee; border-radius: 4px; font-size: 12px; line-height: 1.5;">
-            <div style="font-size: 13px; margin-bottom: 4px;">k-mer reorder groups</div>
-            <strong>${clusters.length} groups</strong> covering all ${state.seqs.length} sequences, in ${ms.toFixed(0)} ms.
-            ${cut.auto
-                ? `The number of groups was chosen from the tree (largest jump in overall similarity) — you do not have to pick it. Type a number in Groups only to force a coarser or finer split.`
-                : `Split into ${cut.target} groups as requested. Leave Groups empty for an automatic split.`}
-            Cut at ${cut.k || 6}-mer distance ${cut.cutHeight.toFixed(3)}. ${sep}
-            <div style="margin-top: 6px; color: #6b6b6b;">
-                Same k-mer UPGMA tree as Reorder by similarity: sequences that look alike overall sit in the same type.
-                Character bases of those types are coloured on the alignment (solid = exclusive to the type, tint = cloudy / leaky).
-                Find diagnostic types with Split current types to look for exclusive SNPs inside these groups. Show 2D analysis to draw rectangles tagged against them.
-            </div>
-        </div>`;
-    clusters.forEach((c, idx) => {
-        const color = colors[idx % colors.length];
-        const nStrict = (c.perfectFeatures || []).length;
-        const nCloudy = (c.cloudyFeatures || []).length;
-        html += `
-            <div style="margin-bottom: 10px; padding: 8px; border: 1px solid #ddd; border-left: 4px solid ${color}; border-radius: 2px;">
-                <div style="cursor:pointer;font-weight:bold;user-select:none;margin-bottom:4px;"
-                     onclick="var e=document.getElementById('gtg${idx}');e.style.display=e.style.display==='none'?'block':'none';">
-                    &gt; Group ${idx + 1}: ${c.size} sequence${c.size !== 1 ? 's' : ''}, ${nStrict} exclusive / ${nCloudy} cloudy
-                </div>
-                <div id="gtg${idx}" style="display:none;margin-left:8px;">
-                    ${c.sequences.map(s => `<div style="font-family:monospace;font-size:10px;">- ${s.id}</div>`).join('')}
-                    <div style="margin-top:6px;"><strong>Characters (motif runs):</strong></div>
-                    ${_motifRunsHtml(c.motifRuns)}
-                </div>
-            </div>`;
-    });
-    content.innerHTML = html;
+function _renderGuideTreeGroups() {
+    displayClusteringResults(state.clusterResults);
 }
 
 // ---- Clusterability probe -------------------------------------------------------------
@@ -12393,8 +12403,8 @@ async function analyzeClusterability() {
     const seqs = getSeqsForClustering();
     const base = getClusteringParameters();
     const grid = _clusterabilityGrid(base);
-    const modal = el('clusteringModal');
-    if (modal) modal.style.display = 'block';
+    _geSetProbeMode(true);
+    _geShowModal();
 
     const rows = [];
     for (let i = 0; i < grid.length; i++) {
@@ -12423,6 +12433,8 @@ async function analyzeClusterability() {
 function _renderClusterabilityReport(rows, base, nSeqs, progress) {
     const content = el('clusteringContent');
     if (!content) return;
+    _geSetProbeMode(true);
+    _geShowModal();
     if (progress) {
         // Partial pass: show what has completed, without drawing conclusions yet.
         let ph = `
@@ -12586,8 +12598,9 @@ function highlightDiagnosticMutations() {
     const diagnosticMap = {};
 
     state.clusterResults.clusters.forEach((cluster, clusterIdx) => {
+        if (cluster.paintOff) return;
         const colors = SINEClusterer.getClusterColors();
-        const color = colors[clusterIdx % colors.length];
+        const color = cluster.color || colors[clusterIdx % colors.length];
 
         // Option: Paint ALL found features (not just validated ones)
         // This helps diagnose if the algorithm is missing features
@@ -13031,100 +13044,446 @@ function deleteClusteringPreset() {
     showMessage(`Preset "${presetName}" deleted`, 2000);
 }
 
-function displayClusteringResults(results) {
+function _geEsc(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, ch => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    }[ch]));
+}
+
+function _geSetProbeMode(on) {
     const modal = el('clusteringModal');
-    const content = el('clusteringContent');
+    const title = modal && modal.querySelector('.ge-header h3');
+    if (modal) modal.classList.toggle('ge-probe', !!on);
+    if (title) title.textContent = on ? 'Clusterability' : 'Group explorer';
+}
 
-    if (!modal || !content) return;
-
-    const colors = SINEClusterer.getClusterColors();
-
-    let html = `
-        <div style="margin-bottom: 16px; padding: 8px; background: #e8f4f8; border-radius: 4px;">
-            <div style="font-size: 13px; margin-bottom: 4px;">${state.clusterSourceLabel || 'Diagnostic positions'}</div>
-            <strong>Summary:</strong> ${results.summary.nClusters} type${results.summary.nClusters !== 1 ? 's' : ''} |
-            ${results.summary.nAssigned} sequences assigned | ${results.summary.nUnassigned} unassigned
-        </div>
-    `;
-
-    // A bare "0 clusters" reads as a failed run. Name the settings that discarded
-    // everything, using the labels the clustering panel itself uses, so the result can be
-    // acted on instead of guessed at.
-    if (results.summary.nClusters === 0) {
-        const p = (typeof getClusteringParameters === 'function') ? getClusteringParameters() : null;
-        html += `
-        <div style="margin-bottom: 16px; padding: 8px; background: #fff6e5; border: 1px solid #f0d6a8; border-radius: 4px; font-size: 12px; line-height: 1.5;">
-            <strong>No group met the current settings</strong> - this is a threshold result, not an error.${p ? `
-            Groups of fewer than <strong>Min Size ${p.minSize}</strong> are discarded, as are groups with fewer than
-            <strong>Min Features ${p.minPerfect}</strong> diagnostic positions, or below the
-            <strong>Quality Thresholds</strong> of ${p.qualitySmall}/${p.qualityMedium}/${p.qualityLarge}%.` : ''}
-            Lowering <strong>Min Features</strong> (default 5) is usually what admits groups on a fairly homogeneous alignment. <strong>Max Iter</strong> relaxes those thresholds on later rounds. Lowering <strong>Min Size</strong> helps when sequences only pair up two at a time.
-        </div>
-        `;
-    }
-
-    // Display each cluster
-    results.clusters.forEach((cluster, idx) => {
-        const color = colors[idx % colors.length];
-        html += `
-            <div style="margin-bottom: 12px; padding: 8px; border: 1px solid #ddd; border-left: 4px solid ${color}; border-radius: 2px;">
-                <div style="cursor: pointer; font-weight: bold; user-select: none; margin-bottom: 4px;" onclick="document.getElementById('cluster${idx}').style.display = document.getElementById('cluster${idx}').style.display === 'none' ? 'block' : 'none';">
-                    > ${cluster._typeName || ('Type ' + (idx + 1))}: ${cluster.size} sequences, ${cluster.nPerfect} exclusive / ${(cluster.cloudyFeatures || []).length} cloudy
-                </div>
-                <div id="cluster${idx}" style="display: none; margin-left: 8px; margin-top: 8px;">
-                    <div style="margin-bottom: 8px;">
-                        <strong>Sequences:</strong>
-                        <div style="margin: 4px 0; padding: 4px; background: #f9f9f9; border-radius: 2px;">
-                            ${cluster.sequences.map((s, i) => `<div style="font-family: monospace; font-size: 10px;">- ${s.id}</div>`).join('')}
-                        </div>
-                    </div>
-                    <div style="margin-bottom: 8px;">
-                        <strong>Exclusive characters (first 20):</strong>
-                        <div style="margin: 4px 0; padding: 4px; background: #f9f9f9; border-radius: 2px; max-height: 150px; overflow-y: auto;">
-                            ${cluster.perfectFeatures.length > 0 ? cluster.perfectFeatures.slice(0, 20).map(f => `<div style="font-family: monospace; font-size: 10px;">Pos ${f.pos}: ${f.char}</div>`).join('') : '<em>None</em>'}
-                        </div>
-                    </div>
-                    <div style="margin-bottom: 8px;">
-                        <strong>Cloudy characters (motif runs):</strong>
-                        <div style="margin: 4px 0; padding: 4px; background: #f9f9f9; border-radius: 2px; max-height: 150px; overflow-y: auto;">
-                            ${_motifRunsHtml(cluster.motifRuns)}
-                        </div>
-                    </div>
-                    <button onclick="highlightCluster(${idx})" style="padding: 4px 8px; font-size: 11px; background: ${color}; color: white; border: none; border-radius: 2px; cursor: pointer;">Highlight in alignment</button>
-                </div>
-            </div>
-        `;
-    });
-
-    // Display unassigned
-    if (results.unassigned.length > 0) {
-        html += `
-            <div style="margin-bottom: 12px; padding: 8px; border: 1px solid #ddd; border-left: 4px solid #999999; border-radius: 2px;">
-                <div style="cursor: pointer; font-weight: bold; user-select: none; margin-bottom: 4px;" onclick="document.getElementById('unassignedCluster').style.display = document.getElementById('unassignedCluster').style.display === 'none' ? 'block' : 'none';">
-                    > Unassigned: ${results.unassigned.length} sequences
-                </div>
-                <div id="unassignedCluster" style="display: none; margin-left: 8px; margin-top: 8px;">
-                    <div style="margin: 4px 0; padding: 4px; background: #f9f9f9; border-radius: 2px;">
-                        ${results.unassigned.map(s => `<div style="font-family: monospace; font-size: 10px;">- ${s.id}</div>`).join('')}
-                    </div>
-                    <button onclick="highlightCluster(-1)" style="padding: 4px 8px; font-size: 11px; background: #999999; color: white; border: none; border-radius: 2px; cursor: pointer; margin-top: 4px;">Highlight in alignment</button>
-                </div>
-            </div>
-        `;
-    }
-
-    content.innerHTML = html;
+function _geShowModal() {
+    const modal = el('clusteringModal');
+    if (!modal) return;
     showExclusiveModal('clusteringModal');
-    // showExclusiveModal sets display:'block' uniformly for all modals, but
-    // this one needs display:'flex' for its header/scrolling-content layout.
     modal.style.display = 'flex';
-    // A fresh clustering run should always show full results, even if the
-    // modal was left minimized from a previous run.
-    content.style.display = '';
+    const content = el('clusteringContent');
+    if (content) content.style.display = '';
+    const tb = el('geToolbar');
+    const sm = el('geSummary');
+    if (tb) tb.style.display = '';
+    if (sm) sm.style.display = '';
     modal.style.maxHeight = modal.style.maxHeight || '80vh';
     if (!modal._draggableResizableInit) {
         modal._draggableResizableInit = true;
         makeModalDraggableResizable('clusteringModal', 'clusteringModalHeader', 'clusteringContent');
+    }
+    _geBindExplorer();
+}
+
+function _geCopyText(text, okMsg) {
+    const done = () => showMessage(okMsg, 2000);
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done).catch(() => {
+            _geCopyFallback(text, done);
+        });
+    } else {
+        _geCopyFallback(text, done);
+    }
+}
+
+function _geCopyFallback(text, done) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.left = '-9999px';
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+        document.execCommand('copy');
+        done();
+    } catch (e) {
+        showMessage('Copy failed', 3000);
+    }
+    ta.remove();
+}
+
+function _geSeqById(id) {
+    return state.seqs.find(s => s.header === id);
+}
+
+function _geMemberIds(kind, idx) {
+    const results = state.clusterResults;
+    if (!results) return [];
+    if (kind === 'unassigned') return (results.unassigned || []).map(s => s.id);
+    const c = results.clusters && results.clusters[idx];
+    return c ? (c.sequences || []).map(s => s.id) : [];
+}
+
+function _geGroupFasta(ids, ungapped) {
+    return ids.map(id => {
+        const s = _geSeqById(id);
+        if (!s) return '';
+        const body = ungapped ? degapResidues(s.seq) : s.seq;
+        return '>' + (s.fullHeader || s.header) + '\n' + body;
+    }).filter(Boolean).join('\n');
+}
+
+function _geGroupConsensusFasta(kind, idx) {
+    const ids = _geMemberIds(kind, idx);
+    const seqs = ids.map(id => _geSeqById(id)).filter(Boolean).map(s => s.seq);
+    const name = kind === 'unassigned'
+        ? 'Unassigned consensus'
+        : ((state.clusterResults.clusters[idx] && state.clusterResults.clusters[idx]._typeName) || ('Group ' + (idx + 1))) + ' consensus';
+    const cons = computeConsensusForSequences(seqs);
+    return '>' + name + '\n' + degapResidues(cons);
+}
+
+function _geReorderSeqsFromGroups() {
+    const results = state.clusterResults;
+    if (!results || !state.seqs) return;
+    const byHeader = new Map();
+    state.seqs.forEach((s, i) => {
+        if (!byHeader.has(s.header)) byHeader.set(s.header, { s, i });
+    });
+    const seen = new Set();
+    const ordered = [];
+    const take = (id) => {
+        if (seen.has(id)) return;
+        const rec = byHeader.get(id);
+        if (!rec) return;
+        ordered.push(rec.s);
+        seen.add(id);
+    };
+    (results.clusters || []).forEach(c => {
+        const members = (c.sequences || []).map(cs => cs.id).filter(id => byHeader.has(id));
+        members.sort((a, b) => byHeader.get(a).i - byHeader.get(b).i);
+        members.forEach(take);
+    });
+    (results.unassigned || []).forEach(u => take(u.id));
+    state.seqs.forEach(s => { if (!seen.has(s.header)) ordered.push(s); });
+    state.seqs = ordered;
+}
+
+function _geMoveGroup(fromIdx, toIdx) {
+    const clusters = state.clusterResults && state.clusterResults.clusters;
+    if (!clusters || fromIdx === toIdx) return;
+    if (fromIdx < 0 || toIdx < 0 || fromIdx >= clusters.length || toIdx >= clusters.length) return;
+    pushUndo('order');
+    const [item] = clusters.splice(fromIdx, 1);
+    clusters.splice(toIdx, 0, item);
+    const movedKey = 'g' + fromIdx;
+    const next = new Set();
+    _geExpanded.forEach(k => {
+        if (k === 'u') { next.add('u'); return; }
+        const n = parseInt(k.slice(1), 10);
+        if (n === fromIdx) next.add('g' + toIdx);
+        else if (fromIdx < toIdx && n > fromIdx && n <= toIdx) next.add('g' + (n - 1));
+        else if (toIdx < fromIdx && n >= toIdx && n < fromIdx) next.add('g' + (n + 1));
+        else next.add(k);
+    });
+    _geExpanded = next;
+    _geSyncMapFromResults();
+    _geReorderSeqsFromGroups();
+    renderGroupExplorer();
+    renderAlignment();
+    if (state._biclusterRaw) reapplyBiclusterPaintMode();
+    else _updateInstrumentStatus();
+    _updateSplitHint();
+}
+
+function _geRepaint() {
+    _geSyncMapFromResults();
+    renderGroupExplorer();
+    renderAlignment();
+    if (state._biclusterRaw) reapplyBiclusterPaintMode();
+    else _updateInstrumentStatus();
+}
+
+function _geFocusSeq(header) {
+    const idx = state.seqs.findIndex(s => s.header === header);
+    if (idx < 0) {
+        showMessage('Sequence not in the current alignment', 2500);
+        return;
+    }
+    state.selectedRows = new Set([idx]);
+    if (typeof updateRowSelections === 'function') updateRowSelections();
+    if (isCanvasMode()) {
+        const rowPitch = _canvasState.rowPitch || _canvasState.metrics?.charH || 16;
+        const viewH = (el('alignmentContainer') && el('alignmentContainer').clientHeight) || 240;
+        _canvasState.offsetY = Math.max(0, idx * rowPitch - Math.min(viewH / 3, rowPitch * 4));
+        _canvasState.scheduleDraw?.();
+        _canvasState.onOffsetChange?.();
+    } else {
+        const rowPx = _unifiedRowHeightPx || 16;
+        alignmentContainer.scrollTop = Math.max(0, idx * rowPx - 48);
+        renderAlignment();
+        requestAnimationFrame(() => {
+            const row = alignmentContainer.querySelector(`.seq-line[data-seq-index="${idx}"]`);
+            if (row) {
+                row.classList.add('ge-jump-flash');
+                row.scrollIntoView({ block: 'center', inline: 'nearest' });
+                setTimeout(() => row.classList.remove('ge-jump-flash'), 1200);
+            }
+        });
+    }
+}
+
+function _geSelectGroup(kind, idx) {
+    const ids = new Set(_geMemberIds(kind, idx));
+    state.selectedRows = new Set();
+    state.seqs.forEach((s, i) => {
+        if (ids.has(s.header)) state.selectedRows.add(i);
+    });
+    if (typeof updateRowSelections === 'function') updateRowSelections();
+    const first = Math.min(...state.selectedRows);
+    if (Number.isFinite(first) && state.seqs[first]) _geFocusSeq(state.seqs[first].header);
+    highlightCluster(kind === 'unassigned' ? -1 : idx);
+}
+
+function _geCopyAction(what, kind, idx) {
+    const ids = _geMemberIds(kind, idx);
+    if (!ids.length) {
+        showMessage('No sequences in this group', 2000);
+        return;
+    }
+    if (what === 'names') _geCopyText(ids.join('\n'), 'Copied ' + ids.length + ' names');
+    else if (what === 'fasta') _geCopyText(_geGroupFasta(ids, false), 'Copied FASTA (' + ids.length + ')');
+    else if (what === 'ungapped') _geCopyText(_geGroupFasta(ids, true), 'Copied ungapped FASTA');
+    else if (what === 'consensus') _geCopyText(_geGroupConsensusFasta(kind, idx), 'Copied ungapped consensus FASTA');
+}
+
+function _geApplySearch(q) {
+    const hit = el('geSearchHit');
+    const needle = (q || '').trim().toLowerCase();
+    document.querySelectorAll('.ge-seq-hit').forEach(n => n.classList.remove('ge-seq-hit'));
+    if (!needle) {
+        if (hit) hit.textContent = '';
+        return;
+    }
+    const results = state.clusterResults;
+    if (!results) {
+        if (hit) hit.textContent = 'No groups yet';
+        return;
+    }
+    let found = null;
+    (results.clusters || []).some((c, idx) => {
+        const m = (c.sequences || []).find(s => String(s.id).toLowerCase().includes(needle));
+        if (m) {
+            found = { kind: 'group', idx, id: m.id, name: c._typeName || ('Group ' + (idx + 1)) };
+            return true;
+        }
+        return false;
+    });
+    if (!found) {
+        const m = (results.unassigned || []).find(s => String(s.id).toLowerCase().includes(needle));
+        if (m) found = { kind: 'unassigned', idx: -1, id: m.id, name: 'Unassigned' };
+    }
+    if (!found) {
+        if (hit) hit.textContent = 'Not found';
+        return;
+    }
+    if (hit) hit.textContent = found.name;
+    _geExpanded.add(found.kind === 'unassigned' ? 'u' : ('g' + found.idx));
+    renderGroupExplorer();
+    const row = Array.from(document.querySelectorAll('.ge-seq')).find(n => n.getAttribute('data-id') === found.id);
+    if (row) row.scrollIntoView({ block: 'nearest' });
+}
+
+function _geBindExplorer() {
+    if (_geExplorerBound) return;
+    _geExplorerBound = true;
+    const content = el('clusteringContent');
+    const search = el('geSearch');
+    if (search) {
+        search.addEventListener('input', () => _geApplySearch(search.value));
+        search.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') {
+                const hit = document.querySelector('.ge-seq-hit');
+                if (hit) _geFocusSeq(hit.getAttribute('data-id'));
+            }
+        });
+    }
+    if (!content) return;
+    content.addEventListener('click', (e) => {
+        const btn = e.target.closest('[data-ge]');
+        if (!btn) return;
+        const act = btn.getAttribute('data-ge');
+        if (act === 'color' || act === 'drag') return;
+        e.preventDefault();
+        e.stopPropagation();
+        const card = btn.closest('.ge-card');
+        const kind = card ? card.getAttribute('data-kind') : null;
+        const idx = card ? parseInt(card.getAttribute('data-idx'), 10) : -1;
+        if (act === 'toggle') {
+            const key = kind === 'unassigned' ? 'u' : ('g' + idx);
+            if (_geExpanded.has(key)) _geExpanded.delete(key);
+            else _geExpanded.add(key);
+            renderGroupExplorer();
+            return;
+        }
+        if (act === 'paint') {
+            if (kind === 'unassigned') state.clusterUnassignedPaintOff = !state.clusterUnassignedPaintOff;
+            else if (state.clusterResults.clusters[idx]) {
+                state.clusterResults.clusters[idx].paintOff = !state.clusterResults.clusters[idx].paintOff;
+            }
+            _geRepaint();
+            return;
+        }
+        if (act === 'up') { _geMoveGroup(idx, idx - 1); return; }
+        if (act === 'down') { _geMoveGroup(idx, idx + 1); return; }
+        if (act === 'seq') { _geFocusSeq(btn.getAttribute('data-id')); return; }
+        if (act === 'select') { _geSelectGroup(kind, idx); return; }
+        if (act === 'copy') { _geCopyAction(btn.getAttribute('data-what'), kind, idx); return; }
+    });
+    content.addEventListener('change', (e) => {
+        const inp = e.target.closest('input[data-ge="color"]');
+        if (!inp) return;
+        const card = inp.closest('.ge-card');
+        if (!card) return;
+        const kind = card.getAttribute('data-kind');
+        const idx = parseInt(card.getAttribute('data-idx'), 10);
+        if (kind === 'unassigned') state.clusterUnassignedColor = inp.value;
+        else if (state.clusterResults.clusters[idx]) state.clusterResults.clusters[idx].color = inp.value;
+        _geRepaint();
+    });
+    content.addEventListener('click', (e) => {
+        if (e.target.closest('input[data-ge="color"]')) e.stopPropagation();
+    });
+    content.addEventListener('dragstart', (e) => {
+        const handle = e.target.closest('.ge-drag');
+        if (!handle) { e.preventDefault(); return; }
+        const card = handle.closest('.ge-card');
+        if (!card || card.getAttribute('data-kind') !== 'group') { e.preventDefault(); return; }
+        _geDragFrom = parseInt(card.getAttribute('data-idx'), 10);
+        e.dataTransfer.setData('text/plain', String(_geDragFrom));
+        e.dataTransfer.effectAllowed = 'move';
+    });
+    content.addEventListener('dragover', (e) => {
+        const card = e.target.closest('.ge-card[data-kind="group"]');
+        if (!card) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+    });
+    content.addEventListener('drop', (e) => {
+        const card = e.target.closest('.ge-card[data-kind="group"]');
+        if (!card) return;
+        e.preventDefault();
+        const toIdx = parseInt(card.getAttribute('data-idx'), 10);
+        const fromIdx = _geDragFrom != null ? _geDragFrom : parseInt(e.dataTransfer.getData('text/plain'), 10);
+        _geDragFrom = null;
+        _geMoveGroup(fromIdx, toIdx);
+    });
+}
+
+function _geCardHtml(opts) {
+    const { kind, idx, name, n, color, paintOff, ids, extraMeta, motifs, exclusive } = opts;
+    const key = kind === 'unassigned' ? 'u' : ('g' + idx);
+    const open = _geExpanded.has(key);
+    const nStrict = exclusive || 0;
+    const canMove = kind === 'group';
+    const colorVal = color || '#cccccc';
+    const seqHtml = (ids || []).map(id =>
+        `<div class="ge-seq" data-ge="seq" data-id="${_geEsc(id)}" title="Jump to this sequence">${_geEsc(id)}</div>`
+    ).join('');
+    return `<div class="ge-card${paintOff ? ' ge-off' : ''}" data-kind="${kind}" data-idx="${idx}" style="border-left:4px solid ${colorVal}">
+        <div class="ge-card-head" data-ge="toggle">
+            ${canMove ? '<span class="ge-drag" data-ge="drag" draggable="true" title="Drag to reorder groups in the list and in the alignment">::</span>' : '<span class="ge-drag" style="visibility:hidden">::</span>'}
+            <input type="color" class="ge-color" data-ge="color" value="${_geEsc(colorVal)}" title="Group colour">
+            <button type="button" class="ge-paint" data-ge="paint" title="${paintOff ? 'Show this group colour on the alignment' : 'Hide this group colour'}">${paintOff ? 'Off' : 'On'}</button>
+            <span class="ge-title">${_geEsc(name)} <span class="ge-meta">${n} seq${n === 1 ? '' : 's'}${extraMeta ? ' · ' + extraMeta : ''}</span></span>
+            ${canMove ? `<span class="ge-move"><button type="button" data-ge="up" title="Move group up">^</button><button type="button" data-ge="down" title="Move group down">v</button></span>` : ''}
+            <span class="ge-chevron">${open ? 'v' : '>'}</span>
+        </div>
+        ${open ? `<div class="ge-card-body">
+            <div class="ge-actions">
+                <button type="button" data-ge="copy" data-what="names" title="Copy sequence names, one per line">Copy names</button>
+                <button type="button" data-ge="copy" data-what="fasta" title="Copy gapped FASTA">Copy FASTA</button>
+                <button type="button" data-ge="copy" data-what="ungapped" title="Copy ungapped FASTA">Copy ungapped</button>
+                <button type="button" data-ge="copy" data-what="consensus" title="Copy group consensus as ungapped FASTA">Copy consensus</button>
+                <button type="button" data-ge="select" title="Select these sequences and jump to the first">Select</button>
+            </div>
+            <div class="ge-seq-list">${seqHtml || '<em>None</em>'}</div>
+            ${motifs ? `<div class="ge-motifs"><strong>Characters</strong>${nStrict ? ' · ' + nStrict + ' exclusive' : ''}<div>${motifs}</div></div>` : ''}
+        </div>` : ''}
+    </div>`;
+}
+
+function renderGroupExplorer() {
+    const content = el('clusteringContent');
+    const summary = el('geSummary');
+    const results = state.clusterResults;
+    if (!content) return;
+    _geSetProbeMode(false);
+    if (!results) {
+        if (summary) summary.textContent = 'No groups yet.';
+        content.innerHTML = '';
+        return;
+    }
+    const s = results.summary || {};
+    const nC = (results.clusters || []).length;
+    const nU = (results.unassigned || []).length;
+    let note = state._geNote || ((state.clusterSourceLabel || 'Groups') + ' · ' + nC + ' group' + (nC === 1 ? '' : 's')
+        + ' · ' + (s.nAssigned != null ? s.nAssigned : (state.seqs.length - nU)) + ' assigned'
+        + (nU ? (' · ' + nU + ' unassigned') : ''));
+    if (nC === 0) {
+        const p = (typeof getClusteringParameters === 'function') ? getClusteringParameters() : null;
+        note = 'No group met the current settings — a threshold result, not an error.'
+            + (p ? (' Min Size ' + p.minSize + ', Min Features ' + p.minPerfect + ', Quality ' + p.qualitySmall + '/' + p.qualityMedium + '/' + p.qualityLarge + '%.') : '');
+    }
+    if (summary) {
+        summary.textContent = note;
+        summary.title = 'Use On/Off to uncolour a group. Arrow or drag to reorder groups in this list and in the alignment. Expand a group for copy buttons. Click a sequence name to jump to it.';
+    }
+    let html = '';
+    (results.clusters || []).forEach((cluster, idx) => {
+        const nStrict = (cluster.perfectFeatures || []).length;
+        const nCloudy = (cluster.cloudyFeatures || []).length;
+        const extra = (nStrict || nCloudy) ? (nStrict + ' exclusive / ' + nCloudy + ' cloudy') : '';
+        html += _geCardHtml({
+            kind: 'group',
+            idx,
+            name: cluster._typeName || ('Group ' + (idx + 1)),
+            n: cluster.size || (cluster.sequences || []).length,
+            color: cluster.color,
+            paintOff: !!cluster.paintOff,
+            ids: (cluster.sequences || []).map(x => x.id),
+            extraMeta: extra,
+            motifs: _motifRunsHtml(cluster.motifRuns),
+            exclusive: nStrict
+        });
+    });
+    if (nU) {
+        html += _geCardHtml({
+            kind: 'unassigned',
+            idx: -1,
+            name: 'Unassigned',
+            n: nU,
+            color: state.clusterUnassignedColor || '#cccccc',
+            paintOff: !!state.clusterUnassignedPaintOff,
+            ids: (results.unassigned || []).map(x => x.id),
+            extraMeta: '',
+            motifs: '',
+            exclusive: 0
+        });
+    }
+    content.innerHTML = html;
+    const q = el('geSearch') && el('geSearch').value;
+    if (q && q.trim()) {
+        const needle = q.trim().toLowerCase();
+        content.querySelectorAll('.ge-seq').forEach(node => {
+            if (String(node.getAttribute('data-id') || '').toLowerCase().includes(needle)) {
+                node.classList.add('ge-seq-hit');
+            }
+        });
+    }
+}
+
+function displayClusteringResults(results) {
+    if (results) state.clusterResults = results;
+    _geSetProbeMode(false);
+    renderGroupExplorer();
+    _geShowModal();
+    const search = el('geSearch');
+    if (search) {
+        search.value = '';
+        const hit = el('geSearchHit');
+        if (hit) hit.textContent = '';
     }
 }
 
@@ -13154,7 +13513,9 @@ function highlightCluster(clusterIdx) {
     const headerToIdx = new Map(state.seqs.map((s, i) => [s.header, i]));
     const indicesToHighlight = headersToHighlight.map(h => headerToIdx.get(h)).filter(i => i !== undefined);
 
-    const color = clusterIdx === -1 ? '#999999' : colors[clusterIdx % colors.length];
+    const color = clusterIdx === -1
+        ? (state.clusterUnassignedColor || '#999999')
+        : ((results.clusters[clusterIdx] && results.clusters[clusterIdx].color) || colors[clusterIdx % colors.length]);
 
     // Apply highlights
     indicesToHighlight.forEach(idx => {
