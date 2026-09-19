@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=122">
+    <link rel="stylesheet" href="styles.css?v=124">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -362,9 +362,12 @@
                             </div>
 
                             <div class="cluster-block">
-                                <div class="cluster-block-title" title="Groups sequences by overall resemblance using the same k-mer similarity tree as Reorder by similarity. Every sequence is assigned. Colours names and distinctive bases. A later grouping replaces these colours unless you check Split current groups.">k-mer groups</div>
+                                <div class="cluster-block-title" title="Groups sequences by overall resemblance using the same k-mer similarity tree as Reorder by similarity. Every sequence is assigned. Colours names and distinctive bases. A later grouping replaces these colours unless you check Split existing groups.">k-mer groups</div>
                                 <div class="cluster-actions">
                                     <button id="clusterGuideTreeButton" style="flex: 1; background: #2563eb; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Group sequences that look alike overall (same k-mer tree as Reorder by similarity). Leave Groups empty to choose the count from the tree. Colours names and distinctive bases.">Group by k-mer</button>
+                                    <button id="clusterClearKmerButton" title="Remove name and letter colours from k-mer or SNP grouping. Does not change row order. 2D rectangles stay until you Clear them in 2D analysis.">Clear</button>
+                                </div>
+                                <div class="cluster-actions">
                                     <label style="font-size: 10px; white-space: nowrap;" title="Oligonucleotide length for the similarity tree (3–12). Default 6, same as Reorder by similarity.">k:
                                         <input type="number" id="guideTreeK" min="3" max="12" value="6" step="1" style="width: 40px; font-size: 11px;" title="k-mer length, 3–12. Default 6.">
                                     </label>
@@ -375,13 +378,17 @@
                             </div>
 
                             <div class="cluster-block">
-                                <div class="cluster-block-title" title="Groups sequences that share exclusive SNP columns the rest of the alignment does not. Sequences without such SNPs stay unassigned. Replaces k-mer colours unless Split current groups is checked (then it looks for SNP subgroups inside each current group).">Diagnostic SNPs</div>
+                                <div class="cluster-block-title" title="Groups sequences that share exclusive SNP columns the rest of the alignment does not. Sequences without such SNPs stay unassigned. Replaces k-mer colours unless Split existing groups is checked (then it looks for SNP subgroups inside each current group, or only the selected group).">Diagnostic SNPs</div>
                                 <div class="cluster-actions">
-                                    <button id="clusterNowButton" style="flex: 1; background: #4CAF50; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Find sequence groups from exclusive SNP columns. Leftovers stay unassigned. Check Split current groups to search inside the groups you already have instead of starting over.">Find SNP groups</button>
-                                    <label style="font-size: 10px; display: flex; align-items: center; gap: 4px;" title="If groups already exist, search for exclusive SNPs inside each group instead of scanning the whole alignment. Groups that do not split are kept.">
-                                        <input type="checkbox" id="clusterWithinTypes" style="margin: 0;"> Split current groups
+                                    <button id="clusterNowButton" style="flex: 1; background: #4CAF50; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Find sequence groups from exclusive SNP columns. Leftovers stay unassigned. Check Split existing groups to search inside the groups you already have instead of starting over.">Find SNP groups</button>
+                                    <button id="clusterClearSnpButton" title="Remove name and letter colours from k-mer or SNP grouping. Does not change row order. 2D rectangles stay until you Clear them in 2D analysis.">Clear</button>
+                                </div>
+                                <div class="cluster-actions">
+                                    <label class="cluster-split-label" title="When checked, Find SNP groups looks for exclusive SNPs inside existing groups instead of scanning the whole alignment. Groups that have no such SNPs stay as they are. If you select sequences, only the group(s) those rows belong to are split; with nothing selected, every current group is tried.">
+                                        <input type="checkbox" id="clusterWithinTypes" style="margin: 0;"> Split existing groups
                                     </label>
                                 </div>
+                                <div id="clusterSplitHint" class="cluster-split-hint">Off: scans the whole alignment and replaces current colours. On: splits inside current groups (all of them, or only selected ones).</div>
                                 <div id="clusteringStatus" class="cluster-progress" style="font-size: 10px; color: #555; margin: 6px 0 0;"></div>
                                 <details style="margin-top: 6px;">
                                     <summary style="font-size: 10px; color: #555; cursor: pointer;">Thresholds</summary>
@@ -455,16 +462,16 @@
                                 <div class="cluster-block-title" title="Draws rectangles over stretches where a subset of rows share a local pattern. This is a separate overlay from name and letter colours. Show 2D never changes row order; Group rows does.">2D analysis</div>
                                 <div class="cluster-actions">
                                     <button id="biclusterComputeButton" style="flex: 1; background: #0d9488; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Draw row × column rectangles. If groups exist, each rectangle is tagged as supporting a group, sitting inside one, or disagreeing.">Show 2D</button>
-                                    <button id="biclusterClearButton" title="Remove the 2D rectangle overlay. Name and letter colours stay until you Clear colours.">Clear 2D</button>
+                                    <button id="biclusterClearButton" title="Remove the 2D rectangle overlay. Name and letter colours stay until you Clear them in k-mer groups or Diagnostic SNPs.">Clear</button>
                                     <button id="biclusterGroupRowsButton" title="Click a colored rectangle to stack those sequences (including scattered copies). Undoable.">Group rows</button>
                                 </div>
                                 <div class="cluster-actions">
-                                    <select id="biclusterPaintMode" style="min-width: 90px; height: 24px; font-size: 11px;" title="How to draw copies of a pattern that are not sitting in one contiguous stack. Does not change alignment order.">
-                                        <option value="local_one">One box</option>
-                                        <option value="local_two">Two layers</option>
-                                        <option value="strict">Stack only</option>
+                                    <select id="biclusterPaintMode" title="How to draw copies of a pattern that are not sitting in one contiguous stack. Does not change alignment order.">
+                                        <option value="local_one" title="One rectangle covers every sequence that has this pattern, even if those rows are not next to each other.">All copies, one box</option>
+                                        <option value="local_two" title="The contiguous stack is one rectangle; scattered copies get a second, paler layer.">Stack + copies</option>
+                                        <option value="strict" title="Paint only the contiguous stack. Scattered copies of the same pattern are left unpainted.">Stack only</option>
                                     </select>
-                                    <label class="cluster-opacity" title="2D overlay opacity">Op
+                                    <label class="cluster-opacity" title="How solid the 2D rectangles are drawn over the alignment.">Opacity
                                         <input type="range" id="blockMaskOpacity" min="0.1" max="0.9" step="0.05" value="0.45">
                                     </label>
                                 </div>
@@ -502,7 +509,6 @@
 
                             <div id="clusterLiveStatus" class="cluster-live-status" hidden>
                                 <span id="clusteringInstrumentStatus" style="flex: 1;"></span>
-                                <button id="clusterClearTypesButton" title="Remove group colours from sequence names and distinctive letters. Does not change row order. 2D rectangles stay until you Clear 2D.">Clear colours</button>
                             </div>
                         </div>
                     </div>
@@ -1207,7 +1213,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=214"></script>
+    <script src="script.js?v=216"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

@@ -788,10 +788,15 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     Three instruments answer different questions. They do not all paint the same layer.
     <strong>k-mer groups</strong> and <strong>diagnostic SNPs</strong> share one
     colour layer: sequence-name colours plus exclusive/cloudy letters. The later run
-    replaces the earlier one, unless <em>Split current groups</em> is checked (SNP grouping
-    then splits inside the current groups). <strong>Clear colours</strong> removes that layer.
-    <strong>2D analysis</strong> is a separate rectangle overlay and can sit on top of those
-    colours; <strong>Clear 2D</strong> removes only the overlay. When groups exist, rectangles
+    replaces the earlier one, unless <em>Split existing groups</em> is checked.
+    That does not add extra groups on top: it looks for exclusive SNPs
+    <em>inside</em> each current group. Groups that have none stay. If sequences
+    are selected, only the group(s) those rows belong to are split; with no
+    selection, every current group is tried. Each of <strong>k-mer groups</strong>,
+    <strong>diagnostic SNPs</strong>, and <strong>2D analysis</strong> has its own
+    <strong>Clear</strong> beside the main action: the first two clear the shared
+    name/letter colour layer; 2D Clear removes only the rectangle overlay.
+    When groups exist, rectangles
     are tagged supporting / inside / discordant, and a new grouping retags a live overlay.
   </p>
 

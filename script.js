@@ -6660,6 +6660,18 @@ function _biclusterPaintMode() {
     return el('biclusterPaintMode')?.value || 'local_one';
 }
 
+const BICLUSTER_PAINT_TIPS = {
+    local_one: 'All copies, one box: one rectangle covers every sequence that has this pattern, even if those rows are not next to each other. Does not change alignment order.',
+    local_two: 'Stack + copies: the contiguous stack is one rectangle; scattered copies get a second, paler layer. Does not change alignment order.',
+    strict: 'Stack only: paint only rows that sit in one contiguous block. Scattered copies of the same pattern are left unpainted. Does not change alignment order.'
+};
+
+function _syncBiclusterPaintModeTip() {
+    const paint = el('biclusterPaintMode');
+    if (!paint) return;
+    paint.title = BICLUSTER_PAINT_TIPS[paint.value] || BICLUSTER_PAINT_TIPS.local_one;
+}
+
 function _paintBiclusterBlocks(raw) {
     if (!raw || !Array.isArray(raw.blocks)) return raw;
     const mode = _biclusterPaintMode();
@@ -6896,8 +6908,10 @@ function initBlockMaskPanel() {
     if (paint && !paint._bmBound) {
         paint._bmBound = true;
         paint.addEventListener('change', () => {
+            _syncBiclusterPaintModeTip();
             if (state._biclusterRaw || state.blockMask) reapplyBiclusterPaintMode();
         });
+        _syncBiclusterPaintModeTip();
     }
 }
 
@@ -12023,7 +12037,6 @@ function _guideTreeK() {
 function _updateInstrumentStatus() {
     const node = el('clusteringInstrumentStatus');
     const wrap = el('clusterLiveStatus');
-    const clearBtn = el('clusterClearTypesButton');
     const clusters = state.clusterResults && state.clusterResults.clusters;
     const n = clusters ? clusters.length : 0;
     const has2d = !!(state._biclusterRaw);
@@ -12033,7 +12046,6 @@ function _updateInstrumentStatus() {
         return;
     }
     if (wrap) wrap.hidden = false;
-    if (clearBtn) clearBtn.style.display = n ? '' : 'none';
     let extra = '';
     if (has2d && state.blockMask && state.blockMask.typeAgreementSummary) {
         const a = state.blockMask.typeAgreementSummary;
@@ -12067,6 +12079,7 @@ function clearTypePaint() {
     if (state._biclusterRaw) reapplyBiclusterPaintMode();
     else _updateInstrumentStatus();
     showMessage('Group colours cleared. 2D overlay unchanged.', 2500);
+    _updateSplitHint();
 }
 
 function _commitTypeResults(clusterResults, source, sourceLabel) {
@@ -12091,6 +12104,7 @@ function _commitTypeResults(clusterResults, source, sourceLabel) {
     renderAlignment();
     if (state._biclusterRaw) reapplyBiclusterPaintMode();
     else _updateInstrumentStatus();
+    _updateSplitHint();
 }
 
 function _clusterFromIndices(allSeqs, indices, name) {
@@ -12112,7 +12126,7 @@ function _parentTypeBuckets(seqs) {
         const info = state.clusterMap && state.clusterMap[s.id];
         if (!info || info.cluster < 0) return;
         if (!byKey.has(info.cluster)) {
-            const b = { name: info.name || ('Group ' + (info.cluster + 1)), indices: [] };
+            const b = { key: info.cluster, name: info.name || ('Group ' + (info.cluster + 1)), indices: [] };
             byKey.set(info.cluster, b);
             buckets.push(b);
         }
@@ -12121,11 +12135,60 @@ function _parentTypeBuckets(seqs) {
     return buckets;
 }
 
+function _selectedClusterKeys() {
+    const keys = new Set();
+    if (!state.selectedRows || !state.selectedRows.size || !state.clusterMap) return keys;
+    state.selectedRows.forEach(idx => {
+        const seq = state.seqs[idx];
+        if (!seq) return;
+        const info = state.clusterMap[seq.header] || state.clusterMap[seq.id];
+        if (info && info.cluster >= 0) keys.add(info.cluster);
+    });
+    return keys;
+}
+
+function _updateSplitHint() {
+    const hint = el('clusterSplitHint');
+    const box = el('clusterWithinTypes');
+    if (!hint) return;
+    const nGroups = (state.clusterResults && state.clusterResults.clusters) ? state.clusterResults.clusters.length : 0;
+    if (!box || !box.checked) {
+        hint.textContent = 'Off: scans the whole alignment and replaces current colours.';
+        return;
+    }
+    if (!nGroups) {
+        hint.textContent = 'On: Group by k-mer first, then Find. Each current group is searched for SNP subgroups; groups without exclusive SNPs stay.';
+        return;
+    }
+    const keys = _selectedClusterKeys();
+    if (!keys.size) {
+        hint.textContent = 'On, nothing selected: tries all ' + nGroups + ' current groups. Groups without exclusive SNPs stay as they are.';
+        return;
+    }
+    const names = [];
+    keys.forEach(k => {
+        const row = state.clusterTypeRows && state.clusterTypeRows[k];
+        const cl = state.clusterResults.clusters[k];
+        names.push((row && row.name) || (cl && cl._typeName) || ('group ' + (k + 1)));
+    });
+    const rest = nGroups - names.length;
+    hint.textContent = 'On, selection: only ' + names.join(', ') + ' will be split'
+        + (rest > 0 ? ('; ' + rest + ' other group' + (rest === 1 ? '' : 's') + ' stay') : '') + '.';
+}
+
 async function _clusterDiagnosticWithinTypes(allSeqs, clusterParams, update) {
     const buckets = _parentTypeBuckets(allSeqs);
     if (!buckets.length) {
-        showMessage('Group by k-mer tree first, then Find diagnostic types can split those groups.', 4000);
+        showMessage('Group by k-mer first, then Find SNP groups can split those groups.', 4000);
         return null;
+    }
+    const selectedKeys = _selectedClusterKeys();
+    if (selectedKeys.size) {
+        const hit = buckets.filter(b => selectedKeys.has(b.key));
+        if (!hit.length) {
+            showMessage('The selected sequences are not in a current group. Select coloured group members, or clear the selection to split every group.', 5000);
+            return null;
+        }
     }
     const chunkOpts = {
         shouldCancel: () => state.clusterCancelled,
@@ -12141,9 +12204,15 @@ async function _clusterDiagnosticWithinTypes(allSeqs, clusterParams, update) {
     };
     const merged = [];
     const unassigned = [];
+    const splitSet = selectedKeys.size ? selectedKeys : null;
     for (let bi = 0; bi < buckets.length; bi++) {
         const b = buckets[bi];
         if (state.clusterCancelled) break;
+        const doSplit = !splitSet || splitSet.has(b.key);
+        if (!doSplit) {
+            merged.push(_clusterFromIndices(allSeqs, b.indices, b.name));
+            continue;
+        }
         if (update) update('Splitting ' + b.name + ' (' + (bi + 1) + '/' + buckets.length + ')');
         if (b.indices.length < (clusterParams.minSize || 3)) {
             merged.push(_clusterFromIndices(allSeqs, b.indices, b.name));
@@ -12477,7 +12546,8 @@ async function _clusterSequencesNow(update) {
             return;
         }
         source = 'diagnostics-within';
-        sourceLabel = 'diagnostic split of current types';
+        const nSel = _selectedClusterKeys().size;
+        sourceLabel = nSel ? ('diagnostic split of ' + nSel + ' selected group' + (nSel === 1 ? '' : 's')) : 'diagnostic split of current groups';
     } else {
         clusterResults = await clusterer.clusterChunked({
             onProgress: (msg) => { updateClusteringStatus(msg); if (update) update(msg); },
@@ -15865,6 +15935,7 @@ function updateRowSelections() {
         document.querySelectorAll(`.seq-line[data-seq-index="${index}"]`).forEach(line => line.classList.add('selected'));
         document.querySelectorAll(`.seq-name[data-seq-index="${index}"]`).forEach(name => name.classList.add('selected'));
     });
+    _updateSplitHint();
 }
 // Was: forEachColumnSpan(pos, ...) once per selected column, each iterating
 // every row's span cache and mutating classList on every hit -- O(selected
@@ -16267,6 +16338,8 @@ function initializeAppUI() {
         'clusteringProbeButton': analyzeClusterability,
         'clusterGuideTreeButton': clusterByGuideTree,
         'clusterClearTypesButton': clearTypePaint,
+        'clusterClearKmerButton': clearTypePaint,
+        'clusterClearSnpButton': clearTypePaint,
         'blockMaskComputeButton': computeAndShowBlockMask,
         'blockMaskClearButton': () => { clearBlockMask(); const s = el('blockMaskStatus'); if (s) s.textContent = ''; },
         'blockMaskGroupButton': groupRowsByBlockMask,
@@ -16618,9 +16691,110 @@ function initializeAppUI() {
 document.addEventListener('DOMContentLoaded', initializeAppUI);
 
 // UI listener wiring is wrapped in a function so we can attach listeners after DOMContentLoaded
+function _initNumSliderPop() {
+    if (document.getElementById('numSliderPop')) return;
+    const pop = document.createElement('div');
+    pop.id = 'numSliderPop';
+    pop.className = 'num-slider-pop';
+    pop.innerHTML = '<input type="range">';
+    document.body.appendChild(pop);
+    const slider = pop.querySelector('input[type="range"]');
+    let current = null;
+    let pinned = false;
+
+    function hide() {
+        pop.style.display = 'none';
+        current = null;
+        pinned = false;
+    }
+
+    function rangeFor(inp) {
+        let min = parseFloat(inp.min);
+        let max = parseFloat(inp.max);
+        let step = parseFloat(inp.step);
+        if (!Number.isFinite(step) || step <= 0) step = 1;
+        if (!Number.isFinite(min)) min = 0;
+        if (!Number.isFinite(max)) {
+            if (inp.id === 'trimKeepFrom' || inp.id === 'trimKeepTo') max = Math.max(min + 1, _trimAlnLen() || min + 1);
+            else {
+                const v = parseFloat(inp.value);
+                max = Number.isFinite(v) ? Math.max(min + step, v * 2, min + 10) : min + 10;
+            }
+        }
+        if (max <= min) max = min + step;
+        return { min, max, step };
+    }
+
+    function show(inp) {
+        if (!(inp instanceof HTMLInputElement) || inp.type !== 'number' || inp.readOnly || inp.disabled) {
+            hide();
+            return;
+        }
+        if (inp.closest('.slider-container')) {
+            hide();
+            return;
+        }
+        current = inp;
+        const r = rangeFor(inp);
+        slider.min = String(r.min);
+        slider.max = String(r.max);
+        slider.step = String(r.step);
+        const v = parseFloat(inp.value);
+        slider.value = String(Number.isFinite(v) ? Math.min(r.max, Math.max(r.min, v)) : r.min);
+        const rect = inp.getBoundingClientRect();
+        pop.style.display = 'block';
+        const width = Math.max(148, rect.width);
+        pop.style.width = width + 'px';
+        slider.style.width = '100%';
+        let left = rect.left;
+        if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
+        pop.style.left = left + 'px';
+        let top = rect.bottom + 3;
+        if (top + 28 > window.innerHeight - 8) top = Math.max(8, rect.top - 28);
+        pop.style.top = top + 'px';
+        const section = inp.closest('.menu-section');
+        if (section && typeof openMenuSection === 'function') openMenuSection(section);
+    }
+
+    slider.addEventListener('pointerdown', () => { pinned = true; });
+    slider.addEventListener('mousedown', (e) => { e.preventDefault(); pinned = true; });
+    slider.addEventListener('input', () => {
+        if (!current) return;
+        current.value = slider.value;
+        current.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    slider.addEventListener('change', () => {
+        if (!current) return;
+        current.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+    pop.addEventListener('mouseenter', () => {
+        if (!current) return;
+        const section = current.closest('.menu-section');
+        if (section && typeof openMenuSection === 'function') openMenuSection(section);
+    });
+    document.addEventListener('focusin', (e) => {
+        const inp = e.target;
+        if (inp === slider) return;
+        if (inp instanceof HTMLInputElement && inp.type === 'number') show(inp);
+        else if (!pop.contains(inp)) hide();
+    });
+    document.addEventListener('pointerup', () => {
+        pinned = false;
+        if (current && document.activeElement !== current && document.activeElement !== slider) hide();
+    });
+    document.addEventListener('scroll', () => { if (current) show(current); }, true);
+    window.addEventListener('resize', () => { if (current) show(current); });
+    document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && current) hide();
+    });
+}
+
 function attachUIListeners() {
     if (state.uiListenersAttached) return;
     state.uiListenersAttached = true;
+    _initNumSliderPop();
+    el('clusterWithinTypes')?.addEventListener('change', _updateSplitHint);
+    _updateSplitHint();
     // Set up slider/input pairs manually to avoid function reference issues
     const sliderPairs = [
         ['blackSlider', 'blackInput'],

@@ -1034,7 +1034,8 @@ input[type="number"]::-webkit-outer-spin-button {
     min-width: 320px;
     max-width: 360px;
     box-sizing: border-box;
-    overflow-x: hidden;
+    overflow-x: visible;
+    padding-right: 2px;
 }
 .cluster-panel {
     padding: 2px 0 0;
@@ -1082,10 +1083,44 @@ input[type="number"]::-webkit-outer-spin-button {
     gap: 2px;
 }
 #clustering-controls .cluster-trim-keep-inputs input[type="number"] {
-    width: 34px;
+    width: 52px;
+    padding-left: 4px;
+    padding-right: 2px;
+    box-sizing: border-box;
 }
 #clusteringStatus:empty {
     display: none;
+}
+.cluster-split-label {
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+.cluster-split-hint {
+    font-size: 10px;
+    color: #555;
+    line-height: 1.35;
+    margin: 4px 0 0;
+}
+.num-slider-pop {
+    position: fixed;
+    z-index: 12000;
+    display: none;
+    background: #fff;
+    border: 1px solid #bbb;
+    border-radius: 3px;
+    padding: 4px 8px 2px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.18);
+    pointer-events: auto;
+}
+.num-slider-pop input[type="range"] {
+    width: 148px;
+    height: 18px;
+    margin: 0;
+    padding: 0;
+    display: block;
+    vertical-align: middle;
 }
 .cluster-actions {
     display: flex;
@@ -1132,20 +1167,30 @@ input[type="number"]::-webkit-outer-spin-button {
 .cluster-opacity {
     display: flex;
     align-items: center;
-    gap: 4px;
+    gap: 6px;
     font-size: 10px;
     flex: 0 0 auto;
     white-space: nowrap;
+    overflow: visible;
 }
 #blockMaskOpacity {
-    width: 64px;
-    min-width: 64px;
-    max-width: 64px;
+    width: 88px;
+    min-width: 88px;
+    max-width: 88px;
     flex: none;
-    height: 16px;
+    height: 18px;
     margin: 0;
     padding: 0;
     vertical-align: middle;
+    overflow: visible;
+}
+#biclusterPaintMode {
+    flex: 1 1 160px;
+    min-width: 150px;
+    max-width: 100%;
+    height: 24px;
+    font-size: 11px;
+    box-sizing: border-box;
 }
 
 .seq-line:not(.consensus-line) .seq-data span.trim-left {
