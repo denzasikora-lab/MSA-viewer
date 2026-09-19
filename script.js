@@ -13655,6 +13655,13 @@ async function realignAll() {
         }
     }
 
+    // originalCaseByHeader captures case from the fasta TEXT actually sent to
+    // MAFFT -- i.e. AFTER any adjustDir reverse-complementing, so a flipped
+    // sequence's case is recorded in the same (flipped) base order the
+    // aligned output will come back in. See _remapCaseOntoAligned.
+    const originalCaseByHeader = new Map();
+    for (const entry of parseMafftOutput(fasta)) originalCaseByHeader.set(entry.name, entry.seq);
+
     // Pre-alignment: reorder by guide tree (6-mer distances) like MAFFT --reorder
     let guideOrder = null;
     if (reorder) {
@@ -13680,10 +13687,11 @@ async function realignAll() {
             const a = aligned.find(x => x.name === hdr || x.name === hdr.split(/\s+/)[0]);
             const orig = state.seqs.find(s => s.header === hdr || s.fullHeader === hdr);
             if (a) {
+                const origCase = originalCaseByHeader.get(a.name);
                 newSeqs.push({
                     header: orig ? orig.header : a.name.split(/\s+/)[0],
                     fullHeader: orig ? orig.fullHeader : a.name,
-                    seq: a.seq,
+                    seq: origCase ? _remapCaseOntoAligned(origCase, a.seq) : a.seq,
                     gaplessPositions: calculateGaplessPositions(a.seq)
                 });
             }
@@ -13692,10 +13700,11 @@ async function realignAll() {
         if (newSeqs.length === 0) {
             for (const a of aligned) {
                 const name = a.name.split(/\s+/)[0];
+                const origCase = originalCaseByHeader.get(a.name);
                 newSeqs.push({
                     header: name,
                     fullHeader: a.name,
-                    seq: a.seq,
+                    seq: origCase ? _remapCaseOntoAligned(origCase, a.seq) : a.seq,
                     gaplessPositions: calculateGaplessPositions(a.seq)
                 });
             }
@@ -13750,6 +13759,10 @@ function realignSelected() {
         }
     }
 
+    // See originalCaseByHeader note in realignAll -- captured post-adjustDir.
+    const originalCaseByHeader = new Map();
+    for (const entry of parseMafftOutput(fasta)) originalCaseByHeader.set(entry.name, entry.seq);
+
     _mafftAlignWithUi(
         fasta,
         extraArgs,
@@ -13767,8 +13780,10 @@ function realignSelected() {
             const s = state.seqs[idx];
             const match = aligned.find(a => a.name === s.header || a.name === s.fullHeader);
             if (match) {
-                state.seqs[idx].seq = match.seq;
-                state.seqs[idx].gaplessPositions = calculateGaplessPositions(match.seq);
+                const origCase = originalCaseByHeader.get(match.name);
+                const recased = origCase ? _remapCaseOntoAligned(origCase, match.seq) : match.seq;
+                state.seqs[idx].seq = recased;
+                state.seqs[idx].gaplessPositions = calculateGaplessPositions(recased);
             }
         }
 
@@ -14075,7 +14090,12 @@ async function alignSequenceToConsensusProfile(seq, profile, extraArgs = []) {
         throw new Error('MAFFT pairwise alignment returned incomplete output');
     }
 
-    return _mergeSequenceIntoConsensusProfile(profile, aligned[0].seq || '', aligned[1].seq || '');
+    // Recover original case -- see _remapCaseOntoAligned. Query and profile
+    // are recorded pre-MAFFT since this pairwise call has no adjustDir step.
+    const consensusSeq = _remapCaseOntoAligned(ungappedProfile, aligned[0].seq || '');
+    const querySeqRecased = _remapCaseOntoAligned(ungappedSeq, aligned[1].seq || '');
+
+    return _mergeSequenceIntoConsensusProfile(profile, consensusSeq, querySeqRecased);
 }
 
 /**
@@ -14140,6 +14160,10 @@ function addSequencesAndAlign() {
     closeAddSequencesModal();
 
     const combinedFasta = existingFasta + '\n' + adjustedNewText;
+    // See originalCaseByHeader note in realignAll -- captured post-adjustDir
+    // (adjustedNewText already reflects any reverse-complementing done above).
+    const originalCaseByHeader = new Map();
+    for (const entry of parseMafftOutput(combinedFasta)) originalCaseByHeader.set(entry.name, entry.seq);
     _mafftAlignWithUi(combinedFasta, extraArgs, 'Adding sequences and aligning with MAFFT...').then(result => {
         if (!result) return;
         const aligned = parseMafftOutput(result);
@@ -14152,10 +14176,11 @@ function addSequencesAndAlign() {
         let newSeqs = [];
         for (const a of aligned) {
             const name = a.name.split(/\s+/)[0];
+            const origCase = originalCaseByHeader.get(a.name);
             newSeqs.push({
                 header: name,
                 fullHeader: a.name,
-                seq: a.seq,
+                seq: origCase ? _remapCaseOntoAligned(origCase, a.seq) : a.seq,
                 gaplessPositions: calculateGaplessPositions(a.seq)
             });
         }
