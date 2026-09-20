@@ -3541,10 +3541,24 @@ function _initCanvasMetrics(ctx, fontSizePx) {
     if (_canvasState.metrics && _canvasState.metrics.fontSizePx === fontSizePx) return _canvasState.metrics;
     ctx.font = fontSizePx + 'px "Courier New", monospace';
     const m = ctx.measureText('X');
-    const charH = (m.fontBoundingBoxAscent && m.fontBoundingBoxDescent)
-        ? m.fontBoundingBoxAscent + m.fontBoundingBoxDescent
-        : Math.ceil(fontSizePx * 1.15);
-    _canvasState.metrics = { charW: Math.ceil(m.width), charH: Math.ceil(charH), fontSizePx };
+    const mU = ctx.measureText('_');
+    const ascent = (m.fontBoundingBoxAscent != null)
+        ? m.fontBoundingBoxAscent
+        : Math.ceil(fontSizePx * 0.8);
+    const descent = Math.max(
+        m.fontBoundingBoxDescent || 0,
+        mU.fontBoundingBoxDescent || 0,
+        mU.actualBoundingBoxDescent || 0,
+        Math.ceil(fontSizePx * 0.25)
+    );
+    const charH = Math.ceil(ascent + descent);
+    _canvasState.metrics = {
+        charW: Math.ceil(m.width),
+        charH,
+        fontSizePx,
+        ascent,
+        descent
+    };
     return _canvasState.metrics;
 }
 
@@ -4058,7 +4072,8 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             const name = state.seqs[i].header || ('Seq' + (i + 1));
             const displayName = name.length > nameLen ? name.substring(0, nameLen) + '\u2026' : name;
             ctx.font = nameFontStr;
-            const nameBaselineY = y + CHAR_H - 2;
+            const nameAscent = (_canvasState.metrics && _canvasState.metrics.ascent) || (CHAR_H - 3);
+            const nameBaselineY = y + nameAscent;
             if (stickyNames) {
                 ctx.fillStyle = '#fff';
                 ctx.fillRect(0, y, NAME_W, CHAR_H);
@@ -7937,10 +7952,9 @@ function _placeZoom100Tick() {
 }
 
 function setZoom(percent) {
-    // Round to a whole pixel. With .seq-line { line-height: 1.0 } a fractional
-    // font-size produces fractional row heights, and the browser rounds each row's
-    // painted background independently - leaving 1px unpainted seams between rows
-    // at some zoom levels, at different rows as the fractional part changes.
+    // Round to a whole pixel. Fractional font-size produces fractional row
+    // heights, and the browser rounds each row's painted background independently
+    // leaving 1px unpainted seams between rows at some zoom levels.
     const size = Math.max(1, Math.round((percent / 100) * 13));
     const isCanvas = document.getElementById('modeCanvas')?.checked;
     const isWindowedDom = state._needsWindowedDom &&

@@ -1504,7 +1504,10 @@ input[type="number"]::-webkit-outer-spin-button {
 .seq-line {
     display: flex;
     font-family: 'Courier New', monospace;
-    line-height: 1.0;
+    /* Extra 3px: Courier New's '_' sits in the font descent and is clipped
+       by height:1em + .seq-name overflow:hidden. line-height:1.15 on the
+       name alone does not help while the row stays 1em. Do not revert. */
+    line-height: calc(1em + 3px);
     margin: 0;
     padding: 0;
     white-space: nowrap;
@@ -1515,8 +1518,7 @@ input[type="number"]::-webkit-outer-spin-button {
     align-items: flex-start;
     position: relative;
     min-width: max-content;
-    height: 1em;
-    height: 1em;
+    height: calc(1em + 3px);
 }
 
 /* Persistent tiny scrollbar area below the alignment */
@@ -1633,8 +1635,10 @@ input[type="number"]::-webkit-outer-spin-button {
     -webkit-user-select: none;
     -ms-user-select: none;
     contain: style;
-    line-height: 1.15;
-    padding-bottom: 1px;
+    line-height: calc(1em + 3px);
+    height: calc(1em + 3px);
+    box-sizing: border-box;
+    padding-bottom: 0;
 }
 .seq-name.static {
     position: static;
