@@ -1871,8 +1871,8 @@ function setupMenuStability() {
             // Check if any input in this menu is focused (autocomplete might be open)
             const hasFocusedInput = controlGroup?.querySelector('input:focus') !== null;
 
-            if (hasFocusedInput) {
-                // Don't close if input is focused - let blur event handle it
+            if (hasFocusedInput || (typeof _numSliderPopKeepsOpen === 'function' && _numSliderPopKeepsOpen())) {
+                // Don't close if input is focused or the number-box slider pop is in use
                 return;
             }
 
@@ -1894,8 +1894,9 @@ function setupMenuStability() {
             // Close menu when blur happens and mouse is not hovering
             controlGroup.querySelectorAll('input').forEach(input => {
                 input.addEventListener('blur', () => {
-                    // Check if mouse is still over the section
-                    if (!section.matches(':hover')) {
+                    // The number-box slider sits on document.body, so the pointer
+                    // is not :hover on the section while dragging it.
+                    if (!section.matches(':hover') && !(typeof _numSliderPopKeepsOpen === 'function' && _numSliderPopKeepsOpen())) {
                         section.classList.remove('menu-open');
                         section.classList.remove('hover-active');
                         clearMenuCloseDelay(section);
@@ -17556,21 +17557,48 @@ function initializeAppUI() {
 document.addEventListener('DOMContentLoaded', initializeAppUI);
 
 // UI listener wiring is wrapped in a function so we can attach listeners after DOMContentLoaded
+function _numSliderPopKeepsOpen() {
+    const pop = document.getElementById('numSliderPop');
+    if (!pop || pop.style.display === 'none') return false;
+    if (pop._pinned) return true;
+    try {
+        if (pop.matches(':hover')) return true;
+    } catch (e) { /* :hover can throw on disconnected nodes */ }
+    return pop.contains(document.activeElement);
+}
+
 function _initNumSliderPop() {
     if (document.getElementById('numSliderPop')) return;
     const pop = document.createElement('div');
     pop.id = 'numSliderPop';
     pop.className = 'num-slider-pop';
-    pop.innerHTML = '<input type="range">';
+    pop.innerHTML = '<input type="range" tabindex="-1">';
     document.body.appendChild(pop);
     const slider = pop.querySelector('input[type="range"]');
     let current = null;
-    let pinned = false;
+
+    function setPinned(v) {
+        pop._pinned = !!v;
+    }
 
     function hide() {
+        const inp = current;
         pop.style.display = 'none';
+        setPinned(false);
         current = null;
-        pinned = false;
+        if (inp) {
+            const section = inp.closest('.menu-section');
+            if (section && !section.matches(':hover')) {
+                section.classList.remove('menu-open');
+                section.classList.remove('hover-active');
+                if (typeof clearMenuCloseDelay === 'function') clearMenuCloseDelay(section);
+            }
+        }
+    }
+
+    function keepMenu(inp) {
+        const section = (inp || current) && (inp || current).closest('.menu-section');
+        if (section && typeof openMenuSection === 'function') openMenuSection(section);
     }
 
     function rangeFor(inp) {
@@ -17614,38 +17642,81 @@ function _initNumSliderPop() {
         let left = rect.left;
         if (left + width > window.innerWidth - 8) left = Math.max(8, window.innerWidth - width - 8);
         pop.style.left = left + 'px';
-        let top = rect.bottom + 3;
-        if (top + 28 > window.innerHeight - 8) top = Math.max(8, rect.top - 28);
+        // Overlap the input by 1px so the pointer never falls in a hover gap
+        // that would close the parent menu before the slider can be grabbed.
+        const popH = pop.offsetHeight || 28;
+        let top = rect.bottom - 1;
+        if (top + popH > window.innerHeight - 8) top = Math.max(8, rect.top - popH + 1);
         pop.style.top = top + 'px';
-        const section = inp.closest('.menu-section');
-        if (section && typeof openMenuSection === 'function') openMenuSection(section);
+        keepMenu(inp);
     }
 
-    slider.addEventListener('pointerdown', () => { pinned = true; });
-    slider.addEventListener('mousedown', (e) => { e.preventDefault(); pinned = true; });
-    slider.addEventListener('input', () => {
+    function applySlider() {
         if (!current) return;
         current.value = slider.value;
         current.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+
+    function valueFromPointer(e) {
+        const box = slider.getBoundingClientRect();
+        const min = parseFloat(slider.min);
+        const max = parseFloat(slider.max);
+        let step = parseFloat(slider.step);
+        if (!Number.isFinite(step) || step <= 0) step = 1;
+        const span = Math.max(box.width, 1);
+        const ratio = Math.min(1, Math.max(0, (e.clientX - box.left) / span));
+        let v = min + ratio * (max - min);
+        v = Math.round(v / step) * step;
+        const decimals = (String(step).split('.')[1] || '').length;
+        if (decimals) v = parseFloat(v.toFixed(decimals));
+        if (v < min) v = min;
+        if (v > max) v = max;
+        return v;
+    }
+
+    function dragTo(e) {
+        if (!current) return;
+        slider.value = String(valueFromPointer(e));
+        applySlider();
+        keepMenu();
+    }
+
+    pop.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        setPinned(true);
+        keepMenu();
+        try { slider.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+        dragTo(e);
+    });
+    pop.addEventListener('pointermove', (e) => {
+        if (!pop._pinned) return;
+        dragTo(e);
+    });
+    pop.addEventListener('pointerup', (e) => {
+        if (!pop._pinned) return;
+        dragTo(e);
+        if (current) current.dispatchEvent(new Event('change', { bubbles: true }));
+        try { slider.releasePointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+    });
+    slider.addEventListener('input', () => {
+        applySlider();
+        keepMenu();
     });
     slider.addEventListener('change', () => {
         if (!current) return;
         current.dispatchEvent(new Event('change', { bubbles: true }));
+        keepMenu();
     });
-    pop.addEventListener('mouseenter', () => {
-        if (!current) return;
-        const section = current.closest('.menu-section');
-        if (section && typeof openMenuSection === 'function') openMenuSection(section);
-    });
+    pop.addEventListener('mouseenter', () => keepMenu());
     document.addEventListener('focusin', (e) => {
         const inp = e.target;
-        if (inp === slider) return;
+        if (pop.contains(inp)) return;
         if (inp instanceof HTMLInputElement && inp.type === 'number') show(inp);
-        else if (!pop.contains(inp)) hide();
+        else hide();
     });
     document.addEventListener('pointerup', () => {
-        pinned = false;
-        if (current && document.activeElement !== current && document.activeElement !== slider) hide();
+        setPinned(false);
     });
     document.addEventListener('scroll', () => { if (current) show(current); }, true);
     window.addEventListener('resize', () => { if (current) show(current); });
