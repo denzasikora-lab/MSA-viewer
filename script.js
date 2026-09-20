@@ -1759,14 +1759,18 @@ function openMenuSection(section) {
     }
 }
 
-function makeControlGroupDetachable(sectionId, controlGroupId, handleId, dockButtonId) {
-    const section = document.getElementById(sectionId);
-    const group = document.getElementById(controlGroupId);
-    const handle = document.getElementById(handleId);
-    const dockBtn = document.getElementById(dockButtonId);
+function makeControlGroupDetachable(section, group, handle, dockBtn) {
+    if (typeof section === 'string') {
+        section = document.getElementById(section);
+        group = document.getElementById(group);
+        handle = document.getElementById(handle);
+        dockBtn = document.getElementById(dockBtn);
+    }
     if (!section || !group || !handle || !dockBtn) {
         return;
     }
+    if (handle._geDetachWired) return;
+    handle._geDetachWired = true;
 
     let dragging = false;
     let dragStartX = 0;
@@ -1823,6 +1827,37 @@ function makeControlGroupDetachable(sectionId, controlGroupId, handleId, dockBut
     });
 }
 
+function setupMenuDocking() {
+    document.querySelectorAll('.standard-menu-group .menu-section').forEach(section => {
+        if (section.id === 'groups-menu-section') return;
+        const group = section.querySelector(':scope > .control-group');
+        if (!group) return;
+        let handle = group.querySelector(':scope > .panel-detach-handle');
+        if (!handle) {
+            const titleEl = section.querySelector('.section-header span');
+            const title = titleEl ? titleEl.textContent.trim() : 'Menu';
+            handle = document.createElement('div');
+            handle.className = 'panel-detach-handle';
+            handle.title = 'Drag to detach this panel';
+            handle.innerHTML = '<span class="panel-detach-grip">&#8942;&#8942;</span> '
+                + String(title).replace(/[&<>"']/g, ch => ({
+                    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+                }[ch]))
+                + ' <span class="panel-dock-btn" title="Dock back into the menu">&#9875;</span>';
+            group.insertBefore(handle, group.firstChild);
+        }
+        let dockBtn = handle.querySelector('.panel-dock-btn');
+        if (!dockBtn) {
+            dockBtn = document.createElement('span');
+            dockBtn.className = 'panel-dock-btn';
+            dockBtn.title = 'Dock back into the menu';
+            dockBtn.innerHTML = '&#9875;';
+            handle.appendChild(dockBtn);
+        }
+        makeControlGroupDetachable(section, group, handle, dockBtn);
+    });
+}
+
 function setupMenuStability() {
     const menuSections = document.querySelectorAll('.menu-section');
     menuSections.forEach(section => {
@@ -1869,7 +1904,7 @@ function setupMenuStability() {
             });
         }
     });
-    makeControlGroupDetachable('clustering-menu-section', 'clustering-controls', 'clusteringDetachHandle', 'clusteringDockButton');
+    setupMenuDocking();
 }
 
 function updateSliderBackground(slider) {
@@ -12136,20 +12171,54 @@ let _geExplorerBound = false;
 let _geDragFrom = null;
 let _geDocked = false;
 let _geHomeParent = null;
+let _geFindHits = [];
+let _geFindStrict = [];
+let _geSuggestI = -1;
+
+function _geSeqAlignIndex(id) {
+    return state.seqs.findIndex(s => s.header === id);
+}
+
+function _geSortClustersToAlignment() {
+    const results = state.clusterResults;
+    if (!results || !Array.isArray(results.clusters)) return;
+    const idxOf = (id) => {
+        const i = _geSeqAlignIndex(id);
+        return i < 0 ? Infinity : i;
+    };
+    const firstRow = (c) => Math.min(...((c.sequences || []).map(s => idxOf(s.id)).concat(Infinity)));
+    results.clusters.forEach(c => {
+        if (Array.isArray(c.sequences)) c.sequences.sort((a, b) => idxOf(a.id) - idxOf(b.id));
+    });
+    results.clusters.sort((a, b) => firstRow(a) - firstRow(b));
+    if (Array.isArray(results.unassigned)) {
+        results.unassigned.sort((a, b) => idxOf(a.id) - idxOf(b.id));
+    }
+}
 
 function _commitTypeResults(clusterResults, source, sourceLabel) {
     state.clusterSource = source;
     state.clusterSourceLabel = sourceLabel;
     state.clusterResults = clusterResults;
+    _geSortClustersToAlignment();
     const colors = SINEClusterer.getClusterColors();
     (clusterResults.clusters || []).forEach((c, idx) => {
         if (!c.color) c.color = colors[idx % colors.length];
         if (c.paintOff == null) c.paintOff = false;
-        if (!c._typeName) c._typeName = source === 'kmers' ? ('Group ' + (idx + 1)) : ('Group ' + (idx + 1));
+        if (!c._typeName) c._typeName = 'Group ' + (idx + 1);
     });
     state.clusterUnassignedPaintOff = false;
     state._geNote = null;
+    state._geMeta = {
+        nGroups: (clusterResults.clusters || []).length,
+        nSeqs: state.seqs.length,
+        nUnassigned: (clusterResults.unassigned || []).length,
+        source,
+        sourceLabel
+    };
     _geExpanded = new Set();
+    _geFindHits = [];
+    _geFindStrict = [];
     _geSyncMapFromResults();
     renderAlignment();
     if (state._biclusterRaw) reapplyBiclusterPaintMode();
@@ -12385,11 +12454,18 @@ async function clusterByGuideTree() {
             unassigned: [],
             summary: { nClusters: clusters.length, nAssigned: state.seqs.length, nUnassigned: 0, nTotal: state.seqs.length }
         }, 'kmers', k + '-mer groups');
-        const autoBit = cut.auto
-            ? 'Groups chosen from the tree (largest similarity jump).'
-            : ('Split into ' + cut.target + ' groups as requested.');
-        state._geNote = clusters.length + ' groups covering all ' + state.seqs.length + ' sequences, in ' + ms.toFixed(0) + ' ms. '
-            + autoBit + ' Cut at ' + (cut.k || 6) + '-mer distance ' + cut.cutHeight.toFixed(3) + '.';
+        state._geMeta = {
+            nGroups: clusters.length,
+            nSeqs: state.seqs.length,
+            nUnassigned: 0,
+            ms: Math.round(ms),
+            k: cut.k || k,
+            cut: cut.cutHeight,
+            auto: cut.auto,
+            target: cut.target,
+            source: 'kmers',
+            sourceLabel: k + '-mer groups'
+        };
         displayClusteringResults(state.clusterResults);
     }, `${state.seqs.length} sequences`);
 }
@@ -13100,7 +13176,7 @@ function _geSetMenuVisible(on) {
 function _geUpdateDockBtn() {
     const btn = el('geDockBtn');
     if (!btn) return;
-    btn.textContent = _geDocked ? 'Float' : 'Dock';
+    btn.innerHTML = '&#9875;';
     btn.title = _geDocked
         ? 'Open Group explorer as a floating window'
         : 'Dock Group explorer into the Groups menu';
@@ -13329,15 +13405,26 @@ function _geRepaint() {
     else _updateInstrumentStatus();
 }
 
-function _geFocusSeq(header) {
+function _geSelectedIdSet() {
+    const ids = new Set();
+    if (!state.selectedRows) return ids;
+    state.selectedRows.forEach(i => {
+        if (state.seqs[i]) ids.add(state.seqs[i].header);
+    });
+    return ids;
+}
+
+function _geMarkSelectedSeqs() {
+    const ids = _geSelectedIdSet();
+    document.querySelectorAll('.ge-seq').forEach(node => {
+        node.classList.toggle('ge-seq-sel', ids.has(node.getAttribute('data-id')));
+    });
+}
+
+function _geScrollToSeq(header) {
     const idx = state.seqs.findIndex(s => s.header === header);
-    if (idx < 0) {
-        showMessage('Sequence not in the current alignment', 2500);
-        return;
-    }
-    state.selectedRows = new Set([idx]);
-    if (typeof updateRowSelections === 'function') updateRowSelections();
-    if (isCanvasMode()) {
+    if (idx < 0) return false;
+    if (typeof isCanvasMode === 'function' && isCanvasMode()) {
         const rowPitch = _canvasState.rowPitch || _canvasState.metrics?.charH || 16;
         const viewH = (el('alignmentContainer') && el('alignmentContainer').clientHeight) || 240;
         _canvasState.offsetY = Math.max(0, idx * rowPitch - Math.min(viewH / 3, rowPitch * 4));
@@ -13346,7 +13433,7 @@ function _geFocusSeq(header) {
     } else {
         const rowPx = _unifiedRowHeightPx || 16;
         alignmentContainer.scrollTop = Math.max(0, idx * rowPx - 48);
-        renderAlignment();
+        if (typeof updateRowSelections === 'function') updateRowSelections();
         requestAnimationFrame(() => {
             const row = alignmentContainer.querySelector(`.seq-line[data-seq-index="${idx}"]`);
             if (row) {
@@ -13356,18 +13443,189 @@ function _geFocusSeq(header) {
             }
         });
     }
+    return true;
+}
+
+function _geToggleSeq(header) {
+    const idx = state.seqs.findIndex(s => s.header === header);
+    if (idx < 0) {
+        showMessage('Sequence not in the current alignment', 2500);
+        return;
+    }
+    if (state.selectedRows.has(idx)) state.selectedRows.delete(idx);
+    else state.selectedRows.add(idx);
+    state.lastSelectedIndex = idx;
+    if (typeof updateRowSelections === 'function') updateRowSelections();
+    if (typeof isCanvasMode === 'function' && isCanvasMode()) _canvasState.scheduleDraw?.();
+    _geMarkSelectedSeqs();
+    _geScrollToSeq(header);
 }
 
 function _geSelectGroup(kind, idx) {
     const ids = new Set(_geMemberIds(kind, idx));
-    state.selectedRows = new Set();
+    const memberIdx = [];
     state.seqs.forEach((s, i) => {
-        if (ids.has(s.header)) state.selectedRows.add(i);
+        if (ids.has(s.header)) memberIdx.push(i);
     });
+    const allOn = memberIdx.length && memberIdx.every(i => state.selectedRows.has(i));
+    if (allOn) memberIdx.forEach(i => state.selectedRows.delete(i));
+    else state.selectedRows = new Set(memberIdx);
     if (typeof updateRowSelections === 'function') updateRowSelections();
-    const first = Math.min(...state.selectedRows);
-    if (Number.isFinite(first) && state.seqs[first]) _geFocusSeq(state.seqs[first].header);
-    highlightCluster(kind === 'unassigned' ? -1 : idx);
+    if (typeof isCanvasMode === 'function' && isCanvasMode()) _canvasState.scheduleDraw?.();
+    _geMarkSelectedSeqs();
+    if (!allOn && memberIdx.length) _geScrollToSeq(state.seqs[memberIdx[0]].header);
+}
+
+function _geAllNamedSeqs() {
+    const out = [];
+    const results = state.clusterResults;
+    if (!results) return out;
+    (results.clusters || []).forEach((c, idx) => {
+        const group = c._typeName || ('Group ' + (idx + 1));
+        (c.sequences || []).forEach(s => out.push({ id: s.id, group, idx, kind: 'group' }));
+    });
+    (results.unassigned || []).forEach(s => {
+        out.push({ id: s.id, group: 'Unassigned', idx: -1, kind: 'unassigned' });
+    });
+    return out;
+}
+
+function _geFindRegex(q) {
+    try { return new RegExp(q, 'i'); }
+    catch (e) { return null; }
+}
+
+function _geSubseqMatch(hay, needle) {
+    let i = 0;
+    for (let p = 0; p < hay.length && i < needle.length; p++) {
+        if (hay[p] === needle[i]) i++;
+    }
+    return i === needle.length;
+}
+
+function _geFindMatches(q, useRe) {
+    const all = _geAllNamedSeqs();
+    const query = (q || '').trim();
+    if (!query) return { matches: [], strict: [], error: '' };
+    if (useRe) {
+        const re = _geFindRegex(query);
+        if (!re) return { matches: [], strict: [], error: 'Invalid regex' };
+        const hits = all.filter(m => re.test(m.id));
+        return { matches: hits, strict: hits, error: '' };
+    }
+    const n = query.toLowerCase();
+    const ranked = all.map(m => {
+        const hay = String(m.id).toLowerCase();
+        let rank = Infinity;
+        if (hay === n) rank = 0;
+        else if (hay.startsWith(n)) rank = 1;
+        else {
+            const pos = hay.indexOf(n);
+            if (pos >= 0) rank = 2 + pos / 1000;
+            else if (_geSubseqMatch(hay, n)) rank = 50 + Math.abs(hay.length - n.length) / 100;
+        }
+        return { m, rank, len: String(m.id).length };
+    }).filter(x => x.rank < Infinity);
+    ranked.sort((a, b) => a.rank - b.rank || a.len - b.len);
+    const matches = ranked.map(x => x.m);
+    const strict = matches.filter(m => String(m.id).toLowerCase().includes(n));
+    return { matches, strict, error: '' };
+}
+
+function _geHideSuggest() {
+    const box = el('geSuggest');
+    if (box) {
+        box.hidden = true;
+        box.innerHTML = '';
+    }
+    _geSuggestI = -1;
+}
+
+function _geRenderSuggest() {
+    const box = el('geSuggest');
+    if (!box) return;
+    const items = _geFindHits.slice(0, 12);
+    if (!items.length) {
+        _geHideSuggest();
+        return;
+    }
+    if (_geSuggestI >= items.length) _geSuggestI = items.length - 1;
+    box.innerHTML = items.map((m, i) =>
+        `<div class="ge-suggest-item${i === _geSuggestI ? ' ge-suggest-on' : ''}" data-ge="suggest" data-id="${_geEsc(m.id)}" data-i="${i}">`
+        + `<span class="ge-suggest-id">${_geEsc(m.id)}</span>`
+        + `<span class="ge-suggest-g">${_geEsc(m.group)}</span></div>`
+    ).join('');
+    box.hidden = false;
+}
+
+function _gePaintFindHits() {
+    const hitIds = new Set(_geFindStrict.map(m => m.id));
+    document.querySelectorAll('.ge-seq').forEach(node => {
+        node.classList.toggle('ge-seq-hit', hitIds.has(node.getAttribute('data-id')));
+    });
+}
+
+function _geFindStatus() {
+    const hit = el('geSearchHit');
+    if (!hit) return;
+    const search = el('geSearch');
+    const q = search && search.value.trim();
+    if (!q) {
+        hit.textContent = '';
+        return;
+    }
+    if (_geFindHits.error) {
+        hit.textContent = _geFindHits.error;
+        return;
+    }
+    const n = _geFindStrict.length;
+    const near = _geFindHits.length;
+    if (!near) {
+        hit.textContent = 'No matches';
+        return;
+    }
+    hit.textContent = n === near
+        ? (n + ' match' + (n === 1 ? '' : 'es'))
+        : (n + ' match' + (n === 1 ? '' : 'es') + ' · ' + near + ' near');
+}
+
+function _geFindUpdate() {
+    const search = el('geSearch');
+    const q = (search && search.value) || '';
+    const useRe = !!(el('geSearchRegex') && el('geSearchRegex').checked);
+    const found = _geFindMatches(q, useRe);
+    _geFindHits = found.matches;
+    _geFindStrict = found.strict;
+    _geFindHits.error = found.error;
+    _geSuggestI = found.matches.length ? 0 : -1;
+    let expandedChanged = false;
+    found.strict.forEach(m => {
+        const key = m.kind === 'unassigned' ? 'u' : ('g' + m.idx);
+        if (!_geExpanded.has(key)) {
+            _geExpanded.add(key);
+            expandedChanged = true;
+        }
+    });
+    if (expandedChanged) renderGroupExplorer();
+    else {
+        _gePaintFindHits();
+        _geMarkSelectedSeqs();
+    }
+    if (found.error || !(q || '').trim()) _geHideSuggest();
+    else _geRenderSuggest();
+    _geFindStatus();
+}
+
+function _gePickFind(id) {
+    _geHideSuggest();
+    _geToggleSeq(id);
+    const row = Array.from(document.querySelectorAll('.ge-seq')).find(n => n.getAttribute('data-id') === id);
+    if (row) row.scrollIntoView({ block: 'nearest' });
+}
+
+function _geApplySearch(q) {
+    if (el('geSearch') && q != null) el('geSearch').value = q;
+    _geFindUpdate();
 }
 
 function _geCopyAction(what, kind, idx) {
@@ -13382,43 +13640,6 @@ function _geCopyAction(what, kind, idx) {
     else if (what === 'consensus') _geCopyText(_geGroupConsensusFasta(kind, idx), 'Copied ungapped consensus FASTA');
 }
 
-function _geApplySearch(q) {
-    const hit = el('geSearchHit');
-    const needle = (q || '').trim().toLowerCase();
-    document.querySelectorAll('.ge-seq-hit').forEach(n => n.classList.remove('ge-seq-hit'));
-    if (!needle) {
-        if (hit) hit.textContent = '';
-        return;
-    }
-    const results = state.clusterResults;
-    if (!results) {
-        if (hit) hit.textContent = 'No groups yet';
-        return;
-    }
-    let found = null;
-    (results.clusters || []).some((c, idx) => {
-        const m = (c.sequences || []).find(s => String(s.id).toLowerCase().includes(needle));
-        if (m) {
-            found = { kind: 'group', idx, id: m.id, name: c._typeName || ('Group ' + (idx + 1)) };
-            return true;
-        }
-        return false;
-    });
-    if (!found) {
-        const m = (results.unassigned || []).find(s => String(s.id).toLowerCase().includes(needle));
-        if (m) found = { kind: 'unassigned', idx: -1, id: m.id, name: 'Unassigned' };
-    }
-    if (!found) {
-        if (hit) hit.textContent = 'Not found';
-        return;
-    }
-    if (hit) hit.textContent = found.name;
-    _geExpanded.add(found.kind === 'unassigned' ? 'u' : ('g' + found.idx));
-    renderGroupExplorer();
-    const row = Array.from(document.querySelectorAll('.ge-seq')).find(n => n.getAttribute('data-id') === found.id);
-    if (row) row.scrollIntoView({ block: 'nearest' });
-}
-
 function _geBindExplorer() {
     if (_geExplorerBound) return;
     _geExplorerBound = true;
@@ -13430,13 +13651,50 @@ function _geBindExplorer() {
     if (closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); _geCloseExplorer(); });
     const content = el('clusteringContent');
     const search = el('geSearch');
+    const regex = el('geSearchRegex');
+    const suggest = el('geSuggest');
     if (search) {
-        search.addEventListener('input', () => _geApplySearch(search.value));
+        search.addEventListener('input', () => _geFindUpdate());
         search.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                const hit = document.querySelector('.ge-seq-hit');
-                if (hit) _geFocusSeq(hit.getAttribute('data-id'));
+            const n = _geFindHits.length;
+            if (e.key === 'ArrowDown' && n) {
+                e.preventDefault();
+                _geSuggestI = (_geSuggestI + 1) % Math.min(12, n);
+                _geRenderSuggest();
+                return;
             }
+            if (e.key === 'ArrowUp' && n) {
+                e.preventDefault();
+                const cap = Math.min(12, n);
+                _geSuggestI = (_geSuggestI - 1 + cap) % cap;
+                _geRenderSuggest();
+                return;
+            }
+            if (e.key === 'Escape') {
+                _geHideSuggest();
+                return;
+            }
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const pick = (_geSuggestI >= 0 && _geFindHits[_geSuggestI])
+                    ? _geFindHits[_geSuggestI]
+                    : (_geFindStrict[0] || _geFindHits[0]);
+                if (pick) _gePickFind(pick.id);
+            }
+        });
+        search.addEventListener('blur', () => {
+            setTimeout(_geHideSuggest, 150);
+        });
+    }
+    if (regex) regex.addEventListener('change', () => _geFindUpdate());
+    if (suggest) {
+        suggest.addEventListener('mousedown', (e) => e.preventDefault());
+        suggest.addEventListener('click', (e) => {
+            const item = e.target.closest('[data-ge="suggest"]');
+            if (!item) return;
+            e.preventDefault();
+            e.stopPropagation();
+            _gePickFind(item.getAttribute('data-id'));
         });
     }
     if (!content) return;
@@ -13467,7 +13725,7 @@ function _geBindExplorer() {
         }
         if (act === 'up') { _geMoveGroup(idx, idx - 1); return; }
         if (act === 'down') { _geMoveGroup(idx, idx + 1); return; }
-        if (act === 'seq') { _geFocusSeq(btn.getAttribute('data-id')); return; }
+        if (act === 'seq') { _geToggleSeq(btn.getAttribute('data-id')); return; }
         if (act === 'select') { _geSelectGroup(kind, idx); return; }
         if (act === 'copy') { _geCopyAction(btn.getAttribute('data-what'), kind, idx); return; }
     });
@@ -13518,16 +13776,20 @@ function _geCardHtml(opts) {
     const nStrict = exclusive || 0;
     const canMove = kind === 'group';
     const colorVal = color || '#cccccc';
-    const seqHtml = (ids || []).map(id =>
-        `<div class="ge-seq" data-ge="seq" data-id="${_geEsc(id)}" title="Jump to this sequence">${_geEsc(id)}</div>`
-    ).join('');
-    return `<div class="ge-card${paintOff ? ' ge-off' : ''}" data-kind="${kind}" data-idx="${idx}" style="border-left:4px solid ${colorVal}">
+    const selected = _geSelectedIdSet();
+    const seqHtml = (ids || []).map(id => {
+        const cls = 'ge-seq'
+            + (selected.has(id) ? ' ge-seq-sel' : '')
+            + (_geFindStrict.some(m => m.id === id) ? ' ge-seq-hit' : '');
+        return `<div class="${cls}" data-ge="seq" data-id="${_geEsc(id)}" title="Click to select; click again to unselect">${_geEsc(id)}</div>`;
+    }).join('');
+    return `<div class="ge-card${paintOff ? ' ge-off' : ''}" data-kind="${kind}" data-idx="${idx}">
         <div class="ge-card-head" data-ge="toggle">
             ${canMove ? '<span class="ge-drag" data-ge="drag" draggable="true" title="Drag to reorder groups in the list and in the alignment">::</span>' : '<span class="ge-drag" style="visibility:hidden">::</span>'}
             <input type="color" class="ge-color" data-ge="color" value="${_geEsc(colorVal)}" title="Group colour">
             <button type="button" class="ge-paint" data-ge="paint" title="${paintOff ? 'Show this group colour on the alignment' : 'Hide this group colour'}">${paintOff ? 'Off' : 'On'}</button>
             <span class="ge-title">${_geEsc(name)} <span class="ge-meta">${n} seq${n === 1 ? '' : 's'}${extraMeta ? ' · ' + extraMeta : ''}</span></span>
-            ${canMove ? `<span class="ge-move"><button type="button" data-ge="up" title="Move group up">^</button><button type="button" data-ge="down" title="Move group down">v</button></span>` : ''}
+            ${canMove ? `<span class="ge-move"><button type="button" data-ge="up" title="Move group up">&#9650;</button><button type="button" data-ge="down" title="Move group down">&#9660;</button></span>` : ''}
             <span class="ge-chevron">${open ? 'v' : '>'}</span>
         </div>
         ${open ? `<div class="ge-card-body">
@@ -13536,12 +13798,45 @@ function _geCardHtml(opts) {
                 <button type="button" data-ge="copy" data-what="fasta" title="Copy gapped FASTA">Copy FASTA</button>
                 <button type="button" data-ge="copy" data-what="ungapped" title="Copy ungapped FASTA">Copy ungapped</button>
                 <button type="button" data-ge="copy" data-what="consensus" title="Copy group consensus as ungapped FASTA">Copy consensus</button>
-                <button type="button" data-ge="select" title="Select these sequences and jump to the first">Select</button>
+                <button type="button" data-ge="select" title="Select these sequences in the alignment. Click again to unselect them.">Select</button>
             </div>
             <div class="ge-seq-list">${seqHtml || '<em>None</em>'}</div>
             ${motifs ? `<div class="ge-motifs"><strong>Characters</strong>${nStrict ? ' · ' + nStrict + ' exclusive' : ''}<div>${motifs}</div></div>` : ''}
         </div>` : ''}
     </div>`;
+}
+
+function _geSummaryHtml() {
+    const results = state.clusterResults;
+    if (!results) return 'No groups yet.';
+    const m = state._geMeta || {};
+    const nC = (results.clusters || []).length;
+    const nU = (results.unassigned || []).length;
+    const nSeqs = m.nSeqs != null ? m.nSeqs : state.seqs.length;
+    if (nC === 0) {
+        const p = (typeof getClusteringParameters === 'function') ? getClusteringParameters() : null;
+        let sub = 'No group met the current settings.';
+        if (p) {
+            sub += ' Min Size <span class="ge-var">' + p.minSize
+                + '</span> · Min Features <span class="ge-var">' + p.minPerfect
+                + '</span> · Quality <span class="ge-var">' + p.qualitySmall + '/' + p.qualityMedium + '/' + p.qualityLarge + '</span>%';
+        }
+        return '<div class="ge-sum-row"><span class="ge-var">0</span> groups</div><div class="ge-sum-sub">' + sub + '</div>';
+    }
+    let row = '<span class="ge-var">' + nC + '</span> group' + (nC === 1 ? '' : 's')
+        + ' · <span class="ge-var">' + nSeqs + '</span> sequences';
+    if (m.ms != null) row += ' · <span class="ge-var">' + m.ms + '</span> ms';
+    if (nU) row += ' · <span class="ge-var">' + nU + '</span> unassigned';
+    let sub = '';
+    if (m.source === 'kmers') {
+        const cut = (m.cut != null && Number.isFinite(Number(m.cut))) ? Number(m.cut).toFixed(3) : '';
+        sub = 'k-mer tree · ' + (m.auto ? 'auto split' : ('split into ' + m.target))
+            + ' · k=<span class="ge-var">' + (m.k || 6) + '</span>'
+            + (cut ? (' · cut <span class="ge-var">' + cut + '</span>') : '');
+    } else if (m.sourceLabel) {
+        sub = _geEsc(m.sourceLabel);
+    }
+    return '<div class="ge-sum-row">' + row + '</div>' + (sub ? '<div class="ge-sum-sub">' + sub + '</div>' : '');
 }
 
 function renderGroupExplorer() {
@@ -13555,26 +13850,18 @@ function renderGroupExplorer() {
         content.innerHTML = '';
         return;
     }
-    const s = results.summary || {};
-    const nC = (results.clusters || []).length;
     const nU = (results.unassigned || []).length;
-    let note = state._geNote || ((state.clusterSourceLabel || 'Groups') + ' · ' + nC + ' group' + (nC === 1 ? '' : 's')
-        + ' · ' + (s.nAssigned != null ? s.nAssigned : (state.seqs.length - nU)) + ' assigned'
-        + (nU ? (' · ' + nU + ' unassigned') : ''));
-    if (nC === 0) {
-        const p = (typeof getClusteringParameters === 'function') ? getClusteringParameters() : null;
-        note = 'No group met the current settings — a threshold result, not an error.'
-            + (p ? (' Min Size ' + p.minSize + ', Min Features ' + p.minPerfect + ', Quality ' + p.qualitySmall + '/' + p.qualityMedium + '/' + p.qualityLarge + '%.') : '');
-    }
     if (summary) {
-        summary.textContent = note;
-        summary.title = 'Use On/Off to uncolour a group. Arrow or drag to reorder groups in this list and in the alignment. Expand a group for copy buttons. Click a sequence name to jump to it.';
+        summary.innerHTML = _geSummaryHtml();
+        summary.title = 'Click a sequence to select it, click again to unselect. Arrow or drag reorders groups in this list and in the alignment.';
     }
     let html = '';
     (results.clusters || []).forEach((cluster, idx) => {
         const nStrict = (cluster.perfectFeatures || []).length;
         const nCloudy = (cluster.cloudyFeatures || []).length;
         const extra = (nStrict || nCloudy) ? (nStrict + ' exclusive / ' + nCloudy + ' cloudy') : '';
+        const ids = (cluster.sequences || []).map(x => x.id).slice()
+            .sort((a, b) => _geSeqAlignIndex(a) - _geSeqAlignIndex(b));
         html += _geCardHtml({
             kind: 'group',
             idx,
@@ -13582,13 +13869,15 @@ function renderGroupExplorer() {
             n: cluster.size || (cluster.sequences || []).length,
             color: cluster.color,
             paintOff: !!cluster.paintOff,
-            ids: (cluster.sequences || []).map(x => x.id),
+            ids,
             extraMeta: extra,
             motifs: _motifRunsHtml(cluster.motifRuns),
             exclusive: nStrict
         });
     });
     if (nU) {
+        const ids = (results.unassigned || []).map(x => x.id).slice()
+            .sort((a, b) => _geSeqAlignIndex(a) - _geSeqAlignIndex(b));
         html += _geCardHtml({
             kind: 'unassigned',
             idx: -1,
@@ -13596,35 +13885,29 @@ function renderGroupExplorer() {
             n: nU,
             color: state.clusterUnassignedColor || '#cccccc',
             paintOff: !!state.clusterUnassignedPaintOff,
-            ids: (results.unassigned || []).map(x => x.id),
+            ids,
             extraMeta: '',
             motifs: '',
             exclusive: 0
         });
     }
     content.innerHTML = html;
-    const q = el('geSearch') && el('geSearch').value;
-    if (q && q.trim()) {
-        const needle = q.trim().toLowerCase();
-        content.querySelectorAll('.ge-seq').forEach(node => {
-            if (String(node.getAttribute('data-id') || '').toLowerCase().includes(needle)) {
-                node.classList.add('ge-seq-hit');
-            }
-        });
-    }
+    _gePaintFindHits();
+    _geMarkSelectedSeqs();
 }
 
 function displayClusteringResults(results) {
     if (results) state.clusterResults = results;
     _geSetProbeMode(false);
+    _geFindHits = [];
+    _geFindStrict = [];
     renderGroupExplorer();
     _geShowModal();
     const search = el('geSearch');
-    if (search) {
-        search.value = '';
-        const hit = el('geSearchHit');
-        if (hit) hit.textContent = '';
-    }
+    if (search) search.value = '';
+    const hit = el('geSearchHit');
+    if (hit) hit.textContent = '';
+    _geHideSuggest();
 }
 
 function highlightCluster(clusterIdx) {

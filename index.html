@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=129">
+    <link rel="stylesheet" href="styles.css?v=130">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -324,7 +324,7 @@
                     <div class="control-group" id="clustering-controls">
                         <div class="panel-detach-handle" id="clusteringDetachHandle" title="Click and drag here to detach this panel and move it anywhere on screen">
                             <span class="panel-detach-grip">&#8942;&#8942;</span> Clustering
-                            <span class="panel-dock-btn" id="clusteringDockButton" title="Dock back into the menu">&#9875; Dock</span>
+                            <span class="panel-dock-btn" id="clusteringDockButton" title="Dock back into the menu">&#9875;</span>
                         </div>
                         <div class="cluster-panel">
                             <div class="cluster-block">
@@ -948,7 +948,7 @@
         <div id="clusteringModalHeader" class="ge-header">
             <h3>Group explorer</h3>
             <div class="ge-header-actions" id="geHeaderActions">
-                <button type="button" id="geDockBtn" class="ge-text-btn" title="Dock Group explorer into the Groups menu">Dock</button>
+                <button type="button" id="geDockBtn" class="panel-dock-btn ge-dock-btn" title="Dock Group explorer into the Groups menu">&#9875;</button>
                 <button type="button" id="geClearBtn" class="ge-text-btn" title="Clear all group colours and membership data">Clear all</button>
                 <div class="ge-window-btns">
                     <button type="button" id="clusteringModalClose" class="ge-win-btn" title="Close">×</button>
@@ -956,7 +956,11 @@
             </div>
         </div>
         <div class="ge-toolbar" id="geToolbar">
-            <input type="search" id="geSearch" placeholder="Find a sequence…" autocomplete="off" spellcheck="false" title="Type part of a sequence name to see which group it belongs to">
+            <div class="ge-find">
+                <input type="search" id="geSearch" placeholder="Find a sequence…" autocomplete="off" spellcheck="false" title="Type to find sequences. Suggestions list nearest names; .* treats the query as a regular expression. Click a name to select, click again to unselect.">
+                <label class="ge-find-re" title="Treat the query as a regular expression"><input type="checkbox" id="geSearchRegex"> .*</label>
+                <div id="geSuggest" class="ge-suggest" hidden></div>
+            </div>
             <span id="geSearchHit" class="ge-search-hit"></span>
         </div>
         <div id="geSummary" class="ge-summary"></div>
@@ -1232,7 +1236,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=220"></script>
+    <script src="script.js?v=221"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

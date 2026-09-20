@@ -404,6 +404,18 @@ html {
 .panel-dock-btn:hover {
     background: #dcebfa;
 }
+#geDockBtn.panel-dock-btn,
+.group-explorer .ge-dock-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: 0;
+    height: 22px;
+    min-width: 22px;
+    padding: 0 6px;
+    font-size: 13px;
+    line-height: 1;
+}
 /* While detached, ignore the hover-driven open/close machinery entirely -
    fixed positioning + explicit display, independent of .menu-open. */
 .control-group.detached {
@@ -1209,6 +1221,14 @@ input[type="number"]::-webkit-outer-spin-button {
     padding: 8px 10px 4px;
     flex-shrink: 0;
 }
+.ge-find {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
 .ge-toolbar input[type="search"] {
     flex: 1;
     min-width: 0;
@@ -1218,11 +1238,65 @@ input[type="number"]::-webkit-outer-spin-button {
     border: 1px solid #ccc;
     border-radius: 4px;
 }
+.ge-find-re {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 11px;
+    color: #444;
+    white-space: nowrap;
+    cursor: pointer;
+    user-select: none;
+}
+.ge-find-re input {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+}
+.ge-suggest {
+    position: absolute;
+    left: 0;
+    right: 42px;
+    top: calc(100% + 2px);
+    max-height: 220px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #c5cdd6;
+    border-radius: 4px;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.16);
+    z-index: 20;
+}
+.ge-suggest-item {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 4px 8px;
+    font-size: 11px;
+    cursor: pointer;
+}
+.ge-suggest-item:hover,
+.ge-suggest-item.ge-suggest-on {
+    background: #e8f1fb;
+}
+.ge-suggest-id {
+    font-family: ui-monospace, Consolas, monospace;
+    font-size: 10px;
+    color: #1a365d;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.ge-suggest-g {
+    color: #888;
+    font-size: 10px;
+    flex-shrink: 0;
+}
 .ge-search-hit {
     font-size: 10px;
     color: #555;
     white-space: nowrap;
-    max-width: 46%;
+    max-width: 34%;
     overflow: hidden;
     text-overflow: ellipsis;
 }
@@ -1231,6 +1305,20 @@ input[type="number"]::-webkit-outer-spin-button {
     font-size: 11px;
     color: #555;
     flex-shrink: 0;
+    line-height: 1.35;
+}
+.ge-sum-row {
+    color: #444;
+}
+.ge-sum-sub {
+    font-size: 10px;
+    color: #777;
+    margin-top: 1px;
+}
+.ge-var {
+    font-variant-numeric: tabular-nums;
+    color: #222;
+    font-weight: 650;
 }
 .group-explorer.ge-probe .ge-toolbar,
 .group-explorer.ge-probe .ge-summary {
@@ -1303,14 +1391,29 @@ input[type="number"]::-webkit-outer-spin-button {
     padding: 0 2px;
 }
 .ge-color {
-    width: 18px;
-    height: 18px;
+    width: 16px;
+    height: 16px;
     padding: 0;
-    border: 1px solid #bbb;
-    border-radius: 3px;
-    background: none;
+    border: none;
+    border-radius: 2px;
+    background: transparent;
     cursor: pointer;
     flex-shrink: 0;
+    overflow: hidden;
+    appearance: none;
+    -webkit-appearance: none;
+    box-shadow: none;
+}
+.ge-color::-webkit-color-swatch-wrapper {
+    padding: 0;
+}
+.ge-color::-webkit-color-swatch {
+    border: none;
+    border-radius: 0;
+}
+.ge-color::-moz-color-swatch {
+    border: none;
+    border-radius: 0;
 }
 .ge-paint {
     font-size: 10px;
@@ -1339,18 +1442,23 @@ input[type="number"]::-webkit-outer-spin-button {
 .ge-move {
     display: flex;
     flex-direction: column;
-    gap: 0;
+    gap: 1px;
 }
 .ge-move button {
-    height: 14px;
-    width: 22px;
+    box-sizing: border-box;
+    height: 16px;
+    width: 18px;
     padding: 0;
-    line-height: 12px;
-    font-size: 10px;
+    margin: 0;
+    line-height: 16px;
+    font-size: 9px;
     border: 1px solid #ddd;
     background: #fafafa;
     cursor: pointer;
     color: #444;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 .ge-move button:hover {
     background: #eee;
@@ -1361,7 +1469,7 @@ input[type="number"]::-webkit-outer-spin-button {
     text-align: center;
 }
 .ge-card-body {
-    padding: 0 8px 8px 28px;
+    padding: 0 8px 8px 8px;
     border-top: 1px solid #f0f0f0;
 }
 .ge-actions {
@@ -1403,6 +1511,13 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .ge-seq-hit {
     background: #fff3bf;
+}
+.ge-seq-sel {
+    background: #d6e8fb;
+    font-weight: 650;
+}
+.ge-seq-sel.ge-seq-hit {
+    background: #e4dc9a;
 }
 .ge-motifs {
     margin-top: 6px;
@@ -2579,6 +2694,11 @@ span.column-selected {
 #display-controls {
     max-width: 520px;
     min-width: 360px;
+}
+#display-controls .panel-detach-handle {
+    position: sticky;
+    top: 0;
+    z-index: 2;
 }
 .shade-mode-label {
     margin-right: 8px;
