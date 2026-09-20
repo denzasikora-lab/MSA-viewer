@@ -1045,9 +1045,10 @@ input[type="number"]::-webkit-outer-spin-button {
 #clustering-controls {
     min-width: 320px;
     max-width: 360px;
+    width: 360px;
     box-sizing: border-box;
-    overflow-x: visible;
-    padding-right: 2px;
+    overflow-x: hidden;
+    overflow-y: auto;
 }
 .cluster-panel {
     padding: 2px 0 0;
@@ -1067,9 +1068,9 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .cluster-trim-row {
     display: flex;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     align-items: flex-end;
-    gap: 6px;
+    gap: 6px 8px;
     margin-bottom: 6px;
 }
 #clustering-controls .cluster-trim-row > label {
