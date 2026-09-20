@@ -317,7 +317,7 @@ function _clusterCharPaint(header, pos, base) {
     const alpha = diag.isPerfect ? 1 : 0.72;
     const fg = diag.isPerfect ? '#fff' : '#111';
     const weight = diag.isPerfect ? 'bold' : '600';
-    const kind = diag.isPerfect ? 'diagnostic' : (diag.isCloudy ? 'cloudy' : 'partial');
+    const kind = diag.isPerfect ? 'diagnostic' : (diag.isCloudy ? 'shared' : 'partial');
     const title = `${diag.clusterName}: ${kind} ${diag.char}`;
     const style = `background-color:rgba(${rgb.r},${rgb.g},${rgb.b},${alpha}) !important;color:${fg} !important;font-weight:${weight} !important;`;
     return { style, title, isPerfect: diag.isPerfect };
@@ -12147,7 +12147,7 @@ function _updateInstrumentStatus() {
         nCl += (c.cloudyFeatures || []).length;
     });
     const src = state.clusterSourceLabel || 'groups';
-    node.textContent = `${src}: ${n} group${n === 1 ? '' : 's'}, ${nEx} exclusive / ${nCl} cloudy${extra}`;
+    node.textContent = `${src}: ${n} group${n === 1 ? '' : 's'}, ${nEx} exclusive / ${nCl} shared${extra}`;
 }
 
 function clearTypePaint() {
@@ -12174,6 +12174,7 @@ let _geHomeParent = null;
 let _geFindHits = [];
 let _geFindStrict = [];
 let _geSuggestI = -1;
+let _geColFlashGen = 0;
 
 function _geSeqAlignIndex(id) {
     return state.seqs.findIndex(s => s.header === id);
@@ -12411,13 +12412,66 @@ async function _clusterDiagnosticWithinTypes(allSeqs, clusterParams, update) {
     };
 }
 
-function _motifRunsHtml(runs) {
-    if (!runs || !runs.length) return '<em>None</em>';
-    return runs.map(r => {
-        const grade = r.nCloudy && r.nStrict ? 'mixed' : (r.nStrict ? 'strict' : 'cloudy');
-        const span = r.start === r.end ? ('Pos ' + r.start) : ('Pos ' + r.start + '\u2013' + r.end);
-        return `<div style="font-family:monospace;font-size:10px;">${span} ${r.motif} <span style="color:#666">(${grade})</span></div>`;
-    }).join('');
+function _geCharsHtml(cluster) {
+    const rows = [];
+    (cluster.perfectFeatures || []).forEach(f => rows.push({ pos: f.pos, char: f.char, kind: 'exclusive' }));
+    (cluster.cloudyFeatures || []).forEach(f => rows.push({ pos: f.pos, char: f.char, kind: 'shared' }));
+    if (!rows.length) return '';
+    rows.sort((a, b) => a.pos - b.pos || (a.kind === 'exclusive' ? -1 : 1));
+    const body = rows.map(r =>
+        `<tr class="ge-char-row" data-ge="pos" data-pos="${r.pos}" title="Go to alignment column ${r.pos}">`
+        + `<td class="ge-char-pos">${r.pos}</td>`
+        + `<td class="ge-char-base">${_geEsc(r.char)}</td>`
+        + `<td class="ge-char-kind ge-char-${r.kind}">${r.kind}</td></tr>`
+    ).join('');
+    return `<div class="ge-chars"><div class="ge-chars-label">Characters</div>`
+        + `<table class="ge-char-table">`
+        + `<thead><tr><th>Pos</th><th>Base</th><th>Kind</th></tr></thead>`
+        + `<tbody>${body}</tbody></table></div>`;
+}
+
+function _geJumpToCol(pos1) {
+    const pos0 = Math.max(0, (Number(pos1) || 1) - 1 + _clusterAlignmentColumnOffset());
+    const token = ++_geColFlashGen;
+    if (typeof isCanvasMode === 'function' && isCanvasMode()) {
+        const charW = _canvasState.metrics?.charW || 8;
+        const viewW = (el('alignmentContainer') && el('alignmentContainer').clientWidth) || 600;
+        _canvasState.offsetX = Math.max(0, pos0 * charW - Math.min(viewW / 3, charW * 10));
+        state.selectedColumns = new Set([pos0]);
+        _canvasState.scheduleDraw?.();
+        _canvasState.onOffsetChange?.();
+        setTimeout(() => {
+            if (token !== _geColFlashGen) return;
+            state.selectedColumns.delete(pos0);
+            _canvasState.scheduleDraw?.();
+        }, 1000);
+        return;
+    }
+    const colPx = _unifiedCharWidthPx || 8;
+    if (alignmentContainer) {
+        alignmentContainer.scrollLeft = Math.max(0, pos0 * colPx - 48);
+        if (state._needsWindowedDom && typeof _refreshUnifiedWindowOnScroll === 'function') {
+            _refreshUnifiedWindowOnScroll(alignmentContainer);
+        }
+    }
+    const paint = () => {
+        if (token !== _geColFlashGen) return;
+        const spans = document.querySelectorAll(`.seq-data > span[data-pos="${pos0}"]`);
+        const view = alignmentContainer.getBoundingClientRect();
+        let target = null;
+        spans.forEach(sp => {
+            sp.classList.add('ge-col-flash');
+            const r = sp.getBoundingClientRect();
+            if (!target && r.bottom > view.top && r.top < view.bottom) target = sp;
+        });
+        const elTarget = target || spans[0];
+        if (elTarget) elTarget.scrollIntoView({ block: 'nearest', inline: 'center' });
+        setTimeout(() => {
+            if (token !== _geColFlashGen) return;
+            document.querySelectorAll('.ge-col-flash').forEach(sp => sp.classList.remove('ge-col-flash'));
+        }, 1000);
+    };
+    requestAnimationFrame(paint);
 }
 
 // Fast grouping by cutting the k-mer guide tree. Where the diagnostic-position clusterer
@@ -12929,7 +12983,7 @@ function highlightDiagnosticMutations() {
                         span.style.setProperty('font-weight', diag.isPerfect ? 'bold' : 'normal', 'important');
 
                         // Create enhanced tooltip showing inter-cluster leakage
-                        let title = `${diag.clusterName}: ${diag.isPerfect ? 'diagnostic' : (diag.isCloudy ? 'cloudy' : 'partial')} ${diag.char}`;
+                        let title = `${diag.clusterName}: ${diag.isPerfect ? 'diagnostic' : (diag.isCloudy ? 'shared' : 'partial')} ${diag.char}`;
 
                         // If this feature has inter-cluster leakage info, show it
                         if (diag.interClusterLeakage) {
@@ -13751,6 +13805,7 @@ function _geBindExplorer() {
         if (act === 'up') { _geMoveGroup(idx, idx - 1); return; }
         if (act === 'down') { _geMoveGroup(idx, idx + 1); return; }
         if (act === 'seq') { _geToggleSeq(btn.getAttribute('data-id')); return; }
+        if (act === 'pos') { _geJumpToCol(btn.getAttribute('data-pos')); return; }
         if (act === 'select') { _geSelectGroup(kind, idx); return; }
         if (act === 'copy') { _geCopyAction(btn.getAttribute('data-what'), kind, idx); return; }
     });
@@ -13813,9 +13868,8 @@ function _geCardHtml(opts) {
             ${canMove ? '<span class="ge-drag" data-ge="drag" draggable="true" title="Drag to reorder groups in the list and in the alignment">::</span>' : '<span class="ge-drag" style="visibility:hidden">::</span>'}
             <input type="color" class="ge-color" data-ge="color" value="${_geEsc(colorVal)}" title="Group colour">
             <button type="button" class="ge-paint" data-ge="paint" title="${paintOff ? 'Show this group colour on the alignment' : 'Hide this group colour'}">${paintOff ? 'Off' : 'On'}</button>
-            <span class="ge-title">${_geEsc(name)} <span class="ge-meta">${n} seq${n === 1 ? '' : 's'}${extraMeta ? ' · ' + extraMeta : ''}</span></span>
+            <span class="ge-title" title="Click to expand or collapse">${_geEsc(name)} <span class="ge-meta">${n} seq${n === 1 ? '' : 's'}${extraMeta ? ' · ' + extraMeta : ''}</span></span>
             ${canMove ? `<span class="ge-move"><button type="button" data-ge="up" title="Move group up">&#9650;</button><button type="button" data-ge="down" title="Move group down">&#9660;</button></span>` : ''}
-            <span class="ge-chevron">${open ? 'v' : '>'}</span>
         </div>
         ${open ? `<div class="ge-card-body">
             <div class="ge-actions">
@@ -13826,7 +13880,7 @@ function _geCardHtml(opts) {
                 <button type="button" data-ge="select" title="Select these sequences in the alignment. Click again to unselect them.">Select</button>
             </div>
             <div class="ge-seq-list">${seqHtml || '<em>None</em>'}</div>
-            ${motifs ? `<div class="ge-motifs"><strong>Characters</strong>${nStrict ? ' · ' + nStrict + ' exclusive' : ''}<div>${motifs}</div></div>` : ''}
+            ${motifs || ''}
         </div>` : ''}
     </div>`;
 }
@@ -13884,7 +13938,9 @@ function renderGroupExplorer() {
     (results.clusters || []).forEach((cluster, idx) => {
         const nStrict = (cluster.perfectFeatures || []).length;
         const nCloudy = (cluster.cloudyFeatures || []).length;
-        const extra = (nStrict || nCloudy) ? (nStrict + ' exclusive / ' + nCloudy + ' cloudy') : '';
+        const extra = (nStrict || nCloudy)
+            ? (nStrict + ' exclusive / ' + nCloudy + ' shared')
+            : '';
         const ids = (cluster.sequences || []).map(x => x.id).slice()
             .sort((a, b) => _geSeqAlignIndex(a) - _geSeqAlignIndex(b));
         html += _geCardHtml({
@@ -13896,7 +13952,7 @@ function renderGroupExplorer() {
             paintOff: !!cluster.paintOff,
             ids,
             extraMeta: extra,
-            motifs: _motifRunsHtml(cluster.motifRuns),
+            motifs: _geCharsHtml(cluster),
             exclusive: nStrict
         });
     });

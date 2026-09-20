@@ -98,15 +98,15 @@ function ok(name, cond, detail) {
     (k3.cloudyFeatures || []).forEach(f => k3pos.add(f.pos));
     const k3motif = (k3.motifRuns || []).map(r => r.start + '-' + r.end + ':' + r.motif).join(' | ');
     console.log('K3 characters', k3pos.size, 'runs', k3motif);
-    ok('K3 paints CTCCCAGG distinctive CTC (ungapped ~58, aln 128-130)',
-        k3pos.has(128) && k3pos.has(129) && k3pos.has(130),
-        'missing ' + [128, 129, 130].filter(p => !k3pos.has(p)).join(',') + ' runs ' + k3motif);
-    ok('K3 CTCCCAGG starts with exclusive C vs consensus G (aln 128)',
-        (k3.perfectFeatures || []).some(f => f.pos === 128 && f.char === 'C'),
-        JSON.stringify((k3.perfectFeatures || []).filter(f => f.pos >= 128 && f.pos <= 135)));
-    ok('conserved ccagg tail of CTCCCAGG is not claimed (aln 131-132, 134-135)',
-        !k3pos.has(131) && !k3pos.has(132) && !k3pos.has(134) && !k3pos.has(135),
-        'claimed ' + [131, 132, 134, 135].filter(p => k3pos.has(p)).join(','));
+    ok('K3 paints CTCCCAGG distinctive CTC (ungapped ~58, aln 63-65)',
+        k3pos.has(63) && k3pos.has(64) && k3pos.has(65),
+        'missing ' + [63, 64, 65].filter(p => !k3pos.has(p)).join(',') + ' runs ' + k3motif);
+    ok('K3 CTCCCAGG starts with exclusive C vs consensus G (aln 63)',
+        (k3.perfectFeatures || []).some(f => f.pos === 63 && f.char === 'C'),
+        JSON.stringify((k3.perfectFeatures || []).filter(f => f.pos >= 63 && f.pos <= 70)));
+    ok('conserved ccagg tail of CTCCCAGG is not claimed (aln 66-67, 69-70)',
+        !k3pos.has(66) && !k3pos.has(67) && !k3pos.has(69) && !k3pos.has(70),
+        'claimed ' + [66, 67, 69, 70].filter(p => k3pos.has(p)).join(','));
     const consPos = [];
     const L = sub[0].seq.length;
     for (let p = 0; p < L; p++) {

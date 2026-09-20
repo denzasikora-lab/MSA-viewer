@@ -779,7 +779,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </ul>
   <p>After clustering:</p>
   <ul>
-    <li>The <strong>Group explorer</strong> lists every group in the same top-to-bottom order as the alignment. After grouping, a <strong>Groups</strong> menu appears to the right of Alignment; the anchor docks the explorer there (the same detach/dock handle is on the other large menus). Expand a group for copy buttons (names, FASTA, ungapped FASTA, ungapped consensus). Click a sequence name to select it in the alignment; click again to unselect. <em>Select</em> toggles the whole group. Find supports substring or <em>.*</em> regex, shows all hits, and offers nearest-name suggestions as you type. <em>On/Off</em> uncolours that group only. The colour picker changes the group colour. Arrows or drag reorder groups in the list and move their sequences together in the alignment. Close hides the explorer; Clear all removes group data and the Groups menu.</li>
+    <li>The <strong>Group explorer</strong> lists every group in the same top-to-bottom order as the alignment. After grouping, a <strong>Groups</strong> menu appears to the right of Alignment; the anchor docks the explorer there (the same detach/dock handle is on the other large menus). Expand a group for copy buttons (names, FASTA, ungapped FASTA, ungapped consensus). Click a sequence name to select it in the alignment; click again to unselect. <em>Select</em> toggles the whole group. Find supports substring or <em>.*</em> regex, shows all hits, and offers nearest-name suggestions as you type. <em>On/Off</em> uncolours that group only. The colour picker changes the group colour. Arrows or drag reorder groups in the list and move their sequences together in the alignment. Characters lists exclusive bases (only this group) and shared bases (common here, also found elsewhere); click a position to jump there. Close hides the explorer; Clear all removes group data and the Groups menu.</li>
     <li>Hovering a cluster row highlights all member sequences in the alignment</li>
     <li><em>Colour by Cluster</em> (Actions menu) assigns persistent background colours to sequence names by cluster membership</li>
     <li><em>Group Consensus</em> (Consensus menu) computes and inserts a consensus row for any selected cluster</li>
@@ -787,7 +787,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <p>
     Three instruments answer different questions. They do not all paint the same layer.
     <strong>k-mer groups</strong> and <strong>diagnostic SNPs</strong> share one
-    colour layer: sequence-name colours plus exclusive/cloudy letters. The later run
+    colour layer: sequence-name colours plus exclusive/shared letters. The later run
     replaces the earlier one, unless <em>Split existing groups</em> is checked.
     That does not add extra groups on top: it looks for exclusive SNPs
     <em>inside</em> each current group. Groups that have none stay. If sequences

@@ -1495,11 +1495,6 @@ input[type="number"]::-webkit-outer-spin-button {
 .ge-move button:hover {
     background: #eee;
 }
-.ge-chevron {
-    color: #888;
-    width: 12px;
-    text-align: center;
-}
 .ge-card-body {
     padding: 0 8px 8px 8px;
     border-top: 1px solid #f0f0f0;
@@ -1556,6 +1551,70 @@ input[type="number"]::-webkit-outer-spin-button {
     color: #555;
     max-height: 120px;
     overflow-y: auto;
+}
+.ge-chars {
+    margin-top: 6px;
+    max-height: 180px;
+    overflow: auto;
+}
+.ge-chars-label {
+    font-size: 10px;
+    font-weight: 650;
+    color: #555;
+    margin: 0 0 3px 0;
+}
+.ge-char-table {
+    width: 100%;
+    table-layout: fixed;
+    border-collapse: collapse;
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+}
+.ge-char-table th,
+.ge-char-table td {
+    padding: 2px 8px;
+    border: 1px solid #e2e5e8;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: clip;
+    font-family: ui-monospace, Consolas, monospace;
+}
+.ge-char-table th {
+    text-align: left;
+    font-weight: 650;
+    color: #555;
+    position: sticky;
+    top: 0;
+    background: #f7f8fa;
+}
+.ge-char-table th:nth-child(1),
+.ge-char-table td:nth-child(1) { width: 4.4em; }
+.ge-char-table th:nth-child(2),
+.ge-char-table td:nth-child(2) { width: 3.6em; text-align: center; }
+.ge-char-row {
+    cursor: pointer;
+}
+.ge-char-row:hover {
+    background: #e8f1fb;
+}
+.ge-char-pos {
+    color: #1a365d;
+    text-decoration: underline;
+    text-underline-offset: 2px;
+}
+.ge-char-base {
+    font-weight: 650;
+}
+.ge-char-exclusive {
+    color: #1b4d1b;
+}
+.ge-char-shared {
+    color: #666;
+}
+span.ge-col-flash {
+    outline: 2px solid #2563eb;
+    outline-offset: -1px;
+    background-color: rgba(37, 99, 235, 0.28) !important;
 }
 .seq-name.ge-jump-flash {
     overflow: visible;
