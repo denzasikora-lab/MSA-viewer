@@ -1153,6 +1153,25 @@ input[type="number"]::-webkit-outer-spin-button {
     font-weight: 650;
     color: #222;
 }
+.ge-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.ge-text-btn {
+    height: 22px;
+    font-size: 11px;
+    padding: 0 8px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    background: #f7f8fa;
+    cursor: pointer;
+    color: #333;
+    white-space: nowrap;
+}
+.ge-text-btn:hover {
+    background: #eef2f6;
+}
 .ge-window-btns {
     display: flex;
     align-items: center;
@@ -1216,6 +1235,38 @@ input[type="number"]::-webkit-outer-spin-button {
 .group-explorer.ge-probe .ge-toolbar,
 .group-explorer.ge-probe .ge-summary {
     display: none;
+}
+.group-explorer.ge-probe #geHeaderActions {
+    visibility: hidden;
+}
+
+/* Hidden until grouping has produced results. .menu-section { display:inline-block }
+   would otherwise keep the empty Groups tab visible on a fresh load. */
+#groups-menu-section.ge-menu-off {
+    display: none !important;
+}
+#groups-controls {
+    padding: 0;
+    min-width: 380px;
+}
+.group-explorer.ge-docked {
+    position: static !important;
+    transform: none !important;
+    left: auto !important;
+    top: auto !important;
+    width: 380px;
+    max-width: min(380px, 92vw);
+    max-height: min(72vh, 620px);
+    margin: 0;
+    border-radius: 0 0 4px 4px;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+    border: none;
+}
+.group-explorer.ge-docked .ge-header {
+    cursor: default;
+}
+.group-explorer.ge-docked [title="Drag to resize"] {
+    display: none !important;
 }
 .ge-body {
     padding: 0 10px 10px;
@@ -1504,10 +1555,7 @@ input[type="number"]::-webkit-outer-spin-button {
 .seq-line {
     display: flex;
     font-family: 'Courier New', monospace;
-    /* Extra 3px: Courier New's '_' sits in the font descent and is clipped
-       by height:1em + .seq-name overflow:hidden. line-height:1.15 on the
-       name alone does not help while the row stays 1em. Do not revert. */
-    line-height: calc(1em + 3px);
+    line-height: 1.0;
     margin: 0;
     padding: 0;
     white-space: nowrap;
@@ -1518,7 +1566,7 @@ input[type="number"]::-webkit-outer-spin-button {
     align-items: flex-start;
     position: relative;
     min-width: max-content;
-    height: calc(1em + 3px);
+    height: 1em;
 }
 
 /* Persistent tiny scrollbar area below the alignment */
@@ -1635,10 +1683,22 @@ input[type="number"]::-webkit-outer-spin-button {
     -webkit-user-select: none;
     -ms-user-select: none;
     contain: style;
-    line-height: calc(1em + 3px);
-    height: calc(1em + 3px);
+    line-height: 1em;
+    height: 1em;
     box-sizing: border-box;
     padding-bottom: 0;
+}
+/* Raise glyphs inside the 1em row so Courier '_' (font descent) is visible
+   without adding a spacer between sequences. Do not put transform on
+   .seq-name itself: that breaks position:sticky. */
+.seq-name-text {
+    position: relative;
+    top: -0.16em;
+    display: inline-block;
+    max-width: 100%;
+    white-space: nowrap;
+    line-height: 1em;
+    vertical-align: top;
 }
 .seq-name.static {
     position: static;

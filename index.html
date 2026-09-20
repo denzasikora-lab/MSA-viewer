@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=126">
+    <link rel="stylesheet" href="styles.css?v=129">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -704,6 +704,14 @@
                         </div>
                     </div>
                 </div>
+                <div class="menu-section ge-menu-off" id="groups-menu-section">
+                    <div class="section-header" data-section="groups">
+                        <span>Groups</span>
+                        <span class="toggle-icon">v</span>
+                    </div>
+                    <div class="control-group" id="groups-controls">
+                    </div>
+                </div>
             </div>
 
             <div class="quick-mode-switch" id="quickModeSwitch" title="Display mode: Full / Block / Canvas / Reads">
@@ -939,8 +947,12 @@
     <div id="clusteringModal" class="group-explorer" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); z-index: 10000;">
         <div id="clusteringModalHeader" class="ge-header">
             <h3>Group explorer</h3>
-            <div class="ge-window-btns">
-                <button type="button" id="clusteringModalClose" class="ge-win-btn" title="Close" onclick="document.getElementById('clusteringModal').style.display='none'">×</button>
+            <div class="ge-header-actions" id="geHeaderActions">
+                <button type="button" id="geDockBtn" class="ge-text-btn" title="Dock Group explorer into the Groups menu">Dock</button>
+                <button type="button" id="geClearBtn" class="ge-text-btn" title="Clear all group colours and membership data">Clear all</button>
+                <div class="ge-window-btns">
+                    <button type="button" id="clusteringModalClose" class="ge-win-btn" title="Close">×</button>
+                </div>
             </div>
         </div>
         <div class="ge-toolbar" id="geToolbar">
@@ -1220,7 +1232,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=218"></script>
+    <script src="script.js?v=220"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

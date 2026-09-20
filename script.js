@@ -1508,7 +1508,8 @@ function makeModalDraggableResizable(modalId, headerId, contentId) {
 
     let dragging = false, dragStartX = 0, dragStartY = 0, modalStartX = 0, modalStartY = 0;
     const onHeaderMousedown = (e) => {
-        if (e.target.closest('button')) return; // don't start a drag from the close/minimize buttons
+        if (e.target.closest('button')) return;
+        if (modal.classList.contains('ge-docked')) return;
         pinCurrentPosition();
         dragging = true;
         dragStartX = e.clientX;
@@ -1550,6 +1551,7 @@ function makeModalDraggableResizable(modalId, headerId, contentId) {
 
     let resizing = false, resizeStartX = 0, resizeStartY = 0, startW = 0, startH = 0;
     const onHandleMousedown = (e) => {
+        if (modal.classList.contains('ge-docked')) return;
         pinCurrentPosition();
         const rect = modal.getBoundingClientRect();
         modal.style.height = rect.height + 'px';
@@ -1746,7 +1748,15 @@ function closeOtherMenusExcept(activeSection) {
 function openMenuSection(section) {
     closeOtherMenusExcept(section);
     clearMenuCloseDelay(section);
+    if (section && section.id === 'groups-menu-section' && !_geDocked) {
+        if (state.clusterResults) _geShowModal();
+        return;
+    }
     section.classList.add('menu-open');
+    if (section && section.id === 'groups-menu-section' && _geDocked) {
+        const modal = el('clusteringModal');
+        if (modal) modal.style.display = 'flex';
+    }
 }
 
 function makeControlGroupDetachable(sectionId, controlGroupId, handleId, dockButtonId) {
@@ -3541,16 +3551,12 @@ function _initCanvasMetrics(ctx, fontSizePx) {
     if (_canvasState.metrics && _canvasState.metrics.fontSizePx === fontSizePx) return _canvasState.metrics;
     ctx.font = fontSizePx + 'px "Courier New", monospace';
     const m = ctx.measureText('X');
-    const mU = ctx.measureText('_');
     const ascent = (m.fontBoundingBoxAscent != null)
         ? m.fontBoundingBoxAscent
         : Math.ceil(fontSizePx * 0.8);
-    const descent = Math.max(
-        m.fontBoundingBoxDescent || 0,
-        mU.fontBoundingBoxDescent || 0,
-        mU.actualBoundingBoxDescent || 0,
-        Math.ceil(fontSizePx * 0.25)
-    );
+    const descent = (m.fontBoundingBoxDescent != null)
+        ? m.fontBoundingBoxDescent
+        : Math.ceil(fontSizePx * 0.15);
     const charH = Math.ceil(ascent + descent);
     _canvasState.metrics = {
         charW: Math.ceil(m.width),
@@ -7521,6 +7527,14 @@ function refreshSequenceRowDom(rowIndex, limitPositions = null, referenceSeq = n
     return true;
 }
 
+function _setSeqNameLabel(nameEl, text) {
+    nameEl.textContent = '';
+    const t = document.createElement('span');
+    t.className = 'seq-name-text';
+    t.textContent = text;
+    nameEl.appendChild(t);
+}
+
 function createSequenceLine(index, start, end, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, showLength = false, conservationData) {
     const lineDiv = document.createElement('div');
     lineDiv.className = 'seq-line';
@@ -7532,10 +7546,10 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
     let displayName = state.seqs[index].header;
     let nameLenInt = parseInt(nameLen, 10);
     if (displayName.length > nameLenInt) {
-        nameSpan.textContent = displayName.slice(0, nameLenInt) + '...';
+        _setSeqNameLabel(nameSpan, displayName.slice(0, nameLenInt) + '...');
         nameSpan.title = `${displayName} (length: ${state.seqs[index].seq.length})`;
     } else {
-        nameSpan.textContent = displayName;
+        _setSeqNameLabel(nameSpan, displayName);
         nameSpan.title = `${displayName} (length: ${state.seqs[index].seq.length})`;
     }
     nameSpan.draggable = false;
@@ -12114,11 +12128,14 @@ function clearTypePaint() {
     else _updateInstrumentStatus();
     showMessage('Group colours cleared. 2D overlay unchanged.', 2500);
     _updateSplitHint();
+    _geOnGroupsCleared();
 }
 
 let _geExpanded = new Set();
 let _geExplorerBound = false;
 let _geDragFrom = null;
+let _geDocked = false;
+let _geHomeParent = null;
 
 function _commitTypeResults(clusterResults, source, sourceLabel) {
     state.clusterSource = source;
@@ -13069,25 +13086,128 @@ function _geSetProbeMode(on) {
     const title = modal && modal.querySelector('.ge-header h3');
     if (modal) modal.classList.toggle('ge-probe', !!on);
     if (title) title.textContent = on ? 'Clusterability' : 'Group explorer';
+    const actions = el('geHeaderActions');
+    if (actions) actions.style.visibility = on ? 'hidden' : '';
+}
+
+function _geSetMenuVisible(on) {
+    const sec = el('groups-menu-section');
+    if (!sec) return;
+    sec.classList.toggle('ge-menu-off', !on);
+    if (!on) sec.classList.remove('menu-open');
+}
+
+function _geUpdateDockBtn() {
+    const btn = el('geDockBtn');
+    if (!btn) return;
+    btn.textContent = _geDocked ? 'Float' : 'Dock';
+    btn.title = _geDocked
+        ? 'Open Group explorer as a floating window'
+        : 'Dock Group explorer into the Groups menu';
+}
+
+function _geCloseExplorer() {
+    const modal = el('clusteringModal');
+    if (modal) modal.style.display = 'none';
+    const section = el('groups-menu-section');
+    if (section) section.classList.remove('menu-open');
+}
+
+function _geOnGroupsCleared() {
+    const modal = el('clusteringModal');
+    if (modal && modal.classList.contains('ge-probe')) return;
+    _geCloseExplorer();
+    _geSetMenuVisible(false);
+    if (_geDocked) _geUndock({ show: false });
+}
+
+function _geClearAll() {
+    clearTypePaint();
+}
+
+function _geDock() {
+    const modal = el('clusteringModal');
+    const host = el('groups-controls');
+    const section = el('groups-menu-section');
+    if (!modal || !host || !section || modal.classList.contains('ge-probe')) return;
+    if (!_geHomeParent) _geHomeParent = modal.parentNode;
+    _geDocked = true;
+    modal.classList.add('ge-docked');
+    ['transform', 'left', 'top', 'width', 'height', 'position', 'margin'].forEach(p => {
+        modal.style[p] = '';
+    });
+    host.appendChild(modal);
+    modal.style.display = 'flex';
+    _geSetMenuVisible(true);
+    closeOtherMenusExcept(section);
+    clearMenuCloseDelay(section);
+    section.classList.add('menu-open');
+    _geUpdateDockBtn();
+}
+
+function _geUndock(opts) {
+    const show = !opts || opts.show !== false;
+    const modal = el('clusteringModal');
+    if (!modal) return;
+    const home = _geHomeParent || document.body;
+    _geDocked = false;
+    modal.classList.remove('ge-docked');
+    home.appendChild(modal);
+    modal.style.position = 'fixed';
+    modal.style.left = '50%';
+    modal.style.top = '50%';
+    modal.style.transform = 'translate(-50%, -50%)';
+    modal.style.width = '';
+    modal.style.height = '';
+    modal.style.maxHeight = '80vh';
+    const section = el('groups-menu-section');
+    if (section) section.classList.remove('menu-open');
+    if (show && state.clusterResults && !modal.classList.contains('ge-probe')) {
+        modal.style.display = 'flex';
+        _geSetMenuVisible(true);
+    } else if (!show) {
+        modal.style.display = 'none';
+    }
+    _geUpdateDockBtn();
+}
+
+function _geToggleDock() {
+    if (_geDocked) _geUndock();
+    else _geDock();
 }
 
 function _geShowModal() {
     const modal = el('clusteringModal');
     if (!modal) return;
-    showExclusiveModal('clusteringModal');
-    modal.style.display = 'flex';
+    const probe = modal.classList.contains('ge-probe');
+    if (!probe && state.clusterResults) _geSetMenuVisible(true);
     const content = el('clusteringContent');
     if (content) content.style.display = '';
     const tb = el('geToolbar');
     const sm = el('geSummary');
     if (tb) tb.style.display = '';
     if (sm) sm.style.display = '';
+    if (_geDocked && !probe) {
+        const section = el('groups-menu-section');
+        if (section) {
+            closeOtherMenusExcept(section);
+            clearMenuCloseDelay(section);
+            section.classList.add('menu-open');
+        }
+        modal.style.display = 'flex';
+        _geBindExplorer();
+        _geUpdateDockBtn();
+        return;
+    }
+    showExclusiveModal('clusteringModal');
+    modal.style.display = 'flex';
     modal.style.maxHeight = modal.style.maxHeight || '80vh';
     if (!modal._draggableResizableInit) {
         modal._draggableResizableInit = true;
         makeModalDraggableResizable('clusteringModal', 'clusteringModalHeader', 'clusteringContent');
     }
     _geBindExplorer();
+    _geUpdateDockBtn();
 }
 
 function _geCopyText(text, okMsg) {
@@ -13302,6 +13422,12 @@ function _geApplySearch(q) {
 function _geBindExplorer() {
     if (_geExplorerBound) return;
     _geExplorerBound = true;
+    const dockBtn = el('geDockBtn');
+    const clearBtn = el('geClearBtn');
+    const closeBtn = el('clusteringModalClose');
+    if (dockBtn) dockBtn.addEventListener('click', (e) => { e.stopPropagation(); _geToggleDock(); });
+    if (clearBtn) clearBtn.addEventListener('click', (e) => { e.stopPropagation(); _geClearAll(); });
+    if (closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); _geCloseExplorer(); });
     const content = el('clusteringContent');
     const search = el('geSearch');
     if (search) {
