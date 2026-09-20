@@ -1334,24 +1334,55 @@ input[type="number"]::-webkit-outer-spin-button {
     display: none !important;
 }
 #groups-controls {
-    padding: 0;
-    min-width: 380px;
+    padding: 4px;
+    min-width: 320px;
+    max-width: 360px;
 }
 .group-explorer.ge-docked {
     position: static !important;
     transform: none !important;
     left: auto !important;
     top: auto !important;
-    width: 380px;
-    max-width: min(380px, 92vw);
-    max-height: min(72vh, 620px);
+    width: 100%;
+    max-width: 352px;
+    height: fit-content !important;
+    max-height: min(52vh, 420px) !important;
     margin: 0;
     border-radius: 0 0 4px 4px;
-    box-shadow: 0 8px 18px rgba(0,0,0,0.18);
+    box-shadow: none;
     border: none;
 }
 .group-explorer.ge-docked .ge-header {
     cursor: default;
+    padding: 3px 6px;
+}
+.group-explorer.ge-docked .ge-header h3 {
+    font-size: 12px;
+}
+.group-explorer.ge-docked .ge-toolbar {
+    padding: 4px 6px 2px;
+}
+.group-explorer.ge-docked .ge-toolbar input[type="search"] {
+    height: 22px;
+}
+.group-explorer.ge-docked .ge-summary {
+    padding: 0 6px 4px;
+}
+.group-explorer.ge-docked .ge-body {
+    padding: 0 6px 6px;
+    flex: 0 1 auto;
+    min-height: 0;
+}
+.group-explorer.ge-docked .ge-card {
+    margin-bottom: 3px;
+    border-radius: 4px;
+}
+.group-explorer.ge-docked .ge-card:last-child {
+    margin-bottom: 0;
+}
+.group-explorer.ge-docked .ge-card-head {
+    padding: 3px 6px;
+    gap: 4px;
 }
 .group-explorer.ge-docked [title="Drag to resize"] {
     display: none !important;
@@ -1441,8 +1472,9 @@ input[type="number"]::-webkit-outer-spin-button {
 }
 .ge-move {
     display: flex;
-    flex-direction: column;
+    flex-direction: row;
     gap: 1px;
+    flex-shrink: 0;
 }
 .ge-move button {
     box-sizing: border-box;
@@ -1525,10 +1557,14 @@ input[type="number"]::-webkit-outer-spin-button {
     max-height: 120px;
     overflow-y: auto;
 }
-.seq-line.ge-jump-flash .seq-name,
-.seq-line.ge-jump-flash {
-    outline: 2px solid #2563eb;
-    outline-offset: -2px;
+.seq-name.ge-jump-flash {
+    overflow: visible;
+}
+.seq-name.ge-jump-flash .seq-name-text {
+    outline: 1px solid #2563eb;
+    outline-offset: 1px;
+    border-radius: 1px;
+    background: rgba(37, 99, 235, 0.1);
 }
 .cluster-actions {
     display: flex;

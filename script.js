@@ -13209,7 +13209,7 @@ function _geDock() {
     if (!_geHomeParent) _geHomeParent = modal.parentNode;
     _geDocked = true;
     modal.classList.add('ge-docked');
-    ['transform', 'left', 'top', 'width', 'height', 'position', 'margin'].forEach(p => {
+    ['transform', 'left', 'top', 'width', 'height', 'position', 'margin', 'maxHeight', 'maxWidth'].forEach(p => {
         modal.style[p] = '';
     });
     host.appendChild(modal);
@@ -13430,19 +13430,44 @@ function _geScrollToSeq(header) {
         _canvasState.offsetY = Math.max(0, idx * rowPitch - Math.min(viewH / 3, rowPitch * 4));
         _canvasState.scheduleDraw?.();
         _canvasState.onOffsetChange?.();
-    } else {
-        const rowPx = _unifiedRowHeightPx || 16;
-        alignmentContainer.scrollTop = Math.max(0, idx * rowPx - 48);
-        if (typeof updateRowSelections === 'function') updateRowSelections();
-        requestAnimationFrame(() => {
-            const row = alignmentContainer.querySelector(`.seq-line[data-seq-index="${idx}"]`);
-            if (row) {
-                row.classList.add('ge-jump-flash');
-                row.scrollIntoView({ block: 'center', inline: 'nearest' });
-                setTimeout(() => row.classList.remove('ge-jump-flash'), 1200);
+        return true;
+    }
+    const flash = () => {
+        const names = alignmentContainer.querySelectorAll(`.seq-line[data-seq-index="${idx}"] .seq-name`);
+        names.forEach(n => n.classList.add('ge-jump-flash'));
+        setTimeout(() => {
+            document.querySelectorAll(`.seq-line[data-seq-index="${idx}"] .seq-name`)
+                .forEach(n => n.classList.remove('ge-jump-flash'));
+        }, 900);
+        return names;
+    };
+    const reveal = () => {
+        const names = flash();
+        if (!names.length) return;
+        const view = alignmentContainer.getBoundingClientRect();
+        const mid = (view.top + view.bottom) / 2;
+        let best = names[0];
+        let bestDist = Infinity;
+        names.forEach(n => {
+            const r = n.getBoundingClientRect();
+            const d = Math.abs((r.top + r.bottom) / 2 - mid);
+            if (d < bestDist) {
+                bestDist = d;
+                best = n;
             }
         });
+        const r = best.getBoundingClientRect();
+        if (r.bottom < view.top + 4 || r.top > view.bottom - 4) {
+            best.scrollIntoView({ block: 'center', inline: 'nearest' });
+            setTimeout(flash, 60);
+        }
+    };
+    if (!el('modeBlocks')?.checked) {
+        const rowPx = _unifiedRowHeightPx || 16;
+        alignmentContainer.scrollTop = Math.max(0, idx * rowPx - 48);
     }
+    if (typeof updateRowSelections === 'function') updateRowSelections();
+    requestAnimationFrame(reveal);
     return true;
 }
 
