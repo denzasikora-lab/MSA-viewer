@@ -200,13 +200,14 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <div class="side-group open">
     <a href="#clustering-menu">4. Clustering Menu</a>
     <div class="side-sub">
-      <a href="#cl-trim">4.1 Trimming Parameters</a>
-      <a href="#cl-basic">4.2 Basic Clustering Parameters</a>
-      <a href="#cl-quality">4.3 Quality Thresholds</a>
-      <a href="#cl-breakpoints">4.4 Size Breakpoints</a>
-      <a href="#cl-presets">4.5 Presets &amp; Workflow</a>
-      <a href="#cl-understanding">4.6 Understanding Results</a>
-      <a href="#cl-blockmask">4.7 2D Block Mask (squint view)</a>
+      <a href="#cl-trim">4.1 Trimming</a>
+      <a href="#cl-kmer">4.2 k-mer groups</a>
+      <a href="#cl-snp">4.3 Diagnostic SNPs</a>
+      <a href="#cl-quality">4.3.1 Quality, breakpoints, presets</a>
+      <a href="#cl-2d">4.4 2D analysis</a>
+      <a href="#cl-understanding">4.5 Group explorer</a>
+      <a href="#cl-layers">4.6 Colour layers</a>
+      <a href="#cl-blockmask">4.7 Legacy squint mask</a>
     </div>
   </div>
 
@@ -331,7 +332,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <ul>
     <li><strong>View</strong> - Four visualisation modes: Full (single-pane), Block (fixed-width), Canvas (high-performance for massive alignments), and Reads (IGV-style read packing for SAM/BAM data).</li>
     <li><strong>Edit</strong> - GeneDoc-style residue editing, Move/Slide tools, undo/redo</li>
-    <li><strong>Analyse</strong> - Statistics, copyable distance matrices, codon analysis, dot plots, repeat/TSD finder, tree builder, restriction site search, subfamily clustering</li>
+    <li><strong>Analyse</strong> - Statistics, copyable distance matrices, codon analysis, dot plots, repeat/TSD finder, tree builder, restriction site search, k-mer / SNP grouping and 2D rectangles</li>
     <li><strong>Colour</strong> - Monochrome conservation shading plus nucleotide, purine/pyrimidine, ambiguity, and amino-acid colour schemes</li>
     <li><strong>Export</strong> - FASTA, RTF (Word-compatible), SVG (vector), Newick trees, standalone HTML snapshots</li>
   </ul>
@@ -343,11 +344,26 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>Paste &amp; Load</td><td>Paste FASTA or MSF text into the Input textarea and click <strong>Load</strong> (or press <kbd>Ctrl+L</kbd>)</td></tr>
     <tr><td>Drag &amp; Drop</td><td>Drop a file onto the drop zone - supports <code>.fasta</code>, <code>.fa</code>, <code>.aln</code>, <code>.msf</code>, <code>.sam</code>, <code>.gb</code>, <code>.gbk</code></td></tr>
     <tr><td>File Picker</td><td>Click the drop zone to browse for a file</td></tr>
-    <tr><td>URL</td><td>Paste a URL to a raw alignment file and click <strong>Load URL</strong></td></tr>
+    <tr><td>URL parameter</td><td>Open the viewer with <code>?url=&lt;fasta-url&gt;</code> (optional <code>&amp;title=</code>). See the starter alignment below</td></tr>
     <tr><td>SAM Paste</td><td>Paste SAM text directly - auto-detected and parsed with CIGAR expansion</td></tr>
     <tr><td>SSH Remote</td><td>Fetch files from a remote server via SSH (requires server with SSH configuration)</td></tr>
-    <tr><td>BLAST Retrieval</td><td>Retrieve GenBank sequences by accession and align them automatically</td></tr>
+    <tr><td>BLAST Retrieval</td><td>Retrieve GenBank sequences by accession and align them automatically (optional server)</td></tr>
   </table>
+  <p>
+    A small public starter alignment is included so you can feel the viewer without
+    preparing a file: 40 DNA sequences, 231 columns, ten copies each of SINE groups
+    K1–K4.
+  </p>
+  <p>
+    <a href="https://toki-bio.github.io/MSA-viewer/?url=https://toki-bio.github.io/MSA-viewer/examples/svk_k4.fa&amp;title=SVK%20SINE%20(K1–K4)">Open the starter alignment in the viewer</a>
+    · source file <a href="examples/svk_k4.fa"><code>examples/svk_k4.fa</code></a>
+  </p>
+  <p>
+    Things to try on that file: <strong>Shade</strong>, Clustering →
+    <strong>Group by k-mer</strong> then <strong>Find SNP groups</strong>,
+    <strong>Show 2D</strong>, Colour Names, Display → <strong>Variable sites only</strong>,
+    Consensus → <strong>+ Consensus Below</strong> on a selected group.
+  </p>
 
   <h3 id="gs-formats">1.3 Supported Formats</h3>
   <table>
@@ -374,14 +390,21 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><th>Menu</th><th>Purpose</th></tr>
     <tr><td><strong>Input</strong></td><td>Load, save, import, export - file handling and snapshots</td></tr>
     <tr><td><strong>Alignment</strong></td><td>MAFFT realignment, BLAST, add sequences, degap</td></tr>
-    <tr><td><strong>Clustering</strong></td><td>Trim alignment ends, subfamily clustering, parameter presets</td></tr>
+    <tr><td><strong>Clustering</strong></td><td>Trim ends, k-mer groups, diagnostic SNP groups, 2D rectangles</td></tr>
+    <tr><td><strong>Groups</strong></td><td>Appears after a grouping run. Docks the Group explorer (membership, colours, copy FASTA)</td></tr>
+    <tr><td><strong>Colour Names</strong></td><td>Colour sequence labels by name pattern or name similarity; sort by colour</td></tr>
     <tr><td><strong>Shade</strong></td><td>Black/Dark/Light conservation shading thresholds and colours, and the All/Non-Gap conservation calculation mode (§5.3)</td></tr>
     <tr><td><strong>Display</strong></td><td>View mode, zoom, name length, Sticky Names, codon toggle, variable sites filter with percentage threshold and breakpoint markers</td></tr>
     <tr><td><strong>Consensus</strong></td><td>Consensus line settings, group consensus computation</td></tr>
     <tr><td><strong>Search</strong></td><td>Motif search with regex and mismatch support</td></tr>
     <tr><td><strong>Edit...</strong></td><td>Edit mode toggle, degap button, GeneDoc-style editing tools</td></tr>
-    <tr><td><strong>Actions</strong></td><td>Selection, sorting, analysis (dot plot, TSD finder, tree), colour schemes, cluster operations, export</td></tr>
+    <tr><td><strong>Actions</strong></td><td>Selection, sorting, analysis (dot plot, TSD finder, tree), colour schemes, export</td></tr>
   </table>
+  <p>
+    Clustering, Display, Shade, and the Group explorer can be <strong>detached</strong>
+    with the grip at the top of the panel and dragged; the dock button puts them back
+    in the menu bar.
+  </p>
   <p>
     The top-right corner shows the current application version and the loaded file name.
   </p>
@@ -403,6 +426,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="gs-updates">1.6 Recent Updates</h3>
   <p>Recent updates added or improved the following features:</p>
   <ul>
+    <li><strong>Clustering panel</strong> - three separate instruments: <em>Group by k-mer</em> (everyone assigned by overall resemblance), <em>Find SNP groups</em> (exclusive diagnostic columns; leftovers unassigned), and <em>Show 2D</em> (row × column rectangles). Results open in the Group explorer; a Groups menu appears to dock it. See §4.</li>
     <li><strong>Tree drawing</strong> - the Tree window now draws the tree with zoom, rooted and unrooted (equal-angle) layouts, branch swapping, re-rooting on a clicked branch, a resizable box, full screen, and SVG or PNG export of the picture.</li>
     <li><strong>Faster editing</strong> - Move and Slide dragging, entering and leaving Edit Mode, and undo/redo are no longer slowed by alignment size; conservation shading now drops only on residues a drag actually moved, instead of the whole row.</li>
     <li><strong>Variable-sites threshold &amp; breakpoint markers</strong> - percentage-based slider (0–100%) controls minimum variation for a column to be shown; breakpoint separators (⋮) indicate where conserved columns were hidden.</li>
@@ -650,19 +674,48 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
 <section id="clustering-menu">
   <h2>4. Clustering Menu</h2>
   <p>
-    The Clustering menu provides alignment trimming and subfamily clustering
-    for transposable element annotation and evolutionary analysis.
+    The Clustering menu is for finding which sequences belong together, and
+    where on the alignment that evidence sits. It is built around three
+    instruments that answer different questions. They share the same panel
+    but do not all paint the same layer:
+  </p>
+  <table>
+    <tr><th>Instrument</th><th>Button</th><th>What it does</th><th>Row order</th></tr>
+    <tr>
+      <td><strong>k-mer groups</strong></td>
+      <td>Group by k-mer</td>
+      <td>Overall resemblance (same k-mer tree as Reorder by similarity). Every sequence is assigned.</td>
+      <td>Unchanged</td>
+    </tr>
+    <tr>
+      <td><strong>Diagnostic SNPs</strong></td>
+      <td>Find SNP groups</td>
+      <td>Exclusive SNP columns the rest of the alignment does not share. Sequences without such SNPs stay unassigned.</td>
+      <td>Unchanged</td>
+    </tr>
+    <tr>
+      <td><strong>2D analysis</strong></td>
+      <td>Show 2D</td>
+      <td>Rectangles over stretches where a subset of rows share a local pattern. Overlay only.</td>
+      <td>Unchanged until you Alt+click a rectangle or press Group rows</td>
+    </tr>
+  </table>
+  <p>
+    Trim first if the ends are gappy. Load the
+    <a href="https://toki-bio.github.io/MSA-viewer/?url=https://toki-bio.github.io/MSA-viewer/examples/svk_k4.fa&amp;title=SVK%20SINE%20(K1–K4)">starter SINE alignment</a>
+    to try the three buttons on a known four-group example.
   </p>
 
-  <h3 id="cl-trim">4.1 Trimming Parameters</h3>
+  <h3 id="cl-trim">4.1 Trimming</h3>
   <p>
-    Trim ragged alignment ends before clustering to prevent gap-based artefacts:
+    Trim ragged alignment ends before grouping so gap-heavy edges do not
+    inflate scores:
   </p>
   <table>
     <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
-    <tr><td>Left Trim Gap %</td><td>50</td><td>If the sliding window at the left edge has >= this % gaps, trim those columns</td></tr>
-    <tr><td>Right Trim Gap %</td><td>80</td><td>Same for right edge (more permissive by default, since right ends are often ragged)</td></tr>
-    <tr><td>Edge Window</td><td>15</td><td>Number of consecutive columns checked at each edge</td></tr>
+    <tr><td>Left %</td><td>50</td><td>If the sliding window at the left edge has >= this % gaps, those columns are candidates to cut</td></tr>
+    <tr><td>Right %</td><td>80</td><td>Same for the right edge (more permissive by default, since right ends are often ragged)</td></tr>
+    <tr><td>Window</td><td>15</td><td>Number of consecutive columns averaged at each edge</td></tr>
     <tr><td>Keep</td><td>—</td><td>1-based first and last column to keep. Filled by Preview from the gap-% windows; you can type new values or drag the coloured Consensus edges</td></tr>
   </table>
   <p>
@@ -670,168 +723,254 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     cut. Left % / Right % / Window choose that automatic cut; the resulting
     1-based <strong>Keep</strong> range is filled in so you can see (and type)
     the exact columns that would remain. Hover <strong>Trim</strong> for a
-    live summary of which columns will go (numbers highlighted so they are
-    not mistaken for fixed copy). Coloured Consensus residues are the
+    live summary of which columns will go. Coloured Consensus residues are the
     ones that will be removed — drag those inner borders to adjust, then
     <strong>Trim</strong>. <strong>Empty cols</strong> deletes columns that are
-    a gap in every sequence. <strong>Undo</strong> reverses a hard trim.
+    a gap in every sequence.
+  </p>
+  <p>
+    <strong>Hard</strong> permanently deletes the trimmed columns (Undo reverses it).
+    <strong>Soft</strong> only hides those columns from SNP grouping and Clusterability;
+    the alignment itself is unchanged. Show 2D currently uses the full sequences,
+    including soft-trimmed columns. <strong>Clear Soft</strong> appears while a
+    soft trim is active.
   </p>
   <div class="tip">
-    <strong>Recommendation:</strong> Always trim before clustering. Gap-heavy edges inflate
-    cluster scores with artefacts.
+    <strong>Recommendation:</strong> Always trim before SNP grouping. Gap-heavy edges
+    inflate diagnostic scores with artefacts.
   </div>
 
-  <h3 id="cl-basic">4.2 Basic Clustering Parameters</h3>
+  <h3 id="cl-kmer">4.2 k-mer groups</h3>
+  <p>
+    <strong>Group by k-mer</strong> cuts the same oligonucleotide-similarity tree
+    used by Alignment → Reorder by similarity. Every sequence is assigned to a
+    group. It does not look for diagnostic SNP columns and it does not reorder
+    the alignment. Names and distinctive bases are coloured.
+  </p>
   <table>
     <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
-    <tr><td>Min Size</td><td>3</td><td>Groups smaller than this are not considered clusters</td></tr>
-    <tr><td>Min Features</td><td>5</td><td>Minimum number of diagnostic positions (unique nucleotide patterns) a cluster must have</td></tr>
-    <tr><td>Max Iter</td><td>10</td><td>Number of clustering rounds with progressively relaxed quality thresholds. More iterations recover smaller families</td></tr>
+    <tr><td>k</td><td>6</td><td>Oligonucleotide length for the similarity tree (3–12)</td></tr>
+    <tr><td>Groups</td><td>auto</td><td>Leave empty to let the tree choose how many groups. Type a number only to force a coarser or finer split</td></tr>
+  </table>
+  <p>
+    Use this when you want a first split by overall resemblance (the four K
+    groups in the starter file). Use Diagnostic SNPs when you care which
+    columns actually distinguish those groups. <strong>Clear</strong> next to
+    this button removes the shared name/letter colour layer (same layer as SNP
+    grouping). 2D rectangles stay.
+  </p>
+
+  <h3 id="cl-snp">4.3 Diagnostic SNPs</h3>
+  <p>
+    <strong>Find SNP groups</strong> looks for exclusive SNP columns: positions
+    where a subset of sequences share a base the rest of the alignment does not.
+    Sequences without such SNPs stay unassigned. Names and exclusive/shared
+    letters are coloured. Row order is unchanged.
+  </p>
+  <p>
+    <strong>Split existing groups</strong> (off by default) does not add extra
+    groups on top. When checked, Find SNP groups looks for exclusive SNPs
+    <em>inside</em> each current group instead of scanning the whole alignment.
+    Groups that have none stay as they are. If sequences are selected, only the
+    group(s) those rows belong to are split; with nothing selected, every
+    current group is tried.
+  </p>
+  <p>
+    Open <strong>Thresholds</strong> for the knobs below. They apply to SNP
+    grouping and Clusterability, and Show 2D also reads Min Size / Min Features
+    when it decides which local patterns are worth boxing.
+  </p>
+  <h4 id="cl-basic">Basic</h4>
+  <table>
+    <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
+    <tr><td>Min Size</td><td>3</td><td>Groups smaller than this are discarded</td></tr>
+    <tr><td>Min Features</td><td>5</td><td>Minimum exclusive SNP columns that survive quality scoring</td></tr>
+    <tr><td>Max Iter</td><td>10</td><td>Rounds with progressively relaxed quality thresholds. More iterations recover smaller families</td></tr>
   </table>
 
-  <h3 id="cl-quality">4.3 Quality Thresholds</h3>
+  <h4 id="cl-quality">4.3.1 Quality, breakpoints, presets</h4>
   <p>
-    Quality thresholds control how many cluster members must share a given nucleotide pattern
-    for it to be considered a diagnostic feature. Higher values = stricter, fewer but cleaner clusters.
+    Quality thresholds control how many group members must share a nucleotide
+    pattern for it to count as a diagnostic feature. Higher values = stricter,
+    fewer but cleaner groups.
   </p>
   <table>
     <tr><th>Parameter</th><th>Default</th><th>Applies To</th></tr>
-    <tr><td>Small</td><td>80%</td><td>Clusters of 10 or fewer sequences</td></tr>
-    <tr><td>Medium</td><td>70%</td><td>Clusters of 11-19 sequences</td></tr>
-    <tr><td>Large</td><td>60%</td><td>Clusters of 20 or more sequences</td></tr>
+    <tr><td>Small &lt;11</td><td>80%</td><td>Groups below the Small→Med breakpoint</td></tr>
+    <tr><td>Medium 11–19</td><td>70%</td><td>Groups between the two breakpoints</td></tr>
+    <tr><td>Large >=20</td><td>60%</td><td>Groups at or above the Med→Large breakpoint</td></tr>
   </table>
-  <p>
-    Three quality tiers allow tighter thresholds for small clusters (where fewer sequences
-    must agree) and looser thresholds for large clusters (where perfect agreement is
-    unlikely).
+  <p id="cl-breakpoints">
+    Size breakpoints are the sequence counts at which the quality tier changes.
+    <strong>Min Occur</strong> (default 3) is a raw floor: how many (position, base)
+    hits a pattern needs before scoring. Min Features is how many of those survive
+    as exclusive SNPs. They are not two names for the same knob.
   </p>
-
-  <h3 id="cl-breakpoints">4.4 Size Breakpoints</h3>
-  <table>
-    <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
-    <tr><td>Small -> Medium</td><td>11</td><td>Clusters below this size use the Small quality threshold</td></tr>
-    <tr><td>Medium -> Large</td><td>20</td><td>Clusters at or above this size use the Large quality threshold</td></tr>
-    <tr><td>Min Occur</td><td>3</td><td>Minimum number of diagnostic positions required to form a cluster</td></tr>
-  </table>
-
-  <h3 id="cl-presets">4.5 Presets &amp; Workflow</h3>
-  <p>
-    <strong>Presets</strong> save and restore parameter configurations for reproducible analysis:
+  <p id="cl-presets">
+    Under <strong>Presets</strong>: <strong>Save</strong> stores current parameters
+    under a name, <strong>Load</strong> restores them,
+    <strong>Defaults</strong> restores the factory starting values (Min Size 3,
+    Min Features 5, quality 80/70/60, Min Occur 3). Presets live in
+    <code>localStorage</code> and persist across sessions.
   </p>
-  <ul>
-    <li><strong>Save</strong> - store current parameters under a name</li>
-    <li><strong>Load</strong> - restore parameters from a saved preset</li>
-    <li><strong>Defaults</strong> - restore the standard starting parameters (Min Size 3, Min Features 5, quality 80/70/60, Min Occurrences 3). These are the values already loaded when the panel opens; nothing here is tuned to your alignment</li>
-    <li>Presets are stored in <code>localStorage</code> and persist across sessions</li>
-  </ul>
-
-  <h4 style="margin: 14px 0 4px;">Clusterability</h4>
+  <h4>Clusterability</h4>
   <p>
-    A single clustering run cannot tell you whether the thresholds were too strict or whether
-    the data simply has no structure this method can find - both come back as zero clusters.
-    <strong>Clusterability</strong> answers that by running the clusterer across a spread of
-    settings: each parameter varied on its own from your current values, plus the loosest
-    combination the panel allows. It reports, for every run, how many clusters formed, how many
-    sequences were assigned, and the largest cluster.
+    A single SNP run cannot tell you whether the thresholds were too strict or
+    whether the data simply has no structure this method can find — both come
+    back as zero groups. <strong>Clusterability</strong> answers that by running
+    the SNP grouper across a spread of settings: each parameter varied on its
+    own from your current values, plus the loosest combination the panel allows.
+    It reports, for every run, how many groups formed, how many sequences were
+    assigned, and the largest group.
   </p>
   <p>The summary above the table names three things:</p>
   <ul>
-    <li>whether the alignment clusters <em>at all</em>, and under which settings it did best</li>
+    <li>whether the alignment groups <em>at all</em>, and under which settings it did best</li>
     <li>which parameters <strong>changed</strong> the outcome</li>
-    <li>which parameters had <strong>no effect anywhere in their range</strong> - the useful half of
-      the answer, since it tells you where further tuning is wasted effort</li>
+    <li>which parameters had <strong>no effect anywhere in their range</strong> — where further tuning is wasted effort</li>
   </ul>
   <div class="note">
-    <strong>Note:</strong> Clusterability only surveys - it reads your parameters and leaves them
-    exactly as they were. Nothing is applied. Choose the settings you want and press
-    <strong>Find diagnostic types</strong>. A full survey takes tens of seconds on a large alignment, and the
-    table fills in row by row as each run finishes.
+    <strong>Note:</strong> Clusterability only surveys — it reads your parameters
+    and leaves them exactly as they were. Nothing is applied. Choose the settings
+    you want and press <strong>Find SNP groups</strong>. A full survey takes tens
+    of seconds on a large alignment, and the table fills in row by row as each
+    run finishes.
   </div>
-
   <p>Typical workflow:</p>
   <ol>
-    <li>Trim alignment ends with Preview -> Trim</li>
-    <li>Adjust clustering parameters or load a preset</li>
-    <li>If unsure whether the alignment can cluster, or if a run returns nothing, press
-      <strong>Clusterability</strong> to see which settings are worth trying</li>
-    <li>Click <strong>Find diagnostic types</strong></li>
-    <li>Review results (cluster sizes, diagnostic features, feature tables)</li>
-    <li>Use Actions -> <em>Colour by Cluster</em> to visualise groups</li>
-    <li>Compute Group Consensus for selected clusters</li>
+    <li>Trim ends with Preview → Trim</li>
+    <li>Optional: <strong>Group by k-mer</strong> for an overall split</li>
+    <li>If unsure whether exclusive SNPs exist, press <strong>Clusterability</strong></li>
+    <li>Click <strong>Find SNP groups</strong> (optionally with Split existing groups)</li>
+    <li>Review the Group explorer; copy FASTA or insert a consensus below selected rows</li>
+    <li>Optional: <strong>Show 2D</strong> to see where those patterns sit as rectangles</li>
   </ol>
   <div class="note">
-    <strong>A zero result is a threshold result.</strong> When no cluster forms, the results panel
-    now names the settings that discarded everything and quotes their current values. Lowering
-    <strong>Min Size</strong> is usually what admits small groups: at Min Size 3, sequences that
-    pair up two at a time are all rejected, so an alignment whose structure is pairwise reports
-    zero clusters until Min Size is 2.
+    <strong>A zero result is a threshold result.</strong> When no SNP group forms,
+    the results panel names the settings that discarded everything and quotes
+    their current values. Lowering <strong>Min Size</strong> is usually what
+    admits small groups: at Min Size 3, sequences that pair up two at a time
+    are all rejected, so an alignment whose structure is pairwise reports zero
+    groups until Min Size is 2.
   </div>
-
-  <h3 id="cl-understanding">4.6 Understanding Results</h3>
-  <p>The clustering algorithm works as follows:</p>
+  <p>How Find SNP groups works:</p>
   <ul>
     <li>At each alignment column, sequences are grouped by shared nucleotide</li>
-    <li>Groups meeting the size and quality thresholds are collected as candidate clusters</li>
-    <li>Near-identical clusters are fuzzy-merged (Jaccard similarity >= 90%)</li>
-    <li>Perfect-unique positions (all cluster members share a base unique to that cluster) get highest weight</li>
-    <li>Outliers matching &lt;50% of core cluster features are pruned</li>
+    <li>Groups meeting the size and quality thresholds are collected as candidates</li>
+    <li>Near-identical groups are fuzzy-merged (Jaccard similarity >= 90%)</li>
+    <li>Perfect-unique positions (all members share a base unique to that group) get highest weight</li>
+    <li>Outliers matching &lt;50% of core features are pruned</li>
     <li>The algorithm iterates with progressively relaxed thresholds to recover smaller families</li>
   </ul>
-  <p>After clustering:</p>
+
+  <h3 id="cl-2d">4.4 2D analysis</h3>
+  <p>
+    <strong>Show 2D</strong> draws translucent rectangles over stretches where a
+    subset of rows share a local pattern. This is a separate overlay from name
+    and letter colours. It does not change row order. Full and Block view modes
+    are supported; Canvas mode is not.
+  </p>
+  <p>
+    If SNP or k-mer groups already exist, each rectangle is tagged against them:
+  </p>
   <ul>
-    <li>The <strong>Group explorer</strong> lists every group in the same top-to-bottom order as the alignment. After grouping, a <strong>Groups</strong> menu appears to the right of Alignment; the anchor docks the explorer there (the same detach/dock handle is on the other large menus). Expand a group for copy buttons (names, FASTA, ungapped FASTA, ungapped consensus). Click a sequence name to select it in the alignment; click again to unselect. <em>Select</em> toggles the whole group. Find supports substring or <em>.*</em> regex, shows all hits, and offers nearest-name suggestions as you type. <em>On/Off</em> uncolours that group only. The colour picker changes the group colour. Arrows or drag reorder groups in the list and move their sequences together in the alignment. Characters lists exclusive bases (only this group) and shared bases (common here, also found elsewhere); click a position to jump there. Close hides the explorer; Clear all removes group data and the Groups menu.</li>
-    <li>Hovering a cluster row highlights all member sequences in the alignment</li>
-    <li><em>Colour by Cluster</em> (Actions menu) assigns persistent background colours to sequence names by cluster membership</li>
-    <li><em>Group Consensus</em> (Consensus menu) computes and inserts a consensus row for any selected cluster</li>
+    <li><strong>supporting</strong> — the boxed rows match a current group</li>
+    <li><strong>inside</strong> — the boxed rows sit inside a larger group</li>
+    <li><strong>discordant</strong> — the boxed rows cut across current groups</li>
   </ul>
   <p>
-    Three instruments answer different questions. They do not all paint the same layer.
-    <strong>k-mer groups</strong> and <strong>diagnostic SNPs</strong> share one
-    colour layer: sequence-name colours plus exclusive/shared letters. The later run
-    replaces the earlier one, unless <em>Split existing groups</em> is checked.
-    That does not add extra groups on top: it looks for exclusive SNPs
-    <em>inside</em> each current group. Groups that have none stay. If sequences
-    are selected, only the group(s) those rows belong to are split; with no
-    selection, every current group is tried. Each of <strong>k-mer groups</strong>,
-    <strong>diagnostic SNPs</strong>, and <strong>2D analysis</strong> has its own
-    <strong>Clear</strong> beside the main action: the first two clear the shared
-    name/letter colour layer; 2D Clear removes only the rectangle overlay.
-    When groups exist, rectangles
-    are tagged supporting / inside / discordant, and a new grouping retags a live overlay.
+    A status line reports rectangle count and, when groups exist, those three
+    tallies. Running a new grouping retags a live overlay. A count of
+    “0 support, 0 inside, 0 discordant” with “no groups to compare” means no
+    grouping has been run yet, not that the rectangles failed.
+  </p>
+  <table>
+    <tr><th>Control</th><th>Meaning</th></tr>
+    <tr><td>Show 2D</td><td>Compute and draw rectangles</td></tr>
+    <tr><td>Clear</td><td>Remove only the rectangle overlay. Name and letter colours stay until you Clear them in k-mer groups or Diagnostic SNPs</td></tr>
+    <tr><td>Group rows</td><td>Does not stack by itself. Prompt: Alt+click a coloured rectangle to stack that type, including scattered copies. Undoable</td></tr>
+    <tr><td>All copies, one box</td><td>One rectangle covers every sequence with that pattern, even if those rows are not next to each other</td></tr>
+    <tr><td>Stack + copies</td><td>The contiguous stack is one rectangle; scattered copies get a second, paler layer</td></tr>
+    <tr><td>Stack only</td><td>Paint only the contiguous stack. Scattered copies of the same pattern are left unpainted</td></tr>
+    <tr><td>Interior conserved: fill / hole</td><td>When a one-column conserved letter sits inside a rectangle (for example AAAGAAA), fill it as part of the box or leave a hole</td></tr>
+    <tr><td>Max dirt</td><td>How much in-rectangle disagreement is allowed before an adjacent column is left unboxed. 0% = only perfect edges. Mean over cells versus that rectangle’s consensus; globally conserved columns are never added. Range 0–20%</td></tr>
+    <tr><td>Opacity</td><td>How solid the rectangles are drawn</td></tr>
+  </table>
+  <p>
+    Paint modes never change alignment order. Plain click on the alignment still
+    selects nucleotides (two clicks extend the range). <strong>Alt+click</strong>
+    a rectangle to stack that type. Terms used in tooltips:
+  </p>
+  <ul>
+    <li><strong>Type</strong> — sequences that share the same pattern in the same column range</li>
+    <li><strong>Rectangle</strong> — that type drawn on the alignment. One type may paint as several boxes if members are not sitting together</li>
+    <li><strong>Stack</strong> — members of a type that currently sit next to each other</li>
+    <li><strong>Orphan</strong> — a member of a type that is not in the stack (same type, wrong place in the list)</li>
+  </ul>
+  <div class="note">
+    2D analysis is newer than SNP grouping and still being refined. Treat the
+    boxes as a map of local similarity, not as a finished classification.
+  </div>
+
+  <h3 id="cl-understanding">4.5 Group explorer</h3>
+  <p>
+    After k-mer or SNP grouping, the <strong>Group explorer</strong> lists every
+    group in the same top-to-bottom order as the alignment. A <strong>Groups</strong>
+    menu appears in the menu bar; the dock button parks the explorer there
+    (the same detach/dock handle is on Clustering, Display, and Shade).
+  </p>
+  <ul>
+    <li>Expand a group for copy buttons: names, FASTA, ungapped FASTA, ungapped consensus</li>
+    <li>Click a sequence name to select it in the alignment; click again to unselect. <em>Select</em> toggles the whole group</li>
+    <li>Find supports substring or <em>.*</em> regex, shows all hits, and offers nearest-name suggestions as you type</li>
+    <li><em>On/Off</em> uncolours that group only. The colour picker changes the group colour</li>
+    <li>Arrows or drag reorder groups in the list and move their sequences together in the alignment</li>
+    <li>Characters lists exclusive bases (only this group) and shared bases (common here, also found elsewhere); click a position to jump there</li>
+    <li>Hovering a group highlights member sequences in the alignment</li>
+    <li>Close hides the explorer; <strong>Clear all</strong> removes group data and the Groups menu</li>
+  </ul>
+  <p>
+    To insert a consensus <em>row</em> into the alignment, select the members
+    and use Consensus → <strong>+ Consensus Below</strong> (<kbd>Ctrl+B</kbd>).
   </p>
 
-  <h3 id="cl-blockmask">4.7 2D Block Mask (squint view)</h3>
+  <h3 id="cl-layers">4.6 Colour layers</h3>
   <p>
-    Reach for this when you want the coarse shape of an alignment at a glance -
-    where the conserved core is, where a region is shared by only a subset of
-    copies, where a flank decays gradually instead of ending cleanly - without
-    reading every column. It answers &ldquo;what is the structure here?&rdquo;
-    the way squinting at the alignment would: fine per-column noise blurs out
-    and a few labelled rectangles remain, drawn as a translucent mask directly
-    over the residues.
+    k-mer groups and diagnostic SNPs share one colour layer: sequence-name
+    colours plus exclusive/shared letters. The later run replaces the earlier
+    one, unless <em>Split existing groups</em> is checked (see §4.3). Each of
+    <strong>k-mer groups</strong>, <strong>Diagnostic SNPs</strong>, and
+    <strong>2D analysis</strong> has its own <strong>Clear</strong> beside the
+    main action: the first two clear the shared name/letter layer; 2D Clear
+    removes only the rectangle overlay.
   </p>
   <p>
-    Open the <strong>2D block mask</strong> block in the Clustering panel and
-    click <em>Show mask</em>. Each rectangle is a range of columns &times; a set
-    of rows, coloured by type: <span style="color:#16a34a;font-weight:bold;">green</span>
-    conservative (high identity, all rows agree),
+    Colour Names (§9.11) is a separate label-colouring tool (name patterns and
+    name similarity). It does not create clustering groups.
+  </p>
+
+  <h3 id="cl-blockmask">4.7 Legacy squint mask</h3>
+  <p>
+    Folded under 2D analysis as <strong>Legacy squint mask</strong>. It is the
+    older overlay that answers “what is the coarse shape here?” by blurring
+    per-column noise into a few labelled rectangles. Showing it
+    <em>replaces</em> the current 2D rectangles.
+  </p>
+  <p>
+    Click <em>Show mask</em>. Rectangles are coloured
+    <span style="color:#16a34a;font-weight:bold;">green</span> conservative
+    (high identity, all rows agree),
     <span style="color:#f59e0b;font-weight:bold;">amber</span> mosaic (elevated
-    identity but only a <em>subset</em> of rows share it - the rectangle covers
-    just those rows), <span style="color:#8b5cf6;font-weight:bold;">purple</span>
-    decay slope (identity trending down over a stretch, LINE-like erosion rather
-    than a real boundary), and grey divergent flank. The <strong>V1&ndash;V5</strong>
-    preset sets the &ldquo;squint&rdquo; coarseness - V1 gives a few big blocks,
-    V5 many fine ones - and <em>Advanced (squint knobs)</em> exposes the eight
-    parameters behind the presets as sliders; releasing any slider recomputes
-    the mask. Opacity is adjustable. A row-split rectangle drawn with a
-    <strong>dashed red outline</strong> is a warning: that group&rsquo;s members
-    are <em>scattered</em> in the post-alignment (MAFFT similarity) order rather
-    than sitting together, so the group is defined by a local region that
-    crosscuts overall similarity - genuine localized mosaicism, or noise. Treat
-    it with caution and check the copies directly. The mask also loads
-    automatically from a <code>?mask=&lt;url&gt;</code> URL parameter alongside
-    <code>?url=</code>. Full and Block view modes are supported; Canvas mode is
-    not.
+    identity but only a subset of rows share it),
+    <span style="color:#8b5cf6;font-weight:bold;">purple</span> decay slope
+    (identity trending down over a stretch), and grey divergent flank.
+    <strong>V1–V5</strong> sets squint coarseness — V1 a few big blocks, V5 many
+    fine ones. Squint knobs expose the eight parameters behind the presets;
+    releasing any slider recomputes the mask. A row-split rectangle with a
+    <strong>dashed red outline</strong> means that group’s members are scattered
+    in the current order rather than sitting together. Full and Block modes
+    only. The same overlay still loads from
+    <code>?mask=&lt;url&gt;</code> alongside <code>?url=</code>.
   </p>
 </section>
 
@@ -1068,7 +1207,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     Toggle it with the <strong>Show consensus</strong> checkbox. Position it at the
     <strong>Top</strong> or <strong>Bottom</strong> of the alignment via the radio buttons.
   </p>
-  <p>Keyboard shortcut: <kbd>Ctrl+B</kbd> toggles the bottom consensus bar.</p>
+  <p>Keyboard shortcut: <kbd>Ctrl+B</kbd> inserts a consensus of the selected sequences below them (same as <strong>+ Consensus Below</strong>).</p>
 
   <h3 id="co-thresholds">6.2 Thresholds &amp; Coverage</h3>
   <table>
@@ -1079,9 +1218,11 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
 
   <h3 id="co-group">6.3 Group Consensus</h3>
   <p>
-    After clustering (see §4), you can compute a consensus for any selected cluster.
-    The group consensus row is inserted into the alignment at the cluster's position.
-    Useful for extracting representative sequences of each subfamily.
+    Select the sequences of a group (from the Group explorer, or by hand) and
+    click <strong>+ Consensus Below</strong> (<kbd>Ctrl+B</kbd>) to insert a
+    consensus row into the alignment under the selection. The Group explorer
+    can also copy an ungapped consensus to the clipboard without inserting a
+    row. Useful for extracting a representative of each subfamily.
   </p>
 </section>
 
@@ -1412,10 +1553,12 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </p>
 
   <h3 id="ac-cluster">9.6 Cluster Operations</h3>
-  <ul>
-    <li><strong>Colour by Cluster</strong> - assign persistent background colours to sequence names based on cluster membership</li>
-    <li><strong>Open Cluster</strong> - create clusters with specific parameters for subfamily annotation</li>
-  </ul>
+  <p>
+    Grouping lives in the <strong>Clustering</strong> menu (§4), not here.
+    After a run, the <strong>Groups</strong> menu docks the Group explorer
+    (membership, colours, copy FASTA / consensus). Colour Names (§9.11)
+    colours labels by name pattern; it is not the SNP/k-mer grouping.
+  </p>
 
   <h3 id="ac-plot">9.7 Plotting</h3>
   <p><strong>Dot Plot:</strong> Self-comparison or pairwise comparison of the alignment,
@@ -1505,8 +1648,9 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
 
   <h3 id="ac-colour-names">9.11 Colour Names</h3>
   <p>
-    The Colour Names panel (in the Actions menu sidebar) provides tools for
-    colouring sequence name labels individually or in groups.
+    The Colour Names panel (its own menu in the menu bar) provides tools for
+    colouring sequence name labels individually or in groups. This is independent
+    of Clustering’s k-mer / SNP groups.
   </p>
   <p><strong>Pattern Match</strong></p>
   <ul>
@@ -1751,15 +1895,17 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
 
   <h3 id="tp-clustering">12.4 Clustering Best Practices</h3>
   <ul>
-    <li><strong>Always trim</strong> alignment ends before clustering - ragged edges inflate gap-based cluster scores</li>
-    <li>Start from <strong>Defaults</strong>, then tighten thresholds if clusters look noisy</li>
-    <li>If a run returns nothing, press <strong>Clusterability</strong> before changing settings by hand - it shows which parameters move the result on your data and which are inert</li>
-    <li>Use <strong>Preview</strong> (trim) and review the cluster table before committing to colours</li>
+    <li><strong>Always trim</strong> alignment ends before SNP grouping — ragged edges inflate gap-based scores</li>
+    <li>Start with <strong>Group by k-mer</strong> for an overall split, then <strong>Find SNP groups</strong> (optionally with Split existing groups) for exclusive columns</li>
+    <li>Start SNP knobs from <strong>Defaults</strong>, then tighten if groups look noisy</li>
+    <li>If a run returns nothing, press <strong>Clusterability</strong> before changing settings by hand — it shows which parameters move the result on your data and which are inert</li>
+    <li>Use <strong>Preview</strong> (trim) and review the Group explorer before treating colours as a classification</li>
     <li>For small families, lower <em>Min Size</em> to 2 and reduce quality thresholds</li>
-    <li>For highly conserved families, increase quality thresholds (90%+ for small clusters)</li>
-    <li>After clustering, use <strong>Colour by Cluster</strong> + <strong>Group Consensus</strong> to extract representative sequences</li>
-    <li>Save working parameter sets as named presets for reproducibility</li>
-    <li>Clusters of size 1 are discarded - they may represent singletons or sequencing artefacts</li>
+    <li>For highly conserved families, increase quality thresholds (90%+ for small groups)</li>
+    <li>After grouping, copy FASTA from the explorer or use <strong>+ Consensus Below</strong> to insert a representative row</li>
+    <li><strong>Show 2D</strong> maps where a pattern sits; it does not replace SNP grouping. Paint modes never reorder; Alt+click a rectangle to stack that type (Undoable)</li>
+    <li>Save working SNP parameter sets as named presets for reproducibility</li>
+    <li>Groups of size 1 are discarded — they may represent singletons or sequencing artefacts</li>
   </ul>
 </section>
 
