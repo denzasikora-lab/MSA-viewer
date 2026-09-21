@@ -34,8 +34,11 @@ No installation, no build step, no framework dependencies.
 
 ## Quick Start
 
+**Try a starter alignment (40 SINE copies, 4 groups):**
+https://toki-bio.github.io/MSA-viewer/?url=https://toki-bio.github.io/MSA-viewer/examples/svk_k4.fa&title=SVK%20SINE%20(K1–K4)
+
 ### Browser (HTML only)
-Open `index.html` in any modern browser. Supports local file upload.
+Open `index.html` in any modern browser. Supports local file upload. More examples: [examples/](examples/).
 
 ### Server Mode (Recommended)
 ```bash
