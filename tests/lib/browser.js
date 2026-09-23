@@ -11,6 +11,8 @@ const CHROME_CANDIDATES = [
 
 function findChrome() {
   const fs = require('fs');
+  // BROWSER_PATH=<exe> runs the suites in another Chromium (e.g. Edge)
+  if (process.env.BROWSER_PATH) return process.env.BROWSER_PATH;
   for (const p of CHROME_CANDIDATES) {
     if (fs.existsSync(p)) return p;
   }
@@ -18,6 +20,11 @@ function findChrome() {
 }
 
 async function launch() {
+  // BROWSER=firefox uses Playwright's Firefox (one-time: npx playwright-core install firefox)
+  // BROWSER=webkit uses Playwright's WebKit, the nearest to Safari on Windows
+  if (process.env.BROWSER === 'firefox' || process.env.BROWSER === 'webkit') {
+    return require('playwright-core')[process.env.BROWSER].launch({ headless: true });
+  }
   return chromium.launch({ executablePath: findChrome(), headless: true });
 }
 

@@ -24,7 +24,7 @@ async function openFile(page, file) {
   for (let i = 0; i < 40; i++) {
     await page.waitForTimeout(250);
     msg = await page.evaluate(() => (document.getElementById('statusMessage') || {}).innerText || '');
-    if (msg && !/^(Scanning|Parsing|Loading|Reading|Detected)/i.test(msg.trim())) break;
+    if (msg && !/^(Scanning|Parsing|Loading|Reading|Detected|Decoding|Fetching)/i.test(msg.trim())) break;
   }
   const seqs = await page.evaluate(() => (state.seqs || []).map(s => ({ name: s.header, full: s.fullHeader || '', seq: s.seq })));
   return { msg: msg.trim().replace(/\s+/g, ' ').slice(0, 220), seqs };
