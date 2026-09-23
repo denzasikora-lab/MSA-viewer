@@ -48,9 +48,9 @@ class SINEClusterer {
         let minOcc = options.minOccurrences || 2;
         if (options.datasetSize > 300) minOcc = 1;
 
-        const qSmall = options.qualitySmall ?? 90;
-        const qMed   = options.qualityMedium ?? 80;
-        const qLarge = options.qualityLarge ?? 70;
+        const qSmall = options.qualitySmall ?? 80;
+        const qMed   = options.qualityMedium ?? 70;
+        const qLarge = options.qualityLarge ?? 60;
 
         const breakSM = options.sizeSmallMedium || 11;
         const breakML = options.sizeMediumLarge || 20;
@@ -306,9 +306,9 @@ class SINEClusterer {
         let minOcc = options.minOccurrences || 2;
         if (options.datasetSize > 300) minOcc = 1;
 
-        const qSmall = options.qualitySmall ?? 90;
-        const qMed   = options.qualityMedium ?? 80;
-        const qLarge = options.qualityLarge ?? 70;
+        const qSmall = options.qualitySmall ?? 80;
+        const qMed   = options.qualityMedium ?? 70;
+        const qLarge = options.qualityLarge ?? 60;
 
         const breakSM = options.sizeSmallMedium || 11;
         const breakML = options.sizeMediumLarge || 20;

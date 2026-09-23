@@ -13325,16 +13325,16 @@ function getClusteringParameters() {
         maxIterations: parseInt(el('clusterMaxIterationsInput')?.value) || 10,
 
         // Quality thresholds for imperfect features (based on cluster size)
-        qualitySmall: parseInt(el('qualitySmallInput')?.value) || 90,      // < 11 sequences
-        qualityMedium: parseInt(el('qualityMediumInput')?.value) || 80,    // 11-19 sequences
-        qualityLarge: parseInt(el('qualityLargeInput')?.value) || 70,      // >= 20 sequences
+        qualitySmall: parseInt(el('qualitySmallInput')?.value) || 80,      // < 11 sequences
+        qualityMedium: parseInt(el('qualityMediumInput')?.value) || 70,    // 11-19 sequences
+        qualityLarge: parseInt(el('qualityLargeInput')?.value) || 60,      // >= 20 sequences
 
         // Size breakpoints
         sizeSmallMedium: parseInt(el('sizeSmallMediumInput')?.value) || 11,
         sizeMediumLarge: parseInt(el('sizeMediumLargeInput')?.value) || 20,
 
         // Feature occurrence threshold
-        minOccurrences: parseInt(el('minOccurrencesInput')?.value) || 5
+        minOccurrences: parseInt(el('minOccurrencesInput')?.value) || 3 // fallbacks match the index.html defaults
     };
 }
 
@@ -13448,16 +13448,16 @@ function loadClusteringPreset(silent = false) {
     el('clusterMaxIterationsInput').value = preset.clustering.maxIterations ?? 20;
 
     // Apply quality thresholds (with fallback to defaults for older presets)
-    el('qualitySmallInput').value = preset.clustering.qualitySmall ?? 90;
-    el('qualityMediumInput').value = preset.clustering.qualityMedium ?? 80;
-    el('qualityLargeInput').value = preset.clustering.qualityLarge ?? 70;
+    el('qualitySmallInput').value = preset.clustering.qualitySmall ?? 80;
+    el('qualityMediumInput').value = preset.clustering.qualityMedium ?? 70;
+    el('qualityLargeInput').value = preset.clustering.qualityLarge ?? 60;
 
     // Apply size breakpoints (with fallback to defaults for older presets)
     el('sizeSmallMediumInput').value = preset.clustering.sizeSmallMedium ?? 11;
     el('sizeMediumLargeInput').value = preset.clustering.sizeMediumLarge ?? 20;
 
     // Apply min occurrences (with fallback to default for older presets)
-    el('minOccurrencesInput').value = preset.clustering.minOccurrences ?? 5;
+    el('minOccurrencesInput').value = preset.clustering.minOccurrences ?? 3;
 
     const shouldSilent = silent || presetName === 'optimal';
     if (!shouldSilent) {
