@@ -9,8 +9,9 @@ No installation, no build step, no framework dependencies.
 
 - **Nine input formats with auto-detection**: FASTA, MSF, Clustal, PHYLIP, NEXUS, Stockholm,
   GenBank flatfile, SAM, and BAM/CRAM (BAM/CRAM via the optional server)
-- **Four view modes**: Full, Block, Canvas (viewport-culled, auto-activates above 150,000
-  residues), and Reads (IGV-style tracks for mapped SAM/BAM data)
+- **Four view modes**: Full, Block, Canvas (viewport-culled; Full and Block window
+  the alignment above about 500,000 residues, and Canvas auto-activates above
+  5 million), and Reads (IGV-style tracks for mapped SAM/BAM data)
 - **GeneDoc-style editing**: residue-level edits, Move NoGaps / Slide KeepGaps, gap column
   insert/delete, random-access undo/redo history
 - **In-browser MAFFT**: WebAssembly build of MAFFT v7.525 — realign blocks or append and

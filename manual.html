@@ -857,7 +857,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <ul>
     <li>At each alignment column, sequences are grouped by shared nucleotide</li>
     <li>Groups meeting the size and quality thresholds are collected as candidates</li>
-    <li>Near-identical groups are fuzzy-merged (Jaccard similarity >= 90%)</li>
+    <li>Near-identical groups are fuzzy-merged (Jaccard similarity &gt;= 90%, and the two groups differ in size by at most 5 sequences)</li>
     <li>Perfect-unique positions (all members share a base unique to that group) get highest weight</li>
     <li>Outliers matching &lt;50% of core features are pruned</li>
     <li>The algorithm iterates with progressively relaxed thresholds to recover smaller families</li>
@@ -987,7 +987,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><th>Mode</th><th>Best For</th><th>Description</th></tr>
     <tr><td><strong>Full</strong></td><td>General browsing, small alignments</td><td>Continuous single-pane view. All sequences in one scrolling block.</td></tr>
     <tr><td><strong>Block</strong></td><td>Publication viewing, wide alignments</td><td>Fixed-width blocks (adjustable via Block Size slider, 40–300 chars). Sequence names repeat per block.</td></tr>
-    <tr><td><strong>Canvas</strong></td><td>Massive alignments (>= 150,000 residues)</td><td>Auto-activates for very large datasets. Canvas-based rendering for performance.</td></tr>
+    <tr><td><strong>Canvas</strong></td><td>Massive alignments (>= 5,000,000 residues)</td><td>Auto-activates above 5 million residues and reports the switch. From about 500,000 residues, Full and Block already draw a window rather than every cell.</td></tr>
     <tr><td><strong>Reads</strong></td><td>SAM/BAM read data</td><td>IGV-style read packing view. Displays reads as horizontal bars with CIGAR-expanded match/mismatch/indel colouring. Activated automatically when SAM/BAM data is loaded.</td></tr>
   </table>
   <p>
@@ -1135,7 +1135,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="di-codons">5.4 Codon Analysis</h3>
   <p>
     Activates codon-aware viewing for coding sequences (CDS). Your alignment must be
-    nucleotide and its length must be divisible by 3.
+    nucleotide and its length must be divisible by 3. Full and Block draw the
+    annotations below. Canvas draws the amino-acid translation track only.
   </p>
   <p>Select the appropriate genetic code from the dropdown (15 variants):</p>
   <table>
@@ -1866,7 +1867,7 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
     <!-- Compact mode removed -->
     <li>Turn on <strong>Highlight Diffs</strong> to visually compress conserved regions</li>
     <li>Use <strong>Block mode</strong> with smaller block sizes (20-30 columns) for very wide alignments</li>
-    <li>The <strong>Canvas</strong> mode auto-activates at >= 150,000 total residues for maximum performance</li>
+    <li>From about 500,000 residues, <strong>Full</strong> and <strong>Block</strong> draw a window of the alignment. <strong>Canvas</strong> auto-activates above 5 million residues and reports the switch</li>
     <li>For extremely large files (&gt; 500 sequences x 5,000 columns), consider splitting the input</li>
     <li>Use <strong>Variable sites only</strong> with the <strong>threshold slider</strong> to strip conserved columns and focus on variation. Set the threshold to ≥20% or higher to highlight only the most polymorphic sites.</li>
   </ul>
