@@ -3045,45 +3045,6 @@ function _isSamInput(text) {
     return /^(\d+[MIDNSHP=X])+$/.test(cigar);
 }
 
-// Expand CIGAR string into aligned read + reference sequences
-function _expandCigar(readSeq, cigar, refSeq, refStart) {
-    let readPos = 0, refPos = 0;
-    let alignedRead = '', alignedRef = '';
-    const ops = cigar.match(/\d+[MIDNSHP=X]/g) || [];
-    for (const op of ops) {
-        const len = parseInt(op);
-        const type = op[op.length - 1];
-        switch (type) {
-            case 'M': case '=': case 'X':
-                for (let i = 0; i < len; i++) {
-                    alignedRead += readSeq[readPos + i] || 'N';
-                    alignedRef += refSeq ? (refSeq[refStart + refPos + i] || 'N') : (readSeq[readPos + i] || 'N');
-                }
-                readPos += len; refPos += len;
-                break;
-            case 'I':
-                for (let i = 0; i < len; i++) { alignedRead += readSeq[readPos + i] || 'N'; alignedRef += '-'; }
-                readPos += len;
-                break;
-            case 'D':
-                for (let i = 0; i < len; i++) { alignedRead += '-'; alignedRef += refSeq ? (refSeq[refStart + refPos + i] || 'N') : 'N'; }
-                refPos += len;
-                break;
-            case 'S':
-                for (let i = 0; i < len; i++) { alignedRead += (readSeq[readPos + i] || 'n').toLowerCase(); alignedRef += '-'; }
-                readPos += len;
-                break;
-            case 'H': break;
-            case 'N':
-                for (let i = 0; i < len; i++) { alignedRead += '-'; alignedRef += refSeq ? (refSeq[refStart + refPos + i] || 'N') : 'N'; }
-                refPos += len;
-                break;
-            case 'P': refPos += len; break;
-        }
-    }
-    return { alignedRead, alignedRef };
-}
-
 // CIGAR reference span (M/D/N/= operations)
 function _cigarRefSpan(cigar) {
     let span = 0;
@@ -3101,6 +3062,17 @@ function _cigarRefSpan(cigar) {
  * Sequence from ORIGIN block.
  */
 function parseGenBank(text) {
+    // A flatfile may hold several records, each ending in '//'
+    const out = [];
+    for (const record of text.split(/^\/\/[^\S\n]*$/m)) {
+        if (!/^LOCUS\s/m.test(record)) continue;
+        const one = _parseGenBankRecord(record);
+        if (one) out.push(...one);
+    }
+    return out.length ? out : null;
+}
+
+function _parseGenBankRecord(text) {
     const lines = text.split(/\r?\n/);
     let locus = '', definition = '', accession = '', organism = '', lineage = '', version = '';
     let inFeatures = false, inOrigin = false, inOrganism = false;
@@ -3255,6 +3227,18 @@ function parseSamToAlignment(samText) {
     }
     if (records.length === 0) return null;
 
+    // Reads on different references share no coordinates, so pile up only the
+    // reference with the most reads and say what was left out
+    const perRef = new Map();
+    for (const r of records) perRef.set(r.rname, (perRef.get(r.rname) || 0) + 1);
+    if (perRef.size > 1) {
+        const ranked = [...perRef.entries()].sort((a, b) => b[1] - a[1]);
+        const keep = ranked[0][0];
+        const skipped = ranked.slice(1).map(([n, c]) => `${n} (${c})`).join(', ');
+        for (let i = records.length - 1; i >= 0; i--) if (records[i].rname !== keep) records.splice(i, 1);
+        _parseNotice = `SAM has reads on ${perRef.size} references; showing ${keep} (${ranked[0][1]} reads). Not shown: ${skipped}.`;
+    }
+
     // Determine coordinate range
     let minPos = Infinity, maxPos = 0;
     for (const r of records) {
@@ -3291,19 +3275,63 @@ function parseSamToAlignment(samText) {
         refSeq += best;
     }
 
-    // Build output sequences: reference first, then reads
+    // Lay reads out as rows of one alignment. Inserted bases (CIGAR I) get
+    // their own columns, sized to the longest insertion at that point across
+    // all reads, with gaps in every other row, so bases after an insertion stay
+    // in their reference column. Soft- and hard-clipped bases are not aligned
+    // to the reference and are left out.
+    const maxIns = new Array(refLen + 1).fill(0);
+    for (const r of records) {
+        let refp = r.pos - minPos;
+        for (const op of r.cigar.match(/\d+[MIDNSHP=X]/g) || []) {
+            const len = parseInt(op), t = op[op.length - 1];
+            if (t === 'M' || t === '=' || t === 'X' || t === 'D' || t === 'N') refp += len;
+            else if (t === 'I' && refp >= 0 && refp <= refLen) maxIns[refp] = Math.max(maxIns[refp], len);
+        }
+    }
+    // colOf[p]: output column of reference position p; its insertion slot
+    // occupies the maxIns[p] columns just before it
+    const colOf = new Array(refLen + 1);
+    let width = 0;
+    for (let p = 0; p <= refLen; p++) {
+        width += maxIns[p];
+        colOf[p] = width;
+        if (p < refLen) width++;
+    }
+
+    let refRow = '';
+    for (let p = 0; p <= refLen; p++) refRow += '-'.repeat(maxIns[p]) + (p < refLen ? refSeq[p] : '');
     const seqs = [{
         header: 'REF',
         fullHeader: 'REF_' + (minPos + 1) + '-' + maxPos,
-        seq: refSeq,
-        gaplessPositions: calculateGaplessPositions(refSeq)
+        seq: refRow,
+        gaplessPositions: calculateGaplessPositions(refRow)
     }];
 
     for (const r of records) {
-        const { alignedRead } = _expandCigar(r.seq, r.cigar, refSeq, r.pos - minPos);
-        const leftPad = Math.max(0, r.pos - minPos);
-        const rightLen = refLen - (leftPad + alignedRead.length);
-        const fullSeq = '-'.repeat(leftPad) + alignedRead + '-'.repeat(Math.max(0, rightLen));
+        const row = new Array(width).fill('-');
+        let readp = 0, refp = r.pos - minPos;
+        for (const op of r.cigar.match(/\d+[MIDNSHP=X]/g) || []) {
+            const len = parseInt(op), t = op[op.length - 1];
+            if (t === 'M' || t === '=' || t === 'X') {
+                for (let i = 0; i < len; i++) {
+                    const p = refp + i;
+                    if (p >= 0 && p < refLen) row[colOf[p]] = r.seq[readp + i] || 'N';
+                }
+                readp += len; refp += len;
+            } else if (t === 'I') {
+                if (refp >= 0 && refp <= refLen) {
+                    const start = colOf[refp] - maxIns[refp];
+                    for (let i = 0; i < len; i++) row[start + i] = r.seq[readp + i] || 'N';
+                }
+                readp += len;
+            } else if (t === 'D' || t === 'N') {
+                refp += len;
+            } else if (t === 'S') {
+                readp += len;
+            }
+        }
+        const fullSeq = row.join('');
         seqs.push({
             header: r.qname,
             fullHeader: r.qname + ' pos=' + (r.pos + 1) + ' cigar=' + r.cigar,
@@ -4546,21 +4574,30 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     scheduleDraw();
 }
 
-// Clustal (.aln) format parser
+// Clustal (.aln) format parser. The first non-blank line is the program's
+// header (CLUSTAL W/O/2.x, MUSCLE, MSAPROBS, PROBCONS, Kalign all write one).
+// Conservation lines are indented, so any line starting with whitespace is
+// skipped; an optional trailing residue count after the sequence is dropped.
+function _isClustalInput(text) {
+    const first = (text.match(/^[^\S\n]*\S.*$/m) || [''])[0].trim();
+    return /^(CLUSTAL|MUSCLE|MSAPROBS|PROBCONS|Kalign)\b/i.test(first);
+}
+
 function parseClustal(text) {
-    const lines = text.split(/\r?\n/);
+    const lines = text.split(/\r\n|\r|\n/);
     const seqMap = new Map();
     let started = false;
     for (const line of lines) {
-        const t = line.trim();
-        if (!t || t.startsWith('//')) continue;
-        if (t.startsWith('CLUSTAL')) { started = true; continue; }
-        if (!started) continue;
-        const m = t.match(/^(\S+)\s+(.+)$/);
+        if (!started) {
+            if (line.trim()) started = true;
+            continue;
+        }
+        if (!line.trim() || /^\s/.test(line) || line.startsWith('//')) continue;
+        const m = line.match(/^(\S+)\s+(\S+)(?:\s+\d+)?\s*$/);
         if (!m) continue;
-        const name = m[1], seq = m[2].replace(/\s/g, '').replace(/\*/g, '-');
+        const name = m[1];
         if (!seqMap.has(name)) seqMap.set(name, '');
-        seqMap.set(name, seqMap.get(name) + seq);
+        seqMap.set(name, seqMap.get(name) + m[2]);
     }
     if (seqMap.size === 0) return null;
     const seqs = [];
@@ -4570,71 +4607,142 @@ function parseClustal(text) {
     return seqs;
 }
 
-// PHYLIP format parser (sequential and interleaved)
+// PHYLIP format parser. Strict PHYLIP gives names a fixed 10-character field
+// (names may contain spaces and may touch the sequence); relaxed PHYLIP (RAxML,
+// PhyML, IQ-TREE) separates a name of any length by whitespace. Either may be
+// sequential (one sequence after another, possibly over several lines) or
+// interleaved. Each combination is tried, and the first that gives every
+// sequence exactly the declared length is used; relaxed is tried first, since
+// a strict file only parses as relaxed by coincidence of its spacing.
 function parsePhylip(text) {
-    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    const lines = text.split(/\r\n|\r|\n/).filter(l => l.trim());
     if (lines.length < 2) return null;
     const hm = lines[0].trim().match(/^(\d+)\s+(\d+)/);
     if (!hm) return null;
     const nSeqs = parseInt(hm[1]), alignLen = parseInt(hm[2]);
     if (nSeqs < 1 || alignLen < 1) return null;
-    const entries = [];
-    for (let i = 1; i < lines.length && entries.length < nSeqs; i++) {
-        const l = lines[i];
-        if (l.length >= 10) {
-            const name = l.substring(0, 10).trim();
-            const seq = l.substring(10).replace(/\s/g, '');
-            if (name && seq) entries.push({ name, seq });
+    const body = lines.slice(1);
+    const strip = s => s.replace(/\s/g, '');
+    const splitName = {
+        relaxed: l => { const m = l.trim().match(/^(\S+)\s+(.*)$/); return m ? [m[1], strip(m[2])] : null; },
+        strict: l => l.length > 10 ? [l.substring(0, 10).trim(), strip(l.substring(10))] : null
+    };
+    function sequential(split) {
+        const out = [];
+        let i = 0;
+        while (out.length < nSeqs && i < body.length) {
+            const first = split(body[i++]);
+            if (!first || !first[0]) return null;
+            let seq = first[1];
+            while (seq.length < alignLen && i < body.length) seq += strip(body[i++]);
+            out.push({ name: first[0], seq });
         }
+        return i === body.length ? out : null;
     }
-    // Handle interleaved blocks (strict PHYLIP: no names in continuation lines)
-    if (entries.length === nSeqs) {
-        let blockStart = 1 + nSeqs;
-        while (blockStart < lines.length) {
-            for (let k = 0; k < nSeqs && blockStart + k < lines.length; k++) {
-                const l = lines[blockStart + k];
-                // Some non-standard PHYLIP variants repeat names in continuation lines;
-                // detect this: if the first 10 chars match a known name, strip it
-                const nameCandidate = l.substring(0, 10).trim();
-                const hasName = entries.some(e => e.name === nameCandidate);
-                const seqPart = hasName ? l.substring(10) : l;
-                const seq = seqPart.replace(/\s/g, '');
-                if (seq) entries[k].seq += seq;
-            }
-            blockStart += nSeqs;
+    function interleaved(split) {
+        if (body.length < nSeqs) return null;
+        const out = [];
+        for (let k = 0; k < nSeqs; k++) {
+            const first = split(body[k]);
+            if (!first || !first[0]) return null;
+            out.push({ name: first[0], seq: first[1] });
         }
+        for (let i = nSeqs; i < body.length; i++) {
+            const e = out[(i - nSeqs) % nSeqs];
+            // Some writers repeat the name on continuation lines; drop it
+            const named = split(body[i]);
+            e.seq += named && named[0] === e.name ? named[1] : strip(body[i]);
+        }
+        return out;
     }
-    if (entries.length < nSeqs) return null;
-    const seqs = [];
-    for (const e of entries) {
-        seqs.push({ header: e.name, fullHeader: e.name, seq: e.seq, gaplessPositions: calculateGaplessPositions(e.seq) });
+    const attempts = [
+        () => sequential(splitName.relaxed), () => interleaved(splitName.relaxed),
+        () => sequential(splitName.strict), () => interleaved(splitName.strict)
+    ];
+    let entries = null;
+    for (const attempt of attempts) {
+        const got = attempt();
+        if (got && got.length === nSeqs && got.every(e => e.seq.length === alignLen)) { entries = got; break; }
     }
-    return seqs;
+    // Nothing fits the declared length exactly: fall back to strict interleaved,
+    // and let the length-mismatch check report the damage
+    if (!entries) entries = interleaved(splitName.strict);
+    if (!entries || entries.length < nSeqs) return null;
+    return entries.map(e => ({ header: e.name, fullHeader: e.name, seq: e.seq, gaplessPositions: calculateGaplessPositions(e.seq) }));
 }
 
-// NEXUS format parser (DATA block with MATRIX)
+// NEXUS format parser (DATA or CHARACTERS block with MATRIX). Bracketed
+// [comments] are removed first; quoted taxon names ('...' with '' for a
+// literal quote) are single names that may contain spaces and brackets; and
+// '_' equals a space in a name, so an interleaved block may spell the same
+// taxon either way.
+function _nexusStripComments(text) {
+    let out = '', depth = 0, quoted = false;
+    for (let i = 0; i < text.length; i++) {
+        const c = text[i];
+        if (depth > 0) {
+            if (c === '[') depth++;
+            else if (c === ']') depth--;
+            continue;
+        }
+        if (quoted) {
+            out += c;
+            if (c === "'") {
+                if (text[i + 1] === "'") { out += "'"; i++; } else quoted = false;
+            }
+            continue;
+        }
+        if (c === "'") { quoted = true; out += c; continue; }
+        if (c === '[') { depth = 1; continue; }
+        out += c;
+    }
+    return out;
+}
+
 function parseNexus(text) {
-    const t = text.replace(/\r/g, '');
+    const t = _nexusStripComments(text.replace(/\r\n?/g, '\n'));
     const matrixIdx = t.search(/\bMATRIX\b/i);
     if (matrixIdx < 0) return null;
-    // Find the matrix block content
-    const block = t.substring(matrixIdx + 6);
-    const endIdx = block.search(/;\s*end/i);
-    const content = endIdx > 0 ? block.substring(0, endIdx) : block;
-    const lines = content.split('\n');
+    // The matrix ends at the first ';' outside a quoted name
+    let content = '', quoted = false;
+    for (let i = matrixIdx + 6; i < t.length; i++) {
+        const c = t[i];
+        if (c === "'") quoted = !quoted;
+        else if (c === ';' && !quoted) break;
+        content += c;
+    }
     const seqMap = new Map();
-    for (const line of lines) {
-        const m = line.trim().match(/^(['\"]?)(\S+)\1\s+(.+)$/);
-        if (!m) continue;
-        const name = m[2];
-        const seq = m[3].replace(/\s/g, '').replace(/[^A-Za-z?\-\.]/g, '');
-        if (!seqMap.has(name)) seqMap.set(name, '');
-        seqMap.set(name, seqMap.get(name) + seq);
+    const display = new Map();
+    for (const line of content.split('\n')) {
+        const s = line.trim();
+        if (!s) continue;
+        let name, rest;
+        if (s[0] === "'") {
+            const m = s.match(/^'((?:[^']|'')*)'\s*(.*)$/);
+            if (!m) continue;
+            name = m[1].replace(/''/g, "'");
+            rest = m[2];
+        } else if (s[0] === '"') {
+            const m = s.match(/^"([^"]*)"\s*(.*)$/);
+            if (!m) continue;
+            name = m[1];
+            rest = m[2];
+        } else {
+            const m = s.match(/^(\S+)\s+(.*)$/);
+            if (!m) continue;
+            name = m[1].replace(/_/g, ' ');
+            rest = m[2];
+        }
+        const seq = rest.replace(/\s/g, '').replace(/[^A-Za-z?*\-.]/g, '');
+        if (!seq) continue;
+        const key = name.replace(/_/g, ' ');
+        if (!seqMap.has(key)) { seqMap.set(key, ''); display.set(key, name.replace(/ /g, '_')); }
+        seqMap.set(key, seqMap.get(key) + seq);
     }
     if (seqMap.size === 0) return null;
     const seqs = [];
-    for (const [name, seq] of seqMap) {
-        seqs.push({ header: name, fullHeader: name, seq: seq, gaplessPositions: calculateGaplessPositions(seq) });
+    for (const [key, seq] of seqMap) {
+        seqs.push({ header: display.get(key), fullHeader: key, seq: seq, gaplessPositions: calculateGaplessPositions(seq) });
     }
     return seqs;
 }
@@ -4763,6 +4871,11 @@ async function readSequenceFile(file) {
         }
     }
     const decoder = new TextDecoder('utf-8');
+    const bytes = new Uint8Array(buf);
+    if (bytes[0] === 0x1f && bytes[1] === 0x8b && typeof BamParser !== 'undefined') {
+        // gzip or BGZF: BamParser.decompressBAM handles both single- and multi-member files
+        return { text: decoder.decode(await BamParser.decompressBAM(new Blob([bytes]))), header: null };
+    }
     return { text: decoder.decode(buf), header: null };
 }
 
@@ -4774,7 +4887,7 @@ function parseFasta(text) {
     try {
         for (let line of lines) {
             line = line.trim();
-            if (!line) continue;
+            if (!line || line.startsWith(';')) continue; // ';' lines are comments in Pearson FASTA
             if (line.startsWith('>')) {
                 if (header) {
                     _pushParsedFastaSequence(seqs, header, seq);
@@ -7408,6 +7521,9 @@ const RESIDUE_SCHEME_CLASS_PRIORITY = [
     'base-A', 'base-C', 'base-G', 'base-T', 'base-U', 'base-N'
 ];
 let _proteinSchemeRemapWarned = false;
+// A parser can leave a one-line note about what it did not load (e.g. reads on
+// other references); parseAndRender shows it instead of the plain success message.
+let _parseNotice = '';
 
 let _proteinMemoArr = null, _proteinMemoType = null, _proteinMemoVal = false;
 function isProteinAlignment(seqs = state.seqs) {
@@ -8367,7 +8483,8 @@ function _looksLikeLocalPath(text) {
 async function parseAndRender(isFromDrop = false) {
     showMessage("Scanning alignment...", 0);
     _proteinSchemeRemapWarned = false;
-    const inputText = fastaInput.value.trim();
+    _parseNotice = '';
+    const inputText = fastaInput.value.trim().replace(/\r\n?/g, '\n'); // CR-only (classic Mac) files too
     if (!inputText) {
         alignmentContainer.innerHTML = '<div>Paste MSF or FASTA into the box and click Load, or drop a file.</div>';
         statusMessage.style.display = 'none';
@@ -8441,7 +8558,7 @@ async function parseAndRender(isFromDrop = false) {
             if (!parsed) throw new Error('GenBank parsing failed');
             state.currentFilename = state.currentFilename || 'genbank_import';
             showMessage('Detected GenBank format', 1500);
-        } else if (inputText.match(/^(CLUSTAL|MUSCLE\s)/m)) {
+        } else if (_isClustalInput(inputText)) {
             parsed = parseClustal(inputText);
             if (!parsed) throw new Error('Clustal parsing failed');
             state.currentFilename = state.currentFilename || 'clustal_import';
@@ -8574,6 +8691,8 @@ async function parseAndRender(isFromDrop = false) {
         // overwritten statusMessage.textContent with consensus info).
         if (_lenMismatchMsg) {
             showMessage(_lenMismatchMsg, 0);
+        } else if (_parseNotice) {
+            showMessage(_parseNotice, 10000);
         } else {
             showMessage("File loaded successfully!", 2000);
         }
