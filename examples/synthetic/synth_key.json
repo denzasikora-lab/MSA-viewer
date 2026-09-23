@@ -1,0 +1,71 @@
+{
+  "alignmentLength": 111,
+  "sequences": [
+    "alpha_ref",
+    "alpha_syn",
+    "alpha_mis",
+    "beta_stop",
+    "beta_fs",
+    "beta_del"
+  ],
+  "cdsColumns": [
+    1,
+    60
+  ],
+  "referenceTranslation": "MALKEFGMPYDIWKQVSFR*",
+  "synonymous": "alpha_syn codon 3 CTG->TTG, both leucine",
+  "nonsynonymous": "alpha_mis codon 2 GCA->GAA, alanine to glutamate",
+  "prematureStop": "beta_stop codon 10 TAC->TAA",
+  "frameshift": "beta_fs 1-base gap at column 5 (1-based)",
+  "inFrameGap": "beta_del deletes codon 7 GGC, a 3-base gap",
+  "clusterBarcode": "columns 61-72, alpha AAAAAACCCCCC, beta GGGGGGTTTTTT",
+  "gattacaColumns0": [
+    72,
+    82
+  ],
+  "invertedRepeatColumn0": 89,
+  "ecoRIColumn0": 96,
+  "bamHIColumn0": 102,
+  "dotplot": {
+    "self": "GATTACA occurs twice in every MSA row; TGTAATC is its reverse complement",
+    "pair": "synth_dotplot.fa seq_early vs seq_late: ACGT repeat is at the end of seq_early and the start of seq_late"
+  },
+  "reads": [
+    {
+      "name": "read_perfect_a",
+      "pos": 1,
+      "cigar": "40M",
+      "flag": 0
+    },
+    {
+      "name": "read_perfect_b",
+      "pos": 25,
+      "cigar": "40M",
+      "flag": 0
+    },
+    {
+      "name": "read_mismatch",
+      "pos": 1,
+      "cigar": "30M",
+      "flag": 0
+    },
+    {
+      "name": "read_deletion",
+      "pos": 20,
+      "cigar": "10M1D15M",
+      "flag": 0
+    },
+    {
+      "name": "read_insertion",
+      "pos": 50,
+      "cigar": "8M3I12M",
+      "flag": 0
+    },
+    {
+      "name": "read_reverse",
+      "pos": 70,
+      "cigar": "20M",
+      "flag": 16
+    }
+  ]
+}

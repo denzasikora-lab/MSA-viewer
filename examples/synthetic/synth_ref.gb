@@ -1,0 +1,17 @@
+LOCUS       synth_ref          111 bp    DNA     linear   SYN 23-SEP-2026
+DEFINITION  Synthetic coding sequence for ViewAlign tests.
+ACCESSION   SYNTHREF
+VERSION     SYNTHREF.1
+SOURCE      synthetic
+  ORGANISM  synthetic construct
+            Unclassified.
+FEATURES             Location/Qualifiers
+     source          1..111
+                     /organism="synthetic construct"
+     CDS             1..60
+                     /codon_start=1
+                     /translation="MALKEFGMPYDIWKQVSFR*"
+ORIGIN
+        1 atggcactga aagagttcgg catgccgtac gacatctgga agcaggtgag ctttcgatag
+       61 aaaaaacccc ccgattacat ttgattacat gtaatcgaat tcggatccca a
+//
