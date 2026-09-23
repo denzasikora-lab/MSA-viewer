@@ -1,0 +1,4 @@
+# Test inputs must reach users byte-for-byte: line endings (CRLF, CR-only) and
+# byte-order marks are what some of these files exist to test.
+examples/compat/** -text
+examples/real/** -text

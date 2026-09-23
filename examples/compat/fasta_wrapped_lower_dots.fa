@@ -1,0 +1,36 @@
+>alpha_ref some description text
+atggcactgaaagagttcggcatgccgtac
+gacatctggaagcaggtgagctttcgatag
+aaaaaaccccccgattacatttgattacat
+gtaatcgaattcggatcccaa
+
+>alpha_syn some description text
+atggcattgaaagagttcggcatgccgtac
+gacatctggaagcaggtgagctttcgatag
+aaaaaaccccccgattacatttgattacat
+gtaatcgaattcggatcccaa
+
+>alpha_mis some description text
+atggaactgaaagagttcggcatgccgtac
+gacatctggaagcaggtgagctttcgatag
+aaaaaaccccccgattacatttgattacat
+gtaatcgaattcggatcccaa
+
+>beta_stop some description text
+atggcactgaaagagttcggcatgccgtaa
+gacatctggaagcaggtgagctttcgatag
+ggggggttttttgattacatttgattacat
+gtaatcgaattcggatcccaa
+
+>beta_fs some description text
+atgg.actgaaagagttcggcatgccgtac
+gacatctggaagcaggtgagctttcgatag
+ggggggttttttgattacatttgattacat
+gtaatcgaattcggatcccaa
+
+>beta_del some description text
+atggcactgaaagagttc...atgccgtac
+gacatctggaagcaggtgagctttcgatag
+ggggggttttttgattacatttgattacat
+gtaatcgaattcggatcccaa
+

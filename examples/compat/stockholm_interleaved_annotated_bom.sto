@@ -1,0 +1,38 @@
+﻿# STOCKHOLM 1.0
+#=GF ID compat
+
+#=GS alpha_ref DE synthetic row alpha_ref
+#=GS alpha_syn DE synthetic row alpha_syn
+#=GS alpha_mis DE synthetic row alpha_mis
+#=GS beta_stop DE synthetic row beta_stop
+#=GS beta_fs DE synthetic row beta_fs
+#=GS beta_del DE synthetic row beta_del
+
+alpha_ref    ATGGCACTGAAAGAGTTCGGCATGCCGTACGACATCTGGAAGCAGGTGAG
+alpha_syn    ATGGCATTGAAAGAGTTCGGCATGCCGTACGACATCTGGAAGCAGGTGAG
+alpha_mis    ATGGAACTGAAAGAGTTCGGCATGCCGTACGACATCTGGAAGCAGGTGAG
+beta_stop    ATGGCACTGAAAGAGTTCGGCATGCCGTAAGACATCTGGAAGCAGGTGAG
+beta_fs      ATGG.ACTGAAAGAGTTCGGCATGCCGTACGACATCTGGAAGCAGGTGAG
+beta_del     ATGGCACTGAAAGAGTTC...ATGCCGTACGACATCTGGAAGCAGGTGAG
+#=GR alpha_ref SS ..................................................
+#=GC SS_cons ..................................................
+
+alpha_ref    CTTTCGATAGAAAAAACCCCCCGATTACATTTGATTACATGTAATCGAAT
+alpha_syn    CTTTCGATAGAAAAAACCCCCCGATTACATTTGATTACATGTAATCGAAT
+alpha_mis    CTTTCGATAGAAAAAACCCCCCGATTACATTTGATTACATGTAATCGAAT
+beta_stop    CTTTCGATAGGGGGGGTTTTTTGATTACATTTGATTACATGTAATCGAAT
+beta_fs      CTTTCGATAGGGGGGGTTTTTTGATTACATTTGATTACATGTAATCGAAT
+beta_del     CTTTCGATAGGGGGGGTTTTTTGATTACATTTGATTACATGTAATCGAAT
+#=GR alpha_ref SS ..................................................
+#=GC SS_cons ..................................................
+
+alpha_ref    TCGGATCCCAA
+alpha_syn    TCGGATCCCAA
+alpha_mis    TCGGATCCCAA
+beta_stop    TCGGATCCCAA
+beta_fs      TCGGATCCCAA
+beta_del     TCGGATCCCAA
+#=GR alpha_ref SS ...........
+#=GC SS_cons ...........
+
+//

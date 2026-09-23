@@ -1,0 +1,8 @@
+ID   SYNTH; SV 1; linear; genomic DNA; STD; SYN; 111 BP.
+XX
+DE   Synthetic EMBL record.
+XX
+SQ   Sequence 111 BP;
+     atggcactga aagagttcgg catgccgtac gacatctgga agcaggtgag ctttcgatag 60
+     aaaaaacccc ccgattacat ttgattacat gtaatcgaat tcggatccca a          111
+//

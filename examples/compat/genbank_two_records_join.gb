@@ -1,0 +1,22 @@
+LOCUS       rec_one          111 bp    DNA     linear   SYN 23-SEP-2026
+DEFINITION  Synthetic record rec_one.
+ACCESSION   REC_ONE
+FEATURES             Location/Qualifiers
+     source          1..111
+     CDS             join(1..30,31..60)
+                     /codon_start=1
+ORIGIN
+        1 atggcactga aagagttcgg catgccgtac gacatctgga agcaggtgag ctttcgatag
+       61 aaaaaacccc ccgattacat ttgattacat gtaatcgaat tcggatccca a
+//
+LOCUS       rec_two          111 bp    DNA     linear   SYN 23-SEP-2026
+DEFINITION  Synthetic record rec_two.
+ACCESSION   REC_TWO
+FEATURES             Location/Qualifiers
+     source          1..111
+     CDS             complement(1..60)
+                     /codon_start=1
+ORIGIN
+        1 atggcactga aagagttcgg catgccgtaa gacatctgga agcaggtgag ctttcgatag
+       61 ggggggtttt ttgattacat ttgattacat gtaatcgaat tcggatccca a
+//
