@@ -1511,7 +1511,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td><strong>New Tab</strong></td><td>Open selected sequences in a new browser tab (<kbd>Ctrl+T</kbd>)</td></tr>
     <tr><td><strong>TSD Finder</strong></td><td>Find target site duplications around SINE insertion boundaries</td></tr>
     <tr><td><strong>Tree</strong></td><td>Build UPGMA or Neighbor-Joining trees from selected sequences. Three distance correction models are available: p-distance (raw), Jukes-Cantor (JC69), and Kimura 2-parameter (K80). Switching UPGMA/NJ or model in the modal rebuilds the tree. Outputs a drawn tree (see below), a text view, and Newick with Copy Newick and Download .nwk options</td></tr>
-    <tr><td><strong>Statistics</strong></td><td>Compute alignment statistics (esl-alistat/esl-alipid style): sequence count, alignment length, total gaps and gap percentage, and mean/min/max pairwise identity across every sequence pair. Full pairwise p-distance and identity matrices are shown with copy-to-clipboard buttons</td></tr>
+    <tr><td><strong>Statistics</strong></td><td>Alignment summary in the style of esl-alistat (sequence count, length, residues, gaps) and pairwise identity in the style of esl-alipid (mean, minimum, and maximum). Identity here is identical residues divided by columns where both sequences are non-gap; esl-alipid divides by the shorter unaligned length. Full pairwise p-distance and identity matrices have copy-to-clipboard buttons. See Credits.</td></tr>
   </table>
 
   <p>
@@ -1974,6 +1974,26 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
       <td>Zappo colour scheme, conservation shading model</td>
       <td>Waterhouse AM et al. (2009) <em>Bioinformatics</em> 25:1189-1191</td>
     </tr>
+    <tr>
+      <td><strong>SPIN</strong> (Staden package)</td>
+      <td>Word-match dot plot. The comparison is original code; SPIN itself is not included.</td>
+      <td>Staden R, Beal KF, Bonfield JK (2000) <em>Methods Mol Biol</em> 132:115-130</td>
+    </tr>
+    <tr>
+      <td><strong>Dotter</strong></td>
+      <td>Sliding-window dot plot. Original code; Dotter is not included.</td>
+      <td>Sonnhammer ELL, Durbin R (1995) <em>Gene</em> 167:GC1-GC10</td>
+    </tr>
+    <tr>
+      <td><strong>EMBOSS</strong> <code>water</code></td>
+      <td>EDNAFULL scoring numbers only (match +5, mismatch &minus;4, gap open 10, gap extend 0.5), as one preset. No EMBOSS source.</td>
+      <td>Rice P, Longden I, Bleasby A (2000) <em>Trends Genet</em> 16:276-277</td>
+    </tr>
+    <tr>
+      <td><strong>Easel</strong> <code>esl-alistat</code> / <code>esl-alipid</code></td>
+      <td>Alignment summary (sequence count, length, residues, gaps) and pairwise identity, reimplemented. Identity here is identical residues over columns where both sequences are non-gap. <code>esl-alipid</code> divides by the shorter unaligned length. No Easel or HMMER source. Easel is BSD and is distributed with HMMER.</td>
+      <td>Eddy SR (2011) <em>PLoS Comput Biol</em> 7:e1002195; <a href="http://eddylab.org/software/easel/" target="_blank">eddylab.org/software/easel</a></td>
+    </tr>
   </table>
 
   <h3>Format Standards</h3>
@@ -1983,12 +2003,12 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
     <li><strong>Clustal</strong> - Thompson JD et al. (1994) <em>Nucleic Acids Res</em> 22:4673-4680</li>
     <li><strong>PHYLIP</strong> - Felsenstein J (1989) <em>Cladistics</em> 5:164-166</li>
     <li><strong>NEXUS</strong> - Maddison DR et al. (1997) <em>Syst Biol</em> 46:590-621</li>
-    <li><strong>Stockholm</strong> - Sonnhammer ELL et al. (1998) <em>Proc ISMB</em> 6:175-182</li>
+    <li><strong>Stockholm</strong> - Sonnhammer ELL et al. (1998) <em>Proc ISMB</em> 6:175-182. The parser reads the format used by HMMER and Pfam. HMMER source is not included.</li>
     <li><strong>NCBI Genetic Codes</strong> - <a href="https://www.ncbi.nlm.nih.gov/Taxonomy/Utils/wprintgc.cgi" target="_blank">NCBI Taxonomy</a></li>
   </ul>
 
   <p style="margin-top:16px;font-size:13px;color:var(--muted);">
-    All external code is used under its original open-source license.
+    MAFFT is included as a compiled WebAssembly binary under the BSD license, and MAFFT's own copyright applies to that binary. samtools and BLAST+ are optional external programs and are not in this repository. GeneDoc, SPIN, Dotter, EMBOSS, Easel, and HMMER are cited for methods or formats; their source is not included.
     The ViewAlign source code itself is released under the <strong>MIT License</strong>.
   </p>
 </section>

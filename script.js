@@ -377,24 +377,35 @@ const SYM = {
 //
 // EXTERNAL CODE & ATTRIBUTION
 // ===========================
-// - MAFFT - alignment engine compiled to WebAssembly (disttbfast.js, mafft-wasm.js).
-//   Katoh K, Standley DM (2013) Mol Biol Evol 30:772-780. BSD license.
-// - GeneDoc - editing tools (Move NoGaps, Slide KeepGaps, RTF export) modeled after
-//   GeneDoc's Arrange/MoveText and SlideText operations.
-//   Nicholas KB et al. (1997) EMBNEW.NEWS 4:14.
-// - IGV - Compact read-packing view inspired by the Integrative Genomics Viewer.
-//   Robinson JT et al. (2011) Nat Biotechnol 29:24-26.
-// - MACSE - Codon-aware visualization inspired by MACSE's approach.
-//   Ranwez V et al. (2011) PLoS ONE 6:e22594.
-// - Clustal - Clustal shading scheme and .aln format parser.
-//   Sievers F et al. (2011) Mol Syst Biol 7:539.
-// - BLOSUM62 - similarity matrix for amino acid grouping.
-//   Henikoff S, Henikoff JG (1992) PNAS 89:10915-10919.
-// - samtools - BAM/CRAM conversion (server-side).
-//   Li H et al. (2009) Bioinformatics 25:2078-2079.
+// Included or invoked (not reimplemented):
+// - MAFFT v7.525, compiled to WebAssembly (disttbfast.js, disttbfast.wasm).
+//   Katoh K, Standley DM (2013) Mol Biol Evol 30:772-780. BSD.
+//   MAFFT's own copyright applies to that binary.
+// - samtools and BLAST+ are optional programs on the server. They are not
+//   in this repository. Li H et al. (2009); Camacho C et al. (2009).
 //
-// All external code is used under its original open-source license.
-// The remainder is original work.
+// Reimplemented here. No source from these projects is included:
+// - GeneDoc editing gestures, tiered shading, and shaded RTF.
+//   Nicholas KB et al. (1997) EMBNEW.NEWS 4:14.
+// - SPIN word-match dot plot (Staden package) and Dotter window scoring.
+//   Staden R, Beal KF, Bonfield JK (2000) Methods Mol Biol 132:115-130.
+//   Sonnhammer ELL, Durbin R (1995) Gene 167:GC1-GC10.
+// - EMBOSS water / EDNAFULL match and gap numbers, as one scoring preset
+//   in blast-worker.js. Rice P, Longden I, Bleasby A (2000) Trends Genet
+//   16:276-277. Not EMBOSS source.
+// - esl-alistat summary counts and an esl-alipid-style pairwise identity.
+//   Easel (Sean Eddy; distributed with HMMER). Eddy SR (2011) PLoS Comput
+//   Biol 7:e1002195. Identity here is identical residues over columns where
+//   both sequences are non-gap. esl-alipid divides by the shorter unaligned
+//   length. Not Easel or HMMER source.
+// - Stockholm format read by HMMER and Pfam. Sonnhammer ELL et al. (1998)
+//   Proc ISMB 6:175-182. Not HMMER source.
+// - IGV-style read packing. Robinson JT et al. (2011) Nat Biotechnol 29:24-26.
+// - MACSE-style codon marks. Ranwez V et al. (2011) PLoS ONE 6:e22594.
+// - Clustal shading scheme and .aln parser. Sievers F et al. (2011) Mol Syst Biol 7:539.
+// - BLOSUM62. Henikoff S, Henikoff JG (1992) PNAS 89:10915-10919.
+//
+// The remainder is original work, released under the MIT license.
 // ============================================================================
 
 // DEFAULTS & STATE
@@ -14803,9 +14814,10 @@ function downloadTreeNewick() {
 
 /**
  * Open Alignment Statistics modal.
- * Implements esl-alistat (summary) and esl-alipid (pairwise identity)
- * from the Easel library by Sean Eddy, HHMI Janelia.
- * http://eddylab.org/easel/
+ * Summary counts follow esl-alistat. Pairwise percent identity is identical
+ * residues over columns where both sequences are non-gap. esl-alipid (Easel,
+ * Sean Eddy) divides by the shorter unaligned length instead. No Easel source.
+ * http://eddylab.org/software/easel/
  */
 // Pairwise matrices are O(sequences^2 x columns), so this reaches seconds on a large
 // alignment. Show the indicator and yield before starting.
