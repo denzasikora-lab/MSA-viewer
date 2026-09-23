@@ -3,19 +3,18 @@
 Files written by other programs and databases, downloaded on 2026-09-23 and kept byte-for-byte
 (see `.gitattributes`) so a reviewer can check how ViewAlign reads files it did not write itself.
 
-`expected.json` holds what an independent parser reads from each file: Biopython 1.85 for alignments,
-GenBank and AB1; a few lines of plain Python for SAM (which bases belong at which reference position).
+`expected.json` holds what an independent parser reads from each file: Biopython 1.85 for alignments and
+GenBank; a few lines of plain Python for SAM (which bases belong at which reference position).
 `node tests/compat/run.js` opens every file in headless Chrome through the real file picker and compares.
 Regenerate the answers with `python scratch/build_real_expected.py`.
 
 Reads files: open `pysam_*.sam` on their own. For `htslib_range.bam`, open `htslib_ce_CHROMOSOME_II.fa` first,
-then the BAM (34 reads pile onto that reference). `htslib_colons.bam` has no reads; on its own it explains
+then the BAM or `htslib_range.cram` (the same 34 reads, decoded in the browser against that reference).
+`htslib_colons.bam` has no reads; on its own it explains
 that a BAM needs its reference first.
 
 | File | Source | Licence | Viewer result |
 |---|---|---|---|
-| [`bp_310.ab1`](https://github.com/biopython/biopython/tree/08fc09086afe/Tests/Abi/310.ab1) | Biopython test suite | Biopython License / BSD 3-Clause | as expected (1 rows); 1 name(s) differ, e.g. "bp_310" vs "D11F" |
-| [`bp_3730.ab1`](https://github.com/biopython/biopython/tree/08fc09086afe/Tests/Abi/3730.ab1) | Biopython test suite | Biopython License / BSD 3-Clause | as expected (1 rows); 1 name(s) differ, e.g. "bp_3730" vs "226032_C-ME-18_pCAGseqF" |
 | [`bp_DOA_prot.msf`](https://github.com/biopython/biopython/tree/08fc09086afe/Tests/msf/DOA_prot.msf) | Biopython test suite | Biopython License / BSD 3-Clause | as expected (12 rows) |
 | [`bp_EU851978.gbk`](https://github.com/biopython/biopython/tree/08fc09086afe/Tests/GenBank/EU851978.gbk) | Biopython test suite | Biopython License / BSD 3-Clause | as expected (1 rows); 1 name(s) differ, e.g. "EU851978" vs "EU851978.1" |
 | [`bp_NC_005816.gb`](https://github.com/biopython/biopython/tree/08fc09086afe/Tests/GenBank/NC_005816.gb) | Biopython test suite | Biopython License / BSD 3-Clause | as expected (1 rows); 1 name(s) differ, e.g. "NC_005816" vs "NC_005816.1" |
@@ -49,6 +48,7 @@ that a BAM needs its reference first.
 | [`htslib_ce_CHROMOSOME_II.fa`](https://github.com/samtools/htslib/tree/d3cc9553d89d/test/ce.fa) | htslib test data | MIT/Expat | reference for `htslib_range.bam` (CHROMOSOME_II extracted from ce.fa) |
 | [`htslib_colons.bam`](https://github.com/samtools/htslib/tree/d3cc9553d89d/test/colons.bam) | htslib test data | MIT/Expat | as expected |
 | [`htslib_range.bam`](https://github.com/samtools/htslib/tree/d3cc9553d89d/test/range.bam) | htslib test data | MIT/Expat | as expected (1 rows) |
+| [`htslib_range.cram`](https://github.com/samtools/htslib/tree/d3cc9553d89d/test/range.cram) | htslib test data | MIT/Expat | as expected (1 rows) |
 | [`ncbi_NC_012920_human_mito.gb`](https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=NC_012920.1&rettype=gbwithparts&retmode=text) | NCBI RefSeq via E-utilities | public (NCBI places no restrictions) | as expected (1 rows); 1 name(s) differ, e.g. "NC_012920" vs "NC_012920.1" |
 | [`pfam_PF00046_seed.sto`](https://www.ebi.ac.uk/interpro/api/entry/pfam/PF00046/?annotation=alignment:seed) | Pfam seed via InterPro API | CC0 | as expected (136 rows) |
 | [`pysam_ex1.fa`](https://github.com/pysam-developers/pysam/tree/ba2e6c124398/tests/pysam_data/ex1.fa) | pysam test data | MIT | as expected (2 rows) |
@@ -59,4 +59,4 @@ that a BAM needs its reference first.
 | [`rfam_RF00005_tRNA.sto`](https://rfam.org/family/RF00005/alignment/stockholm) | Rfam seed | CC0 | as expected (954 rows) |
 
 Name differences in the last column are expected: the viewer names a GenBank record by LOCUS (without
-the `.1` version) and an AB1 trace by its file name, where Biopython uses the accession or sample name.
+the `.1` version), where Biopython uses the accession.

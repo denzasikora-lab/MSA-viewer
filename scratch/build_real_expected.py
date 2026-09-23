@@ -1,5 +1,5 @@
 """Independent reference answers for examples/real/ and examples/synthetic/,
-read with Biopython (alignments, GenBank, AB1) or a few lines of plain Python
+read with Biopython (alignments, GenBank) or a few lines of plain Python
 (SAM), never with ViewAlign's own parsers.
 
 Writes expected.json into each folder: the sequence names and sequences
@@ -113,6 +113,8 @@ SPECIAL = {
     'real': {
         # 34 reads on CHROMOSOME_II, counted from the BAM records themselves
         'htslib_range.bam': {'reference_file': 'htslib_ce_CHROMOSOME_II.fa', 'reads_on_reference': 34},
+        # the same reads as range.bam, as CRAM; decoded in the browser against the reference
+        'htslib_range.cram': {'reference_file': 'htslib_ce_CHROMOSOME_II.fa', 'reads_on_reference': 34},
         'htslib_colons.bam': {'reads_needs_reference': True, 'note': 'reference names contain ":" "-" ","; no reads'},
         # Header claims 62 columns but 11 of 12 sequences say Len: 250; Biopython refuses it.
         # The viewer reads the 12 sequences as written, which is the useful outcome.

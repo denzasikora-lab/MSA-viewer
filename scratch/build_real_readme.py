@@ -44,12 +44,13 @@ def url(name):
 lines = ['# Real-world input files', '',
          'Files written by other programs and databases, downloaded on 2026-09-23 and kept byte-for-byte',
          '(see `.gitattributes`) so a reviewer can check how ViewAlign reads files it did not write itself.', '',
-         '`expected.json` holds what an independent parser reads from each file: Biopython 1.85 for alignments,',
-         'GenBank and AB1; a few lines of plain Python for SAM (which bases belong at which reference position).',
+         '`expected.json` holds what an independent parser reads from each file: Biopython 1.85 for alignments and',
+         'GenBank; a few lines of plain Python for SAM (which bases belong at which reference position).',
          '`node tests/compat/run.js` opens every file in headless Chrome through the real file picker and compares.',
          'Regenerate the answers with `python scratch/build_real_expected.py`.', '',
          'Reads files: open `pysam_*.sam` on their own. For `htslib_range.bam`, open `htslib_ce_CHROMOSOME_II.fa` first,',
-         'then the BAM (34 reads pile onto that reference). `htslib_colons.bam` has no reads; on its own it explains',
+         'then the BAM or `htslib_range.cram` (the same 34 reads, decoded in the browser against that reference).',
+         '`htslib_colons.bam` has no reads; on its own it explains',
          'that a BAM needs its reference first.', '',
          '| File | Source | Licence | Viewer result |', '|---|---|---|---|']
 names = sorted(set(report) | {'htslib_ce_CHROMOSOME_II.fa'})
@@ -64,7 +65,7 @@ for name in names:
         result = 'reference for `htslib_range.bam` (CHROMOSOME_II extracted from ce.fa)'
     lines.append('| [`%s`](%s) | %s | %s | %s |' % (name, url(name), src[0], src[1], result.replace('|', '\\|')))
 lines += ['', 'Name differences in the last column are expected: the viewer names a GenBank record by LOCUS (without',
-          'the `.1` version) and an AB1 trace by its file name, where Biopython uses the accession or sample name.']
+          'the `.1` version), where Biopython uses the accession.']
 with open(os.path.join(ROOT, 'examples', 'real', 'README.md'), 'w', encoding='utf-8', newline='\n') as f:
     f.write('\n'.join(lines) + '\n')
 print('wrote', len(names), 'rows')

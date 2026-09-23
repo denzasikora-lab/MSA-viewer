@@ -27,3 +27,6 @@ Regenerate with `python scratch/build_compat_examples.py`.
 | `msf_gcg_tilde_dot_gaps.msf` | GCG MSF with "PileUp" header, "~" and "." gaps, residues in groups of 10 | 6 rows × 111 columns; "~" and "." gaps become "-" |
 | `genbank_two_records_join.gb` | Two GenBank records in one file; CDS locations use join() and complement() | 2 rows × 111 columns |
 | `unsupported_embl.embl` | EMBL flatfile (not a supported format) | refused with a message; should be refused with a message, not loaded as garbage |
+| `reads_bam_no_extension.dat` | BAM renamed to .dat: recognised by its BGZF/"BAM\1" content, piled onto ../synthetic/synth_ref.fa | 6 reads onto `../synthetic/synth_ref.fa` |
+| `reads_cram_no_extension.dat` | CRAM renamed to .dat: recognised by its "CRAM" magic, decoded in the browser onto ../real/htslib_ce_CHROMOSOME_II.fa | 34 reads onto `../real/htslib_ce_CHROMOSOME_II.fa` |
+| `reads_cram_alone.cram` | CRAM opened with nothing loaded | message: open the reference first; explains that the reference comes first |

@@ -244,6 +244,21 @@ write('unsupported_embl.embl', '\n'.join(embl) + '\n')
 expect('unsupported_embl.embl', 'EMBL flatfile (not a supported format)', reject='.',
        note='should be refused with a message, not loaded as garbage')
 
+# ---- Reads files with no telling extension: recognised by content ----------
+import shutil
+shutil.copyfile(os.path.join(ROOT, 'examples', 'synthetic', 'synth_reads.bam'), os.path.join(OUT, 'reads_bam_no_extension.dat'))
+expected['reads_bam_no_extension.dat'] = {
+    'what': 'BAM renamed to .dat: recognised by its BGZF/"BAM\\1" content, piled onto ../synthetic/synth_ref.fa',
+    'reference_file': '../synthetic/synth_ref.fa', 'reads_on_reference': 6, 'note': ''}
+shutil.copyfile(os.path.join(ROOT, 'examples', 'real', 'htslib_range.cram'), os.path.join(OUT, 'reads_cram_no_extension.dat'))
+expected['reads_cram_no_extension.dat'] = {
+    'what': 'CRAM renamed to .dat: recognised by its "CRAM" magic, decoded in the browser onto ../real/htslib_ce_CHROMOSOME_II.fa',
+    'reference_file': '../real/htslib_ce_CHROMOSOME_II.fa', 'reads_on_reference': 34, 'note': ''}
+shutil.copyfile(os.path.join(ROOT, 'examples', 'real', 'htslib_range.cram'), os.path.join(OUT, 'reads_cram_alone.cram'))
+expected['reads_cram_alone.cram'] = {
+    'what': 'CRAM opened with nothing loaded', 'reads_needs_reference': True,
+    'note': 'explains that the reference comes first'}
+
 with open(os.path.join(OUT, 'expected.json'), 'w', encoding='utf-8', newline='\n') as f:
     json.dump(expected, f, indent=1)
 
@@ -254,7 +269,14 @@ readme = ["# Input-format edge cases", "",
           "Regenerate with `python scratch/build_compat_examples.py`.", "",
           "| File | What it tests | Expected |", "|---|---|---|"]
 for name, e in expected.items():
-    outcome = 'refused with a message' if e.get('reject') else '%d rows × %d columns' % (len(e['seqs']), max(len(s) for s in e['seqs']))
+    if e.get('reject'):
+        outcome = 'refused with a message'
+    elif e.get('reads_needs_reference'):
+        outcome = 'message: open the reference first'
+    elif e.get('reference_file'):
+        outcome = '%d reads onto `%s`' % (e['reads_on_reference'], e['reference_file'])
+    else:
+        outcome = '%d rows × %d columns' % (len(e['seqs']), max(len(s) for s in e['seqs']))
     if e.get('note'):
         outcome += '; ' + e['note']
     readme.append('| `%s` | %s | %s |' % (name, e['what'], outcome))

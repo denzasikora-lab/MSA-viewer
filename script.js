@@ -3177,8 +3177,10 @@ function _parseGenBankRecord(text) {
     // Flush last feature
     flushCurrentFeature();
 
-    // GenBank lowercase carries no soft-masking meaning, so store uppercase
-    const sequence = _sanitizeFastaSequence(seqParts.join('').toUpperCase(), false);
+    // GenBank lowercase carries no soft-masking meaning, so store uppercase.
+    // GenPept (protein) records share the format; sanitise them as protein.
+    const rawSeq = seqParts.join('').toUpperCase();
+    const sequence = _sanitizeFastaSequence(rawSeq, _isProteinFastaSequence(rawSeq));
     if (!sequence) return null;
 
     // Build header from metadata
@@ -4866,7 +4868,7 @@ async function readSequenceFile(file) {
     if (looksAb1ByName || (typeof AB1Parser !== 'undefined' && AB1Parser.looksLikeAb1(buf))) {
         const parsed = typeof AB1Parser !== 'undefined' ? AB1Parser.parse(buf) : null;
         if (parsed && parsed.sequence) {
-            const header = file.name.replace(/\.ab1$/i, '');
+            const header = file.name.replace(/\.[^.]+$/, ''); // any extension: detected by content
             state.ab1Traces[header] = parsed;
             return { text: `>${header}\n${parsed.sequence}\n`, header };
         }
@@ -5267,27 +5269,117 @@ function handleOpenBamClick() {
  * Load and parse a BAM or SAM file.
  */
 /**
- * Route a picked or dropped reads file. Returns true when it was handled here.
- * With an alignment loaded, BAM/SAM reads are piled onto it. A BAM with nothing
- * loaded has no reference to map onto, so say how to load it instead of letting
- * the text parser fail with "No valid sequences found". A SAM on its own still
- * goes through the text parser, which builds a pileup reference from the reads.
+ * What kind of reads file this is: 'bam', 'cram', 'sam' (by extension) or null.
+ * BAM and CRAM are also recognised by content, so a renamed file still routes.
  */
-function _routeReadsFile(file) {
+async function _sniffReadsKind(file) {
     const name = file && file.name || '';
+    if (/\.bam$/i.test(name)) return 'bam';
+    if (/\.cram$/i.test(name)) return 'cram';
+    if (/\.sam$/i.test(name)) return 'sam';
+    let head;
+    try {
+        head = new Uint8Array(await file.slice(0, 65536).arrayBuffer());
+    } catch (e) {
+        return null;
+    }
+    if (head[0] === 0x43 && head[1] === 0x52 && head[2] === 0x41 && head[3] === 0x4d) return 'cram'; // "CRAM"
+    if (typeof BamParser !== 'undefined' && await BamParser.sniffBam(head)) return 'bam';
+    return null;
+}
+
+/**
+ * Route a picked or dropped reads file. Resolves true when it was handled here.
+ * With an alignment loaded, BAM/CRAM/SAM reads are piled onto it. A BAM or CRAM
+ * with nothing loaded has no reference to map onto, so say how to load it
+ * instead of letting the text parser fail with "No valid sequences found". A SAM
+ * on its own still goes through the text parser, which builds a pileup
+ * reference from the reads.
+ */
+async function _routeReadsFile(file) {
+    const kind = await _sniffReadsKind(file);
+    if (!kind) return false;
     const hasAlignment = !!(state.seqs && state.seqs.length > 0);
-    if (/\.(bam|sam)$/i.test(name) && hasAlignment) {
-        handleBamFile({ target: { files: [file], value: '' } });
+    if (hasAlignment) {
+        handleBamFile({ target: { files: [file], value: '' }, readsKind: kind });
         return true;
     }
-    if (/\.bam$/i.test(name)) {
+    if (kind === 'bam' || kind === 'cram') {
+        const k = kind.toUpperCase();
         statusMessage.style.display = 'none';
-        showMessage('A BAM needs its reference first: open the reference sequence (FASTA or GenBank) ' +
-            'whose name matches the BAM’s @SQ SN, then open the BAM again to pile the reads onto it. ' +
+        showMessage(`A ${k} needs its reference first: open the reference sequence (FASTA or GenBank) ` +
+            `whose name matches the ${k}’s @SQ SN, then open the ${k} again to pile the reads onto it. ` +
             'A SAM file can also be opened on its own.', 9000);
         return true;
     }
     return false;
+}
+
+let _cramLibPromise = null;
+function _loadCramLib() {
+    if (window.gmodCRAM) return Promise.resolve(window.gmodCRAM);
+    if (!_cramLibPromise) {
+        _cramLibPromise = new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = 'vendor/gmod-cram/cram-bundle.js';
+            s.onload = () => window.gmodCRAM ? resolve(window.gmodCRAM) : reject(new Error('the CRAM reader did not initialise'));
+            s.onerror = () => { _cramLibPromise = null; reject(new Error('could not load the CRAM reader (vendor/gmod-cram)')); };
+            document.head.appendChild(s);
+        });
+    }
+    return _cramLibPromise;
+}
+
+/**
+ * Decode a whole CRAM file in the browser with @gmod/cram (JBrowse's CRAM
+ * reader, MIT, vendored in vendor/gmod-cram and loaded only when a CRAM is
+ * opened) into SAM text, for the same reads pipeline as SAM and BAM. CRAM
+ * stores reads as differences from the reference, so bases are rebuilt from
+ * the loaded sequence(s); reads on references that are not loaded are skipped.
+ */
+async function cramToSamText(file) {
+    const { CramFile } = await _loadCramLib();
+    const loaded = new Map();
+    for (const s of state.seqs || []) {
+        const name = String(s.fullHeader || s.header || '').trim().split(/\s+/)[0];
+        if (name && !loaded.has(name)) loaded.set(name, s.seq.replace(/[-.]/g, '').toUpperCase());
+    }
+    const filehandle = {
+        read: async (length, position) => new Uint8Array(await file.slice(position, position + length).arrayBuffer()),
+        readFile: async () => new Uint8Array(await file.arrayBuffer()),
+        stat: async () => ({ size: file.size }),
+        close: async () => {}
+    };
+    const cram = new CramFile({
+        filehandle,
+        checkSequenceMD5: false,
+        useSliceWorkerPool: false,
+        // 0-based half-open; an empty answer tells the reader the reference is unknown
+        fetchReferenceSequence: async (id, start, end, refName) => (loaded.get(refName) || '').substring(start, end)
+    });
+    const refInfo = await cram.getReferenceInfo();
+    const refs = refInfo.map(r => r.name);
+    let header = ((await cram.getHeaderText()) || '').split('\n').filter(l => l.startsWith('@'));
+    if (!header.some(l => l.startsWith('@SQ'))) header = refInfo.map(r => `@SQ\tSN:${r.name}\tLN:${r.length}`);
+    const out = header.slice();
+    const nContainers = await cram.containerCount();
+    for (let i = 0; i < nContainers; i++) {
+        const container = await cram.getContainerById(i);
+        if (!container) continue;
+        const h = await container.getHeader();
+        if (!h.numRecords) continue;
+        for (const landmark of h.landmarks) {
+            for (const r of await container.getSlice(landmark).getAllRecords()) {
+                const rname = refs[r.sequenceId];
+                if (!loaded.has(rname) || r.isSegmentUnmapped()) continue;
+                const mate = r.nextSequenceId < 0 ? '*' : (r.nextSequenceId === r.sequenceId ? '=' : (refs[r.nextSequenceId] || '*'));
+                out.push([r.readName || '*', r.flags, rname, r.start + 1, r.mappingQuality || 0,
+                    r.getCigarString() || '*', mate, r.nextStart >= 0 ? r.nextStart + 1 : 0,
+                    r.templateSize || 0, r.getReadBases() || '*', '*'].join('\t'));
+            }
+        }
+    }
+    return out.join('\n');
 }
 
 async function handleBamFile(event) {
@@ -5297,13 +5389,16 @@ async function handleBamFile(event) {
     showMessage('Loading BAM...', 0);
 
     try {
-        const ext = file.name.split('.').pop().toLowerCase();
+        const ext = event.readsKind || file.name.split('.').pop().toLowerCase();
         let buf;
 
         if (ext === 'sam') {
             // SAM is plain text - parse into pseudo-buffer
             const text = await file.text();
             buf = parseSAMToBuffer(text);
+        } else if (ext === 'cram') {
+            showMessage('Decoding CRAM...', 0);
+            buf = parseSAMToBuffer(await cramToSamText(file));
         } else {
             // BAM binary - decompress with browser's DecompressionStream
             buf = await BamParser.decompressBAM(file);
@@ -5343,7 +5438,7 @@ async function handleBamFile(event) {
 
         if (!matchedRef) {
             statusMessage.style.display = 'none';
-            showMessage('BAM reference does not match loaded sequences. ' +
+            showMessage(`${ext.toUpperCase()} reference does not match loaded sequences. ` +
                 'Load a reference FASTA first.', 5000);
             return;
         }
@@ -8476,6 +8571,29 @@ function _looksLikeUrl(text) {
 // dev server's /api/local-cat (read-only, same trust boundary as the
 // existing BLAST database file management, which already reads/writes
 // arbitrary local paths with no additional auth).
+// One or more GenBank/RefSeq accessions (e.g. "NC_012920.1 MN908947"),
+// separated by spaces, commas or new lines: fetched from NCBI and loaded.
+function _parseAccessionList(text) {
+    if (text.length > 5000 || text.startsWith('>')) return null;
+    const ids = text.split(/[\s,;]+/).filter(Boolean);
+    if (!ids.length || ids.length > 200) return null;
+    return ids.every(id => /^[A-Za-z]{1,6}_?\d{4,12}(\.\d+)?$/.test(id)) ? ids : null;
+}
+
+// NCBI E-utilities allows cross-origin requests, so this works on the static
+// deployment too. Nucleotide records first, then protein (GenPept).
+async function _fetchGenBankFromNcbi(ids) {
+    const base = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?rettype=gbwithparts&retmode=text&id='
+        + encodeURIComponent(ids.join(','));
+    for (const db of ['nuccore', 'protein']) {
+        const resp = await fetch(base + '&db=' + db);
+        if (!resp.ok) continue;
+        const text = await resp.text();
+        if (/^LOCUS\s/m.test(text)) return text;
+    }
+    throw new Error('NCBI returned no GenBank record for ' + ids.join(', '));
+}
+
 function _looksLikeLocalPath(text) {
     if (text.includes('\n') || text.length > 500 || text.startsWith('>')) return false;
     return /^[A-Za-z]:[\\/]/.test(text) || /^\//.test(text) || /^~[\\/]/.test(text) || /^\.\.?[\\/]/.test(text);
@@ -8503,6 +8621,19 @@ async function parseAndRender(isFromDrop = false) {
         } catch (err) {
             statusMessage.style.display = 'none';
             showMessage('Could not fetch URL: ' + err.message, 4000);
+            return;
+        }
+    }
+    const accessions = _parseAccessionList(inputText);
+    if (accessions) {
+        showMessage(`Fetching ${accessions.length === 1 ? accessions[0] : accessions.length + ' records'} from NCBI...`, 0);
+        try {
+            fastaInput.value = await _fetchGenBankFromNcbi(accessions);
+            state.currentFilename = state.currentFilename || (accessions.length === 1 ? accessions[0] : accessions.length + '_accessions');
+            return parseAndRender(isFromDrop);
+        } catch (err) {
+            statusMessage.style.display = 'none';
+            showMessage('Could not fetch from NCBI: ' + err.message, 6000);
             return;
         }
     }
@@ -17227,19 +17358,19 @@ function initializeAppUI() {
             dropZone.style.borderColor = 'var(--dropzone-border)';
             const file = e.dataTransfer.files[0];
             if (!file) return;
-            if (_routeReadsFile(file)) return;
+            // Chromium-only: capture a reusable handle (must call this
+            // synchronously off the drop event, before any await, but awaiting
+            // its result is fine) so Recent Files can actually re-read this file later.
+            const item = e.dataTransfer.items && e.dataTransfer.items[0];
+            const handlePromise = item && typeof item.getAsFileSystemHandle === 'function'
+                ? item.getAsFileSystemHandle().catch(() => null) : null;
+            if (await _routeReadsFile(file)) return;
             state.currentFilename = file.name;
             state.currentFilePath = '';
 
-            // Chromium-only: capture a reusable handle (must call this
-            // synchronously off the drop event, but awaiting its result is
-            // fine) so Recent Files can actually re-read this file later.
-            const item = e.dataTransfer.items && e.dataTransfer.items[0];
-            if (item && typeof item.getAsFileSystemHandle === 'function') {
-                try {
-                    const handle = await item.getAsFileSystemHandle();
-                    if (handle && handle.kind === 'file') state._pendingFileHandle = handle;
-                } catch (err) { /* unsupported or denied - fall back silently */ }
+            if (handlePromise) {
+                const handle = await handlePromise; // null if unsupported or denied
+                if (handle && handle.kind === 'file') state._pendingFileHandle = handle;
             }
 
             try {
@@ -17258,7 +17389,7 @@ function initializeAppUI() {
                 try {
                     const [handle] = await window.showOpenFilePicker({ multiple: false });
                     const file = await handle.getFile();
-                    if (_routeReadsFile(file)) return;
+                    if (await _routeReadsFile(file)) return;
                     state.currentFilename = file.name;
                     state.currentFilePath = '';
                     state._pendingFileHandle = handle;
@@ -17279,10 +17410,10 @@ function initializeAppUI() {
         });
     }
 
-    el('fileInput')?.addEventListener('change', (e) => {
+    el('fileInput')?.addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-        if (_routeReadsFile(file)) return;
+        if (await _routeReadsFile(file)) return;
         state.currentFilename = file.name;
         state.currentFilePath = '';
 

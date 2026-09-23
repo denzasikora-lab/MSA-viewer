@@ -55,6 +55,40 @@ async function gunzipBytes(bytes) {
 }
 
 /**
+ * Size of the BGZF block starting at `off`, from its "BC" extra subfield, or
+ * -1 when the bytes there are not a BGZF block header.
+ */
+function bgzfBlockSize(bytes, off) {
+    // gzip magic + FEXTRA flag; BGZF always sets FEXTRA
+    if (bytes[off] !== 0x1f || bytes[off + 1] !== 0x8b || !(bytes[off + 3] & 4)) return -1;
+    const xlen = bytes[off + 10] | (bytes[off + 11] << 8);
+    for (let p = off + 12; p < off + 12 + xlen; ) {
+        const slen = bytes[p + 2] | (bytes[p + 3] << 8);
+        if (bytes[p] === 66 && bytes[p + 1] === 67 && slen === 2) {
+            return (bytes[p + 4] | (bytes[p + 5] << 8)) + 1;
+        }
+        p += 4 + slen;
+    }
+    return -1;
+}
+
+/**
+ * True when `bytes` (the start of a file) is a BAM: a BGZF block whose
+ * content begins with the "BAM\1" magic. Lets a BAM be recognised by content
+ * whatever its file name.
+ */
+async function sniffBam(bytes) {
+    const bsize = bgzfBlockSize(bytes, 0);
+    if (bsize <= 0 || bsize > bytes.length) return false;
+    try {
+        const head = await gunzipBytes(bytes.subarray(0, bsize));
+        return head.length >= 4 && head[0] === 0x42 && head[1] === 0x41 && head[2] === 0x4d && head[3] === 0x01;
+    } catch (e) {
+        return false;
+    }
+}
+
+/**
  * Split a BGZF file into its gzip members. Returns null if the data is not
  * BGZF (a block header without the "BC" extra subfield).
  */
@@ -62,18 +96,7 @@ function splitBgzfBlocks(bytes) {
     const blocks = [];
     let off = 0;
     while (off < bytes.length) {
-        // gzip magic + FEXTRA flag; BGZF always sets FEXTRA
-        if (bytes[off] !== 0x1f || bytes[off + 1] !== 0x8b || !(bytes[off + 3] & 4)) return null;
-        const xlen = bytes[off + 10] | (bytes[off + 11] << 8);
-        let bsize = -1;
-        for (let p = off + 12; p < off + 12 + xlen; ) {
-            const slen = bytes[p + 2] | (bytes[p + 3] << 8);
-            if (bytes[p] === 66 && bytes[p + 1] === 67 && slen === 2) {
-                bsize = (bytes[p + 4] | (bytes[p + 5] << 8)) + 1;
-                break;
-            }
-            p += 4 + slen;
-        }
+        const bsize = bgzfBlockSize(bytes, off);
         if (bsize <= 0 || off + bsize > bytes.length) return null;
         // ISIZE (last 4 bytes) of 0 marks an empty block, e.g. the BGZF EOF marker
         const isize = new DataView(bytes.buffer, bytes.byteOffset + off + bsize - 4, 4).getUint32(0, true);
@@ -425,6 +448,7 @@ function checkRefMatch(bamRefNames, bamRefLengths, loadedSeqs) {
 
 window.BamParser = {
     decompressBAM,
+    sniffBam,
     parseBAMHeader,
     parseBAMRecord,
     parseBAMRecords,

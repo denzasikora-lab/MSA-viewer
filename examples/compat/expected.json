@@ -375,5 +375,22 @@
   "what": "EMBL flatfile (not a supported format)",
   "note": "should be refused with a message, not loaded as garbage",
   "reject": "."
+ },
+ "reads_bam_no_extension.dat": {
+  "what": "BAM renamed to .dat: recognised by its BGZF/\"BAM\\1\" content, piled onto ../synthetic/synth_ref.fa",
+  "reference_file": "../synthetic/synth_ref.fa",
+  "reads_on_reference": 6,
+  "note": ""
+ },
+ "reads_cram_no_extension.dat": {
+  "what": "CRAM renamed to .dat: recognised by its \"CRAM\" magic, decoded in the browser onto ../real/htslib_ce_CHROMOSOME_II.fa",
+  "reference_file": "../real/htslib_ce_CHROMOSOME_II.fa",
+  "reads_on_reference": 34,
+  "note": ""
+ },
+ "reads_cram_alone.cram": {
+  "what": "CRAM opened with nothing loaded",
+  "reads_needs_reference": true,
+  "note": "explains that the reference comes first"
  }
 }
