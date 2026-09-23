@@ -326,7 +326,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     multiple sequence alignments. It handles DNA, RNA, protein, and coding sequence (CDS)
     data - from a handful of sequences to thousands. No installation is required; the viewer
     runs entirely in your browser. An optional local Node.js server adds MAFFT realignment,
-    BLAST search, SSH remote access, and BAM/CRAM support.
+    BLAST search, and SSH remote access.
   </p>
   <p>Key capabilities:</p>
   <ul>
@@ -347,7 +347,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>URL parameter</td><td>Open the viewer with <code>?url=&lt;fasta-url&gt;</code> (optional <code>&amp;title=</code>). See the starter alignment below</td></tr>
     <tr><td>SAM Paste</td><td>Paste SAM text directly - auto-detected and parsed with CIGAR expansion</td></tr>
     <tr><td>SSH Remote</td><td>Fetch files from a remote server via SSH (requires server with SSH configuration)</td></tr>
-    <tr><td>BLAST Retrieval</td><td>Retrieve GenBank sequences by accession and align them automatically (optional server)</td></tr>
+    <tr><td>Accession</td><td>Paste one or more GenBank/RefSeq accessions (nucleotide or protein, separated by spaces, commas or new lines) and click <strong>Load</strong>; the records are fetched from NCBI. Works without the server</td></tr>
   </table>
   <p>
     A small public starter alignment is included so you can feel the viewer without
@@ -371,13 +371,13 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>FASTA</td><td><code>.fasta</code>, <code>.fa</code></td><td>Standard FASTA with <code>&gt;</code> headers; wrapped lines, lowercase, <code>.</code> gaps and <code>;</code> comment lines are accepted</td></tr>
     <tr><td>MSF</td><td><code>.msf</code></td><td>GCG Multiple Sequence Format with header block</td></tr>
     <tr><td>SAM</td><td><code>.sam</code></td><td>Tab-separated alignment records; auto-detected. See 2.5</td></tr>
-    <tr><td>BAM</td><td><code>.bam</code></td><td>Read in the browser; open the reference sequence first. See 2.5</td></tr>
+    <tr><td>BAM</td><td><code>.bam</code></td><td>Read in the browser; open the reference sequence first. Recognised by content. See 2.5</td></tr>
+    <tr><td>CRAM</td><td><code>.cram</code></td><td>Decoded in the browser against the loaded reference; open the reference sequence first. Recognised by content. See 2.5</td></tr>
     <tr><td>Clustal</td><td><code>.aln</code></td><td>Clustal-format output of ClustalW, Clustal Omega, MUSCLE, MSAProbs, ProbCons and Kalign; residue counts and conservation lines are ignored</td></tr>
     <tr><td>PHYLIP</td><td><code>.phy</code></td><td>Strict (10-character names) and relaxed (names of any length), each sequential or interleaved; the layout that gives every sequence the declared length is used</td></tr>
     <tr><td>NEXUS</td><td><code>.nex</code>, <code>.nexus</code></td><td>NEXUS <code>DATA</code> or <code>CHARACTERS</code> block, sequential or interleaved; <code>[comments]</code> are ignored and quoted taxon names may contain spaces</td></tr>
     <tr><td>Stockholm</td><td><code>.sto</code>, <code>.stockholm</code></td><td>Pfam/Rfam Stockholm, sequential or interleaved; <code>#=GF</code>/<code>#=GS</code>/<code>#=GR</code>/<code>#=GC</code> lines are skipped</td></tr>
-    <tr><td>GenBank</td><td><code>.gb</code>, <code>.gbk</code></td><td>Flatfile import from <code>LOCUS</code>/<code>FEATURES</code>/<code>ORIGIN</code>; every record in a multi-record file loads as its own row; accession lookup can also retrieve GenBank records</td></tr>
-    <tr><td>AB1</td><td><code>.ab1</code></td><td>Sanger chromatogram; the base calls load as a sequence and the trace stays available for viewing</td></tr>
+    <tr><td>GenBank</td><td><code>.gb</code>, <code>.gbk</code></td><td>Flatfile import from <code>LOCUS</code>/<code>FEATURES</code>/<code>ORIGIN</code>; every record in a multi-record file loads as its own row; records can also be fetched by accession (1.2)</td></tr>
   </table>
 
   <h3 id="gs-interface">1.4 Interface Layout</h3>
@@ -506,14 +506,17 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     one reference, the reference with the most reads is shown and the others are named in the status line.
   </p>
   <p>
-    <strong>SAM or BAM onto a reference:</strong> open the reference sequence first (FASTA or GenBank,
-    named as in the file's <code>@SQ SN:</code> line), then open the SAM or BAM. The reads are laid out in
-    the Reads view. BAM is decompressed in the browser, so no server is needed. Opening a BAM with nothing
-    loaded shows how to load it instead.
+    <strong>SAM, BAM or CRAM onto a reference:</strong> open the reference sequence first (FASTA or GenBank,
+    named as in the file's <code>@SQ SN:</code> line), then open the reads file. The reads are laid out in
+    the Reads view. Everything happens in the browser, so no server is needed: BAM is decompressed
+    directly, and CRAM, which stores reads as differences from the reference, is decoded against the loaded
+    sequence by the JBrowse CRAM reader (<code>@gmod/cram</code>, loaded only when a CRAM is opened). Reads on
+    references that are not loaded are skipped. BAM and CRAM are recognised by their content, whatever the
+    file is called. Opening a BAM or CRAM with nothing loaded shows how to load it instead.
   </p>
   <p>
     The optional server also exposes <code>POST /api/bam2sam</code> (see 11.4), which converts a BAM or
-    CRAM file on the server's disk to SAM text with <code>samtools view -h</code>.
+    CRAM file on the server's disk to SAM text with <code>samtools view -h</code>, for scripted use.
   </p>
 
   <h3 id="in-snapshot">2.6 Snapshots (Save &amp; Load)</h3>
@@ -1823,7 +1826,7 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
     <li>Node.js >= 16</li>
     <li><strong>MAFFT</strong> - for realignment (binary in PATH)</li>
     <li><strong>BLAST+</strong> - for local BLAST search (optional)</li>
-    <li><strong>samtools</strong> - for BAM/CRAM conversion (optional)</li>
+    <li><strong>samtools</strong> - only for the <code>/api/bam2sam</code> endpoint (optional; the viewer reads BAM and CRAM itself)</li>
     <li><strong>SSH key</strong> - for remote file access (optional)</li>
   </ul>
   <p>Environment variables:</p>
@@ -1945,8 +1948,14 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
       <td>Katoh K, Standley DM (2013) <em>Mol Biol Evol</em> 30:772-780</td>
     </tr>
     <tr>
+      <td><strong>@gmod/cram</strong></td>
+      <td>CRAM decoding in the browser (<code>vendor/gmod-cram</code>, v14.1.1, unmodified)</td>
+      <td>MIT</td>
+      <td>Diesh C et al. (2023) <em>Genome Biol</em> 24:74</td>
+    </tr>
+    <tr>
       <td><strong>samtools</strong></td>
-      <td>BAM/CRAM to SAM conversion on the server (<code>samtools view</code>)</td>
+      <td>BAM/CRAM to SAM conversion for the optional server endpoint (<code>samtools view</code>)</td>
       <td>MIT</td>
       <td>Li H et al. (2009) <em>Bioinformatics</em> 25:2078-2079</td>
     </tr>
@@ -2025,7 +2034,7 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
   </ul>
 
   <p style="margin-top:16px;font-size:13px;color:var(--muted);">
-    MAFFT is included as a compiled WebAssembly binary under the BSD license, and MAFFT's own copyright applies to that binary. samtools and BLAST+ are optional external programs and are not in this repository. GeneDoc, SPIN, Dotter, EMBOSS, Easel, and HMMER are cited for methods or formats; their source is not included.
+    MAFFT is included as a compiled WebAssembly binary under the BSD license, and MAFFT's own copyright applies to that binary. The JBrowse CRAM reader (@gmod/cram) is included unmodified in <code>vendor/gmod-cram</code> under the MIT license, with its licence file. samtools and BLAST+ are optional external programs and are not in this repository. GeneDoc, SPIN, Dotter, EMBOSS, Easel, and HMMER are cited for methods or formats; their source is not included.
     The ViewAlign source code itself is released under the <strong>MIT License</strong>.
   </p>
 </section>

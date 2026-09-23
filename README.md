@@ -8,7 +8,8 @@ No installation, no build step, no framework dependencies.
 ## Features
 
 - **Nine input formats with auto-detection**: FASTA, MSF, Clustal, PHYLIP, NEXUS, Stockholm,
-  GenBank flatfile, SAM, and BAM (read in the browser onto an open reference; CRAM via the optional server)
+  GenBank flatfile, SAM, BAM and CRAM (BAM and CRAM are read in the browser onto an open reference);
+  GenBank/RefSeq records can also be fetched by accession
 - **Four view modes**: Full, Block, Canvas (viewport-culled; Full and Block window
   the alignment above about 500,000 residues, and Canvas auto-activates above
   5 million), and Reads (IGV-style tracks for mapped SAM/BAM data)
@@ -30,8 +31,7 @@ No installation, no build step, no framework dependencies.
 - **Publication export**: SVG (viewport or full), Word-compatible RTF with per-residue
   conservation shading, FASTA, Newick
 - **Shareable snapshots**: save and reopen a viewer state as JSON, standalone HTML, or URL
-- **Optional server**: local BLAST database hosting, SSH remote file loading, samtools
-  CRAM conversion
+- **Optional server**: local BLAST database hosting and SSH remote file loading
 
 ## Quick Start
 
