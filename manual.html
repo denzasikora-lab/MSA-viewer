@@ -1639,6 +1639,14 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     conservation vote. Use <strong>Manual</strong> when both automatic modes pick a boundary
     you can see is wrong on inspection, or when you already know the exact columns.
   </p>
+  <p>Parameters:</p>
+  <table>
+    <tr><th>Parameter</th><th>Default</th><th>Range</th><th>Meaning</th></tr>
+    <tr><td>Flank window</td><td>30 bp</td><td>5–200</td><td>Columns searched on each side of the detected SINE body</td></tr>
+    <tr><td>Min TSD</td><td>4 bp</td><td>2–30</td><td>Shortest duplication reported</td></tr>
+    <tr><td>Max TSD</td><td>20 bp</td><td>2–50</td><td>Longest duplication tried</td></tr>
+    <tr><td>Max div</td><td>20%</td><td>0–50</td><td>Largest mismatch fraction allowed between the upstream and downstream copies</td></tr>
+  </table>
   <p>
     Results show TSD sequence, position in 5' and 3' flanks, length, and mismatch count.
     TSDs are visually marked on the alignment and can be undone.
