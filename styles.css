@@ -346,7 +346,7 @@ html {
 
 /* Reduce padding for shade controls to fit without scrollbar */
 #shade-controls {
-    padding: 6px 6px;
+    padding: 0 6px 6px; /* top 0: the sticky detach handle sits flush */
     overflow-y: visible;
     max-height: none;
 }
@@ -377,10 +377,13 @@ html {
     font-weight: bold;
     color: #555;
     padding: 5px 10px;
-    margin: -15px -15px 8px -15px;
+    margin: 0 -15px 8px -15px;
     background: #f2f4f6;
     border-bottom: 1px solid #ddd;
     border-radius: 3px 3px 0 0;
+    position: sticky;
+    top: 0;
+    z-index: 3;
 }
 .panel-detach-handle:active {
     cursor: grabbing;
@@ -428,10 +431,20 @@ html {
     display: inline-block;
 }
 
-/* Keys panel has 6px padding, so its detach handle bleeds by 6px, not 15px;
-   -15px on top would pull it up under the menu bar */
+/* Detach handle is full-bleed at the top; padding-top: 0 so sticky top:0
+   does not slide the bar down onto the first control row (it did in Display,
+   the one menu that was sticky before, covering the Name Len slider). */
+.control-group:has(> .panel-detach-handle) {
+    padding-top: 0;
+    -webkit-backface-visibility: visible;
+    backface-visibility: visible;
+    will-change: auto;
+}
+/* Shade and Keys have 6px side padding, so their handles bleed by 6px, not 15px */
+#shade-controls > .panel-detach-handle,
 #shortcuts-controls > .panel-detach-handle {
-    margin: -6px -6px 8px -6px;
+    margin-left: -6px;
+    margin-right: -6px;
 }
 
 /* Raise active menu above neighbours */
@@ -856,6 +869,22 @@ button:hover {
     gap: 2px;
     min-width: auto;
     max-width: 180px;
+    position: relative;
+}
+/* The hover colour picker opens on top of its label, not beside it: shown
+   inline it pushed the row 50px right and past the panel's edge. */
+#blackColorPicker,
+#darkColorPicker,
+#lightColorPicker {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 44px;
+    height: 22px;
+    padding: 0;
+    z-index: 2;
+    cursor: pointer;
 }
 
 .reset-button {
@@ -2695,7 +2724,7 @@ span.column-selected {
 #shortcuts-section .control-group {
     min-width: 260px;
     max-width: min(340px, calc(100vw - 12px));
-    padding: 6px;
+    padding: 0 6px 6px; /* top 0: the sticky detach handle sits flush */
 }
 .keys-grid {
     display: grid;
@@ -2818,11 +2847,6 @@ span.column-selected {
 #display-controls {
     max-width: 520px;
     min-width: 360px;
-}
-#display-controls .panel-detach-handle {
-    position: sticky;
-    top: 0;
-    z-index: 2;
 }
 .shade-mode-label {
     margin-right: 8px;
