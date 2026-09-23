@@ -1839,7 +1839,8 @@ function makeControlGroupDetachable(section, group, handle, dockBtn) {
 }
 
 function setupMenuDocking() {
-    document.querySelectorAll('.standard-menu-group .menu-section').forEach(section => {
+    // Keys sits outside the standard group (right-aligned) but detaches the same way
+    document.querySelectorAll('.standard-menu-group .menu-section, #shortcuts-section').forEach(section => {
         if (section.id === 'groups-menu-section') return;
         const group = section.querySelector(':scope > .control-group');
         if (!group) return;
@@ -3101,7 +3102,7 @@ function _cigarRefSpan(cigar) {
  */
 function parseGenBank(text) {
     const lines = text.split(/\r?\n/);
-    let locus = '', definition = '', accession = '', organism = '', version = '';
+    let locus = '', definition = '', accession = '', organism = '', lineage = '', version = '';
     let inFeatures = false, inOrigin = false, inOrganism = false;
     let seqParts = [];
     const features = [];
@@ -3124,7 +3125,8 @@ function parseGenBank(text) {
         // HEADER fields
         if (/^LOCUS\s+/i.test(trimmed)) {
             const parts = trimmed.split(/\s+/);
-            if (parts.length > 1) locus = parts.slice(1).join(' ');
+            // LOCUS name is the first token; the rest is length/type/date
+            if (parts.length > 1) locus = parts[1];
             continue;
         }
         if (/^DEFINITION\s+/i.test(trimmed)) {
@@ -3147,7 +3149,8 @@ function parseGenBank(text) {
             continue;
         }
         if (inOrganism && /^\s{5,}\S/.test(line)) {
-            organism += ' ' + trimmed;
+            // Indented lines under ORGANISM are the taxonomic lineage
+            lineage = lineage ? `${lineage} ${trimmed}` : trimmed;
             continue;
         } else {
             inOrganism = false;
@@ -3202,29 +3205,35 @@ function parseGenBank(text) {
     // Flush last feature
     flushCurrentFeature();
 
-    const sequence = seqParts.join('');
+    // GenBank lowercase carries no soft-masking meaning, so store uppercase
+    const sequence = _sanitizeFastaSequence(seqParts.join('').toUpperCase(), false);
     if (!sequence) return null;
 
     // Build header from metadata
-    let header = locus || (accession ? `${accession}` : 'GenBank_import');
+    const name = locus || accession || 'GenBank_import';
+    let fullHeader = name;
     if (organism) {
         const org = organism.split(/[;.]/)[0]?.trim();
-        if (org) header += ` [${org}]`;
+        if (org) fullHeader += ` [${org}]`;
     }
     if (definition) {
         const def = definition.length > 80 ? definition.substring(0, 77) + '...' : definition;
-        header += ` ${def}`;
+        fullHeader += ` ${def}`;
     }
 
     // Store GenBank annotations in state for display
     state._genbankAnnotations = {
-        locus, definition, accession, version, organism,
+        locus, definition, accession, version, organism, lineage,
         features, sequenceLength: sequence.length
     };
 
+    // Same record shape as the FASTA parser; downstream code (e.g.
+    // updateSourceInfo) reads gaplessPositions unconditionally
     return [{
-        header: header,
+        header: name,
+        fullHeader: fullHeader,
         seq: sequence,
+        gaplessPositions: calculateGaplessPositions(sequence),
         _genbank: { accession, organism, features }
     }];
 }
@@ -5143,6 +5152,30 @@ function handleOpenBamClick() {
 /**
  * Load and parse a BAM or SAM file.
  */
+/**
+ * Route a picked or dropped reads file. Returns true when it was handled here.
+ * With an alignment loaded, BAM/SAM reads are piled onto it. A BAM with nothing
+ * loaded has no reference to map onto, so say how to load it instead of letting
+ * the text parser fail with "No valid sequences found". A SAM on its own still
+ * goes through the text parser, which builds a pileup reference from the reads.
+ */
+function _routeReadsFile(file) {
+    const name = file && file.name || '';
+    const hasAlignment = !!(state.seqs && state.seqs.length > 0);
+    if (/\.(bam|sam)$/i.test(name) && hasAlignment) {
+        handleBamFile({ target: { files: [file], value: '' } });
+        return true;
+    }
+    if (/\.bam$/i.test(name)) {
+        statusMessage.style.display = 'none';
+        showMessage('A BAM needs its reference first: open the reference sequence (FASTA or GenBank) ' +
+            'whose name matches the BAM’s @SQ SN, then open the BAM again to pile the reads onto it. ' +
+            'A SAM file can also be opened on its own.', 9000);
+        return true;
+    }
+    return false;
+}
+
 async function handleBamFile(event) {
     const file = event.target.files[0];
     if (!file) return;
@@ -9320,6 +9353,10 @@ function handleKeyDown(e) {
     const isFormField = activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA' || activeEl.isContentEditable);
     if (isFormField) {
         if (activeEl.tagName === 'TEXTAREA') {
+            if (activeEl === fastaInput && (e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'l') {
+                el('loadButton')?.click(); // Ctrl+L = Load, as the Load button advertises
+                e.preventDefault();
+            }
             return; // let browser handle all keys in textarea (Input window etc.)
         }
         if ((e.ctrlKey || e.metaKey) && !e.altKey) {
@@ -9370,7 +9407,7 @@ function handleKeyDown(e) {
                     e.preventDefault();
                 }
                 break;
-            case 'del':
+            case 'delete': // e.key is 'Delete'; the old 'del' never matched
                 deleteSelected();
                 e.preventDefault();
                 break;
@@ -9391,8 +9428,16 @@ function handleKeyDown(e) {
                 e.preventDefault();
                 break;
             case 't':
+                // Chrome/Edge/Firefox reserve Ctrl+T for a browser tab; this only
+                // reaches the page in an installed-app window. Alt+T is the portable key.
                 openSelectedInNewTab();
                 e.preventDefault();
+                break;
+            case 'l':
+                if (!e.shiftKey && !e.altKey) {
+                    el('loadButton')?.click();
+                    e.preventDefault();
+                }
                 break;
             case 'a':
                 selectAllSequences();
@@ -9429,14 +9474,14 @@ function handleKeyDown(e) {
             case 'k':
                 if (e.shiftKey) {
                     copyConsensus();
+                    e.preventDefault();
                 }
-                e.preventDefault();
                 break;
             case 'j':
                 if (e.shiftKey) {
                     copySelectedConsensus();
+                    e.preventDefault();
                 }
-                e.preventDefault();
                 break;
             case 'v':
                 if (e.shiftKey) {
@@ -9445,14 +9490,14 @@ function handleKeyDown(e) {
                 }
                 break;
             case 'd':
-                if (e.shiftKey) {
-                    deleteSelectedColumns();
-                } else {
-                    deleteSelectedColumns(true);
+                // Only take Ctrl+D from the browser (bookmark) when there is something to delete
+                if (state.selectedColumns.size > 0) {
+                    deleteSelectedColumns(!e.shiftKey);
+                    e.preventDefault();
                 }
-                e.preventDefault();
                 break;
             case '+':
+            case '=': // Ctrl with the main-row +/= key reports '=' without Shift
                 adjustZoom(10);
                 e.preventDefault();
                 break;
@@ -9487,15 +9532,9 @@ function handleKeyDown(e) {
         }
     }
 
-    // Navigation shortcuts (non-Ctrl)
-    if (e.key === 'F3') {
-        if (e.shiftKey) {
-            // Previous search result (placeholder for future implementation)
-            showMessage("Previous search result (not implemented)", 2000);
-        } else {
-            // Next search result (placeholder for future implementation)
-            showMessage("Next search result (not implemented)", 2000);
-        }
+    // Alt+T: open selected in a new tab (e.code, since Alt+T types a symbol on macOS)
+    if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && e.code === 'KeyT') {
+        openSelectedInNewTab();
         e.preventDefault();
     }
 
@@ -17068,14 +17107,9 @@ function initializeAppUI() {
             dropZone.style.borderColor = 'var(--dropzone-border)';
             const file = e.dataTransfer.files[0];
             if (!file) return;
+            if (_routeReadsFile(file)) return;
             state.currentFilename = file.name;
             state.currentFilePath = '';
-
-            // Auto-detect BAM
-            if (/\.(bam|sam)$/i.test(file.name) && state.seqs && state.seqs.length > 0) {
-                handleBamFile({ target: { files: [file], value: '' } });
-                return;
-            }
 
             // Chromium-only: capture a reusable handle (must call this
             // synchronously off the drop event, but awaiting its result is
@@ -17104,13 +17138,10 @@ function initializeAppUI() {
                 try {
                     const [handle] = await window.showOpenFilePicker({ multiple: false });
                     const file = await handle.getFile();
+                    if (_routeReadsFile(file)) return;
                     state.currentFilename = file.name;
                     state.currentFilePath = '';
                     state._pendingFileHandle = handle;
-                    if (/\.(bam|sam)$/i.test(file.name) && state.seqs && state.seqs.length > 0) {
-                        handleBamFile({ target: { files: [file], value: '' } });
-                        return;
-                    }
                     fastaInput.value = (await readSequenceFile(file)).text;
                     parseAndRender(true);
                 } catch (err) {
@@ -17131,16 +17162,9 @@ function initializeAppUI() {
     el('fileInput')?.addEventListener('change', (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        if (_routeReadsFile(file)) return;
         state.currentFilename = file.name;
         state.currentFilePath = '';
-
-        // Auto-detect BAM: if reference already loaded and file is .bam/.sam
-        const isBam = /\.(bam|sam)$/i.test(file.name);
-        console.log('BAM auto-detect:', { name: file.name, isBam, hasSeqs: !!(state.seqs && state.seqs.length > 0) });
-        if (isBam && state.seqs && state.seqs.length > 0) {
-            handleBamFile({ target: { files: [file], value: '' } });
-            return;
-        }
 
         readSequenceFile(file).then(({ text }) => {
             fastaInput.value = text;
@@ -17234,11 +17258,6 @@ function initializeAppUI() {
         'snapshotOpenButton': openSelectedSnapshotFromInputMenu,
         'snapshotPathOpenButton': openSnapshotFromManualPath,
         'infoButton': openInfoModal,
-        'hotkeysIconBtn': () => {
-            openInfoModal();
-            const tip = document.getElementById('hotkeysTooltip');
-            if (tip) tip.style.display = 'none';
-        },
         'minimizeBtn': minimizeMenu,
         'zoomInButton': () => adjustZoom(10),
         'zoomOutButton': () => adjustZoom(-10),
@@ -17276,25 +17295,6 @@ function initializeAppUI() {
             showTooltipAt(_trimButtonTooltipHtml(), trimBtn, { html: true, className: 'trim-tip' });
         });
         trimBtn.addEventListener('blur', hideTooltip);
-    }
-
-    // Hotkeys icon hover tooltip
-    const hotkeysBtn = el('hotkeysIconBtn');
-    const hotkeysTip = el('hotkeysTooltip');
-    if (hotkeysBtn && hotkeysTip) {
-        let hideTimer = null;
-        hotkeysBtn.addEventListener('mouseenter', () => {
-            clearTimeout(hideTimer);
-            hotkeysTip.style.display = 'block';
-            const rect = hotkeysBtn.getBoundingClientRect();
-            hotkeysTip.style.top = (rect.bottom + 4) + 'px';
-            hotkeysTip.style.left = Math.min(rect.left, window.innerWidth - 310) + 'px';
-        });
-        hotkeysBtn.addEventListener('mouseleave', () => {
-            hideTimer = setTimeout(() => { hotkeysTip.style.display = 'none'; }, 300);
-        });
-        hotkeysTip.addEventListener('mouseenter', () => clearTimeout(hideTimer));
-        hotkeysTip.addEventListener('mouseleave', () => { hotkeysTip.style.display = 'none'; });
     }
 
     initializeGeneDocEditToolbar();

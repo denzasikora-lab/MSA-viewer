@@ -519,6 +519,49 @@ check('Dot plot: Ctrl+wheel zoom works (not silently killed by an ancestor captu
   return { pass: true, detail: `zoom changed from ${result.before} to ${result.after} on Ctrl+wheel` };
 });
 
+// Real file-input path (setInputFiles fires the same 'change' event a user's
+// file pick does). Synthetic files are the published examples/synthetic set.
+const SYNTH = require('path').join(__dirname, '..', '..', 'examples', 'synthetic');
+async function openSynthetic(page, name) {
+  await page.setInputFiles('#fileInput', require('path').join(SYNTH, name));
+  await page.waitForTimeout(2500);
+  return page.evaluate(() => ({ n: state.seqs.length, name: state.seqs[0] && state.seqs[0].header, msg: document.getElementById('statusMessage').innerText }));
+}
+
+check('GenBank file opens (parser returns the same record shape as FASTA)', async (page) => {
+  const r = await openSynthetic(page, 'synth_ref.gb');
+  if (r.n !== 1 || r.name !== 'synth_ref') return { pass: false, detail: JSON.stringify(r) };
+  return { pass: true, detail: `1 sequence named ${r.name}` };
+});
+
+check('BAM piles onto a loaded reference (multi-block BGZF decompresses in Chrome)', async (page) => {
+  await openSynthetic(page, 'synth_ref.fa');
+  const r = await openSynthetic(page, 'synth_reads.bam');
+  if (!/Loaded \d+ reads/.test(r.msg)) return { pass: false, detail: r.msg };
+  return { pass: true, detail: r.msg };
+});
+
+check('BAM opened with nothing loaded explains that the reference comes first', async (page) => {
+  const r = await openSynthetic(page, 'synth_reads.bam');
+  if (!/reference first/.test(r.msg)) return { pass: false, detail: r.msg };
+  return { pass: true, detail: 'guidance message shown' };
+});
+
+check('Ctrl+Delete deletes selected rows and Ctrl+= zooms in', async (page) => {
+  await openSynthetic(page, 'synth_msa.fa');
+  page.on('dialog', d => d.accept());
+  await page.evaluate(() => { state.selectedRows = new Set([0]); document.activeElement.blur(); });
+  await page.keyboard.press('Control+Delete');
+  await page.waitForTimeout(500);
+  const rows = await page.evaluate(() => state.seqs.length);
+  const z0 = await page.evaluate(() => document.getElementById('zoomSlider').value);
+  await page.keyboard.press('Control+Equal');
+  await page.waitForTimeout(300);
+  const z1 = await page.evaluate(() => document.getElementById('zoomSlider').value);
+  if (rows !== 5 || z1 === z0) return { pass: false, detail: `rows=${rows} (want 5), zoom ${z0}->${z1}` };
+  return { pass: true, detail: `6->5 rows, zoom ${z0}->${z1}` };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

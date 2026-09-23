@@ -428,6 +428,12 @@ html {
     display: inline-block;
 }
 
+/* Keys panel has 6px padding, so its detach handle bleeds by 6px, not 15px;
+   -15px on top would pull it up under the menu bar */
+#shortcuts-controls > .panel-detach-handle {
+    margin: -6px -6px 8px -6px;
+}
+
 /* Raise active menu above neighbours */
 #controls .menu-section.menu-open,
 .menu-section:has(.control-group:hover),
@@ -2691,6 +2697,27 @@ span.column-selected {
     max-width: min(340px, calc(100vw - 12px));
     padding: 6px;
 }
+.keys-grid {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 2px 12px;
+    font-family: monospace;
+    font-size: 10px;
+    padding: 0 6px 4px;
+}
+.keys-grid .keys-cat {
+    grid-column: 1 / -1;
+    font-family: sans-serif;
+    font-size: 10px;
+    font-weight: bold;
+    color: #666;
+    border-bottom: 1px solid #e3e3e3;
+    margin-top: 6px;
+    padding-bottom: 1px;
+}
+.keys-grid .keys-cat:first-child {
+    margin-top: 0;
+}
 
 /* Top-bar codon analysis controls (visible when Codon analysis is enabled) */
 .codon-mode-panel {
@@ -3402,11 +3429,9 @@ body.var-sites-only.hide-breakpoints .col-breakpoint { display: none !important;
 
 /* Keyboard shortcut displays — key column must not wrap */
 #infoModal > div strong,
-#shortcuts-controls strong,
-#hotkeysTooltip strong {
+#shortcuts-controls strong {
     white-space: nowrap;
 }
-#hotkeysTooltip { max-width: 340px !important; }
 
 /* Recent Files "Max" count now has its own explicit up/down buttons
    (visible, sized, and testable in headless Chrome, unlike native OS

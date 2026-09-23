@@ -1508,7 +1508,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="ac-tools">9.4 Analysis Tools</h3>
   <table>
     <tr><th>Tool</th><th>Description</th></tr>
-    <tr><td><strong>New Tab</strong></td><td>Open selected sequences in a new browser tab (<kbd>Ctrl+T</kbd>)</td></tr>
+    <tr><td><strong>New Tab</strong></td><td>Open selected sequences in a new browser tab (<kbd>Alt+T</kbd>)</td></tr>
     <tr><td><strong>TSD Finder</strong></td><td>Find target site duplications around SINE insertion boundaries</td></tr>
     <tr><td><strong>Tree</strong></td><td>Build UPGMA or Neighbor-Joining trees from selected sequences. Three distance correction models are available: p-distance (raw), Jukes-Cantor (JC69), and Kimura 2-parameter (K80). Switching UPGMA/NJ or model in the modal rebuilds the tree. Outputs a drawn tree (see below), a text view, and Newick with Copy Newick and Download .nwk options</td></tr>
     <tr><td><strong>Statistics</strong></td><td>Alignment summary in the style of esl-alistat (sequence count, length, residues, gaps) and pairwise identity in the style of esl-alipid (mean, minimum, and maximum). Identity here is identical residues divided by columns where both sequences are non-gap; esl-alipid divides by the shorter unaligned length. Full pairwise p-distance and identity matrices have copy-to-clipboard buttons. See Credits.</td></tr>
@@ -1638,7 +1638,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>SVG</td><td>Publication figures</td><td>Vector graphics - viewport or full alignment</td></tr>
     <tr><td>Newick (<code>.nwk</code>)</td><td>Phylogenetics tools</td><td>UPGMA or Neighbor-Joining tree with branch lengths, whichever the Tree window last built</td></tr>
     <tr><td>Standalone HTML</td><td>Sharing</td><td>Self-contained HTML snapshot page with embedded alignment</td></tr>
-    <tr><td>New tab</td><td>Quick copy</td><td>Selected sequences as plain FASTA text in a new browser tab (<kbd>Ctrl+T</kbd>)</td></tr>
+    <tr><td>New tab</td><td>Quick copy</td><td>Selected sequences as plain FASTA text in a new browser tab (<kbd>Alt+T</kbd>)</td></tr>
     <tr><td>Copy Selected</td><td>Clipboard</td><td>FASTA of selected sequences (<kbd>Ctrl+Shift+C</kbd>)</td></tr>
     <tr><td>Copy Columns</td><td>Clipboard</td><td>FASTA of selected columns (<kbd>Ctrl+Shift+V</kbd>)</td></tr>
   </table>
@@ -1742,36 +1742,42 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
   <h3 id="sc-general">10.1 General</h3>
   <table>
     <tr><th>Shortcut</th><th>Action</th></tr>
-    <tr><td><kbd>Ctrl+L</kbd></td><td>Load alignment from input</td></tr>
+    <tr><td><kbd>Ctrl+L</kbd></td><td>Load the pasted input</td></tr>
     <tr><td><kbd>Ctrl+H</kbd></td><td>Hide / show menu bar</td></tr>
+    <tr><td><kbd>Ctrl+M</kbd></td><td>Toggle all menu sections</td></tr>
     <tr><td><kbd>Ctrl+I</kbd></td><td>Show keyboard shortcuts reference</td></tr>
-    <tr><td><kbd>Ctrl+S</kbd></td><td>Save snapshot / preset</td></tr>
-    <tr><td><kbd>Ctrl+O</kbd></td><td>Load snapshot / preset</td></tr>
-    <tr><td><kbd>Ctrl+T</kbd></td><td>Open alignment in new tab</td></tr>
+    <tr><td><kbd>Ctrl+Shift+S</kbd></td><td>Save preset</td></tr>
+    <tr><td><kbd>Ctrl+O</kbd></td><td>Load preset</td></tr>
+    <tr><td><kbd>Alt+T</kbd></td><td>Open selected sequences in a new tab (Ctrl+T also works in an installed-app window; browsers keep Ctrl+T for their own tabs)</td></tr>
     <tr><td><kbd>Ctrl+F</kbd></td><td>Search motif</td></tr>
     <tr><td><kbd>Ctrl+Shift+F</kbd></td><td>Clear last search highlight</td></tr>
-    <tr><td><kbd>Ctrl+-</kbd></td><td>Zoom out</td></tr>
-    <tr><td><kbd>Ctrl++</kbd></td><td>Zoom in</td></tr>
-    <tr><td><kbd>Ctrl+B</kbd></td><td>Toggle bottom consensus bar</td></tr>
+    <tr><td><kbd>Ctrl+Alt+F</kbd></td><td>Clear all search highlights</td></tr>
+    <tr><td><kbd>Ctrl++ / Ctrl+-</kbd></td><td>Zoom in / out</td></tr>
+    <tr><td><kbd>Ctrl+0</kbd></td><td>Reset zoom</td></tr>
+    <tr><td><kbd>PgUp / PgDn</kbd></td><td>Scroll the alignment one page</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Close popups and menus</td></tr>
   </table>
 
   <h3 id="sc-editing">10.2 Editing</h3>
   <table>
     <tr><th>Shortcut</th><th>Action</th></tr>
     <tr><td><kbd>Ctrl+A</kbd></td><td>Select / deselect all sequences</td></tr>
-    <tr><td><kbd>Ctrl+C</kbd></td><td>Copy selected sequence names</td></tr>
-    <tr><td><kbd>Ctrl+Shift+C</kbd></td><td>Copy selected sequences (FASTA)</td></tr>
+    <tr><td><kbd>Ctrl+C</kbd></td><td>Copy the selected bases, or the selected sequences as ungapped FASTA</td></tr>
     <tr><td><kbd>Ctrl+Del</kbd></td><td>Delete selected sequences</td></tr>
     <tr><td><kbd>Ctrl+Z</kbd></td><td>Undo</td></tr>
     <tr><td><kbd>Ctrl+Y</kbd></td><td>Redo</td></tr>
     <tr><td><kbd>Ctrl+R</kbd></td><td>Reverse complement selected</td></tr>
     <tr><td><kbd>Ctrl+U</kbd></td><td>Duplicate selected</td></tr>
     <tr><td><kbd>Ctrl+↑</kbd></td><td>Move selected rows up</td></tr>
-    <tr><td><kbd>Ctrl+v</kbd></td><td>Move selected rows down</td></tr>
+    <tr><td><kbd>Ctrl+↓</kbd></td><td>Move selected rows down</td></tr>
     <tr><td><kbd>Ctrl+Home</kbd></td><td>Move selected to top</td></tr>
     <tr><td><kbd>Ctrl+End</kbd></td><td>Move selected to bottom</td></tr>
+    <tr><td><kbd>Ctrl+B</kbd></td><td>Insert consensus of the selection below it</td></tr>
+    <tr><td><kbd>Ctrl+Shift+K</kbd></td><td>Copy consensus</td></tr>
+    <tr><td><kbd>Ctrl+Shift+J</kbd></td><td>Copy consensus of the selected sequences</td></tr>
     <tr><td><kbd>Ctrl+Shift+V</kbd></td><td>Copy selected columns</td></tr>
-    <tr><td><kbd>Ctrl+Shift+D</kbd></td><td>Delete selected columns</td></tr>
+    <tr><td><kbd>Ctrl+Shift+D</kbd></td><td>Delete selected columns (asks first)</td></tr>
+    <tr><td><kbd>Ctrl+D</kbd></td><td>Delete selected columns without asking (undoable)</td></tr>
     <tr><td><kbd>Ctrl+Shift+R</kbd></td><td>Realign selected block (MAFFT)</td></tr>
   </table>
 

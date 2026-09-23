@@ -24,13 +24,63 @@ const CIGAR_OPS = 'MIDNSHP=X';
 /**
  * Decompress a BAM file (BGZF = concatenated gzip) into a Uint8Array.
  * Uses the browser's built-in DecompressionStream — no external libraries.
+ *
+ * Chrome's DecompressionStream stops after the first gzip member and errors
+ * on the rest ("Failed to fetch"), so a whole BGZF file cannot be piped
+ * through one stream. Each BGZF block is decompressed on its own instead,
+ * using the block size stored in its "BC" extra field.
  */
 async function decompressBAM(file) {
-    const ds = new DecompressionStream('gzip');
-    const stream = file.stream().pipeThrough(ds);
-    const response = new Response(stream);
-    const buf = await response.arrayBuffer();
-    return new Uint8Array(buf);
+    const bytes = new Uint8Array(await file.arrayBuffer());
+    const blocks = splitBgzfBlocks(bytes);
+    if (!blocks) {
+        // Not BGZF (plain single-member gzip): one stream is fine
+        return gunzipBytes(bytes);
+    }
+    const parts = await Promise.all(blocks.map(gunzipBytes));
+    let total = 0;
+    for (const p of parts) total += p.length;
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const p of parts) {
+        out.set(p, off);
+        off += p.length;
+    }
+    return out;
+}
+
+async function gunzipBytes(bytes) {
+    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
+/**
+ * Split a BGZF file into its gzip members. Returns null if the data is not
+ * BGZF (a block header without the "BC" extra subfield).
+ */
+function splitBgzfBlocks(bytes) {
+    const blocks = [];
+    let off = 0;
+    while (off < bytes.length) {
+        // gzip magic + FEXTRA flag; BGZF always sets FEXTRA
+        if (bytes[off] !== 0x1f || bytes[off + 1] !== 0x8b || !(bytes[off + 3] & 4)) return null;
+        const xlen = bytes[off + 10] | (bytes[off + 11] << 8);
+        let bsize = -1;
+        for (let p = off + 12; p < off + 12 + xlen; ) {
+            const slen = bytes[p + 2] | (bytes[p + 3] << 8);
+            if (bytes[p] === 66 && bytes[p + 1] === 67 && slen === 2) {
+                bsize = (bytes[p + 4] | (bytes[p + 5] << 8)) + 1;
+                break;
+            }
+            p += 4 + slen;
+        }
+        if (bsize <= 0 || off + bsize > bytes.length) return null;
+        // ISIZE (last 4 bytes) of 0 marks an empty block, e.g. the BGZF EOF marker
+        const isize = new DataView(bytes.buffer, bytes.byteOffset + off + bsize - 4, 4).getUint32(0, true);
+        if (isize > 0) blocks.push(bytes.subarray(off, off + bsize));
+        off += bsize;
+    }
+    return blocks;
 }
 
 /**
