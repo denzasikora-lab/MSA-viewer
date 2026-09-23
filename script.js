@@ -3437,7 +3437,8 @@ function _getSynCodons(code) {
 function _computeCodonAnalysis(seqs, len, frameOffset) {
     frameOffset = frameOffset || 0;
     if (seqs.length < 1) return null;
-    const ntRe = /^[ACGTUacgtuNn.\s-]+$/;
+    // IUPAC ambiguity letters are nucleotide too; codons containing them translate to X
+    const ntRe = /^[ACGTUNRYKMSWBDHVacgtunrykmswbdhv.\s-]+$/;
     for (const s of seqs) {
         const cleaned = s.seq.replace(/[-.\s]/g, '');
         if (cleaned.length > 0 && !ntRe.test(cleaned)) return null;
