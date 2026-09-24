@@ -632,6 +632,23 @@ check('MAFFT Speed sets -E (guide-tree runs) and changes the alignment', async (
   return { pass: true, detail: '-E 1/2/3 sent, three different alignments' };
 });
 
+// Sort buttons keep their arrow labels (an ASCII pass once turned them into "A->Z", "Lenv", "Simv")
+check('Sort buttons show A→Z / Len↓ / Sim↓ and Len↓ sorts longest first', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1500);
+  const r = await page.evaluate(() => {
+    const t = id => document.getElementById(id).textContent;
+    document.getElementById('sortByLengthButton').click();
+    const lens = state.seqs.map(s => s.seq.replace(/[-.]/g, '').length);
+    return { labels: [t('sortByNameButton'), t('sortByLengthButton'), t('sortBySimButton')], descending: lens.every((v, i) => i === 0 || lens[i - 1] >= v) };
+  });
+  const want = ['A\u2192Z', 'Len\u2193', 'Sim\u2193'];
+  if (JSON.stringify(r.labels) !== JSON.stringify(want)) return { pass: false, detail: 'labels ' + JSON.stringify(r.labels) };
+  if (!r.descending) return { pass: false, detail: 'Len\u2193 did not sort by descending ungapped length' };
+  return { pass: true, detail: 'labels ' + r.labels.join(' ') + ', length sort descending' };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
