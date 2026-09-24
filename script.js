@@ -9648,8 +9648,11 @@ function handleKeyDown(e) {
         switch (e.key.toLowerCase()) {
             case 'r':
                 if (e.shiftKey) {
-                    // Ctrl+Shift+R is browser hard refresh — only hijack when columns are selected
-                    if (state.selectedColumns.size >= 2) {
+                    // Ctrl+Shift+R is browser hard refresh — only hijack when there is a span of
+                    // 2+ adjacent columns to realign (two separate single columns are not one)
+                    const hasSpan = typeof RealignRegion !== 'undefined'
+                        && RealignRegion.columnRuns(state.selectedColumns).length > 0;
+                    if (hasSpan) {
                         realignSelectedBlock();
                         e.preventDefault();
                     }

@@ -649,6 +649,24 @@ check('Sort buttons show A→Z / Len↓ / Sim↓ and Len↓ sorts longest first'
   return { pass: true, detail: 'labels ' + r.labels.join(' ') + ', length sort descending' };
 });
 
+// Ctrl+Shift+R is the browser's hard refresh: take it only when a 2+ column span is selected
+check('Ctrl+Shift+R is left to the browser unless a 2+ column span is selected', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'synthetic', 'synth_msa.fa'));
+  await page.waitForTimeout(1200);
+  const press = (cols) => page.evaluate((cols) => {
+    state.selectedColumns = new Set(cols); document.activeElement.blur();
+    let prevented = null;
+    document.addEventListener('keydown', e => { prevented = e.defaultPrevented; }, { once: true });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'R', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    return prevented;
+  }, cols);
+  const separate = await press([3, 9]);
+  const span = await press([3, 4]);
+  if (separate !== false || span !== true) return { pass: false, detail: `two single columns prevented=${separate}, span prevented=${span}` };
+  return { pass: true, detail: 'separate single columns: browser keeps the key; span: realign' };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

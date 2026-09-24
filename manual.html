@@ -422,8 +422,10 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="gs-recent">1.5 Recent Files &amp; History</h3>
   <p>
     Click the <strong>Recent</strong> button to open the history dropdown.
-    It tracks every alignment loaded - by paste, file, URL, SSH, or BLAST -
-    and stores timestamps and sequence counts. Click any entry to reload it instantly.
+    It records every alignment loaded by paste, file, URL or SSH, with a timestamp and the
+    sequence count. Clicking an entry reloads a paste from its stored text and a file opened by
+    drag-and-drop or the file picker in Chromium browsers from its saved file handle; other
+    entries ask you to open the file again.
     History persists across browser sessions via <code>localStorage</code>.
   </p>
 
@@ -1346,7 +1348,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       gap pattern. Equivalent to GeneDoc's "Move / SlideText".
     </li>
     <li>
-      <strong>Type</strong> - click a cell and type any letter (nucleotide or amino acid)
+      <strong>Type</strong> - click a cell and type any letter (nucleotide or amino acid; stored in upper case)
       or <code>-</code> / <code>.</code> for a gap. Modifies the cell directly.
     </li>
     <li>
@@ -1847,7 +1849,7 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
   <h3 id="sv-setup">11.1 Setup</h3>
   <p>Requirements:</p>
   <ul>
-    <li>Node.js >= 16</li>
+    <li>Node.js - the server code needs version 14 or later (optional chaining, <code>??</code>); tested with Node.js 24</li>
     <li><strong>MAFFT</strong> - only for the <code>/api/mafft</code> endpoint (optional; path set by <code>MAFFT_BIN</code>). The viewer itself realigns in the browser</li>
     <li><strong>BLAST+</strong> - for local BLAST search (optional)</li>
     <li><strong>samtools</strong> - only for the <code>/api/bam2sam</code> endpoint (optional; the viewer reads BAM and CRAM itself)</li>
