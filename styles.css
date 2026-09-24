@@ -2657,9 +2657,9 @@ span.column-selected {
     font-weight: bold;
     color: #1a73e8;
 }
-/* Always-visible quick display-mode switcher in the top bar (mirrors the
-   Full/Block/Canvas/Reads radios buried in the Display dropdown, so the
-   active mode is visible and switchable without opening that menu). */
+/* Quick display-mode switcher in the top bar (mirrors the Full/Block/Canvas/
+   Reads radios in the Display dropdown). Shown only in Canvas or Reads mode,
+   as a way back; syncQuickModeSwitch() hides it in Full and Block. */
 .quick-mode-switch {
     display: inline-flex;
     align-items: stretch;

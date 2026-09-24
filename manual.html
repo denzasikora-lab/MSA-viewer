@@ -408,13 +408,16 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </p>
   <p>
     The top-right corner shows the current application version and the loaded file name.
+  In Canvas or Reads mode a Full / Block / Canvas / Reads switch also appears in the top bar, as a
+  quick way back; in Full and Block mode it is hidden.
   </p>
-  <div class="note">
-    <strong>[Screenshot needed]</strong> A full-window screenshot with the menu bar expanded,
-    labelling: the dropdown menu row, the always-visible top-bar mode switcher, the alignment
-    viewport below, and the top-right version/filename panel - this section is describing a
-    spatial layout that a single annotated image would convey far faster than the table above.
-  </div>
+  <figure style="margin: 12px 0;">
+    <img src="img/interface-layout.png" alt="The viewer with examples/svk_k4.fa loaded and the Display menu open; the menu row, the open menu, the alignment viewport and the version/file panel are outlined and numbered 1 to 4."
+      style="max-width: 100%; border: 1px solid #ddd; border-radius: 4px;">
+    <figcaption style="font-size: 11px; color: #666; margin-top: 5px;">
+      <code>examples/svk_k4.fa</code> in Block mode with the Display menu open. (1) the menu row; (2) an open dropdown, here Display; (3) the alignment viewport; (4) the version and the loaded file with its sequence count, column count and length range. Regenerate with <code>node scratch/build_manual_figures.js &amp;&amp; python scratch/build_manual_figures.py</code>.
+    </figcaption>
+  </figure>
 
   <h3 id="gs-recent">1.5 Recent Files &amp; History</h3>
   <p>
@@ -1084,12 +1087,6 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <strong>1</strong> when a flagged "conserved" region looks suspicious on inspection -
     it surfaces the individually-rare variants a percentage cutoff was built to filter out.
   </p>
-  <div class="note">
-    <strong>[Screenshot needed]</strong> A close-up of the Variable Sites control row showing
-    the %/count mode dropdown, threshold slider, and paired number box together, so their
-    left-to-right grouping and relative sizes are clear at a glance.
-  </div>
-
   <h4 id="di-var-breakpoints">5.2.2 Breakpoint Markers</h4>
   <p>
     When <strong>Variable sites only</strong> is active, a <strong>Breakpoints</strong> checkbox
@@ -1181,12 +1178,13 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>Non-synonymous mutations</td><td>Double red underline - amino acid changed</td></tr>
     <tr><td>AA translation row</td><td>Amino acid letters below each sequence; stops in bold red <code>*</code></td></tr>
   </table>
-  <div class="note">
-    <strong>[Screenshot needed]</strong> A codon-mode alignment showing at least one example
-    of each annotation in the table above (frame-position underlines, a stop codon, a
-    frameshift, a synonymous and a non-synonymous call) side by side, since all six are purely
-    colour/decoration distinctions that are hard to picture from a text description alone.
-  </div>
+  <figure style="margin: 12px 0;">
+    <img src="img/codon-example.png" alt="Codon analysis on examples/synthetic/synth_msa.fa, columns 1 to 60, with the translation under each row."
+      style="max-width: 100%; border: 1px solid #ddd; border-radius: 4px;">
+    <figcaption style="font-size: 11px; color: #666; margin-top: 5px;">
+      <code>examples/synthetic/synth_msa.fa</code>, columns 1-60 (the coding part; see <code>examples/synthetic/README.md</code>), conservation shading off, Standard code, frame auto-selected. Coloured underlines mark codon positions 1-3. <code>alpha_syn</code>: CTG&rarr;TTG in codon 3 is synonymous (green underline, still L). <code>alpha_mis</code>: GCA&rarr;GAA in codon 2 is non-synonymous (double red underline, A&rarr;E). <code>beta_stop</code>: TAC&rarr;TAA in codon 10 is an in-frame stop. <code>beta_fs</code>: the one-base gap at column 5 shifts the frame, so every later codon translates differently and new stops appear. <code>beta_del</code>: the three-base gap removes codon 7 and the frame is kept. TAG at columns 58-60 is the normal stop codon. Regenerate with <code>node scratch/build_manual_figures.js &amp;&amp; python scratch/build_manual_figures.py</code>.
+    </figcaption>
+  </figure>
 
   <h3 id="di-sticky">5.5 Sticky Names</h3>
   <p>
@@ -1429,12 +1427,13 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       the insertion, a right slide lengthens the whole alignment by a column.
     </li>
   </ul>
-  <div class="note">
-    <strong>[Screenshot needed]</strong> Two or three frames of a before/during/after drag for
-    each tool (Move NoGaps and Slide KeepGaps), showing exactly which residues moved and which
-    gap was consumed or inserted - this section's mechanics are inherently about motion and
-    direction, which is difficult to fully picture from prose alone.
-  </div>
+  <figure style="margin: 12px 0;">
+    <img src="img/move-slide-example.png" alt="Three views of the first 30 columns of examples/synthetic/synth_msa.fa: before editing, after a Move NoGaps drag on beta_del, and after a Slide KeepGaps drag on beta_fs."
+      style="max-width: 100%; border: 1px solid #ddd; border-radius: 4px;">
+    <figcaption style="font-size: 11px; color: #666; margin-top: 5px;">
+      Real drags on <code>examples/synthetic/synth_msa.fa</code>. <strong>Move NoGaps</strong>: grabbing column 13 of <code>beta_del</code> and dragging right moves GAGTTC into the three-column gap, which reappears on the left of the moved residues (ATGGCACTGAAAGAGTTC---ATG &rarr; ATGGCACTGAAA---GAGTTCATG). <strong>Slide KeepGaps</strong>: grabbing column 6 of <code>beta_fs</code> and dragging one column left consumes the gap immediately to its left, and the rest of the row shifts left by one (ATGG-ACTG&hellip; &rarr; ATGGACTG&hellip;). Regenerate with <code>node scratch/build_manual_figures.js &amp;&amp; python scratch/build_manual_figures.py</code>.
+    </figcaption>
+  </figure>
 
   <h3 id="ed-seqedit">8.5 Sequence Text Editor</h3>
   <p>
@@ -1547,11 +1546,13 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     so <strong>Copy Newick</strong> and <strong>Download .nwk</strong> export the tree you are
     looking at. Use <strong>Reset</strong> to get back to the computed tree.
   </div>
-  <div class="note">
-    <strong>[Screenshot needed]</strong> The Tree window with a drawn phylogram and its full
-    toolbar visible, so the zoom/layout/export controls in the table above are shown in the
-    context of the actual UI they belong to, not just described by name.
-  </div>
+  <figure style="margin: 12px 0;">
+    <img src="img/tree-example.png" alt="The Alignment Tree window: a rooted UPGMA phylogram of 12 SVK SINE copies with the method, model, zoom, font, layout, click, SVG, PNG, full-screen and reset controls."
+      style="max-width: 100%; border: 1px solid #ddd; border-radius: 4px;">
+    <figcaption style="font-size: 11px; color: #666; margin-top: 5px;">
+      UPGMA tree, p-distance, of 12 copies from <code>examples/svk_k4.fa</code> (the first three of each subfamily K1-K4). The copies group by subfamily, and the first split separates the three K3 copies (branch length 0.205) from the other nine. Regenerate with <code>node scratch/build_manual_figures.js &amp;&amp; python scratch/build_manual_figures.py</code>.
+    </figcaption>
+  </figure>
 
   <h3 id="ac-colour">9.5 Colour &amp; Shading</h3>
   <p><strong>Conservation shading thresholds</strong> (Display menu):</p>
