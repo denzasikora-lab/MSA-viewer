@@ -14342,15 +14342,14 @@ function getMafftExtraArgs() {
     const seqType = el('mafftSeqType')?.value;
     const gapOpen = parseFloat(el('mafftGapOpen')?.value);
     const gapExt = parseFloat(el('mafftGapExt')?.value);
-    const speedEl = el('mafftSpeed');
-    let cycles = speedEl
-        ? parseInt(speedEl.value, 10)
-        : parseInt(el('mafftCycles')?.value, 10);
-    const offset = parseFloat(el('mafftOffset')?.value);
+    // Guide-tree builds (disttbfast -E, MAFFT's --retree): 1 = FFT-NS-1, 2 = FFT-NS-2
+    // (MAFFT's default). disttbfast's -C is the thread count, not refinement cycles:
+    // the old Speed box sent -C and every setting gave byte-identical alignments.
+    const treeRuns = Math.min(3, Math.max(1, parseInt(el('mafftSpeed')?.value, 10) || 2));
 
     if (!isNaN(gapOpen)) args.push('-f', String(-gapOpen));
     if (!isNaN(gapExt)) args.push('-h', String(-gapExt));
-    if (!Number.isNaN(cycles) && cycles >= 0) args.push('-C', String(cycles));
+    args.push('-E', String(treeRuns));
     // Note: disttbfast's -e flag does not accept a numeric value (it's a boolean flag);
     // passing '-e -0.123' causes illegal-option parse errors, so offset is omitted.
 
@@ -15351,17 +15350,17 @@ function _confirmMafftJob(stats, extraArgs) {
     );
     if (!proceed) return { ok: false };
 
-    const cycleIdx = extraArgs.indexOf('-C');
-    const cycles = cycleIdx >= 0 ? parseInt(extraArgs[cycleIdx + 1], 10) : 2;
-    if (totalResidues > 500000 && (!Number.isNaN(cycles) ? cycles >= 2 : true)) {
+    const eIdx = extraArgs.indexOf('-E');
+    const treeRuns = eIdx >= 0 ? parseInt(extraArgs[eIdx + 1], 10) : 2;
+    if (totalResidues > 500000 && treeRuns > 1) {
         const useFast = window.confirm(
-            `Large alignment — use faster mode (1 refinement cycle instead of ${cycles || 2})?\n\n` +
+            `Large alignment — use the fast strategy (FFT-NS-1: build the guide tree once instead of ${treeRuns} times)?\n\n` +
             `OK = faster (lower accuracy)\n` +
             `Cancel = keep current settings`
         );
         if (useFast) {
             const speedEl = el('mafftSpeed');
-            if (speedEl) speedEl.value = totalResidues > 3000000 ? '0' : '1';
+            if (speedEl) speedEl.value = '1';
             return { ok: true, extraArgs: getMafftExtraArgs().args };
         }
     }

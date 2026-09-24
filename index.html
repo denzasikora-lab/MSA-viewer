@@ -661,15 +661,11 @@
                                 </div>
                                 <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
                                     <label style="font-size: 11px; min-width: 55px; text-align: right;">Speed:</label>
-                                    <select id="mafftSpeed" style="height: 20px; font-size: 11px;" title="MAFFT refinement speed (-C cycles). Overrides the Cycles field when set.">
-                                        <option value="0">Fast (-C 0)</option>
-                                        <option value="1">Balanced (-C 1)</option>
-                                        <option value="2" selected>Accurate (-C 2)</option>
+                                    <select id="mafftSpeed" style="height: 20px; font-size: 11px;" title="How many times MAFFT builds the guide tree (--retree). 1 = FFT-NS-1, 2 = FFT-NS-2 (MAFFT's default)">
+                                        <option value="1">Fast (FFT-NS-1)</option>
+                                        <option value="2" selected>Standard (FFT-NS-2)</option>
+                                        <option value="3">Extra (3 guide trees)</option>
                                     </select>
-                                </div>
-                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
-                                    <label style="font-size: 11px; min-width: 55px; text-align: right;">Cycles:</label>
-                                    <input type="number" id="mafftCycles" value="2" min="0" max="10" step="1" style="width: 55px; height: 20px; font-size: 11px;" title="Legacy cycle override (ignored when Speed is set)">
                                 </div>
                                 <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
                                     <label style="font-size: 11px; min-width: 55px; text-align: right;"></label>
@@ -1264,7 +1260,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=235"></script>
+    <script src="script.js?v=236"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

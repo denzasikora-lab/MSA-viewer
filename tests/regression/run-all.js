@@ -607,6 +607,31 @@ check('Dot plot: N runs, U/T, zoom, size limit, copy reset, window input', async
   return { pass: true, detail: 'no dots in N runs, U=T, viewport-sized canvas at 24x, size limit, copy reset, valid input' };
 });
 
+// In-browser MAFFT Speed must change the alignment. It used to send disttbfast -C
+// (the thread count), so all three settings gave byte-identical results.
+check('MAFFT Speed sets -E (guide-tree runs) and changes the alignment', async (page) => {
+  page.on('dialog', d => d.accept());
+  const path = require('path');
+  const out = {};
+  for (const v of ['1', '2', '3']) {
+    await page.goto(page.url(), { waitUntil: 'networkidle' });
+    await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+    await page.waitForTimeout(1500);
+    const args = await page.evaluate(v => { document.getElementById('mafftSpeed').value = v; return getMafftExtraArgs().args; }, v);
+    await page.evaluate(() => { window.__before = state.seqs.map(s => s.seq).join('|'); realignAll(); });
+    await page.waitForFunction(() => state.seqs.map(s => s.seq).join('|') !== window.__before, null, { timeout: 60000 });
+    out[v] = { args: args.join(' '), aln: await page.evaluate(() => state.seqs.map(s => s.seq).join('|')) };
+  }
+  const bad = [];
+  for (const v of ['1', '2', '3']) {
+    if (!out[v].args.includes('-E ' + v)) bad.push(`Speed ${v} sent "${out[v].args}"`);
+    if (out[v].args.includes('-C')) bad.push(`Speed ${v} still sends -C`);
+  }
+  if (out['1'].aln === out['2'].aln || out['2'].aln === out['3'].aln) bad.push('Speed settings gave identical alignments');
+  if (bad.length) return { pass: false, detail: bad.join('; ') };
+  return { pass: true, detail: '-E 1/2/3 sent, three different alignments' };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

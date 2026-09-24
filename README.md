@@ -8,7 +8,7 @@ No installation, no build step, no framework dependencies.
 ## Features
 
 - **Nine input formats with auto-detection**: FASTA, MSF, Clustal, PHYLIP, NEXUS, Stockholm,
-  GenBank flatfile, SAM, BAM and CRAM (BAM and CRAM are read in the browser onto an open reference);
+  GenBank flatfile, SAM, and BAM/CRAM (read in the browser onto an open reference);
   GenBank/RefSeq records can also be fetched by accession
 - **Four view modes**: Full, Block, Canvas (viewport-culled; Full and Block window
   the alignment above about 500,000 residues, and Canvas auto-activates above

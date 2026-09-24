@@ -530,11 +530,16 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     Reads mode reopens in Full/Block.
   </p>
   <ul>
-    <li><strong>Save Preset</strong> (<kbd>Ctrl+S</kbd>) - save current state as a named snapshot</li>
-    <li><strong>Load Preset</strong> (<kbd>Ctrl+O</kbd>) - restore a saved snapshot</li>
-    <li>The snapshot dropdown lists all saved snapshots; click to preview, double-click to load</li>
+    <li><strong>Save Preset</strong> (<kbd>Ctrl+Shift+S</kbd>) - saves the current view settings (shading
+    thresholds and colours, zoom, view mode, block size, name length, consensus settings, colour scheme,
+    Sticky Names) in the browser's <code>localStorage</code>. There is one preset; saving again replaces
+    it. It holds no alignment data.</li>
+    <li><strong>Load Preset</strong> (<kbd>Ctrl+O</kbd>) - applies the saved preset</li>
+    <li>The snapshot dropdown lists snapshot files offered by the server (<code>/api/snapshots</code>) or,
+    on GitHub Pages, listed in <code>snapshots/index.json</code>; click to preview, double-click to load</li>
   </ul>
-  <p>Snapshots persist in <code>localStorage</code> and can be exported/downloaded as JSON files.</p>
+  <p>Snapshots themselves are files (JSON, or a standalone HTML page); they are not kept in
+  <code>localStorage</code>.</p>
   <p>
     On GitHub Pages, snapshot listing is loaded from <code>snapshots/index.json</code>. If no
     shared snapshots are available, the viewer shows an empty list instead of a failed request.
@@ -564,35 +569,27 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </p>
   <ul>
     <li>
-      <strong>Browser-based (MAFFT WASM)</strong> - runs MAFFT directly in the browser via
-      WebAssembly. No server required. Select from the strategy dropdown and click
-      <strong>Align</strong>. Suitable for alignments up to ~200 sequences x ~2,000 columns.
-      <strong>auto</strong> picks a strategy based on your input size and is the right choice
-      unless you have a specific reason to override it. <strong>FFT-NS-2</strong> is the
-      fastest, progressive-alignment strategy - good for large or already-similar datasets.
-      <strong>G-INS-i</strong>, <strong>L-INS-i</strong>, and <strong>E-INS-i</strong> are
-      slower, more accurate iterative-refinement strategies for smaller alignments (roughly
-      under 200 sequences): G-INS-i assumes the sequences are globally similar end-to-end,
-      L-INS-i assumes only local, patchy similarity (e.g. a shared domain in otherwise
-      divergent sequences), and E-INS-i additionally allows large, unaligned insertions
-      between conserved blocks.
+      <strong>In the browser (MAFFT WASM)</strong> - the Realign buttons run MAFFT v7.525's
+      <code>disttbfast</code> program, compiled to WebAssembly, in a background worker. No server is
+      needed. This is MAFFT's progressive FFT-NS strategy; the iterative strategies (G-INS-i, L-INS-i,
+      E-INS-i) are not available in the browser. Above 250,000 residues in total the viewer asks before
+      aligning, and above 500,000 it offers to switch to the fast strategy.
     </li>
     <li>
-      <strong>Server-based MAFFT</strong> - when the Node.js server is running, alignment
-      requests are sent to the server which executes the native MAFFT binary. Handles larger
-      datasets and supports additional strategies.
+      <strong>On the optional server</strong> - <code>server.js</code> also exposes
+      <code>POST /api/mafft</code>, which runs the native MAFFT binary with whitelisted options
+      (§11.2). The viewer's buttons do not call it; it is there for scripts and other clients.
     </li>
   </ul>
 
   <h3 id="al-advanced">3.2 Advanced MAFFT Options</h3>
-  <p>The Alignment menu options below apply to in-browser MAFFT WASM. Strategy names in the first rows remain available when the Node.js server is running.</p>
+  <p>The Alignment menu options below apply to in-browser MAFFT WASM.</p>
   <table>
     <tr><th>Option</th><th>Effect</th></tr>
-    <tr><td>Strategy</td><td>auto, FFT-NS-2, G-INS-i, L-INS-i, E-INS-i</td></tr>
-    <tr><td>Gap open penalty</td><td>Controls the cost of opening a new gap</td></tr>
-    <tr><td>Gap extension penalty</td><td>Controls the cost of extending an existing gap</td></tr>
-    <tr><td>Max iterations</td><td>Number of iterative refinement passes</td></tr>
-    <tr><td>Add-keep-length</td><td>When adding sequences: keep existing alignment length (no re-alignment)</td></tr>
+    <tr><td>Seq Type</td><td>Nucleotide, Protein (BLOSUM62) or Protein (JTT 200PAM) scoring</td></tr>
+    <tr><td>Gap Open</td><td>Cost of opening a gap (default 1.53, MAFFT's <code>--op</code>)</td></tr>
+    <tr><td>Gap Ext</td><td>Gap extension penalty / offset (default 0.0, MAFFT's <code>--ep</code>)</td></tr>
+    <tr><td>Speed</td><td>How many times the guide tree is built (MAFFT's <code>--retree</code>): <strong>Fast</strong> = 1 (FFT-NS-1), <strong>Standard</strong> = 2 (FFT-NS-2, MAFFT's default), <strong>Extra</strong> = 3</td></tr>
     <tr><td>Adjust direction</td><td>Detect sequences whose orientation disagrees with the first (6-mer voting, nucleotide only) and reverse-complement them before aligning. With Realign Block, you are asked whether to apply that to the <em>full</em> sequences (default Yes; suppressible)</td></tr>
     <tr><td>Reorder by similarity</td><td>Order rows by a 6-mer UPGMA guide tree (the viewer's analogue of MAFFT <code>--reorder</code>, not a MAFFT flag during WASM alignment). Realign All applies this to the whole MSA. Realign Block computes the tree from the selected region and asks before applying it to all rows (default No; suppressible)</td></tr>
     <tr><td>Reorder only (no alignment)</td><td>Skip MAFFT. Realign All permutes the loaded rows by the whole-MSA tree. Realign Block permutes by the selected region and still asks before applying (if you answer No, nothing changes)</td></tr>
@@ -874,7 +871,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li>Groups meeting the size and quality thresholds are collected as candidates</li>
     <li>Near-identical groups are fuzzy-merged (Jaccard similarity &gt;= 90%, and the two groups differ in size by at most 5 sequences)</li>
     <li>Perfect-unique positions (all members share a base unique to that group) get highest weight</li>
-    <li>Outliers matching &lt;50% of core features are pruned</li>
+    <li>Outliers are pruned: in a group with more than 2 diagnostic features, a member must match at
+    least 2 of them (groups with up to 5 features) or at least 30% of them, rounded up (larger groups)</li>
     <li>The algorithm iterates with progressively relaxed thresholds to recover smaller families</li>
   </ul>
 
@@ -1206,7 +1204,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="di-names">5.7 Name Length</h3>
   <p>
     Controls how many characters of each sequence name are displayed. The slider ranges
-    from 3 to 60. Check <strong>No limit</strong> to show full names regardless of length.
+    from 3 to 50. Check <strong>No limit</strong> to show full names regardless of length.
     This only affects display, not the underlying data.
   </p>
 
@@ -1312,7 +1310,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>Duplicate</td><td><kbd>Ctrl+U</kbd></td><td>Duplicate selected sequences (undoable)</td></tr>
     <tr><td>Reverse complement</td><td><kbd>Ctrl+R</kbd></td><td>Reverse and complement selected DNA sequences</td></tr>
     <tr><td>Move up</td><td><kbd>Ctrl+↑</kbd></td><td>Move selected rows up by one position</td></tr>
-    <tr><td>Move down</td><td><kbd>Ctrl+v</kbd></td><td>Move selected rows down by one position</td></tr>
+    <tr><td>Move down</td><td><kbd>Ctrl+↓</kbd></td><td>Move selected rows down by one position</td></tr>
     <tr><td>Move to top</td><td><kbd>Ctrl+Home</kbd></td><td>Send selected rows to the top</td></tr>
     <tr><td>Move to bottom</td><td><kbd>Ctrl+End</kbd></td><td>Send selected rows to the bottom</td></tr>
     <tr><td>Undo</td><td><kbd>Ctrl+Z</kbd></td><td>Undo last editing operation</td></tr>
@@ -1505,9 +1503,9 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="ac-sort">9.2 Sort Functions</h3>
   <table>
     <tr><th>Sort</th><th>Description</th></tr>
-    <tr><td>A -> Z</td><td>Sort sequences alphabetically by name</td></tr>
-    <tr><td>Len v</td><td>Sort by sequence length, longest first</td></tr>
-    <tr><td>Sim v</td><td>Sort by similarity to the first sequence, most similar first</td></tr>
+    <tr><td>A-&gt;Z</td><td>Sort sequences alphabetically by name</td></tr>
+    <tr><td>Lenv</td><td>Sort by sequence length, longest first</td></tr>
+    <tr><td>Simv</td><td>Sort by similarity to the first sequence, most similar first</td></tr>
   </table>
 
   <h3 id="ac-order">9.3 Save / Load Order</h3>
@@ -1859,14 +1857,16 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
     <tr><th>Variable</th><th>Purpose</th></tr>
     <tr><td><code>CORS_ORIGIN</code></td><td>Allowed origin for cross-origin requests (default: localhost only)</td></tr>
     <tr><td><code>SSH_KEY_PATH</code></td><td>Path to SSH private key for remote access</td></tr>
-    <tr><td><code>BLAST_API_KEY</code></td><td>NCBI API key for NCBI BLAST queries</td></tr>
+    <tr><td><code>MAFFT_BIN</code></td><td>Path to the native MAFFT binary used by <code>POST /api/mafft</code></td></tr>
   </table>
 
   <h3 id="sv-mafft">11.2 MAFFT Integration</h3>
   <p>
     The server executes MAFFT as a child process with whitelisted options only.
     Input is sanitised - only recognised MAFFT flags are passed to the binary.
-    Strategies: auto, FFT-NS-2, G-INS-i, L-INS-i, E-INS-i.
+    Strategy flags such as <code>--auto</code>, <code>--localpair</code>, <code>--globalpair</code>,
+    <code>--genafpair</code> and <code>--maxiterate</code> are accepted. The viewer's Realign buttons do
+    not use this endpoint (they run MAFFT in the browser, §3.1).
   </p>
 
   <h3 id="sv-ssh">11.3 SSH Remote Access</h3>
