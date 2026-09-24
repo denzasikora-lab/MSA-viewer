@@ -1057,7 +1057,7 @@
 
     <!-- Dot-Plot Modal -->
     <div id="dotPlotModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:10002;overflow:hidden;">
-        <div id="dotPlotDialog" style="background:white;margin:30px auto;padding:16px;max-width:95vw;max-height:92vh;width:900px;min-width:560px;min-height:420px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);position:relative;display:flex;flex-direction:column;overflow:hidden;">
+        <div id="dotPlotDialog" style="background:white;margin:30px auto;padding:16px;max-width:95vw;height:calc(100vh - 60px);max-height:92vh;width:900px;min-width:560px;min-height:420px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);position:relative;display:flex;flex-direction:column;overflow:hidden;">
             <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
                 <h3 style="margin:0;" id="dotPlotTitle">Dot Plot</h3>
                 <button id="dotPlotCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;padding:0 4px;" title="Close this dialog">x</button>
@@ -1065,9 +1065,9 @@
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px;flex-wrap:wrap;">
                 <span style="font-weight:bold;">Mode:</span>
                 <label title="Exact word match - faster, sharper diagonals"><input type="radio" name="dotPlotMode" value="spin" checked onchange="_dotOnModeChange()" title="Exact word match - faster, sharper diagonals"> SPIN (word)</label>
-                <label title="Sliding-window identity - tolerant of mismatches, better for diverged copies"><input type="radio" name="dotPlotMode" value="doter" onchange="_dotOnModeChange()" title="Sliding-window identity - tolerant of mismatches, better for diverged copies"> Doter (window)</label>
+                <label title="Sliding-window identity - tolerant of mismatches, better for diverged copies"><input type="radio" name="dotPlotMode" value="doter" onchange="_dotOnModeChange()" title="Sliding-window identity - tolerant of mismatches, better for diverged copies"> Dotter (window)</label>
                 <span style="border-left:1px solid #ccc;height:16px;display:inline-block;margin:0 4px;"></span>
-                <label>Word/Window: <input type="number" id="dotPlotWindow" value="6" min="1" max="61" step="2" style="width:45px;" title="Word length (SPIN) or sliding window length (Doter), odd, 1-61"></label>
+                <label>Word/Window: <input type="number" id="dotPlotWindow" value="6" min="2" max="20" step="1" style="width:45px;" title="Word length for SPIN exact matches (2-20). Shorter words find more, and noisier, matches"></label>
                 <label>Threshold: <input type="range" id="dotPlotThreshold" min="0" max="100" value="55" style="width:100px;vertical-align:middle;" title="Minimum identity for a dot to be plotted (0-100%)"><span id="dotPlotThreshVal">55%</span></label>
                 <label>Context: <input type="number" id="dotPlotContextRadius" value="30" min="5" max="100" step="5" style="width:45px;" title="Extra bases to show around the hover position"> bp</label>
                 <label><input type="checkbox" id="dotPlotRevComp" title="Reverse-complement the second sequence/axis, to find inverted repeats"> RevComp B</label>
@@ -1077,14 +1077,19 @@
                     <button id="dotPlotZoomIn" style="font-size:11px;padding:2px 8px;" title="Zoom in (Ctrl+wheel)">+</button>
                 </span>
                 <span style="display:inline-flex;gap:8px;white-space:nowrap;">
-                    <button id="dotPlotExport" style="font-size:11px;padding:2px 8px;" title="Save the plot as a PNG image">Export PNG</button>
-                    <button id="dotPlotExportSvg" style="font-size:11px;padding:2px 8px;" title="Save the plot as a vector SVG image">Export SVG</button>
+                    <button id="dotPlotExport" style="font-size:11px;padding:2px 8px;" title="Save the whole plot as a PNG image">Export PNG</button>
+                    <button id="dotPlotExportSvg" style="font-size:11px;padding:2px 8px;" title="Save the whole plot as a vector SVG: each diagonal run of dots is one line">Export SVG</button>
                 </span>
             </div>
             <div style="display:flex;gap:8px;flex:1;min-height:260px;">
                 <div id="dotPlotViewport" style="overflow:auto;flex:1;min-width:300px;border:1px solid #ccc;position:relative;cursor:crosshair;">
-                    <canvas id="dotPlotCanvas" width="400" height="400"></canvas>
-                    <canvas id="dotPlotOverlay" width="400" height="400" style="position:absolute;top:0;left:0;pointer-events:auto;"></canvas>
+                    <!-- Only the visible part is drawn: the canvases stay pinned to the
+                         viewport and the spacer gives the scrollbars the full plot size -->
+                    <div style="position:sticky;top:0;left:0;width:0;height:0;z-index:1;">
+                        <canvas id="dotPlotCanvas" width="400" height="400" style="position:absolute;top:0;left:0;display:block;"></canvas>
+                        <canvas id="dotPlotOverlay" width="400" height="400" style="position:absolute;top:0;left:0;pointer-events:auto;"></canvas>
+                    </div>
+                    <div id="dotPlotSpacer"></div>
                 </div>
                 <div id="dotPlotRegionList" style="width:220px;min-width:180px;border:1px solid #ccc;overflow-y:auto;font-size:11px;background:#fafafa;">
                     <div style="padding:6px;font-weight:bold;border-bottom:1px solid #ddd;background:#eee;position:sticky;top:0;">Top Regions</div>
@@ -1108,13 +1113,13 @@ B: -</pre>
                 </p>
                 <p style="margin:0 0 8px;"><b>SPIN vs Dotter</b></p>
                 <ul style="margin:0 0 10px;padding-left:18px;">
-                    <li><b>SPIN (word)</b>: exact k-mer ("word") matches. Small word sizes find fewer/stricter matches; larger word sizes are slower but more specific.</li>
+                    <li><b>SPIN (word)</b>: exact k-mer ("word") matches. Short words find more matches, including chance ones; longer words find fewer, stricter matches and run faster. Words containing N (X in protein) are ignored.</li>
                     <li><b>Dotter (window)</b>: sliding-window identity scoring along diagonals. Threshold controls which similarities are shown as dots.</li>
                 </ul>
                 <p style="margin:0 0 8px;"><b>Controls</b></p>
                 <ul style="margin:0 0 10px;padding-left:18px;">
-                    <li><b>Word/Window</b>: use the SPIN word size or the Dotter window size (odd recommended).</li>
-                    <li><b>Threshold</b>: minimum similarity for dots/lines (percent).</li>
+                    <li><b>Word/Window</b>: SPIN word length (2-20) or Dotter window length (1-61). Press Recalculate after changing it.</li>
+                    <li><b>Threshold</b>: Dotter only. Minimum identity of a window, as a percent of the window length, for a dot; windows cut short at a sequence end count their missing positions as mismatches.</li>
                     <li><b>Context</b>: how many bases around the hover position are shown in the alignment panel.</li>
                     <li><b>RevComp B</b>: compute the plot using the reverse-complement of sequence B.</li>
                 </ul>
@@ -1259,7 +1264,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=234"></script>
+    <script src="script.js?v=235"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

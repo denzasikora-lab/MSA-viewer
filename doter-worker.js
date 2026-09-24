@@ -5,7 +5,7 @@
 
 self.addEventListener('message', (event) => {
   try {
-    const { seqA, seqB, windowSize, mode } = event.data;
+    const { seqA, seqB, windowSize, mode, unknown } = event.data;
     const N = seqA.length;
     const M = seqB.length;
     // Split unevenly for even windowSize (e.g. 4 -> 1 before, 2 after) so the
@@ -14,10 +14,13 @@ self.addEventListener('message', (event) => {
     const halfAfter = windowSize - 1 - halfBefore;
     const mismatch = mode === 'dna-simple' ? -1 : 0;
 
-    const aEnc = new Uint8Array(N);
-    const bEnc = new Uint8Array(M);
-    for (let i = 0; i < N; i++) aEnc[i] = seqA.charCodeAt(i);
-    for (let j = 0; j < M; j++) bEnc[j] = seqB.charCodeAt(j);
+    // Unknown residues (N, or X in protein) never match: A's are coded 1000+,
+    // B's 2000+, so they differ from each other and from every real residue.
+    const unk = new Set(String(unknown || 'N'));
+    const aEnc = new Uint16Array(N);
+    const bEnc = new Uint16Array(M);
+    for (let i = 0; i < N; i++) aEnc[i] = unk.has(seqA[i]) ? 1000 : seqA.charCodeAt(i);
+    for (let j = 0; j < M; j++) bEnc[j] = unk.has(seqB[j]) ? 2000 : seqB.charCodeAt(j);
 
     const scores = new Int16Array(N * M);
     const maxDiagLen = Math.max(N, M);
@@ -43,14 +46,11 @@ self.addEventListener('message', (event) => {
         const hi = k + halfAfter + 1;
         const loClamped = lo > 0 ? lo : 0;
         const hiClamped = hi < len ? hi : len;
-        const actualLen = hiClamped - loClamped;
-        const raw = prefix[hiClamped] - prefix[loClamped];
-        // Near the ends of a diagonal (or on diagonals shorter than windowSize)
-        // the window gets clamped to fewer than windowSize positions. Scale the
-        // raw sum back up to windowSize-equivalent units so a clamped edge window
-        // is comparable to a full centered window instead of always reading lower
-        // and drawing a fake similarity gradient toward the plot's edges.
-        const s = actualLen > 0 ? Math.round(raw * windowSize / actualLen) : 0;
+        // Identical-residue count over the window. A window clipped at a
+        // sequence end is NOT scaled up to windowSize: scaling turned one or
+        // two chance matches in a corner into a full-strength dot. The main
+        // thread divides by windowSize, so clipped windows read lower.
+        const s = prefix[hiClamped] - prefix[loClamped];
         scores[(iStart + k) * M + (jStart + k)] = s;
         if (s < globalMin) globalMin = s;
         if (s > globalMax) globalMax = s;

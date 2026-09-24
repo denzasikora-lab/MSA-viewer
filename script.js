@@ -21745,7 +21745,7 @@ let _dotPlotState = {
     scores: null, rows: 0, cols: 0,
     scoreMin: 0, scoreMax: 1,
     threshold: 0.55, windowSize: 9, zoom: 1,
-    dotImage: null, computing: false,
+    dotImage: null, overview: null, overviewBin: 1, computing: false,
     lastRow: -1, lastCol: -1,
     pinnedRow: -1, pinnedCol: -1,
     meta: null,
@@ -21753,14 +21753,24 @@ let _dotPlotState = {
     alignMapB: null,
     rowIndexA: -1,
     rowIndexB: -1,
+    regions: [],
+    _copyRegion: null,
     _frozen: false,
     _frozenRow: -1,
     _frozenCol: -1
 };
 const DOT_AXIS_PAD = 50;
+// Largest plot computed (cells = length A x length B). The score matrix is
+// held in memory, so this bounds memory at about 200 MB (Dotter) / 100 MB (SPIN).
+const DOT_MAX_CELLS = 100_000_000;
+// Side of the cached overview image. Larger plots are max-pooled into it, and
+// zooming in past its resolution draws the visible cells straight from the data.
+const DOT_OVERVIEW_MAX = 4096;
+// Word lengths (SPIN) and window lengths (Dotter) accepted by the input
+const DOT_WORD_RANGE = [2, 20];
+const DOT_WINDOW_RANGE = [1, 61];
 
-
-// Old v1 dot plot (kept for reference, can be removed later)
+// Ungapped position -> 1-based alignment column
 function _buildUngappedToAlignMap(alignedSeq) {
     if (!alignedSeq) return null;
     const map = [];
@@ -21781,30 +21791,49 @@ function _dotSeqContext(seq, pos0, radius = 8) {
     return `${left}[${center}]${right}`;
 }
 
+// Dotter scores are identical-residue counts over the window; identity is that
+// count over the full window length (a window clipped at a sequence end is not
+// scaled up, so a few chance matches at the plot edge cannot read as 100%).
+function _dotIdentityAt(i) {
+    const S = _dotPlotState;
+    return S.scores ? S.scores[i] / (S.windowSize || 1) : 0;
+}
+
+function _dotIsDot(row, col) {
+    const S = _dotPlotState;
+    const i = row * S.cols + col;
+    if (S.spinMode && S.matchMap) return S.matchMap[i] === 1;
+    return !!S.scores && _dotIdentityAt(i) >= S.threshold;
+}
+
 function _dotNormAt(row, col) {
     const S = _dotPlotState;
     if (S.spinMode && S.matchMap) return S.matchMap[row * S.cols + col];
-    if (!S.scores) return 0;
-    const range = S.scoreMax - S.scoreMin || 1;
-    return (S.scores[row * S.cols + col] - S.scoreMin) / range;
+    return _dotIdentityAt(row * S.cols + col);
 }
 
-// --- SPIN word-match computation (k-mer exact matching) ---
-let _dotWordWorker = null;
-function _dotComputeWord(seqA, seqB, wordSize) {
+// Residues that never match, so runs of unknown bases do not draw solid blocks
+function _dotUnknownChars(seqA, seqB) {
+    // Letters that exist in protein but not in nucleotide IUPAC codes
+    const protein = /[EFIJLOPQZ*]/.test(seqA) || /[EFIJLOPQZ*]/.test(seqB);
+    return protein ? 'X*' : 'N';
+}
+
+function _dotRunWorker(file, message) {
     return new Promise((res, rej) => {
-        if (!_dotWordWorker) _dotWordWorker = new Worker('doter-word-worker.js');
-        const w = _dotWordWorker;
+        const w = file === 'word' ? (_dotWordWorker ||= new Worker('doter-word-worker.js?v=' + BUILD_TAG))
+                                  : (_dotPlotWorker ||= new Worker('doter-worker.js?v=' + BUILD_TAG));
         const ok = (e) => { w.removeEventListener('message', ok); w.removeEventListener('error', no);
             if (e.data.error) { rej(new Error(e.data.error)); return; } res(e.data); };
         const no = (e) => { w.removeEventListener('message', ok); w.removeEventListener('error', no); rej(e); };
         w.addEventListener('message', ok);
         w.addEventListener('error', no);
-        w.postMessage({ seqA, seqB, wordSize });
+        w.postMessage(message);
     });
 }
+let _dotWordWorker = null;
 
-// --- Mode toggle handler ---
+// --- Mode toggle: each mode has its own valid length range ---
 function _dotOnModeChange() {
     const S = _dotPlotState;
     const spinRadio = document.querySelector('input[name="dotPlotMode"][value="spin"]');
@@ -21812,36 +21841,55 @@ function _dotOnModeChange() {
     const slider = document.getElementById('dotPlotThreshold');
     const val = document.getElementById('dotPlotThreshVal');
     const win = document.getElementById('dotPlotWindow');
-    if (S.spinMode) {
-        if (win) { win.max = 20; win.min = 2; if (parseInt(win.value) > 20) win.value = 9; }
-        if (slider) slider.disabled = true;
-        if (val) val.textContent = 'N/A';
-    } else {
-        if (win) { win.max = 61; win.min = 1; }
-        if (slider) slider.disabled = false;
-        if (slider && val) val.textContent = slider.value + '%';
+    const [lo, hi] = S.spinMode ? DOT_WORD_RANGE : DOT_WINDOW_RANGE;
+    if (win) {
+        win.min = lo; win.max = hi; win.step = 1;
+        const v = parseInt(win.value, 10);
+        if (!(v >= lo && v <= hi)) win.value = S.spinMode ? 6 : 11;
+        win.title = S.spinMode
+            ? `Word length for SPIN exact matches (${lo}-${hi}). Shorter words find more, and noisier, matches`
+            : `Sliding window length for Dotter (${lo}-${hi}). Longer windows smooth over single mismatches`;
     }
+    if (slider) slider.disabled = S.spinMode;
+    if (val) val.textContent = S.spinMode ? 'N/A' : (slider ? slider.value + '%' : '');
+}
+
+function _dotViewport() {
+    const vp = document.getElementById('dotPlotViewport');
+    return { vp, vw: vp ? vp.clientWidth : 600, vh: vp ? vp.clientHeight : 400 };
+}
+
+function _dotSetSpacer() {
+    const S = _dotPlotState;
+    const sp = document.getElementById('dotPlotSpacer');
+    if (!sp) return;
+    sp.style.width = (DOT_AXIS_PAD + Math.ceil(S.cols * S.zoom) + 1) + 'px';
+    sp.style.height = (DOT_AXIS_PAD + Math.ceil(S.rows * S.zoom) + 1) + 'px';
+}
+
+function _dotMinZoom() {
+    const S = _dotPlotState;
+    const { vw, vh } = _dotViewport();
+    const fit = Math.min((vw - DOT_AXIS_PAD - 12) / (S.cols || 1), (vh - DOT_AXIS_PAD - 12) / (S.rows || 1));
+    return Math.max(0.01, Math.min(0.5, fit));
 }
 
 function _dotApplyZoom(factor, anchorX, anchorY) {
     const S = _dotPlotState;
-    const vp = document.getElementById('dotPlotViewport');
+    const { vp } = _dotViewport();
     if (!vp || (!S.scores && !S.matchMap)) return;
-
-    const vpRect = vp.getBoundingClientRect();
-    const ax = anchorX != null ? anchorX : vpRect.left + vpRect.width / 2;
-    const ay = anchorY != null ? anchorY : vpRect.top + vpRect.height / 2;
-    const mx = ax - vpRect.left + vp.scrollLeft - DOT_AXIS_PAD;
-    const my = ay - vpRect.top + vp.scrollTop - DOT_AXIS_PAD;
-    const col = mx / S.zoom;
-    const row = my / S.zoom;
-
-    S.zoom = Math.max(0.5, Math.min(24, Math.round(S.zoom * factor * 10) / 10));
+    const r = vp.getBoundingClientRect();
+    const ax = (anchorX != null ? anchorX : r.left + vp.clientWidth / 2) - r.left - DOT_AXIS_PAD;
+    const ay = (anchorY != null ? anchorY : r.top + vp.clientHeight / 2) - r.top - DOT_AXIS_PAD;
+    const col = (ax + vp.scrollLeft) / S.zoom;
+    const row = (ay + vp.scrollTop) / S.zoom;
+    const z = S.zoom * factor;
+    S.zoom = Math.max(_dotMinZoom(), Math.min(24, z >= 1 ? Math.round(z * 10) / 10 : Math.round(z * 1000) / 1000));
+    S._autoFit = false; // the user chose a zoom: resizing no longer refits
+    _dotSetSpacer();
+    vp.scrollLeft = col * S.zoom - ax;
+    vp.scrollTop = row * S.zoom - ay;
     _dotRender();
-
-    vp.scrollLeft = DOT_AXIS_PAD + col * S.zoom - (ax - vpRect.left);
-    vp.scrollTop = DOT_AXIS_PAD + row * S.zoom - (ay - vpRect.top);
-
     if (S.lastRow >= 0) {
         _dotDrawOverlay(S.lastRow, S.lastCol);
         _dotUpdateHoverInfo(S.lastRow, S.lastCol, { force: S._frozen });
@@ -21864,10 +21912,17 @@ function _dotBindPlotWheel(el) {
     }, { passive: false });
 }
 
+// Two residues count as the same for the guide line only when neither is unknown
+function _dotSame(a, b) {
+    const S = _dotPlotState;
+    return a === b && a !== ' ' && !(S.unknown || 'N').includes(a);
+}
+
 function _dotUpdateHoverInfo(row, col, options = {}) {
     var S = _dotPlotState;
     var hoverEl = document.getElementById('dotPlotHover');
     var panelEl = document.getElementById('dotPlotAlignPanel');
+    var metaEl = document.getElementById('dotPlotAlignMeta');
     const force = options.force === true;
 
     if (S._frozen && !force) {
@@ -21901,7 +21956,7 @@ function _dotUpdateHoverInfo(row, col, options = {}) {
         var bCh = (br >= 0 && br < S.seqB.length) ? S.seqB[br] : ' ';
         aLine += aCh;
         bLine += bCh;
-        guide += (ar >= 0 && ar < S.seqA.length && br >= 0 && br < S.seqB.length && aCh === bCh) ? '|' : ' ';
+        guide += _dotSame(aCh, bCh) ? '|' : ' ';
     }
 
     var cursorCol = ctx;
@@ -21911,8 +21966,16 @@ function _dotUpdateHoverInfo(row, col, options = {}) {
 
     if (hoverEl) {
         hoverEl.textContent = 'A:' + (row + 1) + '/' + S.rows + '  B:' + (col + 1) + '/' + S.cols + '  ' +
-            (S.spinMode ? 'match=' + norm : 'score=' + norm.toFixed(3)) + '  ' + chA + ' vs ' + chB +
+            (S.spinMode ? 'match=' + norm : 'identity=' + Math.round(norm * 100) + '%') + '  ' + chA + ' vs ' + chB +
             '  A[' + (aStart + 1) + '-' + aEnd + '] B[' + (bStart + 1) + '-' + bEnd + ']';
+    }
+    // Where this point sits in the loaded alignment
+    if (metaEl) {
+        const colA = S.alignMapA && S.alignMapA[row];
+        const colB = S.alignMapB && S.alignMapB[col];
+        metaEl.textContent = (colA || colB)
+            ? `Alignment columns: A ${colA || '-'}, B ${colB || '-'}`
+            : '';
     }
 
     if (panelEl) {
@@ -21951,48 +22014,61 @@ function _dotClearHoverInfo() {
     if (panelEl) panelEl.textContent = 'A: -\n   \nB: -';
 }
 
-function _getDotWorker() {
-    if (!_dotPlotWorker) _dotPlotWorker = new Worker('doter-worker.js?v=' + BUILD_TAG);
-    return _dotPlotWorker;
+// Grey level for one cell: SPIN = white dot on black; Dotter = darker = more identical
+function _dotCellValue(i) {
+    const S = _dotPlotState;
+    if (S.spinMode && S.matchMap) return S.matchMap[i] ? 255 : 0;
+    const n = _dotIdentityAt(i);
+    return n >= S.threshold ? Math.round((1 - n) * 255) : 255;
 }
 
-function _dotCompute(seqA, seqB, windowSize, mode) {
-    return new Promise((res, rej) => {
-        const w = _getDotWorker();
-        const ok = (e) => { w.removeEventListener('message', ok); w.removeEventListener('error', no);
-            if (e.data.error) { rej(new Error(e.data.error)); return; } res(e.data); };
-        const no = (e) => { w.removeEventListener('message', ok); w.removeEventListener('error', no); rej(e); };
-        w.addEventListener('message', ok);
-        w.addEventListener('error', no);
-        w.postMessage({ seqA, seqB, windowSize, mode });
-    });
-}
-
+// Build the cached overview image. Plots wider than DOT_OVERVIEW_MAX are
+// max-pooled (the strongest cell in each bin wins) so no dot disappears.
 function _dotBuildImage() {
     const S = _dotPlotState;
-    // SPIN mode: binary matchMap (white dot on black background)
-    if (S.spinMode && S.matchMap) {
-        const img = new ImageData(S.cols, S.rows);
-        const d = img.data;
-        for (let i = 0, j = 0; i < S.rows * S.cols; i++, j += 4) {
-            const v = S.matchMap[i] ? 255 : 0;
-            d[j] = v; d[j+1] = v; d[j+2] = v; d[j+3] = 255;
-        }
-        S.dotImage = img;
-        return;
-    }
-    // Doter mode: grayscale scores (black=high similarity, white=low)
-    if (!S.scores) return;
-    const img = new ImageData(S.cols, S.rows);
+    if (!S.matchMap && !S.scores) return;
+    const bin = Math.max(1, Math.ceil(Math.max(S.rows, S.cols) / DOT_OVERVIEW_MAX));
+    S.overview = _dotPooledCanvas(bin);
+    S.overviewBin = bin;
+    S._pool = null;
+}
+
+// Canvas with one pixel per bin x bin cells, keeping the strongest cell
+function _dotPooledCanvas(bin) {
+    const S = _dotPlotState;
+    const w = Math.ceil(S.cols / bin), h = Math.ceil(S.rows / bin);
+    const spin = S.spinMode && !!S.matchMap;
+    const img = new ImageData(w, h);
     const d = img.data;
-    const range = S.scoreMax - S.scoreMin || 1;
-    const thr = S.threshold;
-    for (let i = 0, j = 0; i < S.rows * S.cols; i++, j += 4) {
-        const n = (S.scores[i] - S.scoreMin) / range;
-        const v = n >= thr ? Math.round((1 - n) * 255) : 255;
-        d[j] = v; d[j + 1] = v; d[j + 2] = v; d[j + 3] = 255;
+    for (let by = 0; by < h; by++) {
+        for (let bx = 0; bx < w; bx++) {
+            let best = spin ? 0 : 255;
+            const r1 = Math.min(S.rows, (by + 1) * bin), c1 = Math.min(S.cols, (bx + 1) * bin);
+            for (let r = by * bin; r < r1; r++) {
+                const base = r * S.cols;
+                for (let c = bx * bin; c < c1; c++) {
+                    const v = _dotCellValue(base + c);
+                    if (spin ? v > best : v < best) best = v;
+                }
+            }
+            const j = (by * w + bx) * 4;
+            d[j] = d[j + 1] = d[j + 2] = best; d[j + 3] = 255;
+        }
     }
-    S.dotImage = img;
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    cv.getContext('2d').putImageData(img, 0, 0);
+    return cv;
+}
+
+// Source image for drawing at zoom z. Below 1 px per cell a plain downscale
+// would skip rows and columns and break diagonals into dots, so pool first.
+function _dotSourceFor(z) {
+    const S = _dotPlotState;
+    const need = z < 1 ? Math.ceil(1 / z) : 1;
+    if (need <= S.overviewBin) return { canvas: S.overview, bin: S.overviewBin };
+    if (!S._pool || S._pool.bin !== need) S._pool = { bin: need, canvas: _dotPooledCanvas(need) };
+    return S._pool;
 }
 
 function _dotNiceStep(seqLen, maxTicks) {
@@ -22007,144 +22083,154 @@ function _dotNiceStep(seqLen, maxTicks) {
     return Math.max(1, step * mag);
 }
 
-function _dotRender() {
+// Paint the part of the plot that is visible through a vw x vh window whose
+// top-left shows plot pixel (sl, st) at zoom z. Axes stay pinned to the top
+// and left edges. Used for the screen (window = viewport) and for export
+// (window = whole plot, sl = st = 0).
+function _dotPaint(ctx, z, sl, st, vw, vh) {
     const S = _dotPlotState;
-    if (!S.dotImage) return;
-    const canvas = document.getElementById('dotPlotCanvas');
-    const overlay = document.getElementById('dotPlotOverlay');
-    if (!canvas || !overlay) return;
-    const ctx = canvas.getContext('2d', { alpha: false });
-    const dpr = window.devicePixelRatio || 1;
-    const z = S.zoom;
-    const plotW = Math.round(S.cols * z);
-    const plotH = Math.round(S.rows * z);
-    const totalW = DOT_AXIS_PAD + plotW + 1;
-    const totalH = DOT_AXIS_PAD + plotH + 1;
-    // HiDPI: scale backing store, keep CSS size at logical pixels
-    canvas.width = totalW * dpr; canvas.height = totalH * dpr;
-    canvas.style.width = totalW + 'px'; canvas.style.height = totalH + 'px';
-    overlay.width = totalW * dpr; overlay.height = totalH * dpr;
-    overlay.style.width = totalW + 'px'; overlay.style.height = totalH + 'px';
-    ctx.scale(dpr, dpr);
-    // overlay context also needs HiDPI scaling
-    const oCtx = overlay.getContext('2d');
-    oCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
+    const P = DOT_AXIS_PAD;
     ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, totalW, totalH);
-
-    const tmp = document.createElement('canvas');
-    tmp.width = S.cols; tmp.height = S.rows;
-    tmp.getContext('2d').putImageData(S.dotImage, 0, 0);
+    ctx.fillRect(0, 0, vw, vh);
+    if (!S.overview) return;
+    const plotW = S.cols * z, plotH = S.rows * z;
+    // Visible cells
+    const c0 = Math.max(0, Math.floor(sl / z)), r0 = Math.max(0, Math.floor(st / z));
+    const c1 = Math.min(S.cols, Math.ceil((sl + vw - P) / z)), r1 = Math.min(S.rows, Math.ceil((st + vh - P) / z));
+    ctx.save();
+    ctx.beginPath(); ctx.rect(P, P, vw - P, vh - P); ctx.clip();
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(tmp, DOT_AXIS_PAD, DOT_AXIS_PAD, plotW, plotH);
+    if (c1 > c0 && r1 > r0) {
+        const dx = P + c0 * z - sl, dy = P + r0 * z - st;
+        const bin = S.overviewBin;
+        if (bin > 1 && z * bin >= 2) {
+            // Zoomed in past the overview's resolution: draw the visible cells exactly
+            const w = c1 - c0, h = r1 - r0;
+            const img = new ImageData(w, h);
+            const d = img.data;
+            for (let r = 0; r < h; r++) {
+                for (let c = 0; c < w; c++) {
+                    const v = _dotCellValue((r0 + r) * S.cols + c0 + c);
+                    const j = (r * w + c) * 4;
+                    d[j] = d[j + 1] = d[j + 2] = v; d[j + 3] = 255;
+                }
+            }
+            const tmp = document.createElement('canvas');
+            tmp.width = w; tmp.height = h;
+            tmp.getContext('2d').putImageData(img, 0, 0);
+            ctx.drawImage(tmp, dx, dy, w * z, h * z);
+        } else {
+            const src = _dotSourceFor(z);
+            ctx.drawImage(src.canvas, c0 / src.bin, r0 / src.bin, (c1 - c0) / src.bin, (r1 - r0) / src.bin,
+                dx, dy, (c1 - c0) * z, (r1 - r0) * z);
+        }
+    }
+    ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
+    ctx.strokeRect(P + 0.5 - sl, P + 0.5 - st, plotW, plotH);
+    ctx.restore();
 
-    // Axes
+    // Axis strips (pinned)
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, vw, P); ctx.fillRect(0, 0, P, vh);
     ctx.font = '11px system-ui, sans-serif';
     ctx.strokeStyle = '#333'; ctx.lineWidth = 1;
-    ctx.strokeRect(DOT_AXIS_PAD + 0.5, DOT_AXIS_PAD + 0.5, plotW, plotH);
-
-    const maxTicksX = Math.max(2, Math.floor(plotW / 50));
-    const maxTicksY = Math.max(2, Math.floor(plotH / 40));
-    const stepX = _dotNiceStep(S.cols, maxTicksX);
-    const stepY = _dotNiceStep(S.rows, maxTicksY);
-
+    const stepX = _dotNiceStep(S.cols, Math.max(2, Math.floor(plotW / 50)));
+    const stepY = _dotNiceStep(S.rows, Math.max(2, Math.floor(plotH / 40)));
     ctx.fillStyle = '#555'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
-    for (let pos = stepX; pos <= S.cols; pos += stepX) {
-        const x = DOT_AXIS_PAD + Math.round(pos * z) + 0.5;
-        ctx.beginPath(); ctx.moveTo(x, DOT_AXIS_PAD); ctx.lineTo(x, DOT_AXIS_PAD - 5); ctx.stroke();
-        ctx.fillText(String(pos), x, DOT_AXIS_PAD - 6);
+    for (let pos = stepX * Math.max(1, Math.floor(c0 / stepX)); pos <= Math.min(S.cols, c1 + stepX); pos += stepX) {
+        const x = P + Math.round(pos * z - sl) + 0.5;
+        if (x < P || x > vw) continue;
+        ctx.beginPath(); ctx.moveTo(x, P); ctx.lineTo(x, P - 5); ctx.stroke();
+        ctx.fillText(String(pos), x, P - 6);
     }
     ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
-    for (let pos = stepY; pos <= S.rows; pos += stepY) {
-        const y = DOT_AXIS_PAD + Math.round(pos * z) + 0.5;
-        ctx.beginPath(); ctx.moveTo(DOT_AXIS_PAD, y); ctx.lineTo(DOT_AXIS_PAD - 5, y); ctx.stroke();
-        ctx.fillText(String(pos), DOT_AXIS_PAD - 7, y);
+    for (let pos = stepY * Math.max(1, Math.floor(r0 / stepY)); pos <= Math.min(S.rows, r1 + stepY); pos += stepY) {
+        const y = P + Math.round(pos * z - st) + 0.5;
+        if (y < P || y > vh) continue;
+        ctx.beginPath(); ctx.moveTo(P, y); ctx.lineTo(P - 5, y); ctx.stroke();
+        ctx.fillText(String(pos), P - 7, y);
     }
-
-    // Axis titles
     ctx.fillStyle = '#333'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
     ctx.font = 'bold 11px system-ui, sans-serif';
     const nameB = S.nameB.length > 30 ? S.nameB.substring(0, 30) + '...' : S.nameB;
     const nameA = S.nameA.length > 30 ? S.nameA.substring(0, 30) + '...' : S.nameA;
-    ctx.fillText(nameB, DOT_AXIS_PAD + plotW / 2, 2);
-    ctx.save(); ctx.translate(12, DOT_AXIS_PAD + plotH / 2); ctx.rotate(-Math.PI / 2);
+    ctx.fillText(nameB, P + Math.min(plotW, vw - P) / 2, 2);
+    ctx.save(); ctx.translate(12, P + Math.min(plotH, vh - P) / 2); ctx.rotate(-Math.PI / 2);
     ctx.fillText(nameA, 0, 0); ctx.restore();
+}
 
-    // Detect interesting regions for side panel
-    setTimeout(() => _dotDetectRegions(), 50);
+// Size a canvas to the viewport (HiDPI backing store) and return its context
+function _dotSizeToViewport(canvas, vw, vh) {
+    const dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.round(vw * dpr) || canvas.height !== Math.round(vh * dpr)) {
+        canvas.width = Math.round(vw * dpr); canvas.height = Math.round(vh * dpr);
+    }
+    canvas.style.width = vw + 'px'; canvas.style.height = vh + 'px';
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return ctx;
+}
+
+function _dotRender() {
+    const S = _dotPlotState;
+    if (!S.overview) return;
+    const canvas = document.getElementById('dotPlotCanvas');
+    const overlay = document.getElementById('dotPlotOverlay');
+    const { vp, vw, vh } = _dotViewport();
+    if (!canvas || !overlay || !vp) return;
+    _dotSetSpacer();
+    const ctx = _dotSizeToViewport(canvas, vw, vh);
+    _dotSizeToViewport(overlay, vw, vh);
+    _dotPaint(ctx, S.zoom, vp.scrollLeft, vp.scrollTop, vw, vh);
 }
 
 function _dotFitView() {
     const S = _dotPlotState;
     if ((!S.scores && !S.matchMap)) return;
-    const vp = document.getElementById('dotPlotViewport');
-    if (!vp) return;
-    const vw = (vp.clientWidth || 600) - DOT_AXIS_PAD - 20;
-    const vh = (vp.clientHeight || 400) - DOT_AXIS_PAD - 20;
-    if (S.cols === 0 || S.rows === 0) return;
-    const z = Math.min(vw / S.cols, vh / S.rows, 24);
-    S.zoom = Math.max(0.5, Math.round(z * 10) / 10);
+    const { vp } = _dotViewport();
+    if (!vp || S.cols === 0 || S.rows === 0) return;
+    // 12 px spare on the far sides so the last tick labels are not clipped
+    const fit = Math.min((vp.clientWidth - DOT_AXIS_PAD - 12) / S.cols, (vp.clientHeight - DOT_AXIS_PAD - 12) / S.rows);
+    const z = Math.min(24, Math.max(0.01, fit));
+    S.zoom = z >= 1 ? Math.floor(z * 10) / 10 : Math.floor(z * 1000) / 1000;
+    vp.scrollLeft = vp.scrollTop = 0;
     _dotRender();
 }
 
-// Detect top-scoring diagonal regions for the side navigation list
+// Detect top-scoring diagonal runs for the side navigation list
 function _dotDetectRegions() {
     const S = _dotPlotState;
     if ((!S.scores && !S.matchMap)) return;
     const regions = [];
-
-    if (S.spinMode && S.matchMap) {
-        // SPIN: find consecutive runs of word matches on each diagonal
-        const minRun = Math.max(4, Math.floor(Math.min(S.rows, S.cols) * 0.08));
-        for (let d = -(S.rows - 1); d < S.cols; d++) {
-            let runStart = -1, runLen = 0;
-            const startR = d < 0 ? -d : 0;
-            const endR = Math.min(S.rows, S.cols - d);
-            for (let r = startR; r < endR; r++) {
-                const c = r + d;
-                if (c < 0 || c >= S.cols || r >= S.rows) continue;
-                if (S.matchMap[r * S.cols + c]) {
-                    if (runStart < 0) runStart = r;
-                    runLen++;
-                } else {
-                    if (runLen >= minRun) {
-                        regions.push({ row: runStart, col: runStart + d, length: runLen, avgScore: 1, diagonal: d });
-                    }
-                    runStart = -1; runLen = 0;
-                }
-            }
+    const spin = S.spinMode && !!S.matchMap;
+    // SPIN: a single chance word hit gives a run of one word length, so ask for two.
+    // Dotter: a run of windows at or above the threshold.
+    const minRun = spin ? Math.max(8, 2 * S.windowSize)
+                        : Math.max(6, Math.min(15, Math.floor(Math.min(S.rows, S.cols) * 0.12)));
+    const minScore = S.threshold * S.windowSize;
+    for (let d = -(S.rows - 1); d < S.cols; d++) {
+        let runStart = -1, runSum = 0, runLen = 0;
+        const startR = d < 0 ? -d : 0;
+        const endR = Math.min(S.rows, S.cols - d);
+        const flush = () => {
             if (runLen >= minRun) {
-                regions.push({ row: runStart, col: runStart + d, length: runLen, avgScore: 1, diagonal: d });
+                regions.push({ row: runStart, col: runStart + d, length: runLen,
+                    avgScore: spin ? 1 : runSum / (runLen * S.windowSize), diagonal: d });
+            }
+            runStart = -1; runSum = 0; runLen = 0;
+        };
+        for (let r = startR; r < endR; r++) {
+            const i = r * S.cols + r + d;
+            const on = spin ? S.matchMap[i] === 1 : S.scores[i] >= minScore;
+            if (on) {
+                if (runStart < 0) runStart = r;
+                runSum += spin ? 1 : S.scores[i];
+                runLen++;
+            } else if (runLen) {
+                flush();
             }
         }
-    } else if (S.scores) {
-        // Doter: find runs where sliding-window score exceeds threshold
-        const minRun = Math.max(6, Math.min(15, Math.floor(Math.min(S.rows, S.cols) * 0.12)));
-        const minScore = S.threshold * S.windowSize * 0.9;
-        for (let d = -(S.rows - 1); d < S.cols; d++) {
-            let runStart = -1, runSum = 0, runLen = 0;
-            const startR = d < 0 ? -d : 0;
-            const endR = Math.min(S.rows, S.cols - d);
-            for (let r = startR; r < endR; r++) {
-                const c = r + d;
-                if (c < 0 || c >= S.cols || r >= S.rows) continue;
-                const score = S.scores[r * S.cols + c];
-                if (score >= minScore) {
-                    if (runStart < 0) runStart = r;
-                    runSum += score;
-                    runLen++;
-                } else {
-                    if (runLen >= minRun) {
-                        regions.push({ row: runStart, col: runStart + d, length: runLen, avgScore: runSum / (runLen * S.windowSize), diagonal: d });
-                    }
-                    runStart = -1; runSum = 0; runLen = 0;
-                }
-            }
-            if (runLen >= minRun) {
-                regions.push({ row: runStart, col: runStart + d, length: runLen, avgScore: runSum / (runLen * S.windowSize), diagonal: d });
-            }
-        }
+        flush();
     }
 
     const isSelf = S.seqA === S.seqB && S.rows === S.cols;
@@ -22159,21 +22245,20 @@ function _dotRenderRegionList() {
     const listEl = document.getElementById('dotPlotRegionList');
     const itemsEl = document.getElementById('dotPlotRegionItems');
     if (!listEl || !itemsEl) return;
-
+    listEl.style.display = 'block';
     if (!S.regions || S.regions.length === 0) {
-        listEl.style.display = 'none';
+        itemsEl.innerHTML = '<div style="padding:4px 6px;color:#888;">No diagonal runs above the current settings.</div>';
         return;
     }
-
-    listEl.style.display = 'block';
     itemsEl.innerHTML = S.regions.map((r, i) => {
         const pct = (r.avgScore * 100).toFixed(1);
+        const what = S.spinMode ? 'exact word matches' : `${pct}% mean window identity`;
         return `<div style="padding:3px 6px;cursor:pointer;border-bottom:1px solid #eee;"
             onmouseenter="this.style.background='#d0e4ff'"
             onmouseleave="this.style.background=''"
             onclick="_dotGoToRegion(${i})"
-            title="Diagonal run: ${r.length}bp, ${pct}% similarity">
-            <b>#${i + 1}</b> ${r.length}bp ${pct}%
+            title="Diagonal run of ${r.length} positions, ${what}">
+            <b>#${i + 1}</b> ${r.length}bp${S.spinMode ? '' : ' ' + pct + '%'}
             <span style="color:#888;font-size:10px;">A${r.row + 1}-${r.row + r.length} / B${r.col + 1}-${r.col + r.length}</span>
           </div>`;
     }).join('');
@@ -22183,102 +22268,116 @@ function _dotGoToRegion(idx) {
     const S = _dotPlotState;
     if (!S.regions || !S.regions[idx]) return;
     const r = S.regions[idx];
-    const vp = document.getElementById('dotPlotViewport');
+    const { vp, vw, vh } = _dotViewport();
     if (!vp) return;
-    // Scroll to center the region in the viewport
-    const cx = DOT_AXIS_PAD + (r.col + r.length / 2) * S.zoom;
-    const cy = DOT_AXIS_PAD + (r.row + r.length / 2) * S.zoom;
-    vp.scrollLeft = Math.max(0, cx - vp.clientWidth / 2);
-    vp.scrollTop = Math.max(0, cy - vp.clientHeight / 2);
-    // Highlight the region on overlay
+    // Centre the run in the plot area
+    vp.scrollLeft = Math.max(0, (r.col + r.length / 2) * S.zoom - (vw - DOT_AXIS_PAD) / 2);
+    vp.scrollTop = Math.max(0, (r.row + r.length / 2) * S.zoom - (vh - DOT_AXIS_PAD) / 2);
+    _dotRender();
+    S.lastRow = r.row; S.lastCol = r.col;
     _dotDrawOverlay(r.row, r.col);
     _dotUpdateHoverInfo(r.row, r.col);
+}
+
+// Screen position of a cell's centre in the viewport
+function _dotCellToScreen(row, col) {
+    const S = _dotPlotState;
+    const { vp } = _dotViewport();
+    return {
+        x: DOT_AXIS_PAD + (col + 0.5) * S.zoom - (vp ? vp.scrollLeft : 0),
+        y: DOT_AXIS_PAD + (row + 0.5) * S.zoom - (vp ? vp.scrollTop : 0)
+    };
+}
+
+// Viewport-relative mouse position -> cell (or null outside the plot)
+function _dotEventToCell(e) {
+    const S = _dotPlotState;
+    const { vp } = _dotViewport();
+    const overlay = document.getElementById('dotPlotOverlay');
+    if (!vp || !overlay) return null;
+    const rect = overlay.getBoundingClientRect();
+    const x = e.clientX - rect.left - DOT_AXIS_PAD, y = e.clientY - rect.top - DOT_AXIS_PAD;
+    if (x < 0 || y < 0) return null;
+    const col = Math.floor((x + vp.scrollLeft) / S.zoom);
+    const row = Math.floor((y + vp.scrollTop) / S.zoom);
+    if (row < 0 || col < 0 || row >= S.rows || col >= S.cols) return null;
+    return { row, col };
 }
 
 function _dotDrawOverlay(row, col) {
     const S = _dotPlotState;
     const overlay = document.getElementById('dotPlotOverlay');
+    const { vw, vh } = _dotViewport();
     if (!overlay) return;
-    const oCtx = overlay.getContext('2d');
-    const z = S.zoom;
-    const plotW = Math.round(S.cols * z), plotH = Math.round(S.rows * z);
-    const totalW = DOT_AXIS_PAD + plotW + 1;
-    const totalH = DOT_AXIS_PAD + plotH + 1;
-    oCtx.clearRect(0, 0, totalW, totalH);
+    const oCtx = _dotSizeToViewport(overlay, vw, vh);
+    oCtx.clearRect(0, 0, vw, vh);
     if (row < 0 || col < 0 || row >= S.rows || col >= S.cols) return;
-    const colW = plotW / S.cols, rowH = plotH / S.rows;
-    const cx = DOT_AXIS_PAD + (col + 0.5) * colW;
-    const cy = DOT_AXIS_PAD + (row + 0.5) * rowH;
+    const z = S.zoom, P = DOT_AXIS_PAD;
+    const { x: cx, y: cy } = _dotCellToScreen(row, col);
+    oCtx.save();
+    oCtx.beginPath(); oCtx.rect(P, P, vw - P, vh - P); oCtx.clip();
     // Crosshair
     oCtx.strokeStyle = 'rgba(80,160,255,0.7)'; oCtx.lineWidth = 1;
     oCtx.beginPath();
-    oCtx.moveTo(DOT_AXIS_PAD, cy); oCtx.lineTo(DOT_AXIS_PAD + plotW, cy);
-    oCtx.moveTo(cx, DOT_AXIS_PAD); oCtx.lineTo(cx, DOT_AXIS_PAD + plotH);
+    oCtx.moveTo(P, cy); oCtx.lineTo(vw, cy);
+    oCtx.moveTo(cx, P); oCtx.lineTo(cx, vh);
     oCtx.stroke();
-    // Diagonal trace - snap to pixel grid for crisp alignment with dot image
-    const range = S.scoreMax - S.scoreMin || 1;
+    // Diagonal trace through the hovered cell
     oCtx.fillStyle = 'rgba(100,230,160,0.85)';
-    const pxSz = Math.max(1, Math.round(colW));
-    let r = row, c = col;
-    if (S.spinMode && S.matchMap) {
-        // SPIN: walk diagonal using binary matchMap
-        while (r >= 0 && c >= 0) {
-            if (!S.matchMap[r * S.cols + c]) break;
-            oCtx.fillRect(DOT_AXIS_PAD + Math.floor(c * colW), DOT_AXIS_PAD + Math.floor(r * rowH), pxSz, pxSz);
-            r--; c--;
-        }
-        r = row + 1; c = col + 1;
-        while (r < S.rows && c < S.cols) {
-            if (!S.matchMap[r * S.cols + c]) break;
-            oCtx.fillRect(DOT_AXIS_PAD + Math.floor(c * colW), DOT_AXIS_PAD + Math.floor(r * rowH), pxSz, pxSz);
-            r++; c++;
-        }
-    } else if (S.scores) {
-        // Doter: walk diagonal using normalized scores
-        while (r >= 0 && c >= 0) {
-            const n = (S.scores[r * S.cols + c] - S.scoreMin) / range;
-            if (n < S.threshold) break;
-            oCtx.fillRect(DOT_AXIS_PAD + Math.floor(c * colW), DOT_AXIS_PAD + Math.floor(r * rowH), pxSz, pxSz);
-            r--; c--;
-        }
-        r = row + 1; c = col + 1;
-        while (r < S.rows && c < S.cols) {
-            const n = (S.scores[r * S.cols + c] - S.scoreMin) / range;
-            if (n < S.threshold) break;
-            oCtx.fillRect(DOT_AXIS_PAD + Math.floor(c * colW), DOT_AXIS_PAD + Math.floor(r * rowH), pxSz, pxSz);
-            r++; c++;
-        }
-    }
-    // Position labels
-    oCtx.fillStyle = 'rgba(80,160,255,0.95)'; oCtx.font = 'bold 11px system-ui';
-    oCtx.textAlign = 'center'; oCtx.textBaseline = 'bottom';
-    oCtx.fillText(String(col + 1), cx, DOT_AXIS_PAD - 1);
-    oCtx.textAlign = 'right'; oCtx.textBaseline = 'middle';
-    oCtx.fillText(String(row + 1), DOT_AXIS_PAD - 2, cy);
-
-    // Draw pinned position marker (red crosshair) if set
+    const px = Math.max(1, z);
+    const mark = (r, c) => {
+        const p = _dotCellToScreen(r, c);
+        oCtx.fillRect(p.x - z / 2, p.y - z / 2, px, px);
+    };
+    for (let r = row, c = col; r >= 0 && c >= 0 && _dotIsDot(r, c); r--, c--) mark(r, c);
+    for (let r = row + 1, c = col + 1; r < S.rows && c < S.cols && _dotIsDot(r, c); r++, c++) mark(r, c);
+    // Pinned position marker (red crosshair)
     if (S.pinnedRow >= 0 && S.pinnedCol >= 0) {
-        const pcx = DOT_AXIS_PAD + (S.pinnedCol + 0.5) * colW;
-        const pcy = DOT_AXIS_PAD + (S.pinnedRow + 0.5) * rowH;
+        const p = _dotCellToScreen(S.pinnedRow, S.pinnedCol);
         oCtx.strokeStyle = 'rgba(220,50,50,0.85)'; oCtx.lineWidth = 1.5;
         oCtx.beginPath();
-        oCtx.moveTo(DOT_AXIS_PAD, pcy); oCtx.lineTo(DOT_AXIS_PAD + plotW, pcy);
-        oCtx.moveTo(pcx, DOT_AXIS_PAD); oCtx.lineTo(pcx, DOT_AXIS_PAD + plotH);
+        oCtx.moveTo(P, p.y); oCtx.lineTo(vw, p.y);
+        oCtx.moveTo(p.x, P); oCtx.lineTo(p.x, vh);
         oCtx.stroke();
-        // Red square around pinned cell
-        oCtx.strokeStyle = 'rgba(220,50,50,0.9)';
-        oCtx.lineWidth = 2;
-        oCtx.strokeRect(DOT_AXIS_PAD + Math.floor(S.pinnedCol * colW) - 1, DOT_AXIS_PAD + Math.floor(S.pinnedRow * rowH) - 1, colW + 2, rowH + 2);
-        // Label
+        oCtx.strokeStyle = 'rgba(220,50,50,0.9)'; oCtx.lineWidth = 2;
+        oCtx.strokeRect(p.x - z / 2 - 1, p.y - z / 2 - 1, z + 2, z + 2);
+    }
+    oCtx.restore();
+    // Position labels in the axis strips, on a white patch so they cover the tick labels
+    oCtx.font = 'bold 11px system-ui';
+    const label = (text, x, y, align, base) => {
+        const w = oCtx.measureText(text).width + 10;
+        const left = align === 'center' ? x - w / 2 : x - w + 3;
+        const top = base === 'bottom' ? y - 15 : y - 10;
+        oCtx.fillStyle = '#fff'; oCtx.fillRect(left, top, w, 20);
+        oCtx.fillStyle = 'rgba(40,120,230,1)'; oCtx.textAlign = align; oCtx.textBaseline = base;
+        oCtx.fillText(text, x, y);
+    };
+    if (cx >= P) label(String(col + 1), cx, P - 1, 'center', 'bottom');
+    if (cy >= P) label(String(row + 1), P - 2, cy, 'right', 'middle');
+    if (S.pinnedRow >= 0 && S.pinnedCol >= 0) {
         oCtx.fillStyle = 'rgba(220,50,50,0.95)'; oCtx.font = 'bold 10px system-ui';
-        oCtx.textAlign = 'left'; oCtx.textBaseline = 'bottom';
-        oCtx.fillText('PIN: A'+String(S.pinnedRow+1)+' / B'+String(S.pinnedCol+1), DOT_AXIS_PAD + 4, DOT_AXIS_PAD - 1);
+        oCtx.textAlign = 'left'; oCtx.textBaseline = 'top';
+        oCtx.fillText('PIN: A' + (S.pinnedRow + 1) + ' / B' + (S.pinnedCol + 1), P + 4, 16);
     }
 }
 
+function _dotClearOverlay() {
+    const overlay = document.getElementById('dotPlotOverlay');
+    const { vw, vh } = _dotViewport();
+    if (overlay) _dotSizeToViewport(overlay, vw, vh).clearRect(0, 0, vw, vh);
+}
+
+const _DOT_COMPLEMENT = {
+    A: 'T', C: 'G', G: 'C', T: 'A', U: 'A', N: 'N',
+    R: 'Y', Y: 'R', S: 'S', W: 'W', K: 'M', M: 'K', B: 'V', V: 'B', D: 'H', H: 'D'
+};
+
 async function openDotPlot(seqA, seqB, nameA, nameB, meta = null) {
     const S = _dotPlotState;
-    S.seqA = seqA.toUpperCase(); S.seqB = seqB.toUpperCase();
+    // Uppercase; U and T are the same base
+    const norm = s => s.toUpperCase().replace(/U/g, 'T');
+    S.seqA = norm(seqA); S.seqB = norm(seqB);
     S.sourceSeqA = S.seqA; S.sourceSeqB = S.seqB;
     S.nameA = nameA; S.nameB = nameB;
     S.meta = meta || S.meta || null;
@@ -22289,40 +22388,58 @@ async function openDotPlot(seqA, seqB, nameA, nameB, meta = null) {
     S.alignMapB = m.alignMapB || _buildUngappedToAlignMap(m.alignedSeqB);
     const spinRadio = document.querySelector('input[name="dotPlotMode"][value="spin"]');
     S.spinMode = spinRadio ? spinRadio.checked : true;
-    S.windowSize = parseInt(document.getElementById('dotPlotWindow')?.value) || 9;
-    S.threshold = (parseInt(document.getElementById('dotPlotThreshold')?.value) || 55) / 100;
+    const [lo, hi] = S.spinMode ? DOT_WORD_RANGE : DOT_WINDOW_RANGE;
+    const wRaw = parseInt(document.getElementById('dotPlotWindow')?.value, 10);
+    S.windowSize = Math.min(hi, Math.max(lo, Number.isFinite(wRaw) ? wRaw : (S.spinMode ? 6 : 11)));
+    const tRaw = parseInt(document.getElementById('dotPlotThreshold')?.value, 10);
+    S.threshold = (Number.isFinite(tRaw) ? tRaw : 55) / 100;
     S.pinnedRow = S.pinnedCol = -1;
+    S.lastRow = S.lastCol = -1;
     S._frozen = false;
     S._frozenRow = S._frozenCol = -1;
+    S._copyRegion = null;
+    S.regions = [];
 
     const revComp = document.getElementById('dotPlotRevComp')?.checked;
     if (revComp) {
-        const m = { A: 'T', C: 'G', G: 'C', T: 'A', U: 'A', N: 'N' };
-        S.seqB = [...S.seqB].reverse().map(b => m[b] ?? 'N').join('');
+        S.seqB = [...S.seqB].reverse().map(b => _DOT_COMPLEMENT[b] ?? 'N').join('');
         S.nameB = nameB + ' (RevComp)';
         if (S.alignMapB) S.alignMapB = [...S.alignMapB].reverse();
     }
+    S.unknown = _dotUnknownChars(S.seqA, S.seqB);
 
     const modal = document.getElementById('dotPlotModal');
     if (modal) showExclusiveModal('dotPlotModal');
     const titleEl = document.getElementById('dotPlotTitle');
     if (titleEl) titleEl.textContent = `Dot Plot: ${nameA} vs ${nameB}${revComp ? ' (rc)' : ''}`;
     const statusEl = document.getElementById('dotPlotStatus');
-    if (statusEl) statusEl.textContent = `Computing ${S.seqA.length} x ${S.seqB.length}...`;
     _dotClearHoverInfo();
+
+    const cells = S.seqA.length * S.seqB.length;
+    if (cells > DOT_MAX_CELLS) {
+        S.matchMap = S.scores = S.overview = null;
+        S.rows = S.cols = 0;
+        _dotClearOverlay();
+        const c = document.getElementById('dotPlotCanvas');
+        if (c) c.getContext('2d').clearRect(0, 0, c.width, c.height);
+        if (statusEl) statusEl.textContent = `Too large to plot: ${S.seqA.length.toLocaleString()} x ${S.seqB.length.toLocaleString()} positions ` +
+            `(limit ${DOT_MAX_CELLS.toLocaleString()} cells, about 10,000 x 10,000). Plot shorter sequences.`;
+        _dotRenderRegionList();
+        return;
+    }
+    if (statusEl) statusEl.textContent = `Computing ${S.seqA.length} x ${S.seqB.length}...`;
 
     S.computing = true;
     const t0 = performance.now();
     try {
         if (S.spinMode) {
-            const ws = Math.max(2, S.windowSize);
-            const result = await _dotComputeWord(S.seqA, S.seqB, ws);
+            const result = await _dotRunWorker('word', { seqA: S.seqA, seqB: S.seqB, wordSize: S.windowSize, unknown: S.unknown });
             S.matchMap = new Uint8Array(result.matchMap);
             S.scores = null;
             S.rows = result.rows; S.cols = result.cols;
             S.scoreMin = 0; S.scoreMax = 1;
         } else {
-            const result = await _dotCompute(S.seqA, S.seqB, S.windowSize, 'identity');
+            const result = await _dotRunWorker('window', { seqA: S.seqA, seqB: S.seqB, windowSize: S.windowSize, mode: 'identity', unknown: S.unknown });
             S.scores = new Int16Array(result.scores);
             S.matchMap = null;
             S.rows = result.rows; S.cols = result.cols;
@@ -22335,8 +22452,10 @@ async function openDotPlot(seqA, seqB, nameA, nameB, meta = null) {
     const ms = performance.now() - t0;
     S.computing = false;
     _dotBuildImage();
+    S._autoFit = true;
     _dotFitView();
-    S.lastRow = S.lastCol = -1;
+    _dotClearOverlay();
+    _dotDetectRegions();
     if (statusEl) statusEl.textContent = `${S.seqA.length} x ${S.seqB.length} in ${ms < 1000 ? ms.toFixed(0) + ' ms' : (ms / 1000).toFixed(1) + ' s'}.`;
 }
 
@@ -22353,6 +22472,97 @@ async function _dotUnfreeze() {
     }
 }
 
+function _dotSafeName(s) {
+    return String(s || 'seq').replace(/[^A-Za-z0-9._-]+/g, '_').slice(0, 60);
+}
+
+function _dotDownload(href, filename) {
+    const a = document.createElement('a');
+    a.href = href;
+    a.download = filename;
+    a.click();
+}
+
+// PNG of the whole plot (not just the visible part), at the current zoom
+// unless that would exceed 8000 px on a side
+function _dotExportPng() {
+    const S = _dotPlotState;
+    if (!S.overview) return;
+    // At least ~1600 px across (up to 4 px per position), at most 8000 px
+    const n = Math.max(S.rows, S.cols);
+    const z = Math.min((8000 - DOT_AXIS_PAD) / n, Math.max(S.zoom, Math.min(4, 1600 / n)));
+    const w = Math.ceil(DOT_AXIS_PAD + S.cols * z + 2), h = Math.ceil(DOT_AXIS_PAD + S.rows * z + 2);
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    _dotPaint(c.getContext('2d'), z, 0, 0, w, h);
+    _dotDownload(c.toDataURL('image/png'), `dotplot_${_dotSafeName(S.nameA)}_vs_${_dotSafeName(S.nameB)}.png`);
+}
+
+// Vector SVG: every diagonal run of dots is one line segment, so the file
+// scales without pixels. Dotter runs are shaded by their mean identity.
+function _dotExportSvg() {
+    const S = _dotPlotState;
+    if (!S.overview) return;
+    const spin = S.spinMode && !!S.matchMap;
+    const MAX_RUNS = 300000;
+    const size = 800;
+    const z = size / Math.max(S.rows, S.cols);
+    const P = DOT_AXIS_PAD;
+    const W = P + S.cols * z + 2, H = P + S.rows * z + 2;
+    const esc = t => String(t).replace(/[&<>"]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+    const lines = [];
+    let runs = 0;
+    for (let d = -(S.rows - 1); d < S.cols && runs <= MAX_RUNS; d++) {
+        const startR = d < 0 ? -d : 0, endR = Math.min(S.rows, S.cols - d);
+        let rs = -1, sum = 0;
+        for (let r = startR; r <= endR; r++) {
+            const on = r < endR && _dotIsDot(r, r + d);
+            if (on) {
+                if (rs < 0) { rs = r; sum = 0; }
+                sum += spin ? 1 : _dotIdentityAt(r * S.cols + r + d);
+            } else if (rs >= 0) {
+                const len = r - rs;
+                const grey = spin ? 0 : Math.round((1 - sum / len) * 255);
+                const x1 = P + (rs + d) * z, y1 = P + rs * z;
+                lines.push(`<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${(x1 + len * z).toFixed(2)}" y2="${(y1 + len * z).toFixed(2)}" stroke="rgb(${grey},${grey},${grey})"/>`);
+                runs++;
+                rs = -1;
+            }
+        }
+    }
+    if (runs > MAX_RUNS) {
+        showMessage(`Too many separate dots for a vector file (over ${MAX_RUNS.toLocaleString()} runs). Raise the word size or threshold, or export PNG.`, 6000);
+        return;
+    }
+    const ticks = [];
+    const stepX = _dotNiceStep(S.cols, 10), stepY = _dotNiceStep(S.rows, 10);
+    for (let pos = stepX; pos <= S.cols; pos += stepX) {
+        const x = (P + pos * z).toFixed(2);
+        ticks.push(`<line x1="${x}" y1="${P}" x2="${x}" y2="${P - 5}" stroke="#333"/><text x="${x}" y="${P - 7}" text-anchor="middle">${pos}</text>`);
+    }
+    for (let pos = stepY; pos <= S.rows; pos += stepY) {
+        const y = (P + pos * z).toFixed(2);
+        ticks.push(`<line x1="${P}" y1="${y}" x2="${P - 5}" y2="${y}" stroke="#333"/><text x="${P - 7}" y="${y}" text-anchor="end" dominant-baseline="middle">${pos}</text>`);
+    }
+    const svg = [
+        '<?xml version="1.0" encoding="UTF-8"?>',
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${W.toFixed(0)}" height="${H.toFixed(0)}" viewBox="0 0 ${W.toFixed(2)} ${H.toFixed(2)}" font-family="sans-serif" font-size="11">`,
+        `<title>Dot plot: ${esc(S.nameA)} vs ${esc(S.nameB)} (${spin ? 'SPIN word ' + S.windowSize : 'Dotter window ' + S.windowSize + ', threshold ' + Math.round(S.threshold * 100) + '%'})</title>`,
+        `<rect width="100%" height="100%" fill="white"/>`,
+        `<g stroke-width="${Math.max(z, 0.5).toFixed(2)}" stroke-linecap="square">`,
+        ...lines,
+        '</g>',
+        `<rect x="${P}" y="${P}" width="${(S.cols * z).toFixed(2)}" height="${(S.rows * z).toFixed(2)}" fill="none" stroke="#333"/>`,
+        '<g fill="#555">', ...ticks, '</g>',
+        `<text x="${P + S.cols * z / 2}" y="12" text-anchor="middle" font-weight="bold">${esc(S.nameB)}</text>`,
+        `<text transform="translate(12 ${P + S.rows * z / 2}) rotate(-90)" text-anchor="middle" font-weight="bold">${esc(S.nameA)}</text>`,
+        '</svg>'
+    ].join('\n');
+    const url = URL.createObjectURL(new Blob([svg], { type: 'image/svg+xml' }));
+    _dotDownload(url, `dotplot_${_dotSafeName(S.nameA)}_vs_${_dotSafeName(S.nameB)}.svg`);
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    showMessage(`Dot plot exported as SVG (${runs.toLocaleString()} diagonal runs).`, 2500);
+}
 
 function _initDotPlotEvents() {
     const overlay = document.getElementById('dotPlotOverlay');
@@ -22361,6 +22571,7 @@ function _initDotPlotEvents() {
     const recalcBtn = document.getElementById('dotPlotRecalc');
     const exportBtn = document.getElementById('dotPlotExport');
     const closeBtn = document.getElementById('dotPlotCloseBtn');
+    const viewport = document.getElementById('dotPlotViewport');
 
     if (overlay) {
         let hoverRaf = 0;
@@ -22369,56 +22580,45 @@ function _initDotPlotEvents() {
             if ((!S.scores && !S.matchMap) || S._frozen || hoverRaf) return;
             hoverRaf = requestAnimationFrame(() => {
                 hoverRaf = 0;
-                const rect = overlay.getBoundingClientRect();
-                const col = Math.floor((e.clientX - rect.left - DOT_AXIS_PAD) / S.zoom);
-                const row = Math.floor((e.clientY - rect.top - DOT_AXIS_PAD) / S.zoom);
-                if (row < 0 || col < 0 || row >= S.rows || col >= S.cols) {
+                const cell = _dotEventToCell(e);
+                if (!cell) {
                     _dotClearHoverInfo();
                     return;
                 }
-                if (row === S.lastRow && col === S.lastCol) return;
-                S.lastRow = row; S.lastCol = col;
-                try { _dotDrawOverlay(row, col); } catch (e) { console.error('_dotDrawOverlay:', e); }
-                try { _dotUpdateHoverInfo(row, col); } catch (e) { console.error('_dotUpdateHoverInfo:', e); }
+                if (cell.row === S.lastRow && cell.col === S.lastCol) return;
+                S.lastRow = cell.row; S.lastCol = cell.col;
+                try { _dotDrawOverlay(cell.row, cell.col); } catch (err) { console.error('_dotDrawOverlay:', err); }
+                try { _dotUpdateHoverInfo(cell.row, cell.col); } catch (err) { console.error('_dotUpdateHoverInfo:', err); }
             });
         });
         overlay.addEventListener('mouseleave', () => {
             if (hoverRaf) { cancelAnimationFrame(hoverRaf); hoverRaf = 0; }
-            const oCtx = overlay.getContext('2d');
             const S = _dotPlotState;
-            const z = S.zoom;
-            const pW = Math.round(S.cols * z), pH = Math.round(S.rows * z);
-            const tw = DOT_AXIS_PAD + pW + 1;
-            const th = DOT_AXIS_PAD + pH + 1;
-            oCtx.clearRect(0, 0, tw, th);
-            _dotPlotState.lastRow = _dotPlotState.lastCol = -1;
+            if (S._frozen) return;
+            _dotClearOverlay();
+            S.lastRow = S.lastCol = -1;
             _dotClearHoverInfo();
             // Redraw pinned marker if present
-            if (_dotPlotState.pinnedRow >= 0) {
-                _dotDrawOverlay(_dotPlotState.pinnedRow, _dotPlotState.pinnedCol);
-            }
+            if (S.pinnedRow >= 0) _dotDrawOverlay(S.pinnedRow, S.pinnedCol);
         });
         // Click to pin a coordinate for region copying
         overlay.addEventListener('click', (e) => {
             const S = _dotPlotState;
             if ((!S.scores && !S.matchMap) || S._frozen) return;
-            const rect = overlay.getBoundingClientRect();
-            const col = Math.floor((e.clientX - rect.left - DOT_AXIS_PAD) / S.zoom);
-            const row = Math.floor((e.clientY - rect.top - DOT_AXIS_PAD) / S.zoom);
-            if (row < 0 || col < 0 || row >= S.rows || col >= S.cols) return;
-            S.pinnedRow = row; S.pinnedCol = col;
-            _dotDrawOverlay(row, col);
-            _dotUpdateHoverInfo(row, col);
-            showMessage(`Pinned: A${row + 1} / B${col + 1}. Click \"Copy Region\" to copy FASTA.`, 2500);
+            const cell = _dotEventToCell(e);
+            if (!cell) return;
+            S.pinnedRow = cell.row; S.pinnedCol = cell.col;
+            _dotDrawOverlay(cell.row, cell.col);
+            _dotUpdateHoverInfo(cell.row, cell.col);
+            showMessage(`Pinned: A${cell.row + 1} / B${cell.col + 1}. Click "Copy Region" to copy FASTA.`, 2500);
         });
         overlay.addEventListener('dblclick', (e) => {
             const S = _dotPlotState;
             if ((!S.scores && !S.matchMap)) return;
             e.preventDefault();
-            const rect = overlay.getBoundingClientRect();
-            const col = Math.floor((e.clientX - rect.left - DOT_AXIS_PAD) / S.zoom);
-            const row = Math.floor((e.clientY - rect.top - DOT_AXIS_PAD) / S.zoom);
-            if (row < 0 || col < 0 || row >= S.rows || col >= S.cols) return;
+            const cell = _dotEventToCell(e);
+            if (!cell) return;
+            const { row, col } = cell;
             if (S._frozen) {
                 _dotUnfreeze();
                 S.lastRow = row;
@@ -22440,7 +22640,6 @@ function _initDotPlotEvents() {
                 showMessage('FROZEN - double-click to unfreeze.', 3000);
             }
         });
-        const viewport = document.getElementById('dotPlotViewport');
         _dotBindPlotWheel(viewport);
         _dotBindPlotWheel(overlay);
         const dotModal = document.getElementById('dotPlotModal');
@@ -22460,23 +22659,37 @@ function _initDotPlotEvents() {
             el.addEventListener('wheel', (e) => { e.stopPropagation(); }, { passive: false });
         });
     }
-    if (threshSlider) { _dotOnModeChange();
-        threshSlider.addEventListener('input', () => {
-            threshVal.textContent = threshSlider.value + '%';
-            const S = _dotPlotState;
-            S.threshold = parseInt(threshSlider.value) / 100;
-            if (!S.spinMode && S.scores) { _dotBuildImage(); _dotRender(); }
-        }); _dotOnModeChange();
+    // Only the visible part is drawn, so scrolling and resizing redraw
+    if (viewport) {
+        let raf = 0;
+        const redraw = (e) => {
+            if (raf) return;
+            raf = requestAnimationFrame(() => {
+                raf = 0;
+                const S = _dotPlotState;
+                if (S._autoFit && e && e.type !== 'scroll') _dotFitView(); else _dotRender();
+                if (S.lastRow >= 0) _dotDrawOverlay(S.lastRow, S.lastCol);
+                else if (S.pinnedRow >= 0) _dotDrawOverlay(S.pinnedRow, S.pinnedCol);
+                else _dotClearOverlay();
+            });
+        };
+        viewport.addEventListener('scroll', redraw, { passive: true });
+        if (typeof ResizeObserver === 'function') new ResizeObserver(redraw).observe(viewport);
+    }
+    if (threshSlider) {
+        _dotOnModeChange();
         threshSlider.addEventListener('input', () => {
             const v = parseInt(threshSlider.value);
             if (threshVal) threshVal.textContent = v + '%';
-            _dotPlotState.threshold = v / 100;
-            if (_dotPlotState.scores) {
+            const S = _dotPlotState;
+            S.threshold = v / 100;
+            if (!S.spinMode && S.scores) {
                 _dotBuildImage();
                 _dotRender();
-                if (_dotPlotState.lastRow >= 0) {
-                    _dotDrawOverlay(_dotPlotState.lastRow, _dotPlotState.lastCol);
-                    _dotUpdateHoverInfo(_dotPlotState.lastRow, _dotPlotState.lastCol);
+                _dotDetectRegions();
+                if (S.lastRow >= 0) {
+                    _dotDrawOverlay(S.lastRow, S.lastCol);
+                    _dotUpdateHoverInfo(S.lastRow, S.lastCol);
                 }
             }
         });
@@ -22497,25 +22710,10 @@ function _initDotPlotEvents() {
     if (recalcBtn) {
         recalcBtn.addEventListener('click', () => {
             const S = _dotPlotState;
-            if (S.seqA && S.seqB) openDotPlot(S.sourceSeqA || S.seqA, S.sourceSeqB || S.seqB, S.nameA, S.nameB, S.meta);
+            if (S.sourceSeqA && S.sourceSeqB) openDotPlot(S.sourceSeqA, S.sourceSeqB, S.nameA.replace(/ \(RevComp\)$/, ''), S.nameB.replace(/ \(RevComp\)$/, ''), S.meta);
         });
     }
-    if (exportBtn) {
-        exportBtn.addEventListener('click', () => {
-            const canvas = document.getElementById('dotPlotCanvas');
-            const olay = document.getElementById('dotPlotOverlay');
-            if (!canvas) return;
-            const c = document.createElement('canvas');
-            c.width = canvas.width; c.height = canvas.height;
-            const cx = c.getContext('2d');
-            cx.drawImage(canvas, 0, 0);
-            if (olay) cx.drawImage(olay, 0, 0);
-            const a = document.createElement('a');
-            a.href = c.toDataURL('image/png');
-            a.download = `dotplot_${_dotPlotState.nameA}_vs_${_dotPlotState.nameB}.png`;
-            a.click();
-        });
-    }
+    if (exportBtn) exportBtn.addEventListener('click', _dotExportPng);
     const copyBtn = document.getElementById('dotPlotCopyRegion');
     if (copyBtn) {
         copyBtn.addEventListener('click', () => {
@@ -22530,30 +22728,18 @@ function _initDotPlotEvents() {
                 fasta = `>${region.nameA}_${region.aStart + 1}-${region.aStart + region.aSlice.length}\n${region.aSlice}\n` +
                         `>${region.nameB}_${region.bStart + 1}-${region.bStart + region.bSlice.length}\n${region.bSlice}`;
             } else {
-                // Use pinned position - walk diagonal to find match extent
-                const range = S.scoreMax - S.scoreMin || 1;
-                const threshold = S.threshold;
+                // Pinned position only: walk the diagonal to the extent of the match
                 let rBack = S.pinnedRow, cBack = S.pinnedCol;
-                while (rBack >= 0 && cBack >= 0) {
-                    const n = (S.scores[rBack * S.cols + cBack] - S.scoreMin) / range;
-                    if (n < threshold) break;
-                    rBack--; cBack--;
-                }
+                while (rBack >= 0 && cBack >= 0 && _dotIsDot(rBack, cBack)) { rBack--; cBack--; }
                 rBack++; cBack++;
                 let rFwd = S.pinnedRow + 1, cFwd = S.pinnedCol + 1;
-                while (rFwd < S.rows && cFwd < S.cols) {
-                    const n = (S.scores[rFwd * S.cols + cFwd] - S.scoreMin) / range;
-                    if (n < threshold) break;
-                    rFwd++; cFwd++;
-                }
-                const context = parseInt(document.getElementById('dotPlotContextRadius')?.value) || 5;
+                while (rFwd < S.rows && cFwd < S.cols && _dotIsDot(rFwd, cFwd)) { rFwd++; cFwd++; }
+                const context = parseInt(document.getElementById('dotPlotContextRadius')?.value) || 30;
                 const matchLen = rFwd - rBack;
                 const maxSlice = matchLen + 2 * context;
                 const aStart = Math.max(0, rBack - context);
                 const bStart = Math.max(0, cBack - context);
-                const availA = S.seqA.length - aStart;
-                const availB = S.seqB.length - bStart;
-                const sliceLen = Math.min(maxSlice, availA, availB);
+                const sliceLen = Math.min(maxSlice, S.seqA.length - aStart, S.seqB.length - bStart);
                 const aSlice = S.seqA.slice(aStart, aStart + sliceLen);
                 const bSlice = S.seqB.slice(bStart, bStart + sliceLen);
                 fasta = `>${S.nameA}_${aStart + 1}-${aStart + sliceLen}\n${aSlice}\n` +
@@ -22565,32 +22751,8 @@ function _initDotPlotEvents() {
             }).catch(() => showMessage('Copy failed.', 2000));
         });
     }
-    // SVG export
     const svgBtn = document.getElementById('dotPlotExportSvg');
-    if (svgBtn) {
-        svgBtn.addEventListener('click', () => {
-            const canvas = document.getElementById('dotPlotCanvas');
-            if (!canvas) return;
-            const S = _dotPlotState;
-            const dataUrl = canvas.toDataURL('image/png');
-            const svg = [
-                '<?xml version="1.0" encoding="UTF-8"?>',
-                `<svg xmlns="http://www.w3.org/2000/svg" width="${canvas.width}" height="${canvas.height}" viewBox="0 0 ${canvas.width} ${canvas.height}">`,
-                `<title>Dot Plot: ${S.nameA} vs ${S.nameB}</title>`,
-                `<rect width="${canvas.width}" height="${canvas.height}" fill="white"/>`,
-                `<image href="${dataUrl}" width="${canvas.width}" height="${canvas.height}"/>`,
-                '</svg>'
-            ].join('\n');
-            const blob = new Blob([svg], { type: 'image/svg+xml' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `dotplot_${S.nameA}_vs_${S.nameB}.svg`;
-            a.click();
-            setTimeout(() => URL.revokeObjectURL(url), 2000);
-            showMessage('Dot plot exported as SVG!', 2000);
-        });
-    }
+    if (svgBtn) svgBtn.addEventListener('click', _dotExportSvg);
     if (closeBtn) {
         closeBtn.addEventListener('click', () => {
             const modal = document.getElementById('dotPlotModal');

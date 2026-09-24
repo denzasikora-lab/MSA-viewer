@@ -1582,21 +1582,37 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   diverged copies).</p>
   <table>
     <tr><th>Parameter</th><th>Description</th></tr>
-    <tr><td>Word / window size</td><td>Word length in SPIN mode, sliding window length in Dotter mode (odd, 1-61)</td></tr>
-    <tr><td>Threshold</td><td>Minimum identity for a dot (0-100%)</td></tr>
+    <tr><td>Word / window size</td><td>Word length in SPIN mode (2-20, default 6); sliding window length in Dotter mode (1-61, default 11). Shorter words find more matches, including chance ones</td></tr>
+    <tr><td>Threshold</td><td>Dotter only: minimum identity of a window, as a percent of the window length, for a dot (0-100%). A window cut short at a sequence end counts its missing positions as mismatches</td></tr>
     <tr><td>Context radius</td><td>Nucleotide context shown on hover (5-100 bp)</td></tr>
     <tr><td>RevComp B</td><td>Reverse-complement axis B to find inverted repeats</td></tr>
   </table>
-  <p>Additional features: automatic region detection (top 30 diagonal runs),
-  click-to-navigate to alignment position, copy region as FASTA,
-  export as PNG or SVG. Right-click a sequence and select <strong>Dot-plot (self)</strong>
-  for self-comparison (useful for finding internal repeats).</p>
-  <div class="note">
-    <strong>[Screenshot needed]</strong> A completed dot plot showing the main diagonal, at
-    least one off-diagonal repeat region, the Top Regions list, and the alignment-position
-    preview that appears on hover - together in one view, since the point of a dot plot is
-    the visual pattern, which prose can only gesture at.
-  </div>
+  <p>Unknown residues (N in DNA, X in protein) never count as matches, so a run of Ns
+  does not draw a solid block; U and T are treated as the same base. <strong>Top Regions</strong>
+  lists the 30 longest diagonal runs (SPIN: at least twice the word length; Dotter: windows at or
+  above the threshold); click one to centre it. Hovering shows the two aligned stretches and,
+  when the plot was opened from the alignment, the matching alignment columns. Click to pin a
+  position, double-click to freeze the preview, and <strong>Copy Region</strong> copies it as FASTA.
+  Ctrl+wheel or the +/- buttons zoom up to 24 pixels per position; when zoomed out, a pixel shows
+  a dot if any position under it has one.</p>
+  <p><strong>Export PNG</strong> saves the whole plot (at least about 1,600 pixels across).
+  <strong>Export SVG</strong> saves a vector file in which each diagonal run is one line
+  (Dotter runs shaded by their mean identity). Plots are limited to 100 million cells
+  (about 10,000 x 10,000 positions); longer sequences are refused with a message.
+  Right-click a sequence and select <strong>Dot-plot (self)</strong> for self-comparison
+  (useful for finding internal repeats), or select two sequences for a pairwise plot.</p>
+  <figure style="margin: 12px 0;">
+    <img src="img/dotplot-example.png" alt="Dotter-mode self dot plot of the SINE copy K3_499: a main diagonal, off-diagonal blocks
+      from its CT-rich stretch around positions 110-150 and its A-rich 3' end, the Top Regions list, and the hover preview."
+      style="max-width: 100%; border: 1px solid #ddd; border-radius: 4px;">
+    <figcaption style="font-size: 11px; color: #666; margin-top: 5px;">
+      <code>K3_499</code> from <code>examples/svk_k4.fa</code> against itself (Dotter, window 11, threshold 65%).
+      The main diagonal is the copy matching itself; the blocks beside it around positions 110-150 are its
+      CT-rich stretch matching itself at offsets. Hovering (blue cross) shows both stretches, their
+      identity, and the alignment columns they come from. Regenerate with
+      <code>node scratch/build_dotplot_figure.js</code>.
+    </figcaption>
+  </figure>
 
   <h3 id="ac-repeat-finder">9.8 Repeat Finder</h3>
   <p>

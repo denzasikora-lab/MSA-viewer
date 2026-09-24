@@ -562,6 +562,51 @@ check('Ctrl+Delete deletes selected rows and Ctrl+= zooms in', async (page) => {
   return { pass: true, detail: `6->5 rows, zoom ${z0}->${z1}` };
 });
 
+// Dot plot checks (2026-09-24 audit). All in one page to keep the suite fast.
+check('Dot plot: N runs, U/T, zoom, size limit, copy reset, window input', async (page) => {
+  const r = await page.evaluate(async () => {
+    const rnd = (n, seed) => { let s = seed, o = ''; for (let i = 0; i < n; i++) { s = (s * 1103515245 + 12345) & 0x7fffffff; o += 'ACGT'[(s >>> 16) & 3]; } return o; };
+    const plot = async (A, B, mode, win) => {
+      document.querySelector(`input[name="dotPlotMode"][value="${mode}"]`).checked = true; _dotOnModeChange();
+      document.getElementById('dotPlotWindow').value = win;
+      await openDotPlot(A, B, 'A', 'B');
+    };
+    const out = {};
+    const nseq = rnd(100, 5) + 'N'.repeat(200) + rnd(100, 9);
+    for (const mode of ['spin', 'doter']) {
+      await plot(nseq, nseq, mode, mode === 'spin' ? 6 : 11);
+      let inN = 0;
+      for (let r = 120; r < 280; r++) for (let c = 120; c < 280; c++) if (_dotIsDot(r, c)) inN++;
+      out['nBlockDots_' + mode] = inN;
+    }
+    await plot('ACGUACGUACGUACGUACGU', 'ACGTACGTACGTACGTACGT', 'spin', 6);
+    out.uEqualsT = _dotIsDot(0, 0) && _dotIsDot(10, 10);
+    await plot(rnd(1500, 3), rnd(1500, 3), 'spin', 6);
+    const S = _dotPlotState;
+    S.zoom = 24; _dotSetSpacer(); _dotRender();
+    const c = document.getElementById('dotPlotCanvas'), vp = document.getElementById('dotPlotViewport');
+    out.canvasFitsViewport = c.width <= vp.clientWidth * (devicePixelRatio || 1) + 1;
+    _dotUpdateHoverInfo(5, 5);
+    out.copyBefore = !!S._copyRegion;
+    await plot(rnd(12000, 1), rnd(12000, 2), 'spin', 8);
+    out.refused = /Too large/.test(document.getElementById('dotPlotStatus').textContent) && S.rows === 0;
+    await plot(rnd(300, 4), rnd(300, 4), 'spin', 6);
+    out.copyAfter = S._copyRegion;
+    const w = document.getElementById('dotPlotWindow');
+    out.spinInputValid = w.checkValidity() && w.min === '2' && w.max === '20';
+    return out;
+  });
+  const bad = [];
+  if (r.nBlockDots_spin || r.nBlockDots_doter) bad.push(`N block shows dots (spin ${r.nBlockDots_spin}, dotter ${r.nBlockDots_doter})`);
+  if (!r.uEqualsT) bad.push('U and T do not match');
+  if (!r.canvasFitsViewport) bad.push('zoomed canvas larger than the viewport');
+  if (!r.copyBefore || r.copyAfter !== null) bad.push('Copy Region not reset by a new plot');
+  if (!r.refused) bad.push('12000 x 12000 plot not refused');
+  if (!r.spinInputValid) bad.push('word-size input invalid in SPIN mode');
+  if (bad.length) return { pass: false, detail: bad.join('; ') };
+  return { pass: true, detail: 'no dots in N runs, U=T, viewport-sized canvas at 24x, size limit, copy reset, valid input' };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
