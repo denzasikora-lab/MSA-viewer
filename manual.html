@@ -620,7 +620,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </p>
   <ul>
     <li><strong>Just Add</strong> - append sequences padded with gaps at the end</li>
-    <li><strong>Add &amp; Align</strong> - realign the full alignment with MAFFT using add-keep-length mode</li>
+    <li><strong>Add &amp; Align</strong> - remove all gaps and realign every sequence, old and new, with MAFFT (the existing columns are not kept; use Align to consensus to keep them)</li>
     <li><strong>Align to consensus</strong> - align new sequences against the existing consensus before adding</li>
     <li><strong>Place at top</strong> - insert new sequences at position 1 instead of the bottom</li>
   </ul>
@@ -881,7 +881,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <strong>Show 2D</strong> draws translucent rectangles over stretches where a
     subset of rows share a local pattern. This is a separate overlay from name
     and letter colours. It does not change row order. Full and Block view modes
-    are supported; Canvas mode is not.
+    are supported; Canvas mode is not, and neither is the windowed display used above
+    about 500,000 residues.
   </p>
   <p>
     If SNP or k-mer groups already exist, each rectangle is tagged against them:
@@ -1267,7 +1268,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <p>
     The <strong>Mismatches</strong> input (0-10) allows approximate matching.
     A mismatch budget of 2 means up to 2 character differences are allowed in each match.
-    Works with both literal and regex search modes.
+    It applies to literal search only; with regex on, the pattern must match exactly.
   </p>
 
   <h3 id="se-colour">7.4 Search Highlight Colour</h3>
@@ -1345,8 +1346,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       gap pattern. Equivalent to GeneDoc's "Move / SlideText".
     </li>
     <li>
-      <strong>Type</strong> - click a cell and type a residue letter (A, C, G, T, N)
-      or <code>-</code> for a gap. Modifies the cell directly.
+      <strong>Type</strong> - click a cell and type any letter (nucleotide or amino acid)
+      or <code>-</code> / <code>.</code> for a gap. Modifies the cell directly.
     </li>
     <li>
       <strong>Ins Gap Seq</strong> / <strong>Del Gap Seq</strong> - click a position to
@@ -1847,7 +1848,7 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
   <p>Requirements:</p>
   <ul>
     <li>Node.js >= 16</li>
-    <li><strong>MAFFT</strong> - for realignment (binary in PATH)</li>
+    <li><strong>MAFFT</strong> - only for the <code>/api/mafft</code> endpoint (optional; path set by <code>MAFFT_BIN</code>). The viewer itself realigns in the browser</li>
     <li><strong>BLAST+</strong> - for local BLAST search (optional)</li>
     <li><strong>samtools</strong> - only for the <code>/api/bam2sam</code> endpoint (optional; the viewer reads BAM and CRAM itself)</li>
     <li><strong>SSH key</strong> - for remote file access (optional)</li>
