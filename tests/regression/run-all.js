@@ -756,6 +756,30 @@ check('Statistics matrices: named column labels, windowed rows correct, TSV copy
   return { pass: ok, detail: JSON.stringify({ ...out, tsv }) };
 });
 
+// Codon analysis marks frameshift gaps with side bars; drawn as borders they widened those
+// cells by 4px and pushed the rest of the row off its columns
+check('Codon analysis: frameshift-marked cells keep the column width (rows stay aligned)', async (page) => {
+  const cds = 'ATGGCTAAAGGTCTGCAAGAATTCGGTACCTGGAAACCGATGCTTGCAGGTAAAGAACTGTTCCCGGGATCCTAA';
+  const rows = ['>ref\n' + cds, '>del1\n' + cds.slice(0, 20) + '-' + cds.slice(21), '>del2\n' + cds.slice(0, 30) + '--' + cds.slice(32), '>ok\n' + cds];
+  await page.setInputFiles('#fileInput', { name: 'cds.fa', mimeType: 'text/plain', buffer: Buffer.from(rows.join('\n') + '\n') });
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => { const c = document.getElementById('codonAnalysis'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForTimeout(1200);
+  const r = await page.evaluate(() => {
+    const lines = [...document.querySelectorAll('.seq-line[data-seq-index]')];
+    const marked = document.querySelectorAll('.seq-data span.codon-fs-internal').length;
+    const widths = new Set(), lefts = {};
+    for (const l of lines) [...l.querySelector('.seq-data').children].filter(k => !k.classList.contains('seq-length')).forEach((k, ci) => {
+      const b = k.getBoundingClientRect(); widths.add(Math.round(b.width * 100) / 100);
+      (lefts[ci] ||= new Set()).add(Math.round(b.left * 10) / 10);
+    });
+    const misaligned = Object.values(lefts).filter(s => s.size > 1).length;
+    return { rows: lines.length, marked, widths: [...widths], misaligned };
+  });
+  const ok = r.marked > 0 && r.widths.length === 1 && r.misaligned === 0;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

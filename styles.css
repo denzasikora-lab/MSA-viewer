@@ -3330,13 +3330,15 @@ body.codon-mode span.codon-stop {
 
 /* Frameshift positions */
 body.codon-mode span.codon-fs {
-    border-bottom: 3px wavy #e74c3c;
+    text-decoration: underline wavy #e74c3c;
+    text-underline-offset: 3px;
 }
 
 /* Internal frameshift (gap indel not multiple of 3) */
+/* Inset shadows, not borders: a border widens the cell by 4px and pushes every later
+   residue in the row off its column */
 body.codon-mode span.codon-fs-internal {
-    border-left: 2px solid #e74c3c;
-    border-right: 2px solid #e74c3c;
+    box-shadow: inset 2px 0 #e74c3c, inset -2px 0 #e74c3c;
     background-color: rgba(231, 76, 60, 0.15) !important;
 }
 
