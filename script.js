@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v191';
+const BUILD_TAG = 'v192';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1478,8 +1478,8 @@ const EXCLUSIVE_MODAL_IDS = [
     'addSeqModal',
     'dotPlotModal',
     'repeatFinderModal',
-    'treeBuilderModal',
-    'statsModal'
+    'treeBuilderModal'
+    // statsModal is not here: it is a non-blocking window that can stay docked beside the alignment
 ];
 
 // Makes a fixed-position modal draggable (by its header), resizable (by a
@@ -15158,35 +15158,32 @@ function _openStatsNow() {
     const totalCells = nseq * alen;
     const gapPct = totalCells ? (totalGaps / totalCells * 100).toFixed(1) : '0';
 
-    // esl-alipid: pairwise percent identity
-    const identities = [];
-    let minId = 100, maxId = 0, sumId = 0, pairCount = 0;
+    // esl-alipid: pairwise percent identity. Min and max keep every pair that ties.
+    let minId = Infinity, maxId = -Infinity, sumId = 0, pairCount = 0, noOverlap = 0;
+    let minPairs = [], maxPairs = [];
     const identityMatrix = Array.from({ length: nseq }, () => new Array(nseq).fill('100.0'));
     const pidRaw = Array.from({ length: nseq }, () => new Array(nseq).fill(100));
     for (let i = 0; i < nseq; i++) {
-        for (let j = 0; j < nseq; j++) {
-            if (i === j) { identityMatrix[i][j] = '100.0'; continue; }
-            if (i < j) {
-                let matches = 0, compared = 0;
-                for (let p = 0; p < alen; p++) {
-                    const a = seqs[i].seq[p] || '-';
-                    const b = seqs[j].seq[p] || '-';
-                    if (a !== '-' && a !== '.' && b !== '-' && b !== '.') {
-                        compared++;
-                        if (a.toUpperCase() === b.toUpperCase()) matches++;
-                    }
+        for (let j = i + 1; j < nseq; j++) {
+            let matches = 0, compared = 0;
+            for (let p = 0; p < alen; p++) {
+                const a = seqs[i].seq[p] || '-';
+                const b = seqs[j].seq[p] || '-';
+                if (a !== '-' && a !== '.' && b !== '-' && b !== '.') {
+                    compared++;
+                    if (a.toUpperCase() === b.toUpperCase()) matches++;
                 }
-                const pid = compared > 0 ? (matches / compared * 100) : 0;
-                identities.push(pid);
-                identityMatrix[i][j] = pid.toFixed(1);
-                identityMatrix[j][i] = pid.toFixed(1);
-                pidRaw[i][j] = pid;
-                pidRaw[j][i] = pid;
-                minId = Math.min(minId, pid);
-                maxId = Math.max(maxId, pid);
-                sumId += pid;
-                pairCount++;
             }
+            if (compared === 0) noOverlap++;
+            const pid = compared > 0 ? (matches / compared * 100) : 0;
+            identityMatrix[i][j] = identityMatrix[j][i] = pid.toFixed(1);
+            pidRaw[i][j] = pidRaw[j][i] = pid;
+            if (pid < minId - 1e-9) { minId = pid; minPairs = [[i, j]]; }
+            else if (Math.abs(pid - minId) <= 1e-9) minPairs.push([i, j]);
+            if (pid > maxId + 1e-9) { maxId = pid; maxPairs = [[i, j]]; }
+            else if (Math.abs(pid - maxId) <= 1e-9) maxPairs.push([i, j]);
+            sumId += pid;
+            pairCount++;
         }
     }
     const avgId = pairCount > 0 ? (sumId / pairCount) : 0;
@@ -15197,93 +15194,334 @@ function _openStatsNow() {
     // only supports 1.
     const distMatrix = Array.from({ length: nseq }, () => new Array(nseq).fill('0.0000'));
     for (let i = 0; i < nseq; i++) {
-        for (let j = 0; j < nseq; j++) {
-            if (i < j) {
-                const d = 1 - pidRaw[i][j] / 100;
-                distMatrix[i][j] = d.toFixed(4);
-                distMatrix[j][i] = d.toFixed(4);
-            }
+        for (let j = i + 1; j < nseq; j++) {
+            distMatrix[i][j] = distMatrix[j][i] = (1 - pidRaw[i][j] / 100).toFixed(4);
         }
     }
 
-    // Render Summary tab
     const seqNames = seqs.map((s, i) => s.header || `seq_${i + 1}`);
-    const longestName = Math.max(...seqNames.map(n => n.length));
-    const maxName = Math.min(longestName, 30);
-    const nameLen = maxName + 2;
+    state._statsData = { names: seqNames, distance: distMatrix, identity: identityMatrix };
+    state._statsFocus = { i: -1, j: -1 };
 
     const summaryTab = document.getElementById('statsSummaryTab');
     if (!summaryTab) { showMessage('Statistics panel not found.', 3000); return; }
-    const scopeLabel = state.selectedRows.size >= 2 ? 'selected sequences' : 'all sequences';
-    summaryTab.innerHTML =
-        `<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">` +
-        `<div style="border:1px solid #ddd;padding:8px;border-radius:4px;">` +
-            `<b>Alignment (esl-alistat)</b><br>` +
-            `<table style="font-size:11px;">` +
-            `<tr><td>Sequences</td><td style="padding-left:12px;">${nseq}</td></tr>` +
-            `<tr><td>Length</td><td style="padding-left:12px;">${alen} columns</td></tr>` +
-            `<tr><td>Total cells</td><td style="padding-left:12px;">${totalCells.toLocaleString()}</td></tr>` +
-            `<tr><td>Residues</td><td style="padding-left:12px;">${totalResidues.toLocaleString()}</td></tr>` +
-            `<tr><td>Gaps</td><td style="padding-left:12px;">${totalGaps.toLocaleString()} (${gapPct}%)</td></tr>` +
-            `<tr><td>Scope</td><td style="padding-left:12px;">${scopeLabel}</td></tr>` +
-            `</table>` +
-        `</div>` +
-        `<div style="border:1px solid #ddd;padding:8px;border-radius:4px;">` +
-            `<b>Identity (esl-alipid)</b><br>` +
-            `<table style="font-size:11px;">` +
-            `<tr><td>Mean identity</td><td style="padding-left:12px;">${avgId.toFixed(1)}%</td></tr>` +
-            `<tr><td>Min identity</td><td style="padding-left:12px;">${minId.toFixed(1)}%</td></tr>` +
-            `<tr><td>Max identity</td><td style="padding-left:12px;">${maxId.toFixed(1)}%</td></tr>` +
-            `<tr><td>Pairs compared</td><td style="padding-left:12px;">${pairCount}</td></tr>` +
-            `</table>` +
-        `</div></div>`;
-
-    // Pairwise matrices: real tables (sticky row names and column labels, labels angled,
-    // vertical or numbered), built only when their section is opened - 600 sequences
-    // is 360,000 cells.
-    state._statsData = { names: seqNames, distance: distMatrix, identity: identityMatrix };
-    const matrixSection = (kind, title, btnLabel) =>
-        `<details class="stats-mx-section" data-kind="${kind}" style="margin-top:6px;">` +
-        `<summary style="cursor:pointer;font-weight:bold;font-size:11px;">${title}</summary>` +
-        `<div style="margin:4px 0;"><button id="copy${kind === 'distance' ? 'Distance' : 'Identity'}MatrixBtn" style="font-size:11px;padding:2px 8px;" title="Copy as a tab-separated table with full sequence names (pastes into a spreadsheet)">${btnLabel}</button></div>` +
-        `<div class="stats-mx-body"></div></details>`;
+    const allN = state.seqs.length;
+    const usedTxt = nseq === allN ? `${nseq} (all)` : `${nseq} selected of ${allN}`;
+    const esc = _escStats;
+    const T = {
+        seqs: 'Sequences included in these statistics. With two or more rows selected, only the selected rows are used; otherwise every sequence in the alignment.',
+        len: 'Alignment length in columns (the longest row). Shorter rows are treated as gap-padded to this length.',
+        cells: 'Sequences × columns: every position of the alignment grid, residue or gap. Residues + gaps add up to this.',
+        res: 'Cells holding a residue: any character other than the gap characters "-" and ".".',
+        gaps: 'Cells holding "-" or ".", including the implied padding of shorter rows. The percentage is of all cells.',
+        mean: 'Mean of the pairwise identities over all pairs. Pairwise identity = identical residues ÷ columns where both sequences have a residue × 100 (case-insensitive). esl-alipid divides by the shorter unaligned length instead, so its values can be lower.',
+        min: 'Lowest pairwise identity, and the pair(s) that have it. Click a pair to find it in the matrix.',
+        max: 'Highest pairwise identity, and the pair(s) that have it. Click a pair to find it in the matrix.',
+        pairs: 'Number of sequence pairs compared: n × (n − 1) ÷ 2.' +
+            (noOverlap ? ` ${noOverlap} pair(s) share no column where both have a residue; they count as 0% identity.` : ''),
+    };
+    const pairLinks = (pairs) => {
+        const link = ([i, j]) => `<a data-i="${i}" data-j="${j}" title="Find this pair in the matrix">${esc(seqNames[i])} × ${esc(seqNames[j])}</a>`;
+        let html = pairs.slice(0, 2).map(link).join('; ');
+        if (pairs.length > 2) {
+            const list = pairs.slice(0, 40).map(([i, j]) => `${seqNames[i]} × ${seqNames[j]}`).join('\n') + (pairs.length > 40 ? `\n… ${pairs.length - 40} more` : '');
+            html += ` <span class="more" title="${esc(list)}">+${pairs.length - 2} more</span>`;
+        }
+        return `<span class="pair">${html}</span>`;
+    };
+    const row = (label, tip, value) => `<tr><td><span class="tip" title="${esc(tip)}">${label}</span></td><td>${value}</td></tr>`;
     const opts = _statsLabelOpts();
-    const labelControls =
-        `<div class="stats-mx-controls" style="margin-top:10px;font-size:11px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;">` +
-        `<span style="color:#555;">Column labels</span>` +
-        `<select id="statsLabelStyle" style="font-size:11px;" title="How sequence names are shown above the matrix columns">` +
-        ['angled', 'vertical', 'numbers'].map(v => `<option value="${v}"${opts.style === v ? ' selected' : ''}>${{ angled: 'Angled 45°', vertical: 'Vertical', numbers: 'Numbers + key' }[v]}</option>`).join('') +
-        `</select>` +
-        `<label style="color:#555;" title="Longest name shown in labels (the full name is in the tooltip and in copies)">Max chars <input type="number" id="statsLabelChars" min="3" max="80" value="${opts.chars}" style="width:44px;font-size:11px;"></label>` +
-        `</div>`;
-    summaryTab.innerHTML += labelControls +
-        matrixSection('distance', 'Distance Matrix (p-distance)', 'Copy distance matrix') +
-        matrixSection('identity', 'Pairwise Identity (%)', 'Copy identity matrix');
-    showExclusiveModal('statsModal');
+    summaryTab.innerHTML =
+        `<div class="stats-cards">` +
+        `<div class="stats-card"><b>Alignment (esl-alistat)</b><table>` +
+            row('Sequences', T.seqs, usedTxt) +
+            row('Length', T.len, `${alen.toLocaleString()} columns`) +
+            row('Total cells', T.cells, totalCells.toLocaleString()) +
+            row('Residues', T.res, totalResidues.toLocaleString()) +
+            row('Gaps', T.gaps, `${totalGaps.toLocaleString()} (${gapPct}%)`) +
+        `</table></div>` +
+        `<div class="stats-card"><b>Identity (esl-alipid)</b><table>` +
+            row('Mean identity', T.mean, `${avgId.toFixed(1)}%`) +
+            row('Min identity', T.min, `${minId.toFixed(1)}% &nbsp;${pairLinks(minPairs)}`) +
+            row('Max identity', T.max, `${maxId.toFixed(1)}% &nbsp;${pairLinks(maxPairs)}`) +
+            row('Pairs compared', T.pairs, pairCount.toLocaleString()) +
+        `</table></div></div>` +
+        `<div class="stats-mx-toolbar">` +
+            `<span class="stats-seg" title="Which matrix to show">` +
+                `<button type="button" data-kind="distance" class="${opts.kind === 'distance' ? 'on' : ''}" title="p-distance = 1 − identity/100">Distance</button>` +
+                `<button type="button" data-kind="identity" class="${opts.kind === 'identity' ? 'on' : ''}" title="Pairwise identity, %">Identity %</button>` +
+            `</span>` +
+            `<input type="search" class="stats-find" id="statsFindRow" list="statsNameList" placeholder="Find row…" autocomplete="off" spellcheck="false" title="Type part of a sequence name to jump to its row; Enter goes to the next match">` +
+            `<input type="search" class="stats-find" id="statsFindCol" list="statsNameList" placeholder="Find column…" autocomplete="off" spellcheck="false" title="Type part of a sequence name to jump to its column; Enter goes to the next match">` +
+            `<span class="lbl">Labels</span>` +
+            `<select id="statsLabelStyle" title="How sequence names are shown above the matrix columns">` +
+            ['angled', 'vertical', 'numbers'].map(v => `<option value="${v}"${opts.style === v ? ' selected' : ''}>${{ angled: 'Angled 45°', vertical: 'Vertical', numbers: 'Numbers + key' }[v]}</option>`).join('') +
+            `</select>` +
+            `<label title="Longest name shown in labels (the full name is in the tooltip and in copies and files)">Max chars <input type="number" id="statsLabelChars" min="3" max="80" value="${opts.chars}" style="width:42px;"></label>` +
+            `<span class="sp"></span>` +
+            `<button type="button" id="statsCopyBtn" title="Copy the shown matrix as a tab-separated table with full names (pastes into a spreadsheet)">Copy</button>` +
+            `<span class="lbl">Save</span>` +
+            `<button type="button" class="stats-save" data-fmt="csv" title="Save the shown matrix as comma-separated values">CSV</button>` +
+            `<button type="button" class="stats-save" data-fmt="tsv" title="Save the shown matrix as tab-separated values">TSV</button>` +
+            `<button type="button" class="stats-save" data-fmt="xlsx" title="Save the shown matrix as an Excel workbook (.xlsx), names in the first row and column">Excel</button>` +
+        `</div>` +
+        `<datalist id="statsNameList">${seqNames.map(n => `<option value="${esc(n)}">`).join('')}</datalist>` +
+        `<div class="stats-mx-body" data-kind="${opts.kind}"></div>`;
+    _statsShow();
+    _fillStatsMatrices([summaryTab.querySelector('.stats-mx-body')]);
     } catch(e) {
         console.error('Stats error:', e);
         showMessage(`Statistics error: ${e.message}`, 4000);
     }
 }
 
+// ── Statistics window: floating (drag / resize / minimize) or docked on the right ──
+let _statsDockW = 460;
+let _statsFloatRect = null;
+
+function _statsPrefs() {
+    try { return JSON.parse(localStorage.getItem('msaviewer_statsWin') || '{}') || {}; } catch (e) { return {}; }
+}
+function _statsSavePrefs(patch) {
+    try { localStorage.setItem('msaviewer_statsWin', JSON.stringify({ ..._statsPrefs(), ...patch })); } catch (e) {}
+}
+
+function _statsShow() {
+    const w = document.getElementById('statsModal');
+    if (!w) return;
+    const prefs = _statsPrefs();
+    if (prefs.dockW) _statsDockW = Math.max(280, prefs.dockW);
+    w.style.display = 'flex';
+    if (!w._init) {
+        w._init = true;
+        _statsSetFloatRect(_statsDefaultRect());
+        makeModalDraggableResizable('statsModal', 'statsHeader', 'statsContent');
+        const btns = w.querySelector('.ge-window-btns');
+        btns.querySelectorAll('button').forEach(b => { if (b.id !== 'statsDockBtn' && b.id !== 'statsCloseBtn') b.classList.add('stats-min-btn'); });
+        _statsInitDockResizer(w);
+        window.addEventListener('resize', () => {
+            if (w.classList.contains('stats-docked') && w.style.display !== 'none') w.style.top = _statsDockTop() + 'px';
+        });
+    }
+    if (prefs.docked) _statsApplyDock();
+    else _statsUpdateDockBtn(false);
+}
+
+function _statsDefaultRect() {
+    const width = Math.min(1000, window.innerWidth - 40);
+    const height = Math.min(780, window.innerHeight - 80);
+    return { left: Math.max(10, (window.innerWidth - width) / 2), top: 50, width, height };
+}
+
+function _statsSetFloatRect(r) {
+    const w = document.getElementById('statsModal');
+    Object.assign(w.style, { left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px',
+        right: '', bottom: '', transform: 'none', margin: '0', maxHeight: 'none', maxWidth: 'none' });
+}
+
+function _statsDockTop() {
+    const c = document.getElementById('controls');
+    return c ? Math.max(0, Math.round(c.getBoundingClientRect().bottom)) : 0;
+}
+
+function _statsUpdateDockBtn(docked) {
+    const b = document.getElementById('statsDockBtn');
+    if (!b) return;
+    b.innerHTML = docked ? '&#10697;' : '&#9707;';
+    b.title = docked ? 'Undock into a floating window' : 'Dock to the right side of the window';
+}
+
+// Lets the alignment reflow into the narrower space (it re-renders on resize)
+function _statsRelayout() {
+    window.dispatchEvent(new Event('resize'));
+}
+
+function _statsApplyDock() {
+    const w = document.getElementById('statsModal');
+    const content = document.getElementById('statsContent');
+    if (content && content.style.display === 'none') w.querySelector('.stats-min-btn')?.click();   // restore if minimized
+    w.classList.add('stats-docked', 'ge-docked');
+    const width = Math.min(_statsDockW, window.innerWidth - 300);
+    Object.assign(w.style, { left: 'auto', right: '0', top: _statsDockTop() + 'px', bottom: '0', width: width + 'px',
+        height: 'auto', transform: 'none', margin: '0', maxHeight: 'none', maxWidth: 'none' });
+    document.body.style.paddingRight = width + 'px';
+    _statsUpdateDockBtn(true);
+    _statsRelayout();
+}
+
+function _statsDock() {
+    const w = document.getElementById('statsModal');
+    const r = w.getBoundingClientRect();
+    _statsFloatRect = { left: r.left, top: r.top, width: r.width, height: r.height };
+    _statsSavePrefs({ docked: true });
+    _statsApplyDock();
+}
+
+function _statsUndock() {
+    const w = document.getElementById('statsModal');
+    _statsSavePrefs({ docked: false });
+    w.classList.remove('stats-docked', 'ge-docked');
+    document.body.style.paddingRight = '';
+    _statsSetFloatRect(_statsFloatRect || _statsDefaultRect());
+    _statsUpdateDockBtn(false);
+    _statsRelayout();
+}
+
+function _statsInitDockResizer(w) {
+    const grip = w.querySelector('.stats-dock-resizer');
+    if (!grip) return;
+    let dragging = false;
+    grip.addEventListener('mousedown', (e) => { dragging = true; e.preventDefault(); document.body.style.userSelect = 'none'; });
+    document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const width = Math.round(Math.min(window.innerWidth - 300, Math.max(280, window.innerWidth - e.clientX)));
+        w.style.width = width + 'px';
+        document.body.style.paddingRight = width + 'px';
+    });
+    document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        document.body.style.userSelect = '';
+        _statsDockW = parseInt(w.style.width, 10) || _statsDockW;
+        _statsSavePrefs({ dockW: _statsDockW });
+        _statsRelayout();
+    });
+}
+
 function closeStats() {
-    const modal = document.getElementById('statsModal');
-    if (modal) modal.style.display = 'none';
+    const w = document.getElementById('statsModal');
+    if (!w) return;
+    w.style.display = 'none';
+    if (w.classList.contains('stats-docked')) {
+        w.classList.remove('stats-docked', 'ge-docked');   // the docked preference is kept for next time
+        document.body.style.paddingRight = '';
+        _statsRelayout();
+    }
+}
+
+// ── Matrix export ──
+function _statsMatrixGrid(kind) {
+    const d = state._statsData;
+    return [[''].concat(d.names)].concat(d[kind].map((r, i) => [d.names[i]].concat(r)));
+}
+
+function _statsFileBase(kind) {
+    return (state.currentFilename || 'alignment').replace(/\.[^.]+$/, '') + (kind === 'distance' ? '_p-distance' : '_identity');
+}
+
+function _statsCurrentKind() {
+    return document.querySelector('#statsSummaryTab .stats-mx-body')?.dataset.kind || 'identity';
 }
 
 function copyStatsMatrix(kind) {
-    const d = state._statsData;
-    const m = d?.[kind];
-    if (!m) {
+    kind = kind || _statsCurrentKind();
+    if (!state._statsData?.[kind]) {
         showMessage('No statistics matrix available to copy.', 2200);
         return;
     }
-    const clean = n => String(n).replace(/[\t\r\n]+/g, ' ');
-    const text = ['\t' + d.names.map(clean).join('\t')]
-        .concat(m.map((row, i) => clean(d.names[i]) + '\t' + row.join('\t'))).join('\n') + '\n';
+    const clean = v => String(v).replace(/[\t\r\n]+/g, ' ');
+    const text = _statsMatrixGrid(kind).map(r => r.map(clean).join('\t')).join('\n') + '\n';
     navigator.clipboard.writeText(text)
         .then(() => showMessage(`${kind === 'distance' ? 'Distance' : 'Identity'} matrix copied (tab-separated, full names).`, 1800))
         .catch(() => showMessage('Failed to copy statistics matrix.', 2500));
+}
+
+function saveStatsMatrix(fmt, kind) {
+    kind = kind || _statsCurrentKind();
+    if (!state._statsData?.[kind]) { showMessage('No statistics matrix available to save.', 2200); return; }
+    const grid = _statsMatrixGrid(kind);
+    const base = _statsFileBase(kind);
+    let blob, name;
+    if (fmt === 'xlsx') {
+        blob = _xlsxBlob(grid, kind === 'distance' ? 'p-distance' : 'identity');
+        name = base + '.xlsx';
+    } else {
+        const sep = fmt === 'csv' ? ',' : '\t';
+        const cell = fmt === 'csv'
+            ? v => /[",\r\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v)
+            : v => String(v).replace(/[\t\r\n]+/g, ' ');
+        blob = new Blob([grid.map(r => r.map(cell).join(sep)).join('\r\n') + '\r\n'],
+            { type: fmt === 'csv' ? 'text/csv;charset=utf-8' : 'text/tab-separated-values;charset=utf-8' });
+        name = base + '.' + fmt;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    showMessage(`Saved ${name}`, 1800);
+}
+
+// Minimal .xlsx writer: one sheet, header row and column frozen. Names are inline
+// strings and matrix values are numbers. The package is an uncompressed (stored) zip.
+function _crc32(bytes) {
+    let t = _crc32.table;
+    if (!t) {
+        t = _crc32.table = new Uint32Array(256);
+        for (let n = 0; n < 256; n++) {
+            let c = n;
+            for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1;
+            t[n] = c >>> 0;
+        }
+    }
+    let c = 0xFFFFFFFF;
+    for (let i = 0; i < bytes.length; i++) c = t[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function _zipStored(files, type) {
+    const enc = new TextEncoder();
+    const parts = [], central = [];
+    let offset = 0;
+    for (const f of files) {
+        const name = enc.encode(f.name), data = enc.encode(f.text);
+        const crc = _crc32(data), size = data.length;
+        const h = new DataView(new ArrayBuffer(30));
+        h.setUint32(0, 0x04034b50, true); h.setUint16(4, 20, true); h.setUint16(6, 0x0800, true);
+        h.setUint16(8, 0, true); h.setUint16(10, 0, true); h.setUint16(12, 0x21, true);   // stored; 1980-01-01
+        h.setUint32(14, crc, true); h.setUint32(18, size, true); h.setUint32(22, size, true);
+        h.setUint16(26, name.length, true); h.setUint16(28, 0, true);
+        parts.push(new Uint8Array(h.buffer), name, data);
+        const c = new DataView(new ArrayBuffer(46));
+        c.setUint32(0, 0x02014b50, true); c.setUint16(4, 20, true); c.setUint16(6, 20, true); c.setUint16(8, 0x0800, true);
+        c.setUint16(10, 0, true); c.setUint16(12, 0, true); c.setUint16(14, 0x21, true);
+        c.setUint32(16, crc, true); c.setUint32(20, size, true); c.setUint32(24, size, true);
+        c.setUint16(28, name.length, true); c.setUint32(42, offset, true);
+        central.push(new Uint8Array(c.buffer), name);
+        offset += 30 + name.length + size;
+    }
+    const cdSize = central.reduce((n, b) => n + b.length, 0);
+    const e = new DataView(new ArrayBuffer(22));
+    e.setUint32(0, 0x06054b50, true); e.setUint16(8, files.length, true); e.setUint16(10, files.length, true);
+    e.setUint32(12, cdSize, true); e.setUint32(16, offset, true);
+    return new Blob([...parts, ...central, new Uint8Array(e.buffer)], { type });
+}
+
+function _xlsxBlob(grid, sheetName) {
+    const x = v => String(v).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c])
+        .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g, '');
+    const col = (c) => { let s = ''; c++; while (c > 0) { const m = (c - 1) % 26; s = String.fromCharCode(65 + m) + s; c = Math.floor((c - 1) / 26); } return s; };
+    let rows = '';
+    grid.forEach((r, ri) => {
+        rows += `<row r="${ri + 1}">`;
+        r.forEach((v, ci) => {
+            if (v === '' || v == null) return;
+            const ref = col(ci) + (ri + 1);
+            const isNum = ri > 0 && ci > 0 && /^-?\d+(\.\d+)?$/.test(String(v));
+            rows += isNum ? `<c r="${ref}"><v>${Number(v)}</v></c>` : `<c r="${ref}" t="inlineStr"><is><t>${x(v)}</t></is></c>`;
+        });
+        rows += '</row>';
+    });
+    const X = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n';
+    const sheet = String(sheetName).replace(/[\[\]:*?\/\\]/g, '_').slice(0, 31) || 'Sheet1';
+    return _zipStored([
+        { name: '[Content_Types].xml', text: X + '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>' },
+        { name: '_rels/.rels', text: X + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>' },
+        { name: 'xl/workbook.xml', text: X + `<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="${x(sheet)}" sheetId="1" r:id="rId1"/></sheets></workbook>` },
+        { name: 'xl/_rels/workbook.xml.rels', text: X + '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>' },
+        { name: 'xl/worksheets/sheet1.xml', text: X + '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetViews><sheetView workbookViewId="0"><pane xSplit="1" ySplit="1" topLeftCell="B2" activePane="bottomRight" state="frozen"/></sheetView></sheetViews>' +
+            `<sheetData>${rows}</sheetData></worksheet>` },
+    ], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
 
 function _statsLabelOpts() {
@@ -15291,7 +15529,12 @@ function _statsLabelOpts() {
     try { saved = JSON.parse(localStorage.getItem('msaviewer_statsLabels') || 'null'); } catch (e) {}
     const style = ['angled', 'vertical', 'numbers'].includes(saved?.style) ? saved.style : 'angled';
     const chars = Math.max(3, Math.min(80, parseInt(saved?.chars, 10) || 20));
-    return { style, chars };
+    const kind = saved?.kind === 'distance' ? 'distance' : 'identity';
+    return { style, chars, kind };
+}
+
+function _statsSaveLabelOpts(patch) {
+    try { localStorage.setItem('msaviewer_statsLabels', JSON.stringify({ ..._statsLabelOpts(), ...patch })); } catch (e) {}
 }
 
 function _escStats(t) {
@@ -15304,7 +15547,7 @@ function _escStats(t) {
 // Above STATS_MX_WINDOW_MIN sequences only the rows on screen (plus a margin) are in the
 // DOM: a full 600 x 600 table is 360,000 cells and took 5-9 s to lay out.
 const STATS_MX_WINDOW_MIN = 120;
-const STATS_MX_ROW_MARGIN = 40;
+const STATS_MX_ROW_MARGIN = 25;
 
 function _statsMatrixCtx(kind) {
     const d = state._statsData;
@@ -15348,14 +15591,47 @@ function _buildStatsMatrixTable(kind) {
             + `<th class="pad" style="width:${h}ch;"></th>`;   // room for the last labels' overhang
     }
     const rowNameW = Math.min(longest, chars) + String(n).length + 2;
-    const firstRows = ctx.windowed ? Math.min(n, 2 * STATS_MX_ROW_MARGIN) : n;
+    const firstRows = ctx.windowed ? Math.min(n, 3 * STATS_MX_ROW_MARGIN) : n;
     let html = `<div class="stats-mx-scroll"><table class="stats-mx" data-kind="${kind}" style="--cw:${cellW}ch;">` +
         `<thead><tr><th class="corner" style="min-width:${rowNameW}ch;"></th>${head}</tr></thead>` +
-        `<tbody data-r0="0" data-r1="${firstRows}">${_statsMatrixRows(ctx, 0, firstRows)}</tbody></table></div>`;
+        `<tbody data-r0="0" data-r1="${firstRows}"${ctx.windowed ? ' data-placed="1"' : ''}>${_statsMatrixRows(ctx, 0, firstRows)}</tbody></table></div>`;
     if (style === 'numbers') {
         html += `<div class="stats-mx-key">` + d.names.map((name, i) => `<span><b>${i + 1}</b> ${_escStats(name)}</span>`).join('') + `</div>`;
     }
     return html;
+}
+
+// Mark the found / clicked row, column and cell (class fx on the labels, focus on the cell)
+function _statsMarkFocus(table) {
+    const f = state._statsFocus || { i: -1, j: -1 };
+    table.querySelectorAll('.fx, td.focus').forEach(e => e.classList.remove('fx', 'focus'));
+    if (f.j >= 0) table.tHead.rows[0].cells[f.j + 1]?.classList.add('fx');
+    if (f.i < 0) return;
+    for (const tr of table.tBodies[0].rows) {
+        const rn = tr.cells[0];
+        if (!rn?.dataset.r || +rn.dataset.r !== f.i) continue;
+        rn.classList.add('fx');
+        if (f.j >= 0) tr.cells[f.j + 1]?.classList.add('focus');
+    }
+}
+
+// Scroll the matrix so row i / column j sit just inside the sticky labels, and mark them.
+// Pass -1 to leave an axis where it is.
+function _statsJumpTo(i, j) {
+    const sc = document.querySelector('#statsSummaryTab .stats-mx-scroll');
+    const table = sc?.querySelector('table.stats-mx');
+    if (!table) return;
+    state._statsFocus = { i, j };
+    _statsMarkFocus(table);
+    if (i >= 0) {
+        const rowH = sc._rowH || table.tBodies[0].querySelector('tr:not(.sp)')?.getBoundingClientRect().height || 16;
+        sc.scrollTop = Math.max(0, (i - 3) * rowH);
+    }
+    if (j >= 0) {
+        const hr = table.tHead.rows[0];
+        const th = hr.cells[j + 1];
+        sc.scrollLeft = Math.max(0, th.offsetLeft - hr.cells[0].offsetWidth - 2 * th.offsetWidth);
+    }
 }
 
 // Windowed tables: once the first rows are laid out, measure a row and keep the tbody
@@ -15364,10 +15640,13 @@ function _attachStatsWindow(body) {
     const sc = body.querySelector('.stats-mx-scroll');
     const table = sc?.querySelector('table.stats-mx');
     if (!table) return;
+    _statsMarkFocus(table);
     const ctx = _statsMatrixCtx(table.dataset.kind);
     if (!ctx.windowed) return;
     const tbody = table.tBodies[0];
-    const rowH = tbody.rows[0].getBoundingClientRect().height || 16;
+    const rowH = sc._rowH = tbody.rows[0].getBoundingClientRect().height || 16;
+    // The first rows came with the table; add the spacer for the rest now that a row is measured
+    if (tbody.dataset.placed && +tbody.dataset.r1 < ctx.n) tbody.insertAdjacentHTML('beforeend', _statsSpacer(ctx, (ctx.n - +tbody.dataset.r1) * rowH));
     const place = () => {
         const headH = table.tHead.getBoundingClientRect().height;
         const first = Math.floor(Math.max(0, sc.scrollTop - headH) / rowH);
@@ -15378,51 +15657,91 @@ function _attachStatsWindow(body) {
         tbody.innerHTML = (n0 > 0 ? _statsSpacer(ctx, n0 * rowH) : '') + _statsMatrixRows(ctx, n0, n1) +
             (n1 < ctx.n ? _statsSpacer(ctx, (ctx.n - n1) * rowH) : '');
         tbody.dataset.r0 = n0; tbody.dataset.r1 = n1; tbody.dataset.placed = '1';
+        _statsMarkFocus(table);
     };
     place();
     sc.addEventListener('scroll', place, { passive: true });
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(place).observe(sc);   // window resized taller
 }
 
 function _fillStatsMatrices(bodies) {
     bodies.forEach(body => {
-        body.innerHTML = _buildStatsMatrixTable(body.closest('details').dataset.kind);
+        const old = body.querySelector('.stats-mx-scroll');
+        const keep = old ? { top: old.scrollTop, left: old.scrollLeft } : null;
+        body.innerHTML = _buildStatsMatrixTable(body.dataset.kind);
         body.dataset.built = '1';
         _attachStatsWindow(body);
+        const sc = body.querySelector('.stats-mx-scroll');
+        if (keep && sc) { sc.scrollTop = keep.top; sc.scrollLeft = keep.left; }
     });
 }
 
 function _renderOpenStatsMatrices() {
-    const open = [];
-    document.querySelectorAll('#statsSummaryTab details.stats-mx-section').forEach(det => {
-        const body = det.querySelector('.stats-mx-body');
-        if (det.open) open.push(body);
-        else { body.innerHTML = ''; body.dataset.built = ''; }
-    });
-    if (open.length) _fillStatsMatrices(open);
+    const body = document.querySelector('#statsSummaryTab .stats-mx-body');
+    if (body) _fillStatsMatrices([body]);
+}
+
+function _statsSetKind(kind) {
+    const body = document.querySelector('#statsSummaryTab .stats-mx-body');
+    if (!body || body.dataset.kind === kind) return;
+    _statsSaveLabelOpts({ kind });
+    document.querySelectorAll('#statsSummaryTab .stats-seg button').forEach(b => b.classList.toggle('on', b.dataset.kind === kind));
+    body.dataset.kind = kind;
+    _fillStatsMatrices([body]);
+}
+
+// Find a sequence by (part of) its name; Enter moves to the next match
+function _statsFind(input, axis, next) {
+    const names = state._statsData?.names;
+    const q = input.value.trim().toLowerCase();
+    input.classList.remove('nomatch');
+    if (!names || !q) return;
+    const edge = (n, at) => at >= n.length || !/[a-z0-9]/i.test(n[at]);
+    const rank = n => n === q ? 0 : n.startsWith(q) ? (edge(n, q.length) ? 1 : 2) : (edge(n, n.indexOf(q) + q.length) ? 3 : 4);
+    const hits = names.map((n, k) => [n.toLowerCase(), k]).filter(([n]) => n.includes(q))
+        .sort((a, b) => rank(a[0]) - rank(b[0]) || a[1] - b[1]).map(([, k]) => k);
+    if (!hits.length) { input.classList.add('nomatch'); input.title = 'No sequence name contains this'; return; }
+    input._at = next && input._q === q ? (input._at + 1) % hits.length : 0;
+    input._q = q;
+    const k = hits[input._at];
+    const f = state._statsFocus || { i: -1, j: -1 };
+    if (axis === 'row') _statsJumpTo(k, f.j); else _statsJumpTo(f.i, k);
+    input.title = `${names[k]} — match ${input._at + 1} of ${hits.length}${hits.length > 1 ? ' (Enter for next)' : ''}`;
 }
 
 function initStatsTabs() {
     const summaryTab = document.getElementById('statsSummaryTab');
     if (!summaryTab) return;
-    summaryTab.addEventListener('click', (event) => {
-        const target = event.target;
-        if (target?.id === 'copyDistanceMatrixBtn') copyStatsMatrix('distance');
-        if (target?.id === 'copyIdentityMatrixBtn') copyStatsMatrix('identity');
+    document.getElementById('statsDockBtn')?.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (document.getElementById('statsModal').classList.contains('stats-docked')) _statsUndock(); else _statsDock();
     });
-    // <details> toggle does not bubble; capture it
-    summaryTab.addEventListener('toggle', (event) => {
-        const det = event.target;
-        if (!det.classList?.contains('stats-mx-section')) return;
-        const body = det.querySelector('.stats-mx-body');
-        if (det.open && !body.dataset.built) _fillStatsMatrices([body]);
-    }, true);
+    summaryTab.addEventListener('click', (event) => {
+        const t = event.target;
+        if (t.closest?.('.stats-seg button')) { _statsSetKind(t.closest('.stats-seg button').dataset.kind); return; }
+        if (t.id === 'statsCopyBtn') { copyStatsMatrix(); return; }
+        if (t.classList?.contains('stats-save')) { saveStatsMatrix(t.dataset.fmt); return; }
+        const pair = t.closest?.('.pair a[data-i]');
+        if (pair) _statsJumpTo(+pair.dataset.i, +pair.dataset.j);
+    });
     summaryTab.addEventListener('change', (event) => {
         const id = event.target?.id;
         if (id !== 'statsLabelStyle' && id !== 'statsLabelChars') return;
         const style = document.getElementById('statsLabelStyle').value;
         const chars = Math.max(3, Math.min(80, parseInt(document.getElementById('statsLabelChars').value, 10) || 20));
-        try { localStorage.setItem('msaviewer_statsLabels', JSON.stringify({ style, chars })); } catch (e) {}
+        _statsSaveLabelOpts({ style, chars });
         _renderOpenStatsMatrices();
+    });
+    summaryTab.addEventListener('input', (event) => {
+        const t = event.target;
+        if (t.id === 'statsFindRow') _statsFind(t, 'row', false);
+        if (t.id === 'statsFindCol') _statsFind(t, 'col', false);
+    });
+    summaryTab.addEventListener('keydown', (event) => {
+        const t = event.target;
+        if (event.key !== 'Enter' || (t.id !== 'statsFindRow' && t.id !== 'statsFindCol')) return;
+        event.preventDefault();
+        _statsFind(t, t.id === 'statsFindRow' ? 'row' : 'col', true);
     });
     // Hover a cell: highlight its row name and column label, and name the pair in the tooltip
     let lit = [];
@@ -21129,7 +21448,8 @@ function showDbManagementModal() {
     titleBar.innerHTML = '<span>Manage BLAST Databases</span>';
     const closeBtn = document.createElement('button');
     closeBtn.className = 'blast-close-btn';
-    closeBtn.textContent = 'X';
+    closeBtn.textContent = '×';
+    closeBtn.title = 'Close';
     closeBtn.onclick = () => overlay.remove();
     titleBar.appendChild(closeBtn);
     dialog.appendChild(titleBar);
@@ -21716,7 +22036,8 @@ function displayBlastResults(queryName, queryLen, results) {
     titleEl.style.fontWeight = 'bold';
     titleEl.style.fontSize = '13px';
     const closeBtn = document.createElement('button');
-    closeBtn.textContent = '\u2715';
+    closeBtn.textContent = '\u00d7';
+    closeBtn.title = 'Close';
     closeBtn.className = 'blast-close-btn';
     closeBtn.onclick = () => { overlay.remove(); blastResultsModal = null; };
     titleBar.appendChild(titleEl);

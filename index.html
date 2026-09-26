@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=141">
+    <link rel="stylesheet" href="styles.css?v=142">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -906,7 +906,7 @@
     <div id="sshConsole">
         <div id="sshConsoleHeader">
             <span id="sshConsoleTitle">SSH</span>
-            <button onclick="document.getElementById('sshConsole').style.display='none'" title="Close">x</button>
+            <button type="button" onclick="document.getElementById('sshConsole').style.display='none'" title="Close">×</button>
         </div>
         <div id="sshConsoleBody"></div>
     </div>
@@ -957,7 +957,7 @@
     <div id="colourInspectorModal" style="display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: white; border: 2px solid #333; border-radius: 4px; max-width: 500px; width: 90%; max-height: 60vh; overflow: auto; z-index: 10000; box-shadow: 0 4px 6px rgba(0,0,0,0.3);">
         <div style="background: #f5f5f5; padding: 12px; border-bottom: 1px solid #ccc; display: flex; justify-content: space-between; align-items: center; position: sticky; top: 0;">
             <h3 style="margin: 0; font-size: 14px;">Color Assignment History</h3>
-            <button title="Close this dialog" onclick="document.getElementById('colourInspectorModal').style.display='none'" style="background: none; border: none; font-size: 18px; cursor: pointer; padding: 0 4px;">x</button>
+            <button type="button" class="win-close" title="Close" onclick="document.getElementById('colourInspectorModal').style.display='none'">×</button>
         </div>
         <div id="colourHistoryContent" style="padding: 12px; font-size: 11px;">
             <!-- Populated by JavaScript -->
@@ -993,9 +993,9 @@
     <!-- Sequence Editor Modal -->
     <div id="seqEditModal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 10002; overflow: auto;">
         <div style="background: white; margin: 30px auto; padding: 20px; max-width: 700px; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
-                <h2 style="margin: 0;">Sequence Editor</h2>
-                <button id="seqEditCloseBtn" style="background: none; border: none; font-size: 20px; cursor: pointer;" title="Close">x</button>
+            <div class="win-titlebar" style="--win-pad:20px;">
+                <h3>Sequence Editor</h3>
+                <button type="button" id="seqEditCloseBtn" class="win-close" title="Close">×</button>
             </div>
             <div style="font-size: 12px; color: #555; margin-bottom: 8px;">
                 <span id="seqEditIndex" style="display:none;"></span>
@@ -1056,9 +1056,9 @@
     <!-- Dot-Plot Modal -->
     <div id="dotPlotModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:10002;overflow:hidden;">
         <div id="dotPlotDialog" style="background:white;margin:30px auto;padding:16px;max-width:95vw;height:calc(100vh - 60px);max-height:92vh;width:900px;min-width:560px;min-height:420px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);position:relative;display:flex;flex-direction:column;overflow:hidden;">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                <h3 style="margin:0;" id="dotPlotTitle">Dot Plot</h3>
-                <button id="dotPlotCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;padding:0 4px;" title="Close this dialog">x</button>
+            <div class="win-titlebar" style="--win-pad:16px;">
+                <h3 id="dotPlotTitle">Dot Plot</h3>
+                <button type="button" id="dotPlotCloseBtn" class="win-close" title="Close">×</button>
             </div>
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px;flex-wrap:wrap;">
                 <span style="font-weight:bold;">Mode:</span>
@@ -1136,9 +1136,9 @@ B: -</pre>
     <!-- Repeat/TSD Finder Modal -->
     <div id="repeatFinderModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.3);z-index:10002;overflow:auto;">
         <div id="repeatFinderModalInner" style="background:white;position:absolute;top:40px;right:20px;padding:16px;max-width:520px;width:480px;max-height:90vh;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);overflow:auto;">
-            <div id="repeatFinderDragHandle" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;cursor:move;user-select:none;padding:2px 0;" title="Drag to reposition">
-                <h3 style="margin:0;pointer-events:none;">Repeat Finder</h3>
-                <button id="repeatFinderCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;" title="Close this dialog">x</button>
+            <div id="repeatFinderDragHandle" class="win-titlebar" style="--win-pad:16px;cursor:move;user-select:none;" title="Drag to reposition">
+                <h3 style="pointer-events:none;">Repeat Finder</h3>
+                <button type="button" id="repeatFinderCloseBtn" class="win-close" title="Close">×</button>
             </div>
             <div style="font-size:12px;margin-bottom:8px;">
                 <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
@@ -1217,9 +1217,9 @@ B: -</pre>
     <!-- Alignment Tree Modal -->
     <div id="treeBuilderModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:10002;overflow:auto;">
         <div id="treeBuilderDialog" style="background:white;margin:30px auto;padding:16px;max-width:min(1200px, 94vw);border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                <h3 style="margin:0;">Alignment Tree</h3>
-                <button id="treeBuilderCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;" title="Close this dialog">x</button>
+            <div class="win-titlebar" style="--win-pad:16px;">
+                <h3>Alignment Tree</h3>
+                <button type="button" id="treeBuilderCloseBtn" class="win-close" title="Close">×</button>
             </div>
             <div id="treeBuilderSummary" style="font-size:12px;color:#555;margin-bottom:8px;"></div>
             <div style="margin-bottom:6px;font-size:11px;display:flex;gap:12px;align-items:center;">
@@ -1242,16 +1242,20 @@ B: -</pre>
         </div>
     </div>
 
-    <!-- Statistics Modal -->
-    <div id="statsModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:10002;overflow:auto;">
-        <div style="background:white;margin:30px auto;padding:16px;max-width:960px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-                <h3 style="margin:0;">Alignment Statistics</h3>
-                <button id="statsCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;" title="Close this dialog">x</button>
+    <!-- Statistics window: floating (drag, resize, minimize) or docked on the right -->
+    <div id="statsModal" class="stats-win" style="display:none;">
+        <div id="statsHeader" class="win-titlebar stats-titlebar">
+            <h3>Alignment Statistics</h3>
+            <div class="ge-window-btns">
+                <button type="button" id="statsDockBtn" class="ge-win-btn" title="Dock to the right side of the window">&#9707;</button>
+                <button type="button" id="statsCloseBtn" class="win-close" title="Close">×</button>
             </div>
-            <div id="statsSummaryTab" style="max-height:calc(100vh - 150px);overflow:auto;font-size:12px;"></div>
-            <div style="margin-top:8px;font-size:10px;color:#999;">Summary follows esl-alistat (Easel, Eddy lab). Pairwise identity is identical residues over columns where both sequences are non-gap; esl-alipid divides by the shorter unaligned length.</div>
         </div>
+        <div id="statsContent" class="stats-content">
+            <div id="statsSummaryTab"></div>
+            <div class="stats-foot">Summary follows esl-alistat and esl-alipid (Easel, Eddy lab). Pairwise identity here is identical residues over columns where both sequences are non-gap; esl-alipid divides by the shorter unaligned length.</div>
+        </div>
+        <div class="stats-dock-resizer" title="Drag to change the panel width"></div>
     </div>
 
     <!-- Recent Files Dropdown -->
@@ -1262,7 +1266,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=241"></script>
+    <script src="script.js?v=242"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

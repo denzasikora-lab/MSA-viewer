@@ -713,24 +713,23 @@ check('Display menu: Sticky on the Name Len row, labelled Case/Colours/Frame/Cod
 });
 
 // Statistics matrices: names on both axes in every label style, windowed rows hold the right
-// data, copy gives a tab-separated table with full names
-check('Statistics matrices: named column labels, windowed rows correct, TSV copy', async (page) => {
+// data, the Distance/Identity switch, find row/column, copy gives a TSV table with full names
+check('Statistics matrices: named labels, windowed rows, switch, find, TSV copy', async (page) => {
   const names = Array.from({ length: 150 }, (_, i) => `seq_with_a_rather_long_name_${i}`);
   let seed = 3; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) % 4;
   const base = Array.from({ length: 120 }, () => 'ACGT'[rnd()]).join('');
   const fa = names.map(n => `>${n}\n` + base.split('').map(c => rnd() === 0 && rnd() === 0 ? 'ACGT'[rnd()] : c).join('')).join('\n') + '\n';
   await page.setInputFiles('#fileInput', { name: 'many.fa', mimeType: 'text/plain', buffer: Buffer.from(fa) });
   await page.waitForTimeout(1500);
-  await page.evaluate(() => { window._copied = null; navigator.clipboard.writeText = t => { window._copied = t; return Promise.resolve(); }; openStats(); });
-  await page.waitForFunction(() => state._statsData, null, { timeout: 30000 });
+  await page.evaluate(() => { try { localStorage.removeItem('msaviewer_statsLabels'); localStorage.removeItem('msaviewer_statsWin'); } catch (e) {}
+    window._copied = null; navigator.clipboard.writeText = t => { window._copied = t; return Promise.resolve(); }; openStats(); });
+  await page.waitForFunction(() => state._statsData && document.querySelector('#statsSummaryTab table.stats-mx'), null, { timeout: 30000 });
   const out = {};
   for (const style of ['angled', 'vertical', 'numbers']) {
     await page.selectOption('#statsLabelStyle', style);
+    await page.waitForTimeout(150);
     out[style] = await page.evaluate(async (style) => {
-      const d = document.querySelector('details[data-kind="identity"]');
-      d.open = true;
-      for (let k = 0; k < 100 && !d.querySelector('table.stats-mx'); k++) await new Promise(r => setTimeout(r, 20));
-      const sc = d.querySelector('.stats-mx-scroll'), table = sc.querySelector('table');
+      const sc = document.querySelector('#statsSummaryTab .stats-mx-scroll'), table = sc.querySelector('table');
       const head = [...table.tHead.rows[0].cells].filter(c => c.classList.contains('c'));
       const n = state._statsData.names.length, m = state._statsData.identity;
       const headOk = head.length === n && head.every((c, j) => c.title === state._statsData.names[j] &&
@@ -744,16 +743,108 @@ check('Statistics matrices: named column labels, windowed rows correct, TSV copy
       return { headOk, rowOk, i, domRows: table.tBodies[0].rows.length };
     }, style);
   }
-  await page.click('#copyIdentityMatrixBtn');
+  // switch shows the distance matrix; find puts the named row/column under the labels
+  await page.click('.stats-seg button[data-kind="distance"]');
+  await page.fill('#statsFindRow', 'name_97');
+  await page.fill('#statsFindCol', 'name_120');
+  await page.waitForTimeout(300);
+  const nav = await page.evaluate(() => {
+    const sc = document.querySelector('#statsSummaryTab .stats-mx-scroll'), table = sc.querySelector('table');
+    const cell = table.querySelector('td.focus');
+    const cr = cell?.getBoundingClientRect(), sr = sc.getBoundingClientRect();
+    return { kind: table.dataset.kind, f: state._statsFocus, cell: cell?.textContent, want: state._statsData.distance[97][120],
+      visible: !!cr && cr.top > sr.top && cr.bottom < sr.bottom && cr.left > sr.left && cr.right < sr.right };
+  });
+  await page.click('#statsCopyBtn');
   await page.waitForTimeout(200);
   const tsv = await page.evaluate(() => {
     const lines = (window._copied || '').trimEnd().split('\n');
     const head = lines[0].split('\t'), r7 = lines[8].split('\t');
     return { lines: lines.length, headOk: head[0] === '' && head[1] === state._statsData.names[0] && head.length === 151,
-      rowOk: r7[0] === state._statsData.names[7] && r7[8] === '100.0' && r7[3] === state._statsData.identity[7][2] };
+      rowOk: r7[0] === state._statsData.names[7] && r7[8] === '0.0000' && r7[3] === state._statsData.distance[7][2] };
   });
-  const ok = ['angled', 'vertical', 'numbers'].every(s => out[s].headOk && out[s].rowOk && out[s].domRows < 150) && tsv.lines === 151 && tsv.headOk && tsv.rowOk;
-  return { pass: ok, detail: JSON.stringify({ ...out, tsv }) };
+  const navOk = nav.kind === 'distance' && nav.f.i === 97 && nav.f.j === 120 && nav.cell === nav.want && nav.visible;
+  const ok = ['angled', 'vertical', 'numbers'].every(s => out[s].headOk && out[s].rowOk && out[s].domRows < 150) && navOk && tsv.lines === 151 && tsv.headOk && tsv.rowOk;
+  return { pass: ok, detail: JSON.stringify({ ...out, nav, tsv }) };
+});
+
+// Statistics window: tooltips on every summary field, min/max name their pairs, it docks
+// beside the alignment (which narrows instead of being covered) and undocks, and CSV and
+// Excel files hold the matrix
+check('Statistics window: field tooltips, min/max pairs, dock/undock, CSV and Excel files', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => { try { localStorage.removeItem('msaviewer_statsWin'); localStorage.removeItem('msaviewer_statsLabels'); } catch (e) {} openStats(); });
+  await page.waitForFunction(() => document.querySelector('#statsSummaryTab table.stats-mx'), null, { timeout: 30000 });
+  const sum = await page.evaluate(() => {
+    const d = state._statsData, n = d.names.length;
+    let min = Infinity, max = -Infinity, minP = [], maxP = [];
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+      const v = parseFloat(d.identity[i][j]);
+      if (v < min) { min = v; minP = [`${d.names[i]} × ${d.names[j]}`]; } else if (v === min) minP.push(`${d.names[i]} × ${d.names[j]}`);
+      if (v > max) { max = v; maxP = [`${d.names[i]} × ${d.names[j]}`]; } else if (v === max) maxP.push(`${d.names[i]} × ${d.names[j]}`);
+    }
+    const rows = Object.fromEntries([...document.querySelectorAll('.stats-card tr')].map(tr => [tr.cells[0].textContent, tr]));
+    const pairs = label => [...rows[label].querySelectorAll('.pair a')].map(a => a.textContent);
+    return { tips: [...document.querySelectorAll('.stats-card .tip')].filter(e => e.title.length > 20).length,
+      fields: Object.keys(rows).length, minOk: pairs('Min identity').every(p => minP.includes(p)) && pairs('Min identity').length > 0,
+      maxOk: pairs('Max identity').every(p => maxP.includes(p)) && pairs('Max identity').length > 0 };
+  });
+  const w0 = await page.evaluate(() => document.getElementById('alignmentContainer').getBoundingClientRect().width);
+  await page.click('#statsDockBtn');
+  await page.waitForTimeout(600);
+  const docked = await page.evaluate((w0) => {
+    const w = document.getElementById('statsModal').getBoundingClientRect(), a = document.getElementById('alignmentContainer').getBoundingClientRect();
+    return { right: Math.round(innerWidth - w.right), bottom: Math.round(innerHeight - w.bottom), narrowed: a.width < w0 - 300, noOverlap: a.right <= w.left + 1 };
+  }, w0);
+  await page.click('#statsDockBtn');
+  await page.waitForTimeout(400);
+  const undocked = await page.evaluate((w0) => ({ pad: document.body.style.paddingRight,
+    fullWidth: Math.abs(document.getElementById('alignmentContainer').getBoundingClientRect().width - w0) < 2 }), w0);
+  const files = await page.evaluate(async () => {
+    const got = {};
+    const orig = URL.createObjectURL;
+    URL.createObjectURL = b => { got.blob = b; return orig.call(URL, b); };
+    saveStatsMatrix('csv', 'identity'); const csv = await got.blob.text();
+    saveStatsMatrix('xlsx', 'identity'); const xl = new Uint8Array(await got.blob.arrayBuffer());
+    URL.createObjectURL = orig;
+    const d = state._statsData;
+    const lines = csv.trimEnd().split('\r\n').map(l => l.split(','));
+    const csvOk = lines.length === d.names.length + 1 && lines[5][0] === d.names[4] && lines[5][9] === d.identity[4][8];
+    const text = new TextDecoder().decode(xl);
+    return { csvOk, zip: xl[0] === 0x50 && xl[1] === 0x4b, sheet: text.includes('xl/worksheets/sheet1.xml') && text.includes(`<t>${d.names[4]}</t>`) };
+  });
+  const ok = sum.tips === 9 && sum.fields === 9 && sum.minOk && sum.maxOk && docked.right === 0 && docked.bottom === 0 && docked.narrowed && docked.noOverlap
+    && undocked.pad === '' && undocked.fullWidth && files.csvOk && files.zip && files.sheet;
+  return { pass: ok, detail: JSON.stringify({ sum, docked, undocked, files }) };
+});
+
+// Window title bars: every dialog's close button is a 26px target centred in its title bar
+check('Dialog close buttons are centred in a title bar', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1500);
+  const r = {};
+  for (const [name, open, btn] of [
+    ['stats', 'openStats()', '#statsCloseBtn'],
+    ['tree', 'state.selectedRows = new Set([0,1,2,3]); openTreeBuilder()', '#treeBuilderCloseBtn'],
+    ['repeat', 'openRepeatFinder(0)', '#repeatFinderCloseBtn'],
+    ['seqedit', 'openSeqEditor(0)', '#seqEditCloseBtn'],
+  ]) {
+    await page.evaluate(open);
+    await page.waitForTimeout(900);
+    r[name] = await page.evaluate((btn) => {
+      const b = document.querySelector(btn), bar = b.closest('.win-titlebar');
+      if (!bar) return 'no title bar';
+      const br = b.getBoundingClientRect(), hr = bar.getBoundingClientRect();
+      return { w: br.width, h: br.height, dy: Math.round((br.top + br.height / 2) - (hr.top + hr.height / 2)), glyph: b.textContent };
+    }, btn);
+    await page.click(btn);
+    await page.waitForTimeout(200);
+  }
+  const ok = Object.values(r).every(v => v.w === 26 && v.h === 26 && Math.abs(v.dy) <= 1 && v.glyph === '×');
+  return { pass: ok, detail: JSON.stringify(r) };
 });
 
 // Codon analysis marks frameshift gaps with side bars; drawn as borders they widened those

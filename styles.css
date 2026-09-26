@@ -2918,12 +2918,19 @@ span.column-selected {
 #sshConsoleHeader button {
     background: none;
     border: none;
-    color: #888;
+    border-radius: 4px;
+    color: #aaa;
     font-size: 16px;
     line-height: 1;
     cursor: pointer;
-    padding: 0 2px;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
 }
+#sshConsoleHeader button:hover { background: #e24b4b; }
 #sshConsoleHeader button:hover { color: #fff; }
 #sshConsoleBody {
     padding: 7px 10px;
@@ -3187,15 +3194,11 @@ span.diagnostic-mutation {
     flex-shrink: 0;
 }
 .blast-close-btn {
-    background: none;
-    border: none;
-    font-size: 18px;
-    cursor: pointer;
-    color: #666;
-    line-height: 1;
-    padding: 2px 4px;
+    width: 26px; height: 26px; padding: 0; margin: 0; border: none; border-radius: 5px;
+    background: transparent; color: #555; font-size: 18px; line-height: 1; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
 }
-.blast-close-btn:hover { color: #000; }
+.blast-close-btn:hover { background: #e24b4b; color: #fff; }
 
 /* Tab bar */
 .blast-tab-bar {
@@ -3487,3 +3490,88 @@ table.stats-mx th.c.a > div { position: relative; width: var(--cw); }
 table.stats-mx th.c.a span { position: absolute; left: 50%; bottom: 4px; transform-origin: 0 100%; transform: rotate(-45deg); white-space: nowrap; }
 table.stats-mx th.hl, table.stats-mx th.hl span { background: #fff3b0; color: #000; font-weight: bold; }
 .stats-mx-key { margin-top: 6px; font: 10px 'Courier New', monospace; display: flex; flex-wrap: wrap; gap: 2px 14px; max-height: 18vh; overflow: auto; }
+
+/* ── Window title bars and close buttons, shared by every dialog ──
+   A grey strip across the top of the window (it cancels the window's own padding,
+   set per window as --win-pad), title at 14px, close button 26px square centred in
+   the strip with a red hover. Before this, windows had a bare 20px "x" floating in
+   the top-right corner, above the title's centre line. */
+.win-titlebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin: calc(-1 * var(--win-pad, 16px)) calc(-1 * var(--win-pad, 16px)) 10px;
+    padding: 6px 8px 6px var(--win-pad, 16px);
+    background: #f5f6f8;
+    border-bottom: 1px solid #e2e5e8;
+    border-radius: 8px 8px 0 0;
+    flex-shrink: 0;
+}
+.win-titlebar h2, .win-titlebar h3 { margin: 0; font-size: 14px; font-weight: 650; color: #222; }
+.win-close {
+    width: 26px; height: 26px; padding: 0; margin: 0; border: none; border-radius: 5px;
+    background: transparent; color: #555; font-size: 18px; line-height: 1; cursor: pointer;
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0;
+}
+.win-close:hover { background: #e24b4b; color: #fff; }
+.ge-window-btns .win-close { width: 26px; height: 26px; }
+
+/* ── Alignment Statistics window ── */
+.stats-win {
+    position: fixed;
+    z-index: 10000;
+    background: #fff;
+    border: 1px solid #c9ced4;
+    border-radius: 8px;
+    box-shadow: 0 6px 24px rgba(0,0,0,0.25);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-width: 320px;
+}
+.stats-win .stats-titlebar { margin: 0; cursor: move; user-select: none; }
+.stats-content { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 8px 10px 6px; font-size: 12px; }
+#statsSummaryTab { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.stats-foot { flex-shrink: 0; margin-top: 6px; font-size: 10px; color: #999; }
+.stats-win.stats-docked {
+    z-index: 90;          /* under the menu bar (100), so its menus open over the panel */
+    border-radius: 0;
+    border-width: 0 0 0 1px;
+    box-shadow: -2px 0 8px rgba(0,0,0,0.08);
+}
+.stats-win.stats-docked .stats-titlebar { border-radius: 0; cursor: default; }
+.stats-win.stats-docked > [title="Drag to resize"], .stats-win.stats-docked .stats-min-btn { display: none; }
+.stats-dock-resizer { display: none; position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: ew-resize; }
+.stats-win.stats-docked .stats-dock-resizer { display: block; }
+.stats-dock-resizer:hover { background: rgba(74,144,226,0.35); }
+
+.stats-cards { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-start; flex-shrink: 0; }
+.stats-card { border: 1px solid #dde1e5; border-radius: 5px; padding: 5px 10px 6px; background: #fbfbfc; }
+.stats-card b { font-size: 11px; color: #333; }
+.stats-card table { border-collapse: collapse; font-size: 11px; margin-top: 2px; }
+.stats-card td { padding: 1px 0; vertical-align: top; }
+.stats-card td:first-child { padding-right: 12px; }
+.stats-card .tip { border-bottom: 1px dotted #999; cursor: help; }
+.stats-card .pair { color: #555; }
+.stats-card .pair a { color: #1a5aa0; cursor: pointer; text-decoration: none; }
+.stats-card .pair a:hover { text-decoration: underline; }
+.stats-card .more { color: #888; cursor: help; border-bottom: 1px dotted #aaa; }
+
+.stats-mx-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 5px 10px; margin: 8px 0 5px; font-size: 11px; flex-shrink: 0; }
+.stats-mx-toolbar label, .stats-mx-toolbar .lbl { color: #555; }
+.stats-mx-toolbar select, .stats-mx-toolbar input, .stats-mx-toolbar button { font-size: 11px; }
+.stats-seg { display: inline-flex; border: 1px solid #b8c0c8; border-radius: 5px; overflow: hidden; }
+.stats-seg button { border: none; background: #fff; padding: 2px 10px; cursor: pointer; color: #333; }
+.stats-seg button + button { border-left: 1px solid #b8c0c8; }
+.stats-seg button.on { background: #3d7cc9; color: #fff; }
+.stats-find { width: 120px; height: 20px; padding: 0 5px; border: 1px solid #c3c9cf; border-radius: 10px; }
+.stats-find.nomatch { border-color: #e24b4b; background: #fff3f3; }
+.stats-mx-toolbar .sp { flex: 1; }
+.stats-mx-body { flex: 1; min-height: 120px; display: flex; flex-direction: column; }
+.stats-mx-body .stats-mx-scroll { flex: 1; min-height: 0; max-height: none; }
+table.stats-mx td.focus { background: #ffd54f !important; color: #000; font-weight: bold; }
+table.stats-mx th.fx, table.stats-mx th.fx span { background: #ffe082; color: #000; font-weight: bold; }
+/* BLAST dialogs use the same title-bar look as .win-titlebar */
+.blast-text-title-bar { background: #f5f6f8; border-bottom-color: #e2e5e8; padding: 6px 8px 6px 14px; border-radius: 8px 8px 0 0; }
+.blast-text-title-bar > span:first-child { font-size: 14px !important; font-weight: 650 !important; color: #222; }
