@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=139">
+    <link rel="stylesheet" href="styles.css?v=140">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -168,6 +168,7 @@
                             <input type="range" id="nameLengthSlider" class="normal-slider" min="3" max="50" value="50" title="Adjust sequence name display length (3-50 characters)">
                             <input type="number" id="nameLengthInput" min="3" max="50" value="50" title="Adjust sequence name display length (3-50 characters)">
                             <label style="font-size:10px;display:flex;align-items:center;gap:2px;white-space:nowrap;" title="Show full sequence names without truncation"><input type="checkbox" id="nameLengthNoLimit"> No limit</label>
+                            <label style="font-size:10px;display:flex;align-items:center;gap:2px;white-space:nowrap;" title="Keep sequence names visible while scrolling the alignment horizontally"><input type="checkbox" id="stickyNames" checked title="Keep sequence names visible while scrolling the alignment horizontally"> Sticky</label>
                         </div>
                         <div class="slider-container display-slider-row" style="flex: 1; max-width: 500px;">
                             <span class="slider-label" title="Zoom controls for alignment display">Zoom</span>
@@ -212,6 +213,7 @@
                             </div>
                             <div style="display:flex;align-items:center;gap:6px;margin-left:74px;">
                                 <label style="font-size:10px;" title="Colour-code codon positions, flag stop codons and frameshifts, classify substitutions (Full/Block only)"><input type="checkbox" id="codonAnalysis" title="Colour-code codon positions, flag stop codons and frameshifts, classify substitutions (Full/Block only)"> Codon analysis</label>
+                                <label for="codonFrame" style="font-size:10px;color:#555;">Frame</label>
                                 <select id="codonFrame" style="font-size:10px;padding:0 2px;height:18px;" title="Reading frame (also in top bar when codon analysis is on)">
                                     <option value="auto" selected>Auto</option>
                                     <option value="0">Pos 1</option>
@@ -219,6 +221,7 @@
                                     <option value="2">Pos 3</option>
                                     <option value="all">All 3</option>
                                 </select>
+                                <label for="codonCode" style="font-size:10px;color:#555;">Code</label>
                                 <select id="codonCode" style="font-size:10px;padding:0 2px;height:18px;" title="Genetic code table used for translation and stop-codon detection">
                                     <option value="1">Standard</option>
                                     <option value="2">Vert Mito</option>
@@ -237,18 +240,17 @@
                                     <option value="22">Scenedesmus</option>
                                 </select>
                             </div>
-                            <div style="display:flex;align-items:center;gap:6px;margin-left:74px;">
-                                <label style="font-size:10px;" title="Keep sequence names visible while scrolling the alignment horizontally"><input type="checkbox" id="stickyNames" checked title="Keep sequence names visible while scrolling the alignment horizontally"> Sticky Names</label>
-                                <select id="residueCase" style="font-size:10px;padding:0 2px;height:18px;" title="Residue display case (GeneDoc-style)">
-                                    <option value="asis" selected>As-is</option>
+                            <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;">
+                                <span style="font-size:10px;font-weight:bold;width:70px;text-align:right;">Letters</span>
+                                <label for="residueCase" style="font-size:10px;color:#555;">Case</label>
+                                <select id="residueCase" style="font-size:10px;padding:0 2px;height:18px;" title="Letter case of residues in the display (GeneDoc-style); the sequences themselves are not changed">
+                                    <option value="asis" selected>As in file</option>
                                     <option value="upper">UPPER</option>
                                     <option value="lower">lower</option>
                                 </select>
-                            </div>
-                            <div style="display:flex;align-items:center;gap:6px;margin-left:74px;">
-                                <label for="colorSchemeSelect" style="font-size:10px;">Color scheme</label>
+                                <label for="colorSchemeSelect" style="font-size:10px;color:#555;margin-left:6px;">Colours</label>
                                 <select id="colorSchemeSelect" style="font-size:10px;padding:0 2px;height:18px;" title="Residue color scheme for the alignment">
-                                    <option value="monochrome" selected>Monochrome (current)</option>
+                                    <option value="monochrome" selected>Monochrome</option>
                                     <option value="nucleotide">Nucleotide</option>
                                     <option value="purine-pyrimidine">Purine/Pyrimidine</option>
                                     <option value="ambiguity">Nucleotide Ambiguity</option>
@@ -1247,7 +1249,7 @@ B: -</pre>
                 <h3 style="margin:0;">Alignment Statistics</h3>
                 <button id="statsCloseBtn" style="border:none;background:none;font-size:20px;cursor:pointer;" title="Close this dialog">x</button>
             </div>
-            <div id="statsSummaryTab" style="max-height:60vh;overflow:auto;font-size:12px;"></div>
+            <div id="statsSummaryTab" style="max-height:calc(100vh - 150px);overflow:auto;font-size:12px;"></div>
             <div style="margin-top:8px;font-size:10px;color:#999;">Summary follows esl-alistat (Easel, Eddy lab). Pairwise identity is identical residues over columns where both sequences are non-gap; esl-alipid divides by the shorter unaligned length.</div>
         </div>
     </div>
@@ -1260,7 +1262,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=238"></script>
+    <script src="script.js?v=240"></script>
     <script src="tree-draw.js?v=164"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

@@ -3466,3 +3466,22 @@ body.var-sites-only.hide-breakpoints .col-breakpoint { display: none !important;
     -webkit-appearance: none;
     margin: 0;
 }
+
+/* Alignment Statistics: pairwise matrices */
+.stats-mx-scroll { overflow: auto; max-height: 55vh; border: 1px solid #ddd; }
+table.stats-mx { border-collapse: separate; border-spacing: 0; font: 10px/1.35 'Courier New', monospace; }
+table.stats-mx td { width: var(--cw); min-width: var(--cw); padding: 1px 3px; text-align: right; border-right: 1px solid #f0f0f0; border-bottom: 1px solid #f0f0f0; white-space: nowrap; }
+table.stats-mx td.dg { background: #f3f3f3; color: #999; }
+table.stats-mx td:hover { background: #fff3b0; }
+table.stats-mx td.pad, table.stats-mx th.pad { border: none; padding: 0; }
+table.stats-mx thead th { position: sticky; top: 0; z-index: 2; background: #fff; font-weight: normal; border-bottom: 1px solid #bbb; }
+table.stats-mx th.rn { position: sticky; left: 0; z-index: 1; background: #fff; text-align: left; font-weight: normal; white-space: nowrap; padding: 1px 6px 1px 3px; border-right: 1px solid #bbb; border-bottom: 1px solid #f0f0f0; }
+table.stats-mx th.corner { left: 0; z-index: 3; border-right: 1px solid #bbb; }
+table.stats-mx th.rn .ix { color: #999; display: inline-block; min-width: 3ch; text-align: right; }
+table.stats-mx th.c { padding: 1px 0; text-align: center; vertical-align: bottom; }
+table.stats-mx th.c.v > div { writing-mode: vertical-rl; transform: rotate(180deg); white-space: nowrap; margin: 0 auto; padding: 3px 0; }
+table.stats-mx th.c.a { padding: 0; }
+table.stats-mx th.c.a > div { position: relative; width: var(--cw); }
+table.stats-mx th.c.a span { position: absolute; left: 50%; bottom: 4px; transform-origin: 0 100%; transform: rotate(-45deg); white-space: nowrap; }
+table.stats-mx th.hl, table.stats-mx th.hl span { background: #fff3b0; color: #000; font-weight: bold; }
+.stats-mx-key { margin-top: 6px; font: 10px 'Courier New', monospace; display: flex; flex-wrap: wrap; gap: 2px 14px; max-height: 18vh; overflow: auto; }

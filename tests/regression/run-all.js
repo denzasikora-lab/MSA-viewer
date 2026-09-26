@@ -691,6 +691,71 @@ check('Horizontal scrollbar follows zoom (no overshoot / snap-back at 50%)', asy
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+// Display menu: Sticky sits with Name Len; case and colours are labelled on a "Letters" row
+check('Display menu: Sticky on the Name Len row, labelled Case/Colours/Frame/Code, both still work', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1500);
+  const layout = await page.evaluate(() => {
+    const labelFor = id => document.querySelector(`label[for="${id}"]`)?.textContent.trim();
+    return {
+      stickyRow: !!document.getElementById('stickyNames').closest('.display-slider-row')?.querySelector('#nameLengthSlider'),
+      caseLabel: labelFor('residueCase'), colourLabel: labelFor('colorSchemeSelect'),
+      frameLabel: labelFor('codonFrame'), codeLabel: labelFor('codonCode'),
+      caseFirst: document.querySelector('#residueCase option').textContent,
+    };
+  });
+  await page.evaluate(() => { const s = document.getElementById('residueCase'); s.value = 'lower'; s.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForTimeout(600);
+  const lowered = await page.evaluate(() => { const t = document.getElementById('alignmentContainer').innerText; return /[acgt]{5}/.test(t) && !/[ACGT]{5}/.test(t.replace(/^.*Consensus.*$/gm, '')); });
+  const ok = layout.stickyRow && layout.caseLabel === 'Case' && layout.colourLabel === 'Colours' && layout.frameLabel === 'Frame' && layout.codeLabel === 'Code' && layout.caseFirst === 'As in file' && lowered;
+  return { pass: ok, detail: JSON.stringify({ ...layout, lowered }) };
+});
+
+// Statistics matrices: names on both axes in every label style, windowed rows hold the right
+// data, copy gives a tab-separated table with full names
+check('Statistics matrices: named column labels, windowed rows correct, TSV copy', async (page) => {
+  const names = Array.from({ length: 150 }, (_, i) => `seq_with_a_rather_long_name_${i}`);
+  let seed = 3; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648) % 4;
+  const base = Array.from({ length: 120 }, () => 'ACGT'[rnd()]).join('');
+  const fa = names.map(n => `>${n}\n` + base.split('').map(c => rnd() === 0 && rnd() === 0 ? 'ACGT'[rnd()] : c).join('')).join('\n') + '\n';
+  await page.setInputFiles('#fileInput', { name: 'many.fa', mimeType: 'text/plain', buffer: Buffer.from(fa) });
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => { window._copied = null; navigator.clipboard.writeText = t => { window._copied = t; return Promise.resolve(); }; openStats(); });
+  await page.waitForFunction(() => state._statsData, null, { timeout: 30000 });
+  const out = {};
+  for (const style of ['angled', 'vertical', 'numbers']) {
+    await page.selectOption('#statsLabelStyle', style);
+    out[style] = await page.evaluate(async (style) => {
+      const d = document.querySelector('details[data-kind="identity"]');
+      d.open = true;
+      for (let k = 0; k < 100 && !d.querySelector('table.stats-mx'); k++) await new Promise(r => setTimeout(r, 20));
+      const sc = d.querySelector('.stats-mx-scroll'), table = sc.querySelector('table');
+      const head = [...table.tHead.rows[0].cells].filter(c => c.classList.contains('c'));
+      const n = state._statsData.names.length, m = state._statsData.identity;
+      const headOk = head.length === n && head.every((c, j) => c.title === state._statsData.names[j] &&
+        (style === 'numbers' ? c.textContent === String(j + 1) : state._statsData.names[j].startsWith(c.textContent.replace('…', ''))));
+      sc.scrollTop = 0.6 * (sc.scrollHeight - sc.clientHeight);
+      await new Promise(r => setTimeout(r, 150));
+      const top = sc.getBoundingClientRect().top + table.tHead.getBoundingClientRect().height;
+      const tr = [...table.tBodies[0].rows].find(t => t.cells[0].dataset.r && t.getBoundingClientRect().bottom > top + 2);
+      const i = +tr.cells[0].dataset.r;
+      const rowOk = i > 50 && [...tr.cells].slice(1, n + 1).every((c, j) => c.textContent === m[i][j]);
+      return { headOk, rowOk, i, domRows: table.tBodies[0].rows.length };
+    }, style);
+  }
+  await page.click('#copyIdentityMatrixBtn');
+  await page.waitForTimeout(200);
+  const tsv = await page.evaluate(() => {
+    const lines = (window._copied || '').trimEnd().split('\n');
+    const head = lines[0].split('\t'), r7 = lines[8].split('\t');
+    return { lines: lines.length, headOk: head[0] === '' && head[1] === state._statsData.names[0] && head.length === 151,
+      rowOk: r7[0] === state._statsData.names[7] && r7[8] === '100.0' && r7[3] === state._statsData.identity[7][2] };
+  });
+  const ok = ['angled', 'vertical', 'numbers'].every(s => out[s].headOk && out[s].rowOk && out[s].domRows < 150) && tsv.lines === 151 && tsv.headOk && tsv.rowOk;
+  return { pass: ok, detail: JSON.stringify({ ...out, tsv }) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

@@ -395,7 +395,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td><strong>Groups</strong></td><td>Appears after a grouping run. Docks the Group explorer (membership, colours, copy FASTA)</td></tr>
     <tr><td><strong>Colour Names</strong></td><td>Colour sequence labels by name pattern or name similarity; sort by colour</td></tr>
     <tr><td><strong>Shade</strong></td><td>Black/Dark/Light conservation shading thresholds and colours, and the All/Non-Gap conservation calculation mode (§5.3)</td></tr>
-    <tr><td><strong>Display</strong></td><td>View mode, zoom, name length, Sticky Names, codon toggle, variable sites filter with percentage threshold and breakpoint markers</td></tr>
+    <tr><td><strong>Display</strong></td><td>View mode, zoom, name length and Sticky names, codon toggle, variable sites filter with percentage threshold and breakpoint markers, letter case and colour scheme</td></tr>
     <tr><td><strong>Consensus</strong></td><td>Consensus line settings, group consensus computation</td></tr>
     <tr><td><strong>Search</strong></td><td>Motif search with regex and mismatch support</td></tr>
     <tr><td><strong>Edit...</strong></td><td>Edit mode toggle, degap button, GeneDoc-style editing tools</td></tr>
@@ -440,7 +440,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li><strong>Restriction Sites</strong> search in the Search menu, with 50 common enzymes, manual site input, IUPAC ambiguity support, and optional reverse-complement search.</li>
     <li><strong>Reads view mode</strong> for SAM/BAM data with IGV-style read packing and CIGAR-expanded match/mismatch colouring.</li>
     <li><strong>Tree Builder</strong> supports both UPGMA and Neighbor-Joining with three distance correction models (p-distance, Jukes-Cantor, Kimura 2-parameter).</li>
-    <li><strong>Statistics</strong> now includes copy-to-clipboard buttons for p-distance and identity matrices.</li>
+    <li><strong>Statistics</strong> shows the p-distance and identity matrices as tables with sequence names on both axes, and copies them as tab-separated tables.</li>
     <li><strong>Display colour schemes</strong> now include Monochrome, Nucleotide, Purine/Pyrimidine, Nucleotide Ambiguity, Clustal-like amino acid, and Jalview-like amino acid modes.</li>
     <li><strong>Colour Names panel</strong> with pattern matching, auto-similarity grouping, colour presets, sort-by-colour, group-at-top, and colour history inspector.</li>
     <li><strong>Repeat Finder</strong> for tandem, direct, and inverted repeats with configurable parameters.</li>
@@ -1116,13 +1116,16 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
 
   <h3 id="di-colors">5.3 Alignment Colour Schemes</h3>
   <p>
-    The <strong>Color scheme</strong> dropdown controls residue colouring in the main
-    Full and Block alignment renderers. The current conservation-based black/grey/white
-    display is preserved as <strong>Monochrome (current)</strong> and remains the default.
+    The <strong>Letters</strong> row of the Display menu sets how residues are drawn.
+    <strong>Colours</strong> controls residue colouring in the main Full and Block alignment
+    renderers; the conservation-based black/grey/white display is <strong>Monochrome</strong>,
+    the default. <strong>Case</strong> shows residues <strong>As in file</strong>, in
+    <strong>UPPER</strong> or in <strong>lower</strong> case; it changes only the display,
+    not the sequences.
   </p>
   <table>
     <tr><th>Scheme</th><th>Use</th></tr>
-    <tr><td>Monochrome (current)</td><td>Existing conservation shading using Black/Dark/Light thresholds from the Shade menu</td></tr>
+    <tr><td>Monochrome</td><td>Conservation shading using Black/Dark/Light thresholds from the Shade menu</td></tr>
     <tr><td>Nucleotide</td><td>Distinct colours for A, C, G, T/U and N</td></tr>
     <tr><td>Purine/Pyrimidine</td><td>Groups A/G as purines and C/T/U as pyrimidines; ambiguous bases are neutral</td></tr>
     <tr><td>Nucleotide Ambiguity</td><td>Highlights IUPAC ambiguity codes such as R, Y, S, W, K, M, B, D, H, V and N</td></tr>
@@ -1147,10 +1150,10 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     Activates codon-aware viewing for coding sequences (CDS) in any nucleotide alignment
     (IUPAC ambiguity codes allowed; a codon containing one translates to X). The length need
     not be a multiple of 3. The reading frame is chosen automatically (most rows starting
-    with ATG, then fewest stops) or set with the Frame selector. Full and Block draw the
+    with ATG, then fewest stops) or set with the <strong>Frame</strong> selector next to the checkbox. Full and Block draw the
     annotations below. Canvas draws the amino-acid translation track only.
   </p>
-  <p>Select the appropriate genetic code from the dropdown (15 variants):</p>
+  <p>Select the appropriate genetic code from the <strong>Code</strong> dropdown (15 variants):</p>
   <table>
     <tr><th>Code</th><th>NCBI Table</th><th>Key Differences from Standard</th></tr>
     <tr><td>Standard</td><td>1</td><td>-</td></tr>
@@ -1189,8 +1192,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
 
   <h3 id="di-sticky">5.5 Sticky Names</h3>
   <p>
-    When enabled (default), the sequence name column remains fixed on the left while
-    scrolling horizontally. This ensures you always know which sequence you are looking at.
+    When <strong>Sticky</strong> (on the Name Len row) is checked, the default, the sequence
+    name column remains fixed on the left while scrolling horizontally. This ensures you always know which sequence you are looking at.
   </p>
 
   <h3 id="di-zoom">5.6 Zoom &amp; Reset</h3>
@@ -1525,7 +1528,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td><strong>New Tab</strong></td><td>Open selected sequences in a new browser tab (<kbd>Alt+T</kbd>)</td></tr>
     <tr><td><strong>TSD Finder</strong></td><td>Find target site duplications around SINE insertion boundaries</td></tr>
     <tr><td><strong>Tree</strong></td><td>Build UPGMA or Neighbor-Joining trees from selected sequences. Three distance correction models are available: p-distance (raw), Jukes-Cantor (JC69), and Kimura 2-parameter (K80). Switching UPGMA/NJ or model in the modal rebuilds the tree. Outputs a drawn tree (see below), a text view, and Newick with Copy Newick and Download .nwk options</td></tr>
-    <tr><td><strong>Statistics</strong></td><td>Alignment summary in the style of esl-alistat (sequence count, length, residues, gaps) and pairwise identity in the style of esl-alipid (mean, minimum, and maximum). Identity here is identical residues divided by columns where both sequences are non-gap; esl-alipid divides by the shorter unaligned length. Full pairwise p-distance and identity matrices have copy-to-clipboard buttons. See Credits.</td></tr>
+    <tr><td><strong>Statistics</strong></td><td>Alignment summary in the style of esl-alistat (sequence count, length, residues, gaps) and pairwise identity in the style of esl-alipid (mean, minimum, and maximum). Identity here is identical residues divided by columns where both sequences are non-gap; esl-alipid divides by the shorter unaligned length. The full pairwise p-distance and identity matrices open as tables: row names stay on the left and column labels stay on top while scrolling, and hovering a cell highlights its two sequences. <strong>Column labels</strong> shows the names angled at 45°, vertical, or as numbers with a key of full names; <strong>Max chars</strong> shortens long names (the full name is in the tooltip). Large matrices draw only the rows on screen. The copy buttons copy a tab-separated table with full names, ready to paste into a spreadsheet. See Credits.</td></tr>
   </table>
 
   <p>

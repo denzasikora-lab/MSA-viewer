@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v189';
+const BUILD_TAG = 'v190';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -15238,37 +15238,27 @@ function _openStatsNow() {
             `</table>` +
         `</div></div>`;
 
-    // Render Distance Matrix tab
-    let dm = `<b>Pairwise p-distance (1 - identity)</b><br><br>`;
-    dm += ' '.repeat(nameLen);
-    for (let i = 0; i < nseq; i++) dm += ` ${String(i + 1).padStart(4)} `;
-    dm += '\n';
-    for (let i = 0; i < nseq; i++) {
-        const name = seqNames[i].substring(0, maxName).padEnd(nameLen, ' ');
-        dm += name;
-        for (let j = 0; j < nseq; j++) dm += ` ${distMatrix[i][j].padStart(6)}`;
-        dm += '\n';
-    }
-    dm += `\nColumns: 1-${nseq} = ${seqNames.slice(0, 4).join(', ')}${nseq > 4 ? '...' : ''}`;
-    // Append distance matrix and identity to summary
-    const dmControls = `<div style="margin:4px 0;"><button id="copyDistanceMatrixBtn" style="font-size:11px;padding:2px 8px;">Copy distance matrix</button></div>`;
-    const dmContent = `<details style="margin-top:6px;"><summary style="cursor:pointer;font-weight:bold;font-size:11px;">Distance Matrix (p-distance)</summary>${dmControls}<pre style="font-size:10px;white-space:pre;overflow:auto;max-height:200px;">${dm}</pre></details>`;
-    // Render identity matrix
-    let im = `<b>Pairwise % identity</b><br><br>`;
-    im += ' '.repeat(nameLen);
-    for (let i = 0; i < nseq; i++) im += ` ${String(i + 1).padStart(5)}`;
-    im += '\n';
-    for (let i = 0; i < nseq; i++) {
-        const name = seqNames[i].substring(0, maxName).padEnd(nameLen, ' ');
-        im += name;
-        for (let j = 0; j < nseq; j++) im += ` ${identityMatrix[i][j].padStart(5)}`;
-        im += '\n';
-    }
-    im += `\nColumns: 1-${nseq} = ${seqNames.slice(0, 4).join(', ')}${nseq > 4 ? '...' : ''}`;
-    state._statsMatrices = { distance: dm, identity: im };
-    const imControls = `<div style="margin:4px 0;"><button id="copyIdentityMatrixBtn" style="font-size:11px;padding:2px 8px;">Copy identity matrix</button></div>`;
-    const imContent = `<details style="margin-top:4px;"><summary style="cursor:pointer;font-weight:bold;font-size:11px;">Pairwise Identity (%)</summary>${imControls}<pre style="font-size:10px;white-space:pre;overflow:auto;max-height:200px;">${im}</pre></details>`;
-    summaryTab.innerHTML += dmContent + imContent;
+    // Pairwise matrices: real tables (sticky row names and column labels, labels angled,
+    // vertical or numbered), built only when their section is opened - 600 sequences
+    // is 360,000 cells.
+    state._statsData = { names: seqNames, distance: distMatrix, identity: identityMatrix };
+    const matrixSection = (kind, title, btnLabel) =>
+        `<details class="stats-mx-section" data-kind="${kind}" style="margin-top:6px;">` +
+        `<summary style="cursor:pointer;font-weight:bold;font-size:11px;">${title}</summary>` +
+        `<div style="margin:4px 0;"><button id="copy${kind === 'distance' ? 'Distance' : 'Identity'}MatrixBtn" style="font-size:11px;padding:2px 8px;" title="Copy as a tab-separated table with full sequence names (pastes into a spreadsheet)">${btnLabel}</button></div>` +
+        `<div class="stats-mx-body"></div></details>`;
+    const opts = _statsLabelOpts();
+    const labelControls =
+        `<div class="stats-mx-controls" style="margin-top:10px;font-size:11px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;">` +
+        `<span style="color:#555;">Column labels</span>` +
+        `<select id="statsLabelStyle" style="font-size:11px;" title="How sequence names are shown above the matrix columns">` +
+        ['angled', 'vertical', 'numbers'].map(v => `<option value="${v}"${opts.style === v ? ' selected' : ''}>${{ angled: 'Angled 45°', vertical: 'Vertical', numbers: 'Numbers + key' }[v]}</option>`).join('') +
+        `</select>` +
+        `<label style="color:#555;" title="Longest name shown in labels (the full name is in the tooltip and in copies)">Max chars <input type="number" id="statsLabelChars" min="3" max="80" value="${opts.chars}" style="width:44px;font-size:11px;"></label>` +
+        `</div>`;
+    summaryTab.innerHTML += labelControls +
+        matrixSection('distance', 'Distance Matrix (p-distance)', 'Copy distance matrix') +
+        matrixSection('identity', 'Pairwise Identity (%)', 'Copy identity matrix');
     showExclusiveModal('statsModal');
     } catch(e) {
         console.error('Stats error:', e);
@@ -15282,14 +15272,133 @@ function closeStats() {
 }
 
 function copyStatsMatrix(kind) {
-    const text = state._statsMatrices?.[kind];
-    if (!text) {
+    const d = state._statsData;
+    const m = d?.[kind];
+    if (!m) {
         showMessage('No statistics matrix available to copy.', 2200);
         return;
     }
+    const clean = n => String(n).replace(/[\t\r\n]+/g, ' ');
+    const text = ['\t' + d.names.map(clean).join('\t')]
+        .concat(m.map((row, i) => clean(d.names[i]) + '\t' + row.join('\t'))).join('\n') + '\n';
     navigator.clipboard.writeText(text)
-        .then(() => showMessage(`${kind === 'distance' ? 'Distance' : 'Identity'} matrix copied.`, 1600))
+        .then(() => showMessage(`${kind === 'distance' ? 'Distance' : 'Identity'} matrix copied (tab-separated, full names).`, 1800))
         .catch(() => showMessage('Failed to copy statistics matrix.', 2500));
+}
+
+function _statsLabelOpts() {
+    let saved = null;
+    try { saved = JSON.parse(localStorage.getItem('msaviewer_statsLabels') || 'null'); } catch (e) {}
+    const style = ['angled', 'vertical', 'numbers'].includes(saved?.style) ? saved.style : 'angled';
+    const chars = Math.max(3, Math.min(80, parseInt(saved?.chars, 10) || 20));
+    return { style, chars };
+}
+
+function _escStats(t) {
+    return String(t).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+}
+
+// Build one matrix as an HTML table. Column labels: 'angled' (rotated 45° over the
+// column, the classic heat-map header), 'vertical' (read bottom-to-top), or 'numbers'
+// (row names carry the same numbers, plus a key of full names underneath).
+// Above STATS_MX_WINDOW_MIN sequences only the rows on screen (plus a margin) are in the
+// DOM: a full 600 x 600 table is 360,000 cells and took 5-9 s to lay out.
+const STATS_MX_WINDOW_MIN = 120;
+const STATS_MX_ROW_MARGIN = 40;
+
+function _statsMatrixCtx(kind) {
+    const d = state._statsData;
+    const m = d[kind], n = d.names.length;
+    const { style, chars } = _statsLabelOpts();
+    const short = name => name.length > chars ? name.slice(0, chars - 1) + '…' : name;
+    const labels = d.names.map(short);
+    return { d, m, n, style, chars, labels, windowed: n > STATS_MX_WINDOW_MIN };
+}
+
+function _statsMatrixRows(ctx, i0, i1) {
+    const { d, m, n, style, labels } = ctx;
+    let html = '';
+    for (let i = i0; i < i1; i++) {
+        let row = `<tr><th class="rn" data-r="${i}" title="${_escStats(d.names[i])}"><span class="ix">${i + 1}</span> ${_escStats(labels[i])}</th>`;
+        const mi = m[i];
+        for (let j = 0; j < n; j++) row += i === j ? `<td class="dg">${mi[j]}</td>` : `<td>${mi[j]}</td>`;
+        html += row + (style === 'angled' ? '<td class="pad"></td>' : '') + '</tr>';
+    }
+    return html;
+}
+
+function _statsSpacer(ctx, px) {
+    return `<tr class="sp"><td colspan="${ctx.n + 2}" style="height:${px}px;padding:0;border:0;"></td></tr>`;
+}
+
+function _buildStatsMatrixTable(kind) {
+    if (!state._statsData) return '';
+    const ctx = _statsMatrixCtx(kind);
+    const { d, n, style, chars, labels } = ctx;
+    const longest = Math.max(1, ...labels.map(l => l.length));
+    const cellW = kind === 'distance' ? 7 : 6;   // in ch, fits "0.1234" / "100.0"
+    let head;
+    if (style === 'numbers') {
+        head = labels.map((l, j) => `<th class="c" data-c="${j}" title="${_escStats(d.names[j])}">${j + 1}</th>`).join('');
+    } else if (style === 'vertical') {
+        head = labels.map((l, j) => `<th class="c v" data-c="${j}" title="${_escStats(d.names[j])}"><div>${_escStats(l)}</div></th>`).join('');
+    } else {
+        const h = Math.ceil(longest * 0.72) + 2;   // text length x sin 45°, in ch
+        head = labels.map((l, j) => `<th class="c a" data-c="${j}" title="${_escStats(d.names[j])}"><div style="height:${h}ch;"><span>${_escStats(l)}</span></div></th>`).join('')
+            + `<th class="pad" style="width:${h}ch;"></th>`;   // room for the last labels' overhang
+    }
+    const rowNameW = Math.min(longest, chars) + String(n).length + 2;
+    const firstRows = ctx.windowed ? Math.min(n, 2 * STATS_MX_ROW_MARGIN) : n;
+    let html = `<div class="stats-mx-scroll"><table class="stats-mx" data-kind="${kind}" style="--cw:${cellW}ch;">` +
+        `<thead><tr><th class="corner" style="min-width:${rowNameW}ch;"></th>${head}</tr></thead>` +
+        `<tbody data-r0="0" data-r1="${firstRows}">${_statsMatrixRows(ctx, 0, firstRows)}</tbody></table></div>`;
+    if (style === 'numbers') {
+        html += `<div class="stats-mx-key">` + d.names.map((name, i) => `<span><b>${i + 1}</b> ${_escStats(name)}</span>`).join('') + `</div>`;
+    }
+    return html;
+}
+
+// Windowed tables: once the first rows are laid out, measure a row and keep the tbody
+// holding only the rows near the viewport, with spacer rows standing in for the rest.
+function _attachStatsWindow(body) {
+    const sc = body.querySelector('.stats-mx-scroll');
+    const table = sc?.querySelector('table.stats-mx');
+    if (!table) return;
+    const ctx = _statsMatrixCtx(table.dataset.kind);
+    if (!ctx.windowed) return;
+    const tbody = table.tBodies[0];
+    const rowH = tbody.rows[0].getBoundingClientRect().height || 16;
+    const place = () => {
+        const headH = table.tHead.getBoundingClientRect().height;
+        const first = Math.floor(Math.max(0, sc.scrollTop - headH) / rowH);
+        const last = Math.ceil((sc.scrollTop + sc.clientHeight) / rowH);
+        const r0 = +tbody.dataset.r0, r1 = +tbody.dataset.r1;
+        if (first >= r0 && last <= r1 && tbody.rows.length > 0 && tbody.dataset.placed) return;
+        const n0 = Math.max(0, first - STATS_MX_ROW_MARGIN), n1 = Math.min(ctx.n, last + STATS_MX_ROW_MARGIN);
+        tbody.innerHTML = (n0 > 0 ? _statsSpacer(ctx, n0 * rowH) : '') + _statsMatrixRows(ctx, n0, n1) +
+            (n1 < ctx.n ? _statsSpacer(ctx, (ctx.n - n1) * rowH) : '');
+        tbody.dataset.r0 = n0; tbody.dataset.r1 = n1; tbody.dataset.placed = '1';
+    };
+    place();
+    sc.addEventListener('scroll', place, { passive: true });
+}
+
+function _fillStatsMatrices(bodies) {
+    bodies.forEach(body => {
+        body.innerHTML = _buildStatsMatrixTable(body.closest('details').dataset.kind);
+        body.dataset.built = '1';
+        _attachStatsWindow(body);
+    });
+}
+
+function _renderOpenStatsMatrices() {
+    const open = [];
+    document.querySelectorAll('#statsSummaryTab details.stats-mx-section').forEach(det => {
+        const body = det.querySelector('.stats-mx-body');
+        if (det.open) open.push(body);
+        else { body.innerHTML = ''; body.dataset.built = ''; }
+    });
+    if (open.length) _fillStatsMatrices(open);
 }
 
 function initStatsTabs() {
@@ -15299,6 +15408,36 @@ function initStatsTabs() {
         const target = event.target;
         if (target?.id === 'copyDistanceMatrixBtn') copyStatsMatrix('distance');
         if (target?.id === 'copyIdentityMatrixBtn') copyStatsMatrix('identity');
+    });
+    // <details> toggle does not bubble; capture it
+    summaryTab.addEventListener('toggle', (event) => {
+        const det = event.target;
+        if (!det.classList?.contains('stats-mx-section')) return;
+        const body = det.querySelector('.stats-mx-body');
+        if (det.open && !body.dataset.built) _fillStatsMatrices([body]);
+    }, true);
+    summaryTab.addEventListener('change', (event) => {
+        const id = event.target?.id;
+        if (id !== 'statsLabelStyle' && id !== 'statsLabelChars') return;
+        const style = document.getElementById('statsLabelStyle').value;
+        const chars = Math.max(3, Math.min(80, parseInt(document.getElementById('statsLabelChars').value, 10) || 20));
+        try { localStorage.setItem('msaviewer_statsLabels', JSON.stringify({ style, chars })); } catch (e) {}
+        _renderOpenStatsMatrices();
+    });
+    // Hover a cell: highlight its row name and column label, and name the pair in the tooltip
+    let lit = [];
+    summaryTab.addEventListener('mouseover', (event) => {
+        const td = event.target.closest?.('table.stats-mx td');
+        lit.forEach(el => el.classList.remove('hl')); lit = [];
+        if (!td || td.classList.contains('pad')) return;
+        const tr = td.parentElement, table = tr.closest('table');
+        const rn = tr.cells[0];
+        if (!rn?.dataset.r) return;
+        const j = td.cellIndex - 1, i = +rn.dataset.r;
+        const ch = table.tHead.rows[0].cells[j + 1];
+        lit = [rn, ch]; lit.forEach(el => el.classList.add('hl'));
+        const names = state._statsData?.names;
+        if (names) td.title = `${names[i]}  ×  ${names[j]}: ${td.textContent}`;
     });
 }
 
