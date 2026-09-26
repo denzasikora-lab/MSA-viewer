@@ -667,6 +667,30 @@ check('Ctrl+Shift+R is left to the browser unless a 2+ column span is selected',
   return { pass: true, detail: 'separate single columns: browser keeps the key; span: realign' };
 });
 
+// Zoom is a font-size change the persistent scrollbar's observers don't see; before the
+// fix the bar kept its 100%-zoom width at 50%, overshot the alignment and snapped back.
+check('Horizontal scrollbar follows zoom (no overshoot / snap-back at 50%)', async (page) => {
+  let seq = '', rnd = 7;
+  const next = () => (rnd = (rnd * 1103515245 + 12345) % 2147483648);
+  const fa = Array.from({ length: 20 }, (_, i) => { seq = ''; for (let k = 0; k < 4000; k++) seq += 'ACGT'[next() % 4]; return `>s${i}\n${seq}`; }).join('\n') + '\n';
+  await page.setInputFiles('#fileInput', { name: 'wide.fa', mimeType: 'text/plain', buffer: Buffer.from(fa) });
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => { const r = document.getElementById('modeSingle'); r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForTimeout(800);
+  const sw = page.getByRole('button', { name: 'Switch anyway' }); if (await sw.count()) await sw.click();
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => setZoom(50));
+  await page.waitForTimeout(800);
+  const r = await page.evaluate(async () => {
+    const h = document.querySelector('.horizontal-scrollbar'), c = document.getElementById('alignmentContainer');
+    h.scrollLeft = h.scrollWidth; h.dispatchEvent(new Event('scroll'));
+    await new Promise(res => setTimeout(res, 500));
+    return { barMax: h.scrollWidth - h.clientWidth, contMax: c.scrollWidth - c.clientWidth, bar: Math.round(h.scrollLeft), cont: Math.round(c.scrollLeft) };
+  });
+  const ok = r.contMax > 0 && Math.abs(r.barMax - r.contMax) <= 3 && Math.abs(r.bar - r.cont) <= 3 && r.cont >= r.contMax - 3;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

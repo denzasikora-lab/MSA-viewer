@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v188';
+const BUILD_TAG = 'v189';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -8298,6 +8298,21 @@ function setZoom(percent) {
             alignmentContainer.style.removeProperty('transition');
         }));
     }
+    _resyncPersistentScrollbars();
+}
+
+// The persistent scrollbars size themselves from the alignment's scroll size,
+// but a zoom change is a CSS font-size change, which their observers do not see.
+// Without this the horizontal bar kept its 100%-zoom width after zooming out,
+// could be dragged past the alignment's end, and snapped back.
+// Runs on the next frame and again after the 0.1 s font-size transition.
+function _resyncPersistentScrollbars() {
+    const run = () => {
+        window._syncHorizontalScrollbar?.();
+        window._syncVerticalScrollbar?.();
+    };
+    requestAnimationFrame(run);
+    setTimeout(run, 250);
 }
 function setZoomFromSlider() {
     const slider = el('zoomSlider');
@@ -20469,6 +20484,13 @@ function initColourSeqs() {
             _canvasState.scheduleDraw?.();
         } else {
             alignment.scrollLeft = bar.scrollLeft;
+            // The bar reached a position the alignment cannot: its width is stale
+            // (the content changed size without a DOM mutation). Re-measure.
+            if (Math.abs(alignment.scrollLeft - bar.scrollLeft) > 1) {
+                syncing = false;
+                syncSizes();
+                return;
+            }
         }
         syncing = false;
     }
@@ -20490,6 +20512,7 @@ function initColourSeqs() {
     };
 
     syncSizes();
+    window._syncHorizontalScrollbar = syncSizes;
     bar.addEventListener('scroll', onBarScroll, { passive: true });
     alignment.addEventListener('scroll', onAlignmentScroll, { passive: true });
     window.addEventListener('resize', () => window.requestAnimationFrame(syncSizes));
@@ -20623,6 +20646,7 @@ function initColourSeqs() {
     }
 
     syncVisibilityAndSize();
+    window._syncVerticalScrollbar = syncVisibilityAndSize;
     bar.addEventListener('scroll', onBarScroll, { passive: true });
     alignment.addEventListener('scroll', onAlignmentScroll, { passive: true });
     window.addEventListener('resize', () => window.requestAnimationFrame(syncVisibilityAndSize));
