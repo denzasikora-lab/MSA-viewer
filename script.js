@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v202';
+const BUILD_TAG = 'v203';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -6576,7 +6576,7 @@ function renderAlignment(options = {}) {
     }
     state.spanCache = new Map();
     state.domSelectedNucs = new Map();
-    if (_columnSelectionStyleEl) _columnSelectionStyleEl.textContent = ''; // clear stale column highlight on new file load
+    _appliedColumnSel = new Set(); // a new file's rows are built from the (cleared) selection
     state.domPendingNuc = null;
 
     const nameLengthSlider = el('nameLengthSlider');
@@ -8234,6 +8234,7 @@ function addConsensusLine(parent, consensus, start, end, nameLen, stickyNames, b
         if (state._diffColumns && state._diffColumns.has(pos)) {
             span.classList.add('diff-highlight');
         }
+        if (state.selectedColumns.has(pos)) span.classList.add('column-selected');
 
         // Apply trim region coloring
         if (pos <= leftTrimEnd) {
@@ -18336,45 +18337,78 @@ function showContextMenu(e, index) {
     }, 0);
 }
 
+// One pass over the rows, changing only those whose state differs. Was: remove the class
+// from every selected row, then one document-wide querySelectorAll per selected row to add
+// it back: 150 selected rows cost ~760 ms of script on a 316k-span alignment, plus a style
+// recalc over every row whose class was removed and re-added.
 function updateRowSelections() {
-    document.querySelectorAll('.seq-line.selected').forEach(line => line.classList.remove('selected'));
-    document.querySelectorAll('.seq-name.selected').forEach(name => name.classList.remove('selected'));
-    state.selectedRows.forEach(index => {
-        document.querySelectorAll(`.seq-line[data-seq-index="${index}"]`).forEach(line => line.classList.add('selected'));
-        document.querySelectorAll(`.seq-name[data-seq-index="${index}"]`).forEach(name => name.classList.add('selected'));
-    });
+    const sel = state.selectedRows;
+    const els = document.querySelectorAll('.seq-line[data-seq-index], .seq-name[data-seq-index]');
+    for (let i = 0; i < els.length; i++) {
+        const e = els[i];
+        const raw = e.getAttribute('data-seq-index');
+        const want = sel.has(+raw) || sel.has(raw);
+        if (e.classList.contains('selected') !== want) e.classList.toggle('selected', want);
+    }
     _updateSplitHint();
 }
-// Was: forEachColumnSpan(pos, ...) once per selected column, each iterating
-// every row's span cache and mutating classList on every hit -- O(selected
-// columns * rows) DOM mutations. Profiled on a 150-seq/800-col alignment:
-// a 96-column range select took ~314ms this way (96 * 150 = 14,400
-// classList.add calls), the actual reported "sooo slow" bug. A single
-// dynamically-generated <style> rule (attribute selectors matching every
-// selected position) achieves the same visual result via the browser's own
-// CSS engine instead of per-element DOM mutation -- O(selected columns)
-// string-building, no DOM writes proportional to row count at all. Fresh
-// rows created during scroll/windowing still get 'column-selected' baked
-// into their className at creation time (see the two other call sites of
-// `state.selectedColumns.has(pos)` in row-rendering) -- this only replaces
-// the "update already-rendered rows without a full re-render" mechanism.
-let _columnSelectionStyleEl = null;
+// Column highlight: toggle .column-selected on the spans of the columns that changed since
+// the last call, nothing else. Rows drawn later (render, windowed scroll) bake the class in
+// from state.selectedColumns, so syncing a column to the state is always correct.
+// History: first a classList change per span of every selected column (O(selected x rows)
+// per click), then one <style> rule listing `.seq-data > span[data-pos="N"]` for every
+// selected column. The rule made every change re-match that selector list against all
+// spans: on 316k spans one column cost ~1.7 s of style recalc, 201 columns 2.6 s, and
+// clearing 2 s. The delta costs one class change per span of the changed columns only.
+let _appliedColumnSel = new Set();
+function _forEachSpanInColumns(cols, callback) {
+    if (!cols.length) return;
+    const datas = document.querySelectorAll('.seq-data');
+    for (let d = 0; d < datas.length; d++) {
+        const kids = datas[d].children;
+        if (!kids.length) continue;
+        // Spans are laid out in position order; breakpoint markers are extra children,
+        // so the span for pos sits at index (pos - first) or later.
+        let first = null;
+        let k0 = 0;
+        for (; k0 < kids.length; k0++) {
+            const r = kids[k0].getAttribute('data-pos');
+            if (r !== null) { first = +r; break; }
+        }
+        if (first === null) continue;
+        let last = first;
+        for (let k = kids.length - 1; k >= k0; k--) {
+            const r = kids[k].getAttribute('data-pos');
+            if (r !== null) { last = +r; break; }
+        }
+        for (let c = 0; c < cols.length; c++) {
+            const pos = cols[c];
+            if (pos < first || pos > last) continue;
+            for (let k = k0 + (pos - first); k < kids.length; k++) {
+                const r = kids[k].getAttribute('data-pos');
+                if (r === null) continue;
+                const p = +r;
+                if (p === pos) { callback(kids[k], pos); break; }
+                if (p > pos) break;
+            }
+        }
+    }
+}
 function updateColumnSelections() {
-    if (!_columnSelectionStyleEl) {
-        _columnSelectionStyleEl = document.createElement('style');
-        _columnSelectionStyleEl.id = 'column-selection-style';
-        document.head.appendChild(_columnSelectionStyleEl);
-    }
-    if (state.selectedColumns.size === 0) {
-        _columnSelectionStyleEl.textContent = '';
-        return;
-    }
-    const selectors = [];
-    state.selectedColumns.forEach(pos => {
+    const sel = state.selectedColumns;
+    const changed = [];
+    _appliedColumnSel.forEach(pos => { if (!sel.has(pos)) changed.push(pos); });
+    const next = new Set();
+    sel.forEach(pos => {
         const n = Number(pos);
-        if (Number.isInteger(n)) selectors.push(`.seq-data > span[data-pos="${n}"]`);
+        if (!Number.isInteger(n)) return;
+        next.add(n);
+        if (!_appliedColumnSel.has(n)) changed.push(n);
     });
-    _columnSelectionStyleEl.textContent = `${selectors.join(',')} { background-color: var(--column-selected-bg) !important; }`;
+    _appliedColumnSel = next;
+    _forEachSpanInColumns(changed, (span, pos) => {
+        span.classList.toggle('column-selected', next.has(pos));
+    });
 }
 
 let pendingNucDomUpdate = false;

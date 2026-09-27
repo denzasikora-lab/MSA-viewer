@@ -1303,6 +1303,80 @@ check('Reorder only: selectable k in the Alignment menu, linked to Group by k-me
   return { pass: ok, detail: JSON.stringify({ ...r, k3: r.k3.got === r.k3.expect, k10: r.k10.got === r.k10.expect }) };
 });
 
+// Row and column selection update only what changed (was: a document-wide query per selected
+// row, and a <style> rule re-matched against every span). What the user sees must still follow
+// the state exactly: after toggles, a range, a clear, a full redraw and with hidden columns.
+check('Selection: row/column highlight follows the state after delta updates', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1500);
+  const r = await page.evaluate(async () => {
+    const frames = () => new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+    const colBg = getComputedStyle(document.documentElement).getPropertyValue('--column-selected-bg').trim();
+    const probe = document.createElement('span'); probe.style.backgroundColor = colBg; document.body.appendChild(probe);
+    const colRgb = getComputedStyle(probe).backgroundColor; probe.remove();
+    // Compare what is painted with the state: every residue span, every row line and name.
+    const audit = () => {
+      const bad = [];
+      document.querySelectorAll('.seq-data > span[data-pos]').forEach(sp => {
+        const want = state.selectedColumns.has(+sp.dataset.pos);
+        const got = getComputedStyle(sp).backgroundColor === colRgb;
+        if (want !== got && bad.length < 5) bad.push('col ' + sp.dataset.pos + (want ? ' missing' : ' stale'));
+      });
+      document.querySelectorAll('.seq-line[data-seq-index], .seq-name[data-seq-index]').forEach(e => {
+        const i = +e.dataset.seqIndex;
+        if (i < 0) return;
+        if (state.selectedRows.has(i) !== e.classList.contains('selected') && bad.length < 10) bad.push('row ' + i);
+      });
+      return bad;
+    };
+    const out = {};
+    const cols = (...c) => { c.forEach(x => state.selectedColumns.has(x) ? state.selectedColumns.delete(x) : state.selectedColumns.add(x)); updateColumnSelections(); };
+    const rows = (...c) => { c.forEach(x => state.selectedRows.has(x) ? state.selectedRows.delete(x) : state.selectedRows.add(x)); updateRowSelections(); };
+    cols(3, 7, 8); rows(1, 4); await frames(); out.toggle = audit();
+    cols(7); rows(4, 2); await frames(); out.untoggle = audit();
+    for (let c = 20; c < 60; c++) state.selectedColumns.add(c); updateColumnSelections(); await frames(); out.range = audit();
+    // a selected column still shows its colour inside a selected row (the old rule's precedence)
+    const sp = document.querySelector('.seq-line[data-seq-index="1"] .seq-data > span[data-pos="3"]');
+    out.colOverRow = !!sp && getComputedStyle(sp).backgroundColor === colRgb;
+    state.selectedColumns = new Set([5, 25]); updateColumnSelections(); await frames(); out.reassigned = audit();
+    renderAlignment(); await new Promise(res => setTimeout(res, 600)); out.afterRender = audit();
+    const cons = document.querySelector('.consensus-line .seq-data > span[data-pos="25"]');
+    out.consensusBaked = !cons || getComputedStyle(cons).backgroundColor === colRgb;
+    cols(6); await frames(); out.afterRenderToggle = audit();
+    state.selectedColumns.clear(); state.selectedRows.clear(); updateColumnSelections(); updateRowSelections(); await frames(); out.cleared = audit();
+    return out;
+  });
+  const lists = ['toggle', 'untoggle', 'range', 'reassigned', 'afterRender', 'afterRenderToggle', 'cleared'];
+  const ok = lists.every(k => r[k].length === 0) && r.colOverRow && r.consensusBaked;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+// Speed: the update itself (script + forced style/layout) for a column and for rows on ~300k
+// residue spans. Old code here: column 104-129 ms, one row ~850 ms, 150 rows ~1 s.
+// (Real clicks were slower still from hit-testing positioned spans; see styles.css.)
+check('Selection speed: column click and 150 rows on 300k spans', async (page) => {
+  let seed = 7; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+  const base = Array.from({ length: 700 }, () => 'ACGT'[rnd() % 4]);
+  let fa = '';
+  for (let i = 0; i < 420; i++) fa += `>s${i}\n` + base.map(c => (rnd() % 8 === 0 ? 'ACGT-'[rnd() % 5] : c)).join('') + '\n';
+  await page.setInputFiles('#fileInput', { name: 'big.fa', mimeType: 'text/plain', buffer: Buffer.from(fa) });
+  await page.waitForFunction(() => state.seqs && state.seqs.length === 420, null, { timeout: 60000 });
+  await page.waitForTimeout(3000);
+  const r = await page.evaluate(async () => {
+    const frames = () => new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+    const time = (fn) => { const t0 = performance.now(); fn(); void document.body.offsetHeight; return Math.round(performance.now() - t0); };
+    const out = { spans: document.querySelectorAll('.seq-data > span[data-pos]').length };
+    out.col1 = time(() => { state.selectedColumns.add(100); updateColumnSelections(); }); await frames();
+    out.col2 = time(() => { state.selectedColumns.add(101); updateColumnSelections(); }); await frames();
+    out.rows150 = time(() => { for (let i = 10; i < 160; i++) state.selectedRows.add(i); updateRowSelections(); }); await frames();
+    out.row1 = time(() => { state.selectedRows.add(300); updateRowSelections(); });
+    return out;
+  });
+  const ok = r.spans > 250000 && r.col2 < 60 && r.row1 < 300 && r.rows150 < 600;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

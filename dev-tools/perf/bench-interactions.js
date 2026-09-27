@@ -3,6 +3,7 @@
 // and other everyday operations.
 //   node dev-tools/perf/bench-interactions.js            (writes dev-tools/perf/bench-<date>.json)
 //   BENCH_ONLY=rsi node ...                              (one dataset)
+//   BENCH_OUT=name.json  BENCH_CSS='...'                   (output file; extra CSS to try)
 // Gestures as a user makes them: Ctrl-click a name = toggle row, Shift-click = row range,
 // Ctrl+Alt-click a residue = toggle column, Ctrl+Alt+Shift-click = column range.
 // Timing: a timestamp is taken in the page, the real input is sent, then the page waits two
@@ -108,13 +109,15 @@ async function benchPage(p) {
     }
     await p.waitForFunction(() => state.seqs && state.seqs.length > 100, null, { timeout: 120000 });
     await p.waitForTimeout(2500);
+    // BENCH_CSS='...' injects extra CSS first, to try a styling change before making it
+    if (process.env.BENCH_CSS) { await p.addStyleTag({ content: process.env.BENCH_CSS }); await p.waitForTimeout(1500); }
     const r = await benchPage(p);
     r.label = ds.label; r.errors = errs;
     results[ds.id] = r;
     console.log(ds.id, JSON.stringify(r));
     await p.close();
   }
-  const out = path.join(__dirname, `bench-${new Date().toISOString().slice(0, 10)}.json`);
+  const out = path.join(__dirname, process.env.BENCH_OUT || `bench-${new Date().toISOString().slice(0, 10)}.json`);
   fs.writeFileSync(out, JSON.stringify(results, null, 1));
   await b.close(); server.close();
 })();

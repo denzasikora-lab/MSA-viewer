@@ -2231,8 +2231,9 @@ body.suppress-menu-hover #controls .menu-section.menu-open .control-group {
     margin: 0;
     padding: 0;
     line-height: 1.0;
-    position: relative;
-    z-index: 1;
+    /* No position/z-index here: it made each of the (up to ~500k) residue spans its own
+       paint layer, and every click hit-tested all of them (~0.3 s per click at 316k spans,
+       ~1.1 s per column click). Screenshots are pixel-identical without it. */
 }
 .seq-data span.seq-length {
     margin-left: 8px !important;
@@ -2377,12 +2378,6 @@ span.column-highlighted::after {
     width: 1px;
     background: rgba(52, 152, 219, 0.9);
     pointer-events: none;
-}
-
-/* Column selected: highlight full background */
-span.column-selected {
-    background-color: var(--column-selected-bg) !important;
-    color: #000 !important;
 }
 
 /* Row highlight: top and bottom pseudo-element bars, no width expansion */
@@ -3696,3 +3691,10 @@ table.stats-mx.heat td:hover { outline: 2px solid #111; outline-offset: -2px; }
 .stats-labels-panel select, .stats-labels-panel input { font-size: 11px; }
 /* Room for the always-visible colour swatch: the number box stayed inside the panel */
 #shade-controls input[type="range"].shading-slider { width: 108px; }
+/* Column selected. Kept last and at (0,2,1) so it wins over the same rules the old
+   per-column <style> rule (.seq-data > span[data-pos="N"], appended to <head>) won over,
+   e.g. the selected-row background. script.js toggles the class per changed column. */
+.seq-data > span.column-selected {
+    background-color: var(--column-selected-bg) !important;
+    color: #000 !important;
+}
