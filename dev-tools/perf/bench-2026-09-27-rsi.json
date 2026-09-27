@@ -1,0 +1,134 @@
+{
+ "rsi": {
+  "mode": "block",
+  "seqs": 601,
+  "cols": 524,
+  "domSpans": 316050,
+  "rowsVisible": 602,
+  "rowCtrlClick": [
+   328,
+   123,
+   142,
+   151,
+   149,
+   523,
+   179,
+   178,
+   182,
+   532
+  ],
+  "rowShiftRange": {
+   "rows": 142,
+   "ms": 1766
+  },
+  "rowsSelected": 150,
+  "rowClear": 1002,
+  "colCtrlAltClick": [
+   15,
+   17,
+   17,
+   17,
+   16,
+   17,
+   16,
+   17,
+   17,
+   17
+  ],
+  "colSizes": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "colShiftRange": {
+   "cols": 201,
+   "ms": 15
+  },
+  "colsSelected": 0,
+  "rowCtrlClickWithColsSelected": 141,
+  "colClear": 17,
+  "residueClick": 136,
+  "highlightDiffsOn": 7718,
+  "highlightDiffsOff": 10432,
+  "zoomTo80": 9916,
+  "zoomTo100": 9401,
+  "sortByName": 5446,
+  "fullRender": 4722,
+  "scrollStep": 221,
+  "label": "rsi_subfam_input_30k (601 x 524, real)",
+  "errors": []
+ },
+ "syn": {
+  "mode": "block",
+  "seqs": 400,
+  "cols": 3000,
+  "domSpans": 29526,
+  "rowsVisible": 81,
+  "rowCtrlClick": [
+   3,
+   25,
+   122,
+   48,
+   23,
+   32,
+   33,
+   33,
+   33,
+   33
+  ],
+  "rowShiftRange": {
+   "rows": 72,
+   "ms": 242
+  },
+  "rowsSelected": 80,
+  "rowClear": 475,
+  "colCtrlAltClick": [
+   521,
+   12,
+   17,
+   17,
+   17,
+   17,
+   17,
+   17,
+   17,
+   17
+  ],
+  "colSizes": [
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0,
+   0
+  ],
+  "colShiftRange": {
+   "cols": 201,
+   "ms": 16
+  },
+  "colsSelected": 0,
+  "rowCtrlClickWithColsSelected": 25,
+  "colClear": 113,
+  "residueClick": 18,
+  "highlightDiffsOn": 1728,
+  "highlightDiffsOff": 1261,
+  "zoomTo80": 1674,
+  "zoomTo100": 1527,
+  "sortByName": 875,
+  "fullRender": 864,
+  "scrollStep": 1052,
+  "label": "synthetic 400 x 3000 (1.2 M residues)",
+  "errors": []
+ }
+}

@@ -1,0 +1,54 @@
+{
+ "syn": {
+  "mode": "block",
+  "seqs": 400,
+  "cols": 3000,
+  "domSpans": 29526,
+  "rowCtrlClick": [
+   233,
+   22,
+   32,
+   53,
+   31,
+   32,
+   56,
+   38,
+   34,
+   54
+  ],
+  "rowShiftRange": {
+   "toRow": 79,
+   "ms": 854
+  },
+  "rowsSelected": 80,
+  "rowCtrlClickWith150": 495,
+  "colCtrlAltClick": [
+   175,
+   137,
+   137,
+   210,
+   143,
+   155,
+   156,
+   144,
+   185,
+   166
+  ],
+  "colShiftRange": {
+   "toCol": 210,
+   "ms": 445
+  },
+  "colsSelected": 201,
+  "colCtrlAltClickWith200": 486,
+  "scrollWithSelections": 795,
+  "residueClick": null,
+  "highlightDiffsOn": 1838,
+  "highlightDiffsOff": 2209,
+  "zoomTo80": 2409,
+  "zoomTo100": 2249,
+  "sortByName": 1414,
+  "fullRender": 1386,
+  "label": "synthetic 400 x 3000 (1.2 M residues)",
+  "errors": []
+ }
+}
