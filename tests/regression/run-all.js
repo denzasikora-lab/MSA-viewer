@@ -1446,6 +1446,57 @@ check('Slow redraw: notice shown before and hidden after; none for small files',
   return { pass: ok, detail: JSON.stringify({ small, big }) };
 });
 
+// Renaming a sequence: double-click opens a box over the name without moving anything; typing
+// reaches only the box; Esc cancels; Enter and clicking away save, in place (no redraw); undo works.
+check('Rename: box over the name, no shift, Esc cancels, Enter/click-away save without redraw', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1500);
+  const nameSel = (i) => `.seq-line[data-seq-index="${i}"] > .seq-name`;
+  const geo = (i) => page.evaluate((i) => {
+    const line = document.querySelector(`.seq-line[data-seq-index="${i}"]`);
+    const r = (e) => { const b = e.getBoundingClientRect(); return [Math.round(b.left * 10) / 10, Math.round(b.top * 10) / 10, Math.round(b.width * 10) / 10, Math.round(b.height * 10) / 10]; };
+    return { name: r(line.querySelector('.seq-name')), res: r(line.querySelector('.seq-data > span[data-pos]')), line: r(line) };
+  }, i);
+  const mark = () => page.evaluate(() => { window.__m = document.querySelector('#alignmentContainer .seq-line:not(.scale-ruler-line) .seq-data'); });
+  const redrawn = () => page.evaluate(() => !window.__m.isConnected);
+  const out = {};
+  const openBox = async (i) => { const bb = await page.locator(nameSel(i)).first().boundingBox(); await page.mouse.dblclick(bb.x + 30, bb.y + bb.height / 2); await page.waitForTimeout(150); };
+  const before = await geo(2);
+  const orig2 = await page.evaluate(() => state.seqs[2].header);
+  await mark();
+  await openBox(2);
+  out.boxOpen = await page.evaluate(() => document.activeElement?.classList.contains('seq-name-edit'));
+  out.noShift = JSON.stringify(await geo(2)) === JSON.stringify(before);
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('renamed two');
+  out.stateUntouchedWhileTyping = await page.evaluate((o) => state.seqs[2].header === o && !state.editModeActive, orig2);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  out.escCancels = await page.evaluate((o) => state.seqs[2].header === o && !document.querySelector('.seq-name-edit'), orig2);
+  await openBox(2);
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('renamed two');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  out.enterSaves = await page.evaluate(() => state.seqs[2].header === 'renamed two'
+    && [...document.querySelectorAll('.seq-name[data-seq-index="2"]')].every(c => c.textContent.startsWith('renamed')));
+  await openBox(4);
+  await page.keyboard.press('Control+A');
+  await page.keyboard.type('four by click');
+  await page.mouse.click(700, 5);
+  await page.waitForTimeout(150);
+  out.clickAwaySaves = await page.evaluate(() => state.seqs[4].header === 'four by click' && !document.querySelector('.seq-name-edit'));
+  out.noRedraw = !(await redrawn());
+  out.noShiftAfter = JSON.stringify(await geo(2)) === JSON.stringify(before);
+  await page.evaluate(() => document.body.focus());
+  await page.keyboard.press('Control+z'); await page.waitForTimeout(500);
+  await page.keyboard.press('Control+z'); await page.waitForTimeout(500);
+  out.undo = await page.evaluate((o) => state.seqs[2].header === o && document.querySelector('.seq-name[data-seq-index="2"]').textContent.length > 0, orig2);
+  const ok = Object.values(out).every(Boolean);
+  return { pass: ok, detail: JSON.stringify(out) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

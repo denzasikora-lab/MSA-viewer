@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v204';
+const BUILD_TAG = 'v205';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -7994,6 +7994,69 @@ function _setSeqNameLabel(nameEl, text) {
     nameEl.appendChild(t);
 }
 
+// Relabel every on-screen name cell of a row (Block mode repeats it once per block).
+function _relabelSeqNameCells(index) {
+    const seq = state.seqs[index];
+    if (!seq) return;
+    const n = effectiveNameLength();
+    const len = seq.seq.length;
+    document.querySelectorAll(`.seq-name[data-seq-index="${index}"]`).forEach(cell => {
+        if (cell.closest('.consensus-line, .scale-ruler-line')) return;
+        _setSeqNameLabel(cell, seq.header.length > n ? _truncName(seq.header, n) : seq.header);
+        cell.title = `${seq.header} (length: ${len})`;
+    });
+}
+
+function _startSeqNameEdit(nameSpan, index) {
+    if (!state.seqs[index] || nameSpan.querySelector('.seq-name-edit')) return;
+    hideTooltip();
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'seq-name-edit';
+    input.value = state.seqs[index].header;
+    input.spellcheck = false;
+    input.setAttribute('aria-label', 'Sequence name');
+    const label = nameSpan.querySelector('.seq-name-text');
+    if (label) label.style.visibility = 'hidden';
+    nameSpan.classList.add('renaming');
+    nameSpan.appendChild(input);
+    input.focus();
+    input.select();
+    let done = false;
+    const finish = (commit) => {
+        if (done) return;
+        done = true;
+        document.removeEventListener('mousedown', onOutside, true);
+        const newName = input.value.trim();
+        input.remove();
+        nameSpan.classList.remove('renaming');
+        if (label) label.style.visibility = '';
+        if (!commit || !newName || newName === state.seqs[index].header) return;
+        const oldName = state.seqs[index].header;
+        pushUndo('rename');
+        state.seqs[index].header = newName;
+        state.seqs[index].fullHeader = newName;
+        _migrateColourMapping(oldName, newName);
+        _relabelSeqNameCells(index);
+        // "No limit" sizes the name column to the longest name, which may just have changed
+        if (el('nameLengthNoLimit')?.checked) applyNameLengthLive(effectiveNameLength());
+        showMessage('Sequence renamed', 1500);
+    };
+    // Keys typed here are for the name only: none may reach the viewer's shortcuts
+    input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') { e.preventDefault(); finish(true); }
+        else if (e.key === 'Escape') { e.preventDefault(); finish(false); }
+    });
+    input.addEventListener('keyup', e => e.stopPropagation());
+    input.addEventListener('keypress', e => e.stopPropagation());
+    // Clicks inside place the caret / select text; they must not start a row drag or selection
+    ['mousedown', 'click', 'dblclick'].forEach(t => input.addEventListener(t, e => e.stopPropagation()));
+    input.addEventListener('blur', () => finish(true));
+    const onOutside = (e) => { if (e.target !== input) finish(true); };
+    document.addEventListener('mousedown', onOutside, true);
+}
+
 function createSequenceLine(index, start, end, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, showLength = false, conservationData) {
     const lineDiv = document.createElement('div');
     lineDiv.className = 'seq-line';
@@ -8025,6 +8088,7 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
     });
     // Tooltip: show truncated full header on hover (avoid OS tooltip delay)
     nameSpan.addEventListener('mouseover', () => {
+        if (nameSpan.classList.contains('renaming')) return;   // the box shows the name
         const full = state.seqs[index].fullHeader || state.seqs[index].header;
         const maxLen = 120;
         const text = (full.length > maxLen) ? (full.slice(0, maxLen - 1) + '...') : full;
@@ -8033,50 +8097,12 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
     nameSpan.addEventListener('mouseout', () => {
         hideTooltip();
     });
-    // Single click no longer copies the name. Use double-click to edit.
-    nameSpan.addEventListener('dblclick', () => {
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.value = state.seqs[index].header;
-        input.style.width = `${nameSpan.offsetWidth}px`;
-        input.style.fontSize = getComputedStyle(nameSpan).fontSize;
-        input.style.fontFamily = getComputedStyle(nameSpan).fontFamily;
-        input.style.padding = '0';
-        input.style.border = '1px solid #ccc';
-        nameSpan.innerHTML = '';
-        nameSpan.appendChild(input);
-        input.focus();
-        input.select();
-        const save = () => {
-            const newName = input.value.trim();
-            if (newName && newName !== state.seqs[index].header) {
-                const oldName = state.seqs[index].header;
-                pushUndo('rename');
-                state.seqs[index].header = newName;
-                state.seqs[index].fullHeader = newName;
-                _migrateColourMapping(oldName, newName);
-                renderAlignment();
-                showMessage("Sequence renamed!", 2000);
-            } else {
-                renderAlignment();
-            }
-        };
-        input.addEventListener('blur', save);
-        input.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') {
-                save();
-            } else if (e.key === 'Escape') {
-                renderAlignment();
-            }
-        });
-        // Add outside click handler for faster exit
-        const handleOutsideClick = (ev) => {
-            if (!nameSpan.contains(ev.target)) {
-                save();
-                document.removeEventListener('click', handleOutsideClick);
-            }
-        };
-        setTimeout(() => document.addEventListener('click', handleOutsideClick), 0);
+    // Double-click renames in place: an input laid over the name cell (the cell keeps its
+    // size, so nothing shifts), Enter or clicking away saves, Esc cancels. Saving relabels the
+    // name cells of that row instead of redrawing the alignment (~1.4 s on big files).
+    nameSpan.addEventListener('dblclick', (e) => {
+        e.stopPropagation();
+        _startSeqNameEdit(nameSpan, index);
     });
     lineDiv.addEventListener('drop', handleDrop);
     lineDiv.appendChild(nameSpan);
@@ -9803,6 +9829,9 @@ function handleMouseUp() {
 }
 function handleKeyDown(e) {
     if (e.key === 'Escape') {
+        // A rename box handles its own Esc (cancel); closing menus here blurred it, and the
+        // blur saved the name, so Esc used to commit the rename
+        if (document.activeElement?.classList?.contains('seq-name-edit')) return;
         closeAllMenusViaEsc();
         e.preventDefault();
         return;

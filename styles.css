@@ -3707,3 +3707,15 @@ table.stats-mx.heat td:hover { outline: 2px solid #111; outline-offset: -2px; }
     content-visibility: auto;
     contain-intrinsic-size: auto calc(var(--cols, 60) * 1ch) auto 1em;
 }
+/* Rename box: laid over the name cell so the row keeps its size and nothing shifts */
+.seq-name.renaming { z-index: 70; }   /* above the neighbouring sticky names, so the outline shows */
+.seq-name.static.renaming { position: relative; }
+.seq-name .seq-name-edit {
+    position: absolute; left: 9px; right: 2px; top: 0; bottom: 0;
+    box-sizing: border-box; width: auto; height: 100%; margin: 0; padding: 0 2px 0.28em 3px;   /* text lands where the label was; raised so '_' clears the frame */
+    font: inherit; line-height: inherit; color: #000;
+    border: 0; outline: none; border-radius: 2px;
+    box-shadow: inset 0 0 0 1px #1976d2;   /* inside: the name cell clips anything outside it */
+    background: #f3f8ff;
+    z-index: 60; user-select: text; -webkit-user-select: text;
+}
