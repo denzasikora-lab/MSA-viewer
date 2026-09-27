@@ -1,0 +1,106 @@
+{
+ "rsi": {
+  "mode": "block",
+  "seqs": 601,
+  "cols": 524,
+  "domSpans": 316050,
+  "rowCtrlClick": [
+   81,
+   79,
+   81,
+   91,
+   79,
+   98,
+   85,
+   81,
+   106,
+   75
+  ],
+  "rowShiftRange": {
+   "toRow": 150,
+   "ms": 328
+  },
+  "rowsSelected": 151,
+  "rowCtrlClickWith150": 85,
+  "colCtrlAltClick": [
+   183,
+   187,
+   154,
+   168,
+   182,
+   167,
+   156,
+   178,
+   157,
+   169
+  ],
+  "colShiftRange": {
+   "toCol": 210,
+   "ms": 520
+  },
+  "colsSelected": 201,
+  "colCtrlAltClickWith200": 175,
+  "scrollWithSelections": 271,
+  "residueClick": 150,
+  "highlightDiffsOn": 1185,
+  "highlightDiffsOff": 1033,
+  "zoomTo80": 1208,
+  "zoomTo100": 1343,
+  "sortByName": 1620,
+  "fullRender": 1411,
+  "label": "rsi_subfam_input_30k (601 x 524, real)",
+  "errors": []
+ },
+ "syn": {
+  "mode": "block",
+  "seqs": 400,
+  "cols": 3000,
+  "domSpans": 29526,
+  "rowCtrlClick": [
+   24,
+   25,
+   19,
+   26,
+   23,
+   23,
+   23,
+   27,
+   26,
+   27
+  ],
+  "rowShiftRange": {
+   "toRow": 79,
+   "ms": 403
+  },
+  "rowsSelected": 80,
+  "rowCtrlClickWith150": 441,
+  "colCtrlAltClick": [
+   72,
+   52,
+   56,
+   61,
+   55,
+   58,
+   54,
+   56,
+   57,
+   59
+  ],
+  "colShiftRange": {
+   "toCol": 210,
+   "ms": 139
+  },
+  "colsSelected": 201,
+  "colCtrlAltClickWith200": 60,
+  "scrollWithSelections": 607,
+  "residueClick": null,
+  "highlightDiffsOn": 771,
+  "highlightDiffsOff": 446,
+  "zoomTo80": 1441,
+  "zoomTo100": 1392,
+  "sortByName": 792,
+  "fullRender": 707,
+  "label": "synthetic 400 x 3000 (1.2 M residues)",
+  "errors": []
+ }
+}

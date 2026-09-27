@@ -1377,6 +1377,75 @@ check('Selection speed: column click and 150 rows on 300k spans', async (page) =
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+// Highlight diffs (and its threshold) now update the page in place instead of redrawing it.
+// The result must be exactly what a redraw draws: same screenshot, in Block and Full mode,
+// switching on, changing the threshold, switching off; and no redraw may happen.
+check('Highlight diffs: in-place update matches a full redraw exactly', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1500);
+  const out = {};
+  const settle = () => page.waitForTimeout(400);
+  for (const mode of ['modeBlocks', 'modeSingle']) {
+    await page.evaluate((m) => { const r = document.getElementById(m); r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); }, mode);
+    await page.waitForTimeout(1200);
+    // A redraw replaces every row element, so a marked row that is still in the page means none happened
+    const mark = () => page.evaluate(() => { const d = document.querySelector('#alignmentContainer .seq-line:not(.scale-ruler-line) .seq-data'); d.__mark = 1; window.__marked = d; });
+    await mark();
+    const steps = [
+      ['on', () => { const e = document.getElementById('highlightDiffs'); e.checked = true; e.dispatchEvent(new Event('change', { bubbles: true })); }],
+      ['threshold', () => { document.getElementById('varThresholdMode').value = 'count'; const e = document.getElementById('varSitesThresholdInput'); e.value = '3'; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); }],
+      ['off', () => { const e = document.getElementById('highlightDiffs'); e.checked = false; e.dispatchEvent(new Event('change', { bubbles: true })); }],
+    ];
+    for (const [name, fn] of steps) {
+      await page.evaluate(fn); await settle();
+      const renders = await page.evaluate(() => (window.__marked.isConnected && window.__marked.__mark === 1) ? 0 : 1);
+      const inPlace = await page.screenshot();
+      await page.evaluate(() => renderAlignment()); await settle();
+      const redrawn = await page.screenshot();
+      await mark();
+      const diffCols = await page.evaluate(() => state._diffColumns ? state._diffColumns.size : 0);
+      out[mode + ':' + name] = { same: inPlace.equals(redrawn), renders, diffCols };
+      if (process.env.SAVE_SHOTS && !inPlace.equals(redrawn)) { require('fs').writeFileSync(`scratch/_hd_${mode}_${name}_a.png`, inPlace); require('fs').writeFileSync(`scratch/_hd_${mode}_${name}_b.png`, redrawn); }
+    }
+  }
+  const ok = Object.values(out).every(v => v.same && v.renders === 0)
+    && out['modeBlocks:on'].diffCols > out['modeBlocks:threshold'].diffCols && out['modeBlocks:threshold'].diffCols > 0;
+  return { pass: ok, detail: JSON.stringify(out) };
+});
+
+// A redraw expected to take over ~1 s says what it is doing first (it blocks the page, so the
+// notice has to be painted before it starts), and a quick one does not flash a notice.
+check('Slow redraw: notice shown before and hidden after; none for small files', async (page) => {
+  const path = require('path');
+  const watch = () => page.evaluate(() => {
+    window.__busy = [];
+    const box = _busyOverlay();
+    new MutationObserver(() => window.__busy.push(box.hidden ? 'hide' : 'show:' + document.getElementById('busyLabel').textContent)).observe(box, { attributes: true, attributeFilter: ['hidden'] });
+  });
+  const toggle = () => page.evaluate(async () => {
+    const e = document.getElementById('showConsensus'); e.checked = !e.checked; e.dispatchEvent(new Event('change', { bubbles: true }));
+    const t0 = performance.now();
+    while (performance.now() - t0 < 15000) { await new Promise(r => setTimeout(r, 100)); if (window.__busy.includes('hide') || (performance.now() - t0 > 3000 && !window.__busy.length)) break; }
+    return { log: window.__busy.slice(), hiddenNow: document.getElementById('busyOverlay').hidden };
+  });
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1500);
+  await watch();
+  const small = await toggle();
+  let seed = 3; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+  const base = Array.from({ length: 700 }, () => 'ACGT'[rnd() % 4]);
+  let fa = '';
+  for (let i = 0; i < 420; i++) fa += `>s${i}\n` + base.map(c => (rnd() % 8 === 0 ? 'ACGT-'[rnd() % 5] : c)).join('') + '\n';
+  await page.setInputFiles('#fileInput', { name: 'big.fa', mimeType: 'text/plain', buffer: Buffer.from(fa) });
+  await page.waitForFunction(() => state.seqs && state.seqs.length === 420, null, { timeout: 60000 });
+  await page.waitForTimeout(3000);
+  await page.evaluate(() => { window.__busy = []; });
+  const big = await toggle();
+  const ok = small.log.length === 0 && big.log.length === 2 && /^show:Redrawing/.test(big.log[0]) && big.log[1] === 'hide' && big.hiddenNow;
+  return { pass: ok, detail: JSON.stringify({ small, big }) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

@@ -3698,3 +3698,12 @@ table.stats-mx.heat td:hover { outline: 2px solid #111; outline-offset: -2px; }
     background-color: var(--column-selected-bg) !important;
     color: #000 !important;
 }
+/* Rows off screen skip style, layout and paint (non-windowed views, where every row is in
+   the page). At 316k residue spans a full layout cost ~2 s, and zoom, Highlight diffs, sort
+   and redraws each needed one. Placeholder size: one ch per column, 1em high, which is what
+   a row measures; `auto` keeps a row's real size once it has been drawn. Names stay outside
+   (sticky; paint containment would clip them). Consensus keeps its own padding. */
+.block-block.cv-block .seq-line:not(.scale-ruler-line):not(.consensus-line) > .seq-data {
+    content-visibility: auto;
+    contain-intrinsic-size: auto calc(var(--cols, 60) * 1ch) auto 1em;
+}

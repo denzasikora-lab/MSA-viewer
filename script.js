@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v203';
+const BUILD_TAG = 'v204';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -2249,7 +2249,9 @@ function _computeBlockColumnWindow(start, end, scrollLeft, visibleDataWidth, cha
 function _buildBlockElement(start, end, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options) {
     const blockLen = end - start;
     const blockDiv = document.createElement('div');
-    blockDiv.className = 'block-block';
+    // cv-block: rows off screen skip layout and paint (styles.css); --cols sizes them meanwhile
+    blockDiv.className = 'block-block cv-block';
+    blockDiv.style.setProperty('--cols', String(blockLen));
 
     const scaleDiv = document.createElement('div');
     scaleDiv.className = 'seq-line scale-ruler-line';
@@ -2258,6 +2260,7 @@ function _buildBlockElement(start, end, len, nameLen, stickyNames, standard, amb
     scaleNameDiv.textContent = '';
     const scaleDataDiv = document.createElement('div');
     scaleDataDiv.className = 'seq-data';
+    scaleDataDiv.dataset.scale = blockLen + ':' + start;   // lets Highlight diffs rebuild it in place
     if (state._diffColumns) {
         scaleDataDiv.innerHTML = generateScaleHTML(blockLen, 10, start);
     } else {
@@ -2407,6 +2410,7 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     const scaleDataDiv = document.createElement('div');
     scaleDataDiv.className = 'seq-data';
     const rulerLen = colEnd - colStart + 1;
+    scaleDataDiv.dataset.scale = rulerLen + ':' + colStart;
     if (state._diffColumns) {
         scaleDataDiv.innerHTML = generateScaleHTML(rulerLen, 10, colStart);
     } else {
@@ -6489,6 +6493,33 @@ function _computeVarSites(len) {
     }
 }
 
+// Highlight diffs only changes which columns carry .diff-highlight (the look is CSS on
+// body.highlight-diffs), so switching it or its threshold needs no redraw: recompute the
+// columns and toggle the class on the columns that changed. A full redraw took 8-12 s at
+// 316k residues. Returns false when a redraw is needed instead: Variable sites only (hides
+// columns, draws breakpoint markers) now or on screen, or a non-span view.
+function _refreshDiffHighlightInPlace() {
+    if (!isSpanRenderMode() || !state.seqs || state.seqs.length < 2) return false;
+    if (el('varSitesOnly')?.checked || document.body.classList.contains('var-sites-only')) return false;
+    if (!alignmentContainer?.querySelector('.seq-data')) return false;
+    const len = state.seqs.reduce((m, s) => Math.max(m, s.seq.length), 0);
+    const before = state._diffColumns || new Set();
+    _computeVarSites(len);
+    const after = state._diffColumns || new Set();
+    // The ruler is plain text without diff columns and one span per column with them
+    // (so its digits fade and bold with the rows); build it the way a redraw would.
+    alignmentContainer.querySelectorAll('.scale-ruler-line .seq-data[data-scale]').forEach(d => {
+        const [n, start] = d.dataset.scale.split(':').map(Number);
+        if (state._diffColumns && !d.children.length) d.innerHTML = generateScaleHTML(n, 10, start);
+        else if (!state._diffColumns && d.children.length) d.textContent = generateScale(n, 10, start);
+    });
+    const changed = [];
+    before.forEach(p => { if (!after.has(p)) changed.push(p); });
+    after.forEach(p => { if (!before.has(p)) changed.push(p); });
+    _forEachSpanInColumns(changed, (span, pos) => span.classList.toggle('diff-highlight', after.has(pos)));
+    return true;
+}
+
 function renderAlignment(options = {}) {
     // Catch-all sync: covers every path that flips a mode radio programmatically
     // (BAM load, snapshot/session restore, the auto-switch heuristic below,
@@ -8396,6 +8427,10 @@ function _placeZoom100Tick() {
     tick.style.left = center + 'px';
 }
 
+function _approxResidueCount() {
+    const seqs = state.seqs || [];
+    return seqs.length * (seqs.length ? seqs[0].seq.length : 0);
+}
 function setZoom(percent) {
     // Round to a whole pixel. Fractional font-size produces fractional row
     // heights, and the browser rounds each row's painted background independently
@@ -8405,8 +8440,11 @@ function setZoom(percent) {
     const isWindowedDom = state._needsWindowedDom &&
         (document.getElementById('modeSingle')?.checked || document.getElementById('modeBlocks')?.checked);
     // Window geometry must be measured at the final font size, not midway
-    // through the container's 0.1s CSS font-size transition.
-    if (isWindowedDom) alignmentContainer.style.transition = 'none';
+    // through the container's 0.1s CSS font-size transition. A big span view skips the
+    // transition too: every animation step re-laid out every residue span (zoom took 5-13 s
+    // at 316k spans).
+    const bigDom = !isCanvas && (isWindowedDom || _approxResidueCount() > 60000);
+    if (bigDom) alignmentContainer.style.transition = 'none';
     alignmentContainer.style.fontSize = size + 'px';
     el('zoomVal').textContent = percent + '%';
     el('zoomVal').classList.toggle('not-default', percent !== 100);
@@ -8431,6 +8469,8 @@ function setZoom(percent) {
     } else if (isWindowedDom) {
         _invalidateUnifiedWindowMeasurements();
         renderAlignment();
+    }
+    if (bigDom) {
         // Keep transitions disabled through the next paint so restoring the
         // stylesheet rule cannot animate away from the geometry just measured.
         requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -8478,7 +8518,42 @@ function debounce(func, delay) {
         timer = setTimeout(func, delay);
     };
 }
-const debounceRender = debounce(renderAlignment, 50);
+// Redraws the user asked for say what they are doing when they will take over ~1 s. A redraw
+// is synchronous, so the notice has to be on screen before it starts: predict the cost from
+// the last measured redraw in the same view (script + the browser's layout and paint, which
+// is most of it), scaled by residues; with nothing measured yet, assume a big span view is slow.
+// No Stop button: a half-done redraw cannot be abandoned without leaving a broken view.
+let _lastRedraw = null;   // { key, residues, ms }
+function _redrawKey() {
+    return [_checkedRadioValue('mode', ''), !!state._needsWindowedDom].join('|');
+}
+function _predictRedrawMs() {
+    const n = _approxResidueCount();
+    const key = _redrawKey();
+    if (_lastRedraw && _lastRedraw.key === key && _lastRedraw.residues > 0) return _lastRedraw.ms * n / _lastRedraw.residues;
+    return (isSpanRenderMode() && !state._needsWindowedDom && n > 200000) ? 1500 : 0;
+}
+async function renderWithNotice(label) {
+    if (!state.seqs || !state.seqs.length) { renderAlignment(); return; }
+    const slow = _predictRedrawMs() > 1000;
+    if (slow) {
+        const len = state.seqs.reduce((m, s) => Math.max(m, s.seq.length), 0);
+        showBusy(label || 'Redrawing the alignment…', `${state.seqs.length.toLocaleString()} sequences × ${len.toLocaleString()} columns`);
+        await yieldToPaint();
+    }
+    const t0 = performance.now();
+    try {
+        renderAlignment();
+        // layout and paint happen after the script: wait for the frame to be drawn
+        await new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
+        _lastRedraw = { key: _redrawKey(), residues: _approxResidueCount(), ms: performance.now() - t0 };
+    } finally {
+        if (slow) hideBusy();
+    }
+}
+const debounceRender = debounce(() => renderWithNotice(), 50);
+// Var-sites threshold changes: in place while only Highlight diffs shows them, else a redraw
+const debouncedDiffRefresh = debounce(() => { if (!_refreshDiffHighlightInPlace()) renderAlignment(); }, 50);
 
 // -- Large-alignment pre-parse index & mode classification ------------------
 // Three viewing strategies (chunking implemented in later phases):
@@ -9975,8 +10050,7 @@ function sortByName() {
     indices.sort((a, b) => a.name.localeCompare(b.name));
     state.seqs = indices.map(e => state.seqs[e.idx]);
     state.lastAction = 'sort';
-    renderAlignment();
-    showMessage('Sorted by name', 2000);
+    renderWithNotice('Sorting by name…').then(() => showMessage('Sorted by name', 2000));
 }
 function sortByLength() {
     pushUndo();
@@ -9984,8 +10058,7 @@ function sortByLength() {
     indices.sort((a, b) => b.len - a.len);
     state.seqs = indices.map(e => state.seqs[e.idx]);
     state.lastAction = 'sort';
-    renderAlignment();
-    showMessage('Sorted by length (descending)', 2000);
+    renderWithNotice('Sorting by length…').then(() => showMessage('Sorted by length (descending)', 2000));
 }
 function sortBySimilarity() {
     if (state.seqs.length < 2) return;
@@ -10002,8 +10075,7 @@ function sortBySimilarity() {
     scored.sort((a, b) => b.score - a.score);
     state.seqs = scored.map(e => state.seqs[e.idx]);
     state.lastAction = 'sort';
-    renderAlignment();
-    showMessage('Sorted by similarity to first sequence', 2000);
+    renderWithNotice('Sorting by similarity…').then(() => showMessage('Sorted by similarity to first sequence', 2000));
 }
 
 // -- Save / Load sequence order --
@@ -19287,7 +19359,7 @@ function attachUIListeners() {
         const slider = el(sliderId);
         const input = el(inputId);
         if (slider && input) {
-            const renderCb = debounceRender;
+            const renderCb = sliderId === 'varSitesThreshold' ? debouncedDiffRefresh : debounceRender;
             slider.addEventListener('input', () => {
                 if (sliderId === 'consensusThreshold') {
                     const clamped = clampConsensusPercent(slider.value);
@@ -19486,6 +19558,7 @@ function attachUIListeners() {
             if (id === 'highlightDiffs' || id === 'varSitesOnly') {
                 syncVariationControls();
             }
+            if (id === 'highlightDiffs' && _refreshDiffHighlightInPlace()) return;
             debounceRender();
         });
     });
@@ -19495,13 +19568,14 @@ function attachUIListeners() {
     // this just keeps the "\u2265N% diff" / "\u2265N seqs" label current for either input method.
     const varThreshold = el('varSitesThreshold');
     const varThresholdInput = el('varSitesThresholdInput');
+    const onVarThresholdChange = debouncedDiffRefresh;
     if (varThreshold) {
         varThreshold.addEventListener('input', updateVarThresholdLabel);
-        varThreshold.addEventListener('change', debounceRender);
+        varThreshold.addEventListener('change', onVarThresholdChange);
     }
     if (varThresholdInput) {
         varThresholdInput.addEventListener('input', updateVarThresholdLabel);
-        varThresholdInput.addEventListener('change', debounceRender);
+        varThresholdInput.addEventListener('change', onVarThresholdChange);
     }
     // Switching % <-> count changes what the same number means and its valid
     // range (100 vs nSeq), so bounds/label must refresh before the next render.
