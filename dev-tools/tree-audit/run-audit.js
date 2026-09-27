@@ -51,7 +51,38 @@ function cite(text, re) {
 }
 
 function collectAudit() {
-  throw new Error('NotImplementedError');
+  const fns = loadTreeFns();
+  const alignText = fs.readFileSync(ALIGN_SOURCE, 'utf8');
+  const drawText = fs.readFileSync(DRAW_SOURCE, 'utf8');
+  const distances = FIXTURES.map(function (row) {
+    const distance = fns._modelPairDistance(row.a, row.b, row.model);
+    return { id: row.id, model: row.model, value: Number.isFinite(distance) ? distance : 'Infinity' };
+  });
+  let zoomIn = 1;
+  let zoomOut = 1;
+  for (let i = 0; i < 30; i++) {
+    zoomIn = Math.min(4, zoomIn * 1.25);
+    zoomOut = Math.max(0.25, zoomOut / 1.25);
+  }
+  const zoomFit = Number(drawText.match(/act === 'zoom-fit'\) st\.zoom = ([0-9.]+);/)[1]);
+  const pngScale = Number(drawText.match(/var scale = ([0-9.]+);\s*\/\/ 2x/)[1]);
+  const fit = cite(drawText, /act === 'zoom-fit'\) st\.zoom = [0-9.]+;/);
+  const gap = cite(alignText, /compared === 0\) return 1;/);
+  const tie = cite(alignText, /if \(q < minQ\) \{/);
+  return {
+    distances: distances,
+    upgma_newick: fns.buildUPGMATreeFromAlignment(TREE_SEQS, 'raw').newick,
+    nj_newick: fns.buildNJTreeFromAlignment(TREE_SEQS, 'raw').newick,
+    zoom_after_30_in: zoomIn,
+    zoom_after_30_out: zoomOut,
+    zoom_after_fit: zoomFit,
+    png_scale: pngScale,
+    defects: [
+      { id: 'zoom-fit', file: DRAW_BASENAME, line: fit.line, quote: fit.quote },
+      { id: 'no-overlap', file: ALIGN_BASENAME, line: gap.line, quote: gap.quote },
+      { id: 'nj-tie', file: ALIGN_BASENAME, line: tie.line, quote: tie.quote }
+    ]
+  };
 }
 
 function main() {

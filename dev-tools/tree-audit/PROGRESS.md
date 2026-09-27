@@ -1,6 +1,6 @@
 ## Current phase
 
-Implement collectAudit. Not started.
+All phases complete. The check passed against a fresh execution of the tree functions.
 
 ## Notes
 
