@@ -373,7 +373,7 @@
                                 </div>
                                 <div class="cluster-actions">
                                     <label style="font-size: 10px; white-space: nowrap;" title="Oligonucleotide length for the similarity tree (3–12). Default 6, same as Reorder by similarity.">k:
-                                        <input type="number" id="guideTreeK" min="3" max="12" value="6" step="1" style="width: 40px; font-size: 11px;" title="k-mer length, 3–12. Default 6.">
+                                        <input type="number" id="guideTreeK" min="3" max="12" value="6" step="1" style="width: 40px; font-size: 11px;" title="k-mer length, 3–12. Default 6. The same setting as k next to Reorder in the Alignment menu.">
                                     </label>
                                     <label style="font-size: 10px; white-space: nowrap;" title="Leave empty to let the tree choose how many groups. Type a number only to force a coarser or finer split.">Groups:
                                         <input type="number" id="guideTreeGroups" min="2" max="50" step="1" placeholder="auto" style="width: 52px; font-size: 11px;" title="Empty = automatic.">
@@ -683,8 +683,11 @@
                                 </div>
                                 <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
                                     <label style="font-size: 11px; min-width: 55px; text-align: right;"></label>
-                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer;" title="Do not align. Only compute a 6-mer guide-tree order. Realign All applies it to the whole MSA. Realign Block orders rows by the selected region and asks before applying (default No).">
+                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer;" title="Do not align. Only compute a k-mer guide-tree order (k set next to this box). Realign All applies it to the whole MSA. Realign Block orders rows by the selected region and asks before applying (default No).">
                                         <input type="checkbox" id="mafftReorderOnly"> Reorder only (no alignment)
+                                    </label>
+                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px;" title="k-mer length (3-12, default 6) of the similarity tree used by Reorder by similarity and Reorder only. The same setting as k in Clustering, Group by k-mer.">k
+                                        <input type="number" id="mafftReorderK" min="3" max="12" value="6" step="1" style="width: 40px; font-size: 11px;">
                                     </label>
                                 </div>
                                 <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
@@ -1272,7 +1275,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=251"></script>
+    <script src="script.js?v=252"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

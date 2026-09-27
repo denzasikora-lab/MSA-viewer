@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v201';
+const BUILD_TAG = 'v202';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -12561,6 +12561,27 @@ function _guideTreeK() {
     return (Number.isFinite(v) && v >= 3 && v <= 12) ? v : 6;
 }
 
+// One k-mer length for the similarity tree, shown in two places: Clustering > Group by k-mer
+// (guideTreeK) and next to Reorder in the Alignment menu (mafftReorderK). Reorder always used
+// guideTreeK, but the Alignment menu showed no k and said "6-mer".
+function _initGuideTreeKSync() {
+    const a = el('guideTreeK'), b = el('mafftReorderK');
+    if (!a || !b || b._synced) return;
+    b._synced = true;
+    b.value = a.value;
+    const copy = (from, to) => () => {
+        const v = parseInt(from.value, 10);
+        if (Number.isFinite(v) && v >= 3 && v <= 12) to.value = v;
+    };
+    const clamp = (inp) => () => {
+        const v = parseInt(inp.value, 10);
+        inp.value = Number.isFinite(v) ? Math.max(3, Math.min(12, v)) : 6;
+        (inp === a ? copy(a, b) : copy(b, a))();
+    };
+    a.addEventListener('input', copy(a, b)); b.addEventListener('input', copy(b, a));
+    a.addEventListener('change', clamp(a)); b.addEventListener('change', clamp(b));
+}
+
 function _updateInstrumentStatus() {
     const node = el('clusteringInstrumentStatus');
     const wrap = el('clusterLiveStatus');
@@ -19212,6 +19233,7 @@ function attachUIListeners() {
     if (state.uiListenersAttached) return;
     state.uiListenersAttached = true;
     _initNumSliderPop();
+    _initGuideTreeKSync();
     el('clusterWithinTypes')?.addEventListener('change', _updateSplitHint);
     _updateSplitHint();
     // Set up slider/input pairs manually to avoid function reference issues

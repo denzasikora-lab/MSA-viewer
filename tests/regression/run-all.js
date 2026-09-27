@@ -1271,6 +1271,38 @@ check('Neighbor-Joining reproduces known trees (Wikipedia example, long branches
   return { pass: wikiOk && lbaOk, detail: JSON.stringify(r) };
 });
 
+// Reorder only uses the k shown next to it in the Alignment menu, which is the same setting as
+// k in Clustering > Group by k-mer; the two boxes stay in step both ways
+check('Reorder only: selectable k in the Alignment menu, linked to Group by k-mer k', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1500);
+  const r = await page.evaluate(async () => {
+    const input = (id, v) => { const e = document.getElementById(id); e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); };
+    const out = {};
+    input('mafftReorderK', 4); out.syncAtoB = document.getElementById('guideTreeK').value;
+    input('guideTreeK', 9); out.syncBtoA = document.getElementById('mafftReorderK').value;
+    input('mafftReorderK', 40); out.clamped = [document.getElementById('mafftReorderK').value, document.getElementById('guideTreeK').value];
+    const orderFor = (k) => _kmerGuideTree(state.seqs.map(s => ({ header: s.header, seq: s.seq.replace(/[-.]/g, '') })), k).order.map(i => state.seqs[i].header).join(',');
+    out.kMatters = orderFor(3) !== orderFor(10);
+    const runWithK = async (k) => {
+      input('mafftReorderK', k);
+      const expect = orderFor(k);   // from the rows as they are before this run
+      document.getElementById('mafftReorderOnly').checked = true;
+      window.confirm = () => true;
+      await realignAll();
+      await new Promise(res => setTimeout(res, 400));
+      return { got: state.seqs.map(s => s.header).join(','), expect };
+    };
+    out.k3 = await runWithK(3);
+    out.k10 = await runWithK(10);
+    return out;
+  });
+  const ok = r.syncAtoB === '4' && r.syncBtoA === '9' && r.clamped[0] === '12' && r.clamped[1] === '12'
+    && r.k3.got === r.k3.expect && r.k10.got === r.k10.expect && r.kMatters;
+  return { pass: ok, detail: JSON.stringify({ ...r, k3: r.k3.got === r.k3.expect, k10: r.k10.got === r.k10.expect }) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
