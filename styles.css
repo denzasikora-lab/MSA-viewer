@@ -3658,3 +3658,37 @@ table.stats-pairs tbody tr:hover { background: #fff3b0; }
 .stats-win h3, .stats-card, .stats-mx-toolbar, .stats-filter, .stats-foot, .stats-tipcard { font-family: inherit; }
 .stats-mx-toolbar button, .stats-filter button, .stats-mx-toolbar select, .stats-filter select, .stats-mx-toolbar input, .stats-filter input { font-family: inherit; }
 .stats-filter .sp { flex: 1; }
+
+/* ── Statistics heatmap ── */
+.stats-heat-btn.on { background: #3d7cc9; color: #fff; border-color: #2f67ad; }
+.stats-heat-legend { display: inline-flex; align-items: center; gap: 5px; font-size: 10.5px; color: #444; cursor: pointer; }
+.stats-heat-legend[hidden] { display: none; }
+.stats-heat-legend i { display: inline-block; width: 90px; height: 10px; border-radius: 2px; border: 1px solid rgba(0,0,0,0.15); }
+.stats-heat-panel {
+    position: absolute; z-index: 30; top: calc(100% + 3px); left: 0; width: 280px;
+    background: #fff; border: 1px solid #b9c2cb; border-radius: 7px; box-shadow: 0 8px 22px rgba(0,0,0,0.18);
+    padding: 9px 11px; display: flex; flex-direction: column; gap: 7px; font-size: 11.5px;
+}
+.stats-heat-panel[hidden] { display: none; }
+.stats-heat-panel .row { display: flex; align-items: center; gap: 6px; }
+.stats-heat-panel .pals { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.stats-heat-pal { display: flex; flex-direction: column; align-items: stretch; gap: 2px; padding: 4px; border: 1px solid #d3d8de; border-radius: 5px; background: #fff; cursor: pointer; font-size: 10.5px; color: #333; }
+.stats-heat-pal i { display: block; height: 12px; border-radius: 2px; }
+.stats-heat-pal.on { border-color: #3d7cc9; box-shadow: 0 0 0 1px #3d7cc9; }
+.stats-heat-panel .range { flex-wrap: wrap; }
+.stats-heat-panel .range input { width: 62px; font-size: 11px; }
+.stats-heat-panel .hint { color: #888; font-size: 10.5px; }
+/* With colours on: selected columns are outlined (their fill would hide the colour); the pair
+   filter dims non-matching cells and rings the matching ones */
+table.stats-mx.heat td.cs { box-shadow: inset 2px 0 #1a5aa0, inset -2px 0 #1a5aa0; }
+table.stats-mx.heat thead th.cs { box-shadow: inset 0 -3px #1a5aa0; }
+table.stats-mx.heat.filtering td.miss { opacity: 0.22; }
+table.stats-mx.heat.filtering td.hit { font-weight: bold; box-shadow: inset 0 0 0 2px rgba(0,0,0,0.55); }
+table.stats-mx.heat td:hover { outline: 2px solid #111; outline-offset: -2px; }
+/* The heatmap panel opens leftwards from its button so it stays inside the window; the legend sits in the button */
+.stats-heat-btn { display: inline-flex; align-items: center; gap: 4px; }
+.stats-heat-btn.on { background: #fff; color: #333; border-color: #3d7cc9; box-shadow: 0 0 0 1px #3d7cc9; }
+.stats-heat-btn .txt[hidden] { display: none; }
+.stats-content { overflow: clip; }
+.stats-labels-panel { width: auto; min-width: 250px; }
+.stats-labels-panel select, .stats-labels-panel input { font-size: 11px; }

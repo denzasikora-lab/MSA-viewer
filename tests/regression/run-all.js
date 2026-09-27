@@ -726,6 +726,7 @@ check('Statistics matrices: named labels, windowed rows, switch, find, TSV copy'
   await page.waitForFunction(() => state._statsData && document.querySelector('#statsSummaryTab table.stats-mx'), null, { timeout: 30000 });
   const out = {};
   for (const style of ['angled', 'vertical', 'numbers']) {
+    if (await page.locator('#statsLabelsPanel').isHidden()) await page.click('#statsLabelsBtn');   // label options live in the Labels panel
     await page.selectOption('#statsLabelStyle', style);
     await page.waitForTimeout(150);
     out[style] = await page.evaluate(async (style) => {
@@ -1076,6 +1077,44 @@ check('Codon analysis: an insertion in one row flags that row only', async (page
     marked: [...document.querySelectorAll('.aa-row')].map(a => a.querySelectorAll('.aa-fs, .aa-fs-at').length),
   }));
   const ok = r.fs.join() === '0,0,0,0,1' && r.marked.join() === '0,0,0,0,1';
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+// Statistics heatmap: off by default; on, every off-diagonal cell is coloured, the lowest and
+// highest take the palette's end colours and colours follow value order; a custom range puts
+// values below it at the first colour; Reverse flips; the panel stays inside the window
+check('Statistics heatmap: colours follow values, custom range, reverse, panel inside window', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => { ['msaviewer_statsWin', 'msaviewer_statsLabels', 'msaviewer_statsHeat'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} }); openStats(); });
+  await page.waitForFunction(() => document.querySelector('#statsSummaryTab table.stats-mx'), null, { timeout: 30000 });
+  const cells = () => page.evaluate(() => {
+    const d = state._statsData, n = d.n, out = [];
+    for (const tr of document.querySelector('table.stats-mx').tBodies[0].rows) {
+      const rn = tr.cells[0]; if (!rn?.dataset.r) continue; const i = +rn.dataset.r;
+      for (let j = 0; j < n; j++) if (i !== j) out.push({ v: d.pid[d.mode][i * n + j], bg: tr.cells[j + 1].style.background });
+    }
+    return out;
+  });
+  const r = {};
+  r.offByDefault = (await cells()).every(c => !c.bg);
+  await page.click('#statsHeatBtn');
+  r.panelInside = await page.evaluate(() => { const p = document.getElementById('statsHeatPanel').getBoundingClientRect(), b = document.getElementById('statsContent').getBoundingClientRect(); return p.left >= b.left && p.right <= b.right; });
+  await page.click('#statsHeatOn'); await page.waitForTimeout(300);
+  const lum = s => { const m = s.match(/\d+/g).map(Number); return 0.2126 * m[0] + 0.7152 * m[1] + 0.0722 * m[2]; };
+  let cs = (await cells()).sort((a, b) => a.v - b.v);
+  r.allColoured = cs.every(c => c.bg);
+  r.ends = cs[0].bg === 'rgb(255, 255, 204)' && cs[cs.length - 1].bg === 'rgb(177, 0, 38)';
+  r.monotonic = cs.every((c, k) => k === 0 || lum(c.bg) <= lum(cs[k - 1].bg) + 0.5);
+  await page.fill('#statsHeatLo', '90'); await page.fill('#statsHeatHi', '100'); await page.waitForTimeout(600);
+  cs = await cells();
+  r.range = cs.filter(c => c.v < 90).every(c => c.bg === 'rgb(255, 255, 204)');
+  await page.click('#statsHeatReverse'); await page.waitForTimeout(300);
+  cs = await cells();
+  r.reverse = cs.filter(c => c.v < 90).every(c => c.bg === 'rgb(177, 0, 38)');
+  r.legend = await page.evaluate(() => document.getElementById('statsHeatLegend').textContent);
+  const ok = r.offByDefault && r.panelInside && r.allColoured && r.ends && r.monotonic && r.range && r.reverse && r.legend === '90.0100.0%';
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
