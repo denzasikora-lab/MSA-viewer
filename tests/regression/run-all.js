@@ -1497,6 +1497,50 @@ check('Rename: box over the name, no shift, Esc cancels, Enter/click-away save w
   return { pass: ok, detail: JSON.stringify(out) };
 });
 
+// Dragging the persistent scrollbars moves the view with the mouse, like a scrollbar thumb.
+// It used to scroll -1 px per px: dragging the thumb down moved the view back up ("jumps
+// back"), and from the start of the track it did not move at all.
+check('Scrollbars: dragging the thumb moves the view with the mouse, never back', async (page) => {
+  let seed = 5; const rnd = () => (seed = (seed * 1103515245 + 12345) % 2147483648);
+  const base = Array.from({ length: 900 }, () => 'ACGT'[rnd() % 4]);
+  let fa = '';
+  for (let i = 0; i < 700; i++) fa += `>s${i}\n` + base.map(c => (rnd() % 9 === 0 ? 'ACGT-'[rnd() % 5] : c)).join('') + '\n';
+  await page.setInputFiles('#fileInput', { name: 'bars.fa', mimeType: 'text/plain', buffer: Buffer.from(fa) });
+  await page.waitForFunction(() => state.seqs && state.seqs.length === 700, null, { timeout: 60000 });
+  await page.waitForTimeout(2000);
+  const out = {};
+  const drag = async (sel, axis) => {
+    const r = await page.evaluate((sel) => { const b = document.querySelector(sel); if (getComputedStyle(b).display === 'none') return null; const q = b.getBoundingClientRect(); return [q.x, q.y, q.width, q.height, b.clientWidth, b.scrollWidth, b.clientHeight, b.scrollHeight]; }, sel);
+    if (!r) return { shown: false };
+    const read = () => page.evaluate(([sel, axis]) => document.querySelector(sel)[axis === 'y' ? 'scrollTop' : 'scrollLeft'], [sel, axis]);
+    // start at the beginning of the track (a mode switch keeps the previous position)
+    await page.evaluate(([sel, axis]) => { const b = document.querySelector(sel); b[axis === 'y' ? 'scrollTop' : 'scrollLeft'] = 0; b.dispatchEvent(new Event('scroll')); }, [sel, axis]);
+    await page.waitForTimeout(500);
+    const [x, y, w, h] = r;
+    const x0 = axis === 'y' ? x + w / 2 : x + 12, y0 = axis === 'y' ? y + 12 : y + h / 2;
+    const seen = [await read()];
+    await page.mouse.move(x0, y0); await page.mouse.down();
+    for (let k = 1; k <= 6; k++) { await page.mouse.move(axis === 'y' ? x0 : x0 + k * 25, axis === 'y' ? y0 + k * 25 : y0, { steps: 2 }); await page.waitForTimeout(200); seen.push(await read()); }
+    await page.mouse.up(); await page.waitForTimeout(400); seen.push(await read());
+    const track = axis === 'y' ? r[6] : r[4], content = axis === 'y' ? r[7] : r[5];
+    const expected = 150 * (content - track) / (track - Math.max(20, track * track / content));   // thumb under the pointer
+    const moved = seen[seen.length - 1] - seen[0];
+    const hit = await page.evaluate(([x, y]) => { const e = document.elementFromPoint(x, y); return e ? (e.id || e.className) : null; }, [x0, y0]);
+    return { shown: true, forward: seen.every((v, i) => i === 0 || v >= seen[i - 1]), moved, ratio: Math.round(moved / expected * 100) / 100, range: content - track, hit, seen };
+  };
+  const setMode = async (m) => {
+    await page.evaluate((m) => { const r = document.getElementById(m); r.checked = true; r.dispatchEvent(new Event('change', { bubbles: true })); }, m);
+    await page.waitForTimeout(1000);
+    if (await page.locator('#alignLoadProceed').count()) await page.click('#alignLoadProceed');
+    await page.waitForTimeout(2500);
+  };
+  await setMode('modeBlocks'); out.blockV = await drag('.vertical-scrollbar', 'y');
+  await setMode('modeSingle'); out.fullV = await drag('.vertical-scrollbar', 'y'); out.fullH = await drag('.horizontal-scrollbar', 'x');
+  await setMode('modeCanvas'); out.canvasV = await drag('.vertical-scrollbar', 'y');
+  const good = v => v.shown && v.forward && v.moved > 0 && v.ratio > 0.8 && v.ratio < 1.2;
+  return { pass: Object.values(out).every(good), detail: JSON.stringify(out) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

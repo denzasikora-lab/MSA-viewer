@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v205';
+const BUILD_TAG = 'v206';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -21832,6 +21832,17 @@ function initColourSeqs() {
 // ============================================================================
 // Persistent horizontal scrollbar synced with alignment
 // ============================================================================
+// Dragging a persistent scrollbar moves it like a scrollbar thumb: with the mouse, and so
+// that the whole track covers the whole alignment. It used to scroll by -1 px per px (the
+// "grab and pan" direction, the opposite of the thumb under the pointer): dragging the thumb
+// down moved the view back up, and from the top it did not move at all.
+function _scrollbarDragRatio(trackPx, contentPx) {
+    const range = contentPx - trackPx;
+    if (range <= 0) return 0;
+    const thumbPx = Math.max(20, trackPx * trackPx / contentPx);
+    return range / Math.max(1, trackPx - thumbPx);
+}
+
 (function setupPersistentScrollbar() {
     const alignment = document.getElementById('alignmentContainer');
     const bar = document.querySelector('.horizontal-scrollbar');
@@ -21919,15 +21930,15 @@ function initColourSeqs() {
         lastDx = e.clientX - startX;
         if (dragRaf) { e.preventDefault(); return; }
         dragRaf = window.requestAnimationFrame(() => {
-            const newScroll = startScroll - lastDx;
             syncing = true;
+            bar.scrollLeft = startScroll + lastDx * _scrollbarDragRatio(bar.clientWidth, bar.scrollWidth);
+            const newScroll = bar.scrollLeft;   // clamped by the browser
             if (isCanvasMode()) {
                 _canvasState.offsetX = newScroll;
                 _canvasState.scheduleDraw?.();
             } else {
                 alignment.scrollLeft = newScroll;
             }
-            bar.scrollLeft = newScroll;
             syncing = false;
             dragRaf = null;
         });
@@ -22060,15 +22071,15 @@ function initColourSeqs() {
         lastDy = e.clientY - startY;
         if (dragRaf) { e.preventDefault(); return; }
         dragRaf = window.requestAnimationFrame(() => {
-            const newScroll = startScroll - lastDy;
             syncing = true;
+            bar.scrollTop = startScroll + lastDy * _scrollbarDragRatio(bar.clientHeight, bar.scrollHeight);
+            const newScroll = bar.scrollTop;   // clamped by the browser
             if (isCanvasMode()) {
                 _canvasState.offsetY = newScroll;
                 _canvasState.scheduleDraw?.();
             } else {
                 alignment.scrollTop = newScroll;
             }
-            bar.scrollTop = newScroll;
             syncing = false;
             dragRaf = null;
         });
