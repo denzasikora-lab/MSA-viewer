@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v198';
+const BUILD_TAG = 'v199';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -3536,7 +3536,9 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
             flushGapRun(false);
 
             // Skip non-gap columns before frameOffset (not part of the analyzed CDS)
-            if (pos < frameOffset) { seenResidue = true; continue; }
+            // Bases before the frame start are not counted, so they must not stop the first
+            // counted base from being placed on the codon grid below
+            if (pos < frameOffset) continue;
 
             // A sequence that starts after the frame start begins wherever its first column
             // falls in the alignment's codon grid, not always at codon position 1 (a row
@@ -3550,7 +3552,7 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
 
             // Non-gap base - add to codon
             phase[i][pos] = codonPhase;
-            codonBuf += base.toUpperCase();
+            codonBuf += base.toUpperCase().replace('U', 'T');   // RNA: the code table is keyed by T
             codonCols.push(pos);
             codonPhase++;
 
@@ -3577,10 +3579,13 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
                     if (refEntry) {
                         const refCodon = refEntry.codon;
                         const refAA = refEntry.aa;
-                        if (aa === refAA && codon !== refCodon) {
-                            for (const c of codonCols) synNonSyn[i][c] = 'syn';
-                        } else if (aa !== refAA) {
+                        // Only the bases that differ from the reference codon are marked (all three
+                        // used to be, including unchanged ones); each is classed by what that single
+                        // change would do to the reference amino acid
+                        if (codon !== refCodon) {
                             for (let k = 0; k < 3; k++) {
+                                if (codon[k] === refCodon[k]) continue;
+                                if (aa === refAA) { synNonSyn[i][codonCols[k]] = 'syn'; continue; }
                                 const mutCodon = refCodon.substring(0, k) + codon[k] + refCodon.substring(k + 1);
                                 const mutAA = activeCode[mutCodon] || 'X';
                                 synNonSyn[i][codonCols[k]] = (mutAA !== refAA) ? 'nonsyn' : 'syn';
@@ -3651,7 +3656,7 @@ function _markRelativeFrameshifts(phase, frameShifts, len) {
             if (prevOffset >= 0 && off !== prevOffset) {
                 const runStart = lastCol + 1;
                 const runLen = Math.max(1, c - runStart);
-                frameShifts[i].push({ pos: runStart, type: 'indel', runStart, runLen, shift: (off - prevOffset + 3) % 3 });
+                frameShifts[i].push({ pos: runStart, type: 'indel', runStart, runLen, at: c, shift: (off - prevOffset + 3) % 3 });
             }
             prevOffset = off;
             lastCol = c;
@@ -3729,7 +3734,7 @@ function _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd, frameShif
             html += `<span class="aa-c aa-${x.cls}${x.first ? ' aa-first' : ''}${x.last ? ' aa-last' : ''}" title="${x.title}">${x.text || '\u00A0'}</span>`;
         } else if (fsStart.has(c)) {
             const f = fsStart.get(c);
-            html += `<span class="aa-fs" title="Frameshift: from column ${f.runStart + f.runLen + 1} on, this sequence reads ${f.shift === 1 ? 'one base ahead of' : 'one base behind'} most sequences (a gap or insertion here whose length is not a multiple of 3, columns ${f.runStart + 1}-${f.runStart + f.runLen})">!</span>`;
+            html += `<span class="aa-fs" title="Frameshift: from column ${f.at + 1} on, this sequence reads ${f.shift === 1 ? 'one base ahead of' : 'one base behind'} most sequences (a gap or insertion here whose length is not a multiple of 3, columns ${f.runStart + 1}-${f.runStart + f.runLen})">!</span>`;
         } else {
             html += '<span>\u00A0</span>';
         }
@@ -13053,20 +13058,27 @@ function _renderClusterabilityReport(rows, base, nSeqs, progress) {
         return;
     }
     const ok = rows.filter(r => !r.error);
-    const best = ok.reduce((a, b) => (b.assigned > (a ? a.assigned : -1) ? b : a), null);
     const current = ok.find(r => r.label === 'current settings');
+    // Most sequences assigned wins; on a tie the current settings are kept (a later equal row
+    // used to be reported as "not at the current settings")
+    const topAssigned = ok.reduce((m, r) => Math.max(m, r.assigned), -1);
+    const best = (current && current.assigned === topAssigned) ? current : (ok.find(r => r.assigned === topAssigned) || null);
     const anyClusters = ok.some(r => r.clusters > 0);
 
     // Which knobs moved the outcome at all? A parameter that never changes the result is
     // worth knowing about: it means tuning it on this alignment is wasted effort.
     const groups = { 'Min Size': [], 'Min Features': [], 'Min Occurrences': [], 'Quality': [] };
+    // Compare the whole outcome, not just the assigned count: the same sequences split into a
+    // different number of clusters is a change. Without a current-settings result there is
+    // no baseline, so nothing is called inert or active.
+    const outcome = r => `${r.clusters}/${r.assigned}/${r.largest}`;
     ok.forEach(r => {
         const key = Object.keys(groups).find(k => r.label.startsWith(k));
-        if (key) groups[key].push(r.assigned);
+        if (key) groups[key].push(outcome(r));
     });
-    const baseAssigned = current ? current.assigned : 0;
-    const inert = Object.keys(groups).filter(k => groups[k].length && groups[k].every(v => v === baseAssigned));
-    const active = Object.keys(groups).filter(k => groups[k].length && groups[k].some(v => v !== baseAssigned));
+    const baseline = current ? outcome(current) : null;
+    const inert = baseline ? Object.keys(groups).filter(k => groups[k].length && groups[k].every(v => v === baseline)) : [];
+    const active = baseline ? Object.keys(groups).filter(k => groups[k].length && groups[k].some(v => v !== baseline)) : [];
 
     let verdict;
     if (!anyClusters) {
@@ -14675,7 +14687,8 @@ function _kmerGuideTree(seqs, k) {
     // Build k-mer frequency vectors for each sequence
     const kmerVecs = [];
     for (const s of seqs) {
-        const clean = s.seq.toUpperCase().replace(/[^ACGT]/g, '');
+        // U counts as T: RNA used to lose every U here, leaving little or no k-mer profile
+        const clean = s.seq.toUpperCase().replace(/U/g, 'T').replace(/[^ACGT]/g, '');
         const counts = new Map();
         for (let i = 0; i <= clean.length - K; i++) {
             const kmer = clean.substring(i, i + K);

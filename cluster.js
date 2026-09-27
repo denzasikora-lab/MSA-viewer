@@ -894,7 +894,8 @@ class SINEClusterer {
                 console.log(`Cluster ${clusters.length + 1}: size=${group.size} perfect=${f.perfectFeatures.length} total=${group.nOccurrences}`);
                 return { group, avail: avail.filter(i => !group.sequences.includes(i)) };
             }
-            if (avail.length >= o.minSize) console.log(`Stopped — ${avail.length} left as noise`);
+            // cluster() goes on to the next round with relaxed settings, so this is not the end
+            if (avail.length >= o.minSize) console.log(`Round ${it}: no group found; ${avail.length} still unassigned`);
             return { group: null, avail };
     }
 

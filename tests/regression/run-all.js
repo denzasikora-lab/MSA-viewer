@@ -1118,6 +1118,58 @@ check('Statistics heatmap: colours follow values, custom range, reverse, panel i
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+// GLM audit 2026-09-27, confirmed defects: RNA codons translated to X; synonymous /
+// non-synonymous marks put on unchanged bases; a row with bases before the frame start was
+// not placed on the codon grid; the k-mer guide tree dropped every U
+check('Codon/guide-tree audit fixes: RNA translation, marks on changed bases only, frame start, RNA k-mers', async (page) => {
+  const dna = 'ATGGCTCTGAAATAA';
+  const fa = `>dna_ref\n${dna}\n>rna\n${dna.replace(/T/g, 'U')}\n>syn\nATGGCTTTGAAATAA\n>nonsyn\nATGGAACTGAAATAA\n`;
+  await page.setInputFiles('#fileInput', { name: 'c.fa', mimeType: 'text/plain', buffer: Buffer.from(fa) });
+  await page.waitForTimeout(1000);
+  await page.evaluate(() => { const c = document.getElementById('codonAnalysis'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForTimeout(1000);
+  const r = await page.evaluate(() => {
+    const cd = state._codonData;
+    const marks = cd.synNonSyn.map(row => row.map((v, c) => v ? c + ':' + v : null).filter(Boolean).join(' '));
+    // Frame 3 (offset 2): codons start at columns 2, 5, 8, ... A row with bases in columns 0-1
+    // (before the frame start) and a gap in 2-5 resumes at column 6, the 2nd base of the codon
+    // at 5-7; that partial codon gets no amino acid and translation starts at column 8
+    const ref = 'NNATGGCTCTGAAATAA', row = 'NA' + '----' + 'CT' + 'CTGAAATAA';
+    const fr = _computeCodonAnalysis([{ seq: ref }, { seq: row }], ref.length, 2);
+    const g = _kmerGuideTree([{ seq: 'ACGUACGUUUGACGUAAGU' }, { seq: 'ACGUACGUUUGACGUAAGU' }, { seq: 'GGGCCCAAAGGGCCCAAAG' }], 4);
+    const groups = cutGuideTree([{ seq: 'ACGUACGUUUGACGUAAGU' }, { seq: 'ACGUACGUUUGACGUAAGU' }, { seq: 'GGGCCCAAAGGGCCCAAAG' }], 2, 4);
+    return { aa: cd.aaSeq.map(x => x.map(e => e.aa).join('')), marks,
+      frameStart: fr.aaSeq[1][0]?.cols[0], frameAa: fr.aaSeq[1].map(e => e.aa).join(''),
+      rnaGroups: JSON.stringify(groups.groups || groups) };
+  });
+  const ok = r.aa.join() === 'MALK*,MALK*,MALK*,MELK*' && r.marks.join('|') === '||6:syn|4:nonsyn 5:syn'
+    && r.frameStart === 8 && r.frameAa === 'LK*' && /\[0,1\]|\[1,0\]/.test(r.rnaGroups.replace(/\s/g, ''));
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+// Clusterability verdict (GLM audit): a setting that changes the clusters but not the assigned
+// count is not "changed nothing"; on a tie for most assigned the current settings stay best;
+// with no current-settings result nothing is called inert
+check('Clusterability verdict: whole outcome compared, ties keep current settings', async (page) => {
+  const r = await page.evaluate(() => {
+    const html = rows => { _renderClusterabilityReport(rows, {}, 20); return document.getElementById('clusteringContent').innerHTML.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' '); };
+    const a = html([
+      { label: 'current settings', clusters: 1, assigned: 10, largest: 10 },
+      { label: 'Quality: loose', clusters: 2, assigned: 10, largest: 6 },
+      { label: 'Min Size 3', clusters: 1, assigned: 10, largest: 10 }]);
+    const b = html([
+      { label: 'Min Size 3', clusters: 2, assigned: 12, largest: 7 },
+      { label: 'current settings', clusters: 2, assigned: 12, largest: 7 }]);
+    const c = html([
+      { label: 'current settings', error: 'failed' },
+      { label: 'Quality: loose', clusters: 1, assigned: 5, largest: 5 }]);
+    return { a, b, c };
+  });
+  const ok = /Changed the outcome: Quality/.test(r.a) && /Changed nothing[^.]*: Min Size/.test(r.a) && !/Changed nothing[^.]*Quality/.test(r.a)
+    && /current settings are already the best/.test(r.b) && !/Changed nothing|Changed the outcome/.test(r.c);
+  return { pass: ok, detail: JSON.stringify({ a: r.a.slice(0, 300), b: r.b.slice(0, 160), c: r.c.slice(0, 200) }) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
