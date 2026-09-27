@@ -57,7 +57,7 @@ fs.mkdirSync(OUT, { recursive: true });
     const p = await newPage('synthetic/synth_msa.fa', { width: 1300, height: 600 });
     await p.evaluate(() => {
       document.getElementById('modeSingle').checked = true; onModeChange();
-      // conservation shading off so the codon underlines are visible
+      // conservation shading off so the codon marks are visible
       for (const id of ['enableBlack', 'enableDark', 'enableLight']) { const e = document.getElementById(id); e.checked = false; e.dispatchEvent(new Event('change', { bubbles: true })); }
       const c = document.getElementById('codonAnalysis'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true }));
     });
