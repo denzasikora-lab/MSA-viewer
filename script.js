@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v195';
+const BUILD_TAG = 'v196';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -15287,6 +15287,10 @@ async function openStats() {
         'pairwise distance and identity matrices');
 }
 
+// ── Alignment Statistics ────────────────────────────────────────────────────────
+// Reimplements Easel esl-alistat (summary) and esl-alipid (pairwise identity). Both
+// identity definitions are computed in one pass; the matrix, the identity card and the
+// pair filter use the one chosen in the window (default: esl-alipid's).
 function _openStatsNow() {
     try {
         const seqs = getTreeInputSequences();
@@ -15294,144 +15298,243 @@ function _openStatsNow() {
             showMessage('Need at least two sequences for statistics.', 2200);
             return;
         }
-    // esl-alistat summary
-    const alen = Math.max(...seqs.map(s => s.seq.length));
-    const nseq = seqs.length;
-    let totalResidues = 0, totalGaps = 0;
-    for (const s of seqs) {
-        // Walk to alen, not s.seq.length: rows shorter than the alignment are implicitly
-        // gap-padded everywhere else in this function (identity calc uses `s.seq[p] || '-'`),
-        // so the gap count needs to include those implicit trailing positions too, or it
-        // undercounts gaps for any alignment with unequal-length rows.
-        for (let p = 0; p < alen; p++) {
-            const ch = s.seq[p] || '-';
-            if (ch === '-' || ch === '.') totalGaps++;
-            else totalResidues++;
+        const alen = Math.max(...seqs.map(s => s.seq.length));
+        const nseq = seqs.length;
+        const isGap = ch => ch === undefined || ch === '-' || ch === '.';
+        // Rows shorter than the alignment count as gap-padded to alen.
+        const rawLen = new Int32Array(nseq);
+        let totalGaps = 0;
+        const up = seqs.map(s => s.seq.toUpperCase());
+        for (let i = 0; i < nseq; i++) {
+            let r = 0;
+            for (let p = 0; p < alen; p++) if (!isGap(up[i][p])) r++;
+            rawLen[i] = r;
+            totalGaps += alen - r;
         }
-    }
-    const totalCells = nseq * alen;
-    const gapPct = totalCells ? (totalGaps / totalCells * 100).toFixed(1) : '0';
+        const totalResidues = rawLen.reduce((a, b) => a + b, 0);
+        const totalCells = nseq * alen;
 
-    // esl-alipid: pairwise percent identity. Min and max keep every pair that ties.
-    let minId = Infinity, maxId = -Infinity, sumId = 0, pairCount = 0, noOverlap = 0;
-    let minPairs = [], maxPairs = [];
-    const identityMatrix = Array.from({ length: nseq }, () => new Array(nseq).fill('100.0'));
-    const pidRaw = Array.from({ length: nseq }, () => new Array(nseq).fill(100));
-    for (let i = 0; i < nseq; i++) {
-        for (let j = i + 1; j < nseq; j++) {
-            let matches = 0, compared = 0;
-            for (let p = 0; p < alen; p++) {
-                const a = seqs[i].seq[p] || '-';
-                const b = seqs[j].seq[p] || '-';
-                if (a !== '-' && a !== '.' && b !== '-' && b !== '.') {
-                    compared++;
-                    if (a.toUpperCase() === b.toUpperCase()) matches++;
+        // One pass per pair: identical residues, columns where both have a residue.
+        //   esl  = nid / MIN(len1, len2)   (esl_dst_XPairId; 0 when the minimum is 0)
+        //   cols = nid / shared columns    (0 when they share none)
+        const pidEsl = new Float64Array(nseq * nseq).fill(100);
+        const pidCols = new Float64Array(nseq * nseq).fill(100);
+        let noSharedCols = 0, emptyPairs = 0;
+        for (let i = 0; i < nseq; i++) {
+            const a = up[i];
+            for (let j = i + 1; j < nseq; j++) {
+                const b = up[j];
+                let nid = 0, shared = 0;
+                for (let p = 0; p < alen; p++) {
+                    const x = a[p], y = b[p];
+                    if (isGap(x) || isGap(y)) continue;
+                    shared++;
+                    if (x === y) nid++;
                 }
+                const minLen = Math.min(rawLen[i], rawLen[j]);
+                if (!minLen) emptyPairs++;
+                if (!shared) noSharedCols++;
+                pidEsl[i * nseq + j] = pidEsl[j * nseq + i] = minLen ? nid / minLen * 100 : 0;
+                pidCols[i * nseq + j] = pidCols[j * nseq + i] = shared ? nid / shared * 100 : 0;
             }
-            if (compared === 0) noOverlap++;
-            const pid = compared > 0 ? (matches / compared * 100) : 0;
-            identityMatrix[i][j] = identityMatrix[j][i] = pid.toFixed(1);
-            pidRaw[i][j] = pidRaw[j][i] = pid;
-            if (pid < minId - 1e-9) { minId = pid; minPairs = [[i, j]]; }
-            else if (Math.abs(pid - minId) <= 1e-9) minPairs.push([i, j]);
-            if (pid > maxId + 1e-9) { maxId = pid; maxPairs = [[i, j]]; }
-            else if (Math.abs(pid - maxId) <= 1e-9) maxPairs.push([i, j]);
-            sumId += pid;
-            pairCount++;
         }
-    }
-    const avgId = pairCount > 0 ? (sumId / pairCount) : 0;
 
-    // Distance matrix (p-distance = 1 - identity). Derived from the unrounded pidRaw
-    // value, not the identityMatrix display string (already rounded to 1 decimal) — reading
-    // the rounded string back in would manufacture false 4-decimal precision from data that
-    // only supports 1.
-    const distMatrix = Array.from({ length: nseq }, () => new Array(nseq).fill('0.0000'));
-    for (let i = 0; i < nseq; i++) {
-        for (let j = i + 1; j < nseq; j++) {
-            distMatrix[i][j] = distMatrix[j][i] = (1 - pidRaw[i][j] / 100).toFixed(4);
-        }
-    }
+        const seqNames = seqs.map((s, i) => s.header || `seq_${i + 1}`);
+        const prev = _statsLabelOpts();
+        state._statsData = {
+            names: seqNames, seqs, n: nseq, pid: { esl: pidEsl, cols: pidCols },
+            counts: { noSharedCols, emptyPairs }, mode: prev.idMode
+        };
+        state._statsFocus = { i: -1, j: -1 };
+        state._statsSelCols = new Set();
+        state._statsFilter = null;
+        _statsBuildStrings();
 
-    const seqNames = seqs.map((s, i) => s.header || `seq_${i + 1}`);
-    state._statsData = { names: seqNames, distance: distMatrix, identity: identityMatrix };
-    state._statsFocus = { i: -1, j: -1 };
+        let small = Infinity, large = 0;
+        for (const r of rawLen) { small = Math.min(small, r); large = Math.max(large, r); }
+        const eslMean = _statsIdentitySummary('esl').mean;
 
-    const summaryTab = document.getElementById('statsSummaryTab');
-    if (!summaryTab) { showMessage('Statistics panel not found.', 3000); return; }
-    const allN = state.seqs.length;
-    const usedTxt = nseq === allN ? `${nseq} (all)` : `${nseq} selected of ${allN}`;
-    const esc = _escStats;
-    const T = {
-        seqs: 'Sequences included in these statistics. With two or more rows selected, only the selected rows are used; otherwise every sequence in the alignment.',
-        len: 'Alignment length in columns (the longest row). Shorter rows are treated as gap-padded to this length.',
-        cells: 'Sequences × columns: every position of the alignment grid, residue or gap. Residues + gaps add up to this.',
-        res: 'Cells holding a residue: any character other than the gap characters "-" and ".".',
-        gaps: 'Cells holding "-" or ".", including the implied padding of shorter rows. The percentage is of all cells.',
-        mean: 'Mean of the pairwise identities over all pairs. Pairwise identity = identical residues ÷ columns where both sequences have a residue × 100 (case-insensitive). esl-alipid divides by the shorter unaligned length instead, so its values can be lower.',
-        min: 'Lowest pairwise identity, and the pair(s) that have it. Click a pair to find it in the matrix.',
-        max: 'Highest pairwise identity, and the pair(s) that have it. Click a pair to find it in the matrix.',
-        pairs: 'Number of sequence pairs compared: n × (n − 1) ÷ 2.' +
-            (noOverlap ? ` ${noOverlap} pair(s) share no column where both have a residue; they count as 0% identity.` : ''),
-    };
-    const pairLinks = (pairs) => {
-        const link = ([i, j]) => `<a data-i="${i}" data-j="${j}" title="Find this pair in the matrix">${esc(seqNames[i])} × ${esc(seqNames[j])}</a>`;
-        let html = pairs.slice(0, 2).map(link).join('; ');
-        if (pairs.length > 2) {
-            const list = pairs.slice(0, 40).map(([i, j]) => `${seqNames[i]} × ${seqNames[j]}`).join('\n') + (pairs.length > 40 ? `\n… ${pairs.length - 40} more` : '');
-            html += ` <span class="more" title="${esc(list)}">+${pairs.length - 2} more</span>`;
-        }
-        return `<span class="pair">${html}</span>`;
-    };
-    const row = (label, tip, value) => `<tr><td><span class="tip" title="${esc(tip)}">${label}</span></td><td>${value}</td></tr>`;
-    const opts = _statsLabelOpts();
-    summaryTab.innerHTML =
-        `<div class="stats-cards">` +
-        `<div class="stats-card"><b>Alignment (esl-alistat)</b><table>` +
-            row('Sequences', T.seqs, usedTxt) +
-            row('Length', T.len, `${alen.toLocaleString()} columns`) +
-            row('Total cells', T.cells, totalCells.toLocaleString()) +
-            row('Residues', T.res, totalResidues.toLocaleString()) +
-            row('Gaps', T.gaps, `${totalGaps.toLocaleString()} (${gapPct}%)`) +
-        `</table></div>` +
-        `<div class="stats-card"><b>Identity (esl-alipid)</b><table>` +
-            row('Mean identity', T.mean, `${avgId.toFixed(1)}%`) +
-            row('Min identity', T.min, `${minId.toFixed(1)}% &nbsp;${pairLinks(minPairs)}`) +
-            row('Max identity', T.max, `${maxId.toFixed(1)}% &nbsp;${pairLinks(maxPairs)}`) +
-            row('Pairs compared', T.pairs, pairCount.toLocaleString()) +
-        `</table></div></div>` +
-        `<div class="stats-mx-toolbar">` +
-            `<span class="stats-seg" title="Which matrix to show">` +
-                `<button type="button" data-kind="distance" class="${opts.kind === 'distance' ? 'on' : ''}" title="p-distance = 1 − identity/100">Distance</button>` +
-                `<button type="button" data-kind="identity" class="${opts.kind === 'identity' ? 'on' : ''}" title="Pairwise identity, %">Identity %</button>` +
-            `</span>` +
-            `<input type="search" class="stats-find" id="statsFindRow" list="statsNameList" placeholder="Find row…" autocomplete="off" spellcheck="false" title="Type part of a sequence name to jump to its row; Enter goes to the next match">` +
-            `<input type="search" class="stats-find" id="statsFindCol" list="statsNameList" placeholder="Find column…" autocomplete="off" spellcheck="false" title="Type part of a sequence name to jump to its column; Enter goes to the next match">` +
-            `<span class="lbl">Labels</span>` +
-            `<select id="statsLabelStyle" title="How sequence names are shown above the matrix columns">` +
-            ['angled', 'vertical', 'numbers'].map(v => `<option value="${v}"${opts.style === v ? ' selected' : ''}>${{ angled: 'Angled 45°', vertical: 'Vertical', numbers: 'Numbers + key' }[v]}</option>`).join('') +
-            `</select>` +
-            `<label title="Longest name shown in labels (the full name is in the tooltip and in copies and files)">Max chars <input type="number" id="statsLabelChars" min="3" max="80" value="${opts.chars}" style="width:42px;"></label>` +
-            `<span class="sp"></span>` +
-            `<button type="button" id="statsCopyBtn" title="Copy the shown matrix as a tab-separated table with full names (pastes into a spreadsheet)">Copy</button>` +
-            `<span class="lbl">Save</span>` +
-            `<button type="button" class="stats-save" data-fmt="csv" title="Save the shown matrix as comma-separated values">CSV</button>` +
-            `<button type="button" class="stats-save" data-fmt="tsv" title="Save the shown matrix as tab-separated values">TSV</button>` +
-            `<button type="button" class="stats-save" data-fmt="xlsx" title="Save the shown matrix as an Excel workbook (.xlsx), names in the first row and column">Excel</button>` +
-        `</div>` +
-        `<datalist id="statsNameList">${seqNames.map(n => `<option value="${esc(n)}">`).join('')}</datalist>` +
-        `<div class="stats-mx-body" data-kind="${opts.kind}"></div>`;
-    _statsShow();
-    _fillStatsMatrices([summaryTab.querySelector('.stats-mx-body')]);
-    } catch(e) {
+        const summaryTab = document.getElementById('statsSummaryTab');
+        if (!summaryTab) { showMessage('Statistics panel not found.', 3000); return; }
+        const allN = state.seqs.length;
+        const usedTxt = nseq === allN ? `${nseq} (all)` : `${nseq} selected of ${allN}`;
+        const tipRow = (key, label, value, extra = '') => `<tr><td><span class="tip" data-tip="${key}">${label}</span></td><td${extra}>${value}</td></tr>`;
+        const opts = _statsLabelOpts();
+        summaryTab.innerHTML =
+            `<div class="stats-cards">` +
+            `<div class="stats-card"><b>Alignment <span class="src">esl-alistat</span></b><table>` +
+                tipRow('nseq', 'Number of sequences', usedTxt) +
+                tipRow('alen', 'Alignment length', `${alen.toLocaleString()}`) +
+                tipRow('nres', 'Total # residues', totalResidues.toLocaleString()) +
+                tipRow('small', 'Smallest', small.toLocaleString()) +
+                tipRow('large', 'Largest', large.toLocaleString()) +
+                tipRow('avglen', 'Average length', (totalResidues / nseq).toFixed(1)) +
+                tipRow('avgid', 'Average identity', `${eslMean.toFixed(1)}%`) +
+                tipRow('gaps', 'Gaps', `${totalGaps.toLocaleString()} (${(totalCells ? totalGaps / totalCells * 100 : 0).toFixed(1)}%)`, ' class="extra"') +
+            `</table></div>` +
+            `<div class="stats-card" id="statsIdCard"></div></div>` +
+            `<div class="stats-mx-toolbar">` +
+                `<span class="stats-seg" title="Which matrix to show">` +
+                    `<button type="button" data-kind="distance" class="${opts.kind === 'distance' ? 'on' : ''}" title="Distance = 1 − identity/100">Distance</button>` +
+                    `<button type="button" data-kind="identity" class="${opts.kind === 'identity' ? 'on' : ''}" title="Pairwise identity, %">Identity %</button>` +
+                `</span>` +
+                `<label class="lbl" title="Denominator of pairwise identity">over <select id="statsIdMode">` +
+                    `<option value="esl"${opts.idMode === 'esl' ? ' selected' : ''}>shorter sequence (esl-alipid)</option>` +
+                    `<option value="cols"${opts.idMode === 'cols' ? ' selected' : ''}>shared columns</option>` +
+                `</select></label>` +
+                `<input type="search" class="stats-find" id="statsFindRow" list="statsNameList" placeholder="Find row…" autocomplete="off" spellcheck="false" title="Type part of a sequence name to jump to its row; Enter goes to the next match">` +
+                `<input type="search" class="stats-find" id="statsFindCol" list="statsNameList" placeholder="Find column…" autocomplete="off" spellcheck="false" title="Type part of a sequence name to jump to its column; Enter goes to the next match">` +
+                `<span class="lbl">Labels</span>` +
+                `<select id="statsLabelStyle" title="How sequence names are shown above the matrix columns">` +
+                ['angled', 'vertical', 'numbers'].map(v => `<option value="${v}"${opts.style === v ? ' selected' : ''}>${{ angled: 'Angled 45°', vertical: 'Vertical', numbers: 'Numbers + key' }[v]}</option>`).join('') +
+                `</select>` +
+                `<label class="lbl" title="Longest name shown in labels (the full name is in the tooltip and in copies and files)">Max chars <input type="number" id="statsLabelChars" min="3" max="80" value="${opts.chars}" style="width:42px;"></label>` +
+            `</div>` +
+            `<div class="stats-filter">` +
+                `<span class="lbl">Pairs with <span id="statsFilterMetric"></span></span>` +
+                `<select id="statsFilterOp" title="Keep pairs at or above, or at or below, the value"><option value="ge">≥</option><option value="le">≤</option></select>` +
+                `<input type="number" id="statsFilterValue" step="any" placeholder="value" title="Threshold; matching cells are highlighted in the matrix">` +
+                `<span id="statsFilterCount" class="count"></span>` +
+                `<span class="stats-seg stats-view" title="Show the matrix, or the list of matching pairs">` +
+                    `<button type="button" data-view="matrix" class="on">Matrix</button><button type="button" data-view="list">Pair list</button>` +
+                `</span>` +
+                `<span class="stats-menu-wrap"><button type="button" id="statsFilterSaveBtn" disabled title="Save the matching pairs, their names or their sequences">Save pairs ▾</button>` +
+                `<span id="statsFilterMenu" class="stats-menu" hidden>` +
+                    `<button type="button" data-out="pairs">Pair table (TSV): names and values</button>` +
+                    `<button type="button" data-out="names">Sequence names (TXT), one per line</button>` +
+                    `<button type="button" data-out="fasta-aln">Sequences as aligned (FASTA)</button>` +
+                    `<button type="button" data-out="fasta-raw">Sequences without gaps (FASTA)</button>` +
+                `</span></span>` +
+                `<button type="button" id="statsFilterClear" class="stats-x" title="Clear the filter" hidden>×</button>` +
+                `<span class="sp"></span>` +
+                `<span id="statsSelChip" class="stats-chip" hidden></span>` +
+                `<button type="button" id="statsCopyBtn" title="Copy the shown matrix as a tab-separated table with full names (pastes into a spreadsheet). Click column names to copy only those columns.">Copy</button>` +
+                `<span class="stats-menu-wrap"><button type="button" id="statsMatrixSaveBtn" title="Save the shown matrix to a file">Save matrix ▾</button>` +
+                `<span id="statsMatrixMenu" class="stats-menu stats-menu-right" hidden>` +
+                    `<button type="button" class="stats-save" data-fmt="csv">CSV, comma-separated</button>` +
+                    `<button type="button" class="stats-save" data-fmt="tsv">TSV, tab-separated</button>` +
+                    `<button type="button" class="stats-save" data-fmt="xlsx">Excel workbook (.xlsx)</button>` +
+                `</span></span>` +
+            `</div>` +
+            `<datalist id="statsNameList">${seqNames.map(n => `<option value="${_escStats(n)}">`).join('')}</datalist>` +
+            `<div class="stats-mx-body" data-kind="${opts.kind}"></div>`;
+        _statsRenderIdCard();
+        _statsUpdateFilterUI();
+        _statsShow();
+        _fillStatsMatrices([summaryTab.querySelector('.stats-mx-body')]);
+    } catch (e) {
         console.error('Stats error:', e);
         showMessage(`Statistics error: ${e.message}`, 4000);
     }
 }
 
-// ── Statistics window: floating (drag / resize / minimize) or docked on the right ──
+// Matrix strings for the chosen identity definition (the tables and exports read these)
+function _statsBuildStrings() {
+    const d = state._statsData, n = d.n, pid = d.pid[d.mode];
+    d.identity = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => pid[i * n + j].toFixed(1)));
+    d.distance = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => (i === j ? 0 : 1 - pid[i * n + j] / 100).toFixed(4)));
+}
+
+function _statsIdentitySummary(mode) {
+    const d = state._statsData, n = d.n, pid = d.pid[mode];
+    let min = Infinity, max = -Infinity, sum = 0, pairs = 0, minP = [], maxP = [];
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+        const v = pid[i * n + j];
+        sum += v; pairs++;
+        if (v < min - 1e-9) { min = v; minP = [[i, j]]; } else if (Math.abs(v - min) <= 1e-9) minP.push([i, j]);
+        if (v > max + 1e-9) { max = v; maxP = [[i, j]]; } else if (Math.abs(v - max) <= 1e-9) maxP.push([i, j]);
+    }
+    return { mean: pairs ? sum / pairs : 0, min, max, minP, maxP, pairs };
+}
+
+function _statsRenderIdCard() {
+    const card = document.getElementById('statsIdCard');
+    const d = state._statsData;
+    if (!card || !d) return;
+    const s = _statsIdentitySummary(d.mode);
+    const names = d.names, esc = _escStats;
+    const pairLinks = (pairs) => {
+        const link = ([i, j]) => `<a data-i="${i}" data-j="${j}" title="Find this pair in the matrix">${esc(names[i])} × ${esc(names[j])}</a>`;
+        let html = pairs.slice(0, 2).map(link).join('; ');
+        if (pairs.length > 2) {
+            const list = pairs.slice(0, 40).map(([i, j]) => `${names[i]} × ${names[j]}`).join('\n') + (pairs.length > 40 ? `\n… ${pairs.length - 40} more` : '');
+            html += ` <span class="more" title="${esc(list)}">+${pairs.length - 2} more</span>`;
+        }
+        return `<span class="pair">${html}</span>`;
+    };
+    const zero = d.mode === 'esl' ? d.counts.emptyPairs : d.counts.noSharedCols;
+    const row = (key, label, value) => `<tr><td><span class="tip" data-tip="${key}">${label}</span></td><td>${value}</td></tr>`;
+    card.innerHTML = `<b>Pairwise identity <span class="src">esl-alipid</span></b><table>` +
+        row(d.mode === 'esl' ? 'defEsl' : 'defCols', 'Identity', d.mode === 'esl' ? 'identical ÷ shorter sequence' : 'identical ÷ shared columns') +
+        row('mean', 'Mean', `${s.mean.toFixed(1)}%`) +
+        row('min', 'Min', `${s.min.toFixed(1)}% &nbsp;${pairLinks(s.minP)}`) +
+        row('max', 'Max', `${s.max.toFixed(1)}% &nbsp;${pairLinks(s.maxP)}`) +
+        row('pairs', 'Pairs compared', s.pairs.toLocaleString()) +
+        (zero ? row(d.mode === 'esl' ? 'zeroEsl' : 'zeroCols', d.mode === 'esl' ? 'Empty sequences' : 'Pairs sharing no column', `${zero.toLocaleString()} pair${zero > 1 ? 's' : ''}, counted as 0%`) : '') +
+        `</table>`;
+}
+
+// Tooltip texts: one-line summary, then what the program's documentation or source says.
+// Quotes are from the Easel man pages (esl-alistat, esl-alipid) and source files
+// (esl-alistat.c, esl_distance.c) in github.com/EddyRivasLab/easel, read 2026-09-27.
+const _STATS_TIPS = {
+    nseq: { sum: 'Sequences used here: all rows, or only the selected rows when two or more are selected.',
+        src: 'esl-alistat man page', doc: 'esl-alistat summarizes the contents of the multiple sequence alignment(s) in msafile, such as the alignment name, format, alignment length (number of aligned columns), number of sequences, average pairwise % identity, and mean, smallest, and largest raw (unaligned) lengths of the sequences.' },
+    alen: { sum: 'Number of alignment columns (the longest row; shorter rows count as gap-padded).',
+        src: 'esl-alistat man page', doc: 'alignment length (number of aligned columns)' },
+    nres: { sum: 'All residues (non-gap characters) in the sequences, i.e. the sum of their unaligned lengths.',
+        src: 'esl-alistat.c', doc: 'For each sequence: rlen = esl_abc_dsqrlen(...) (its raw, unaligned length); nres += rlen. Printed as "Total # residues".' },
+    small: { sum: 'Length of the shortest sequence without gaps.',
+        src: 'esl-alistat man page', doc: '...mean, smallest, and largest raw (unaligned) lengths of the sequences.' },
+    large: { sum: 'Length of the longest sequence without gaps.',
+        src: 'esl-alistat man page', doc: '...mean, smallest, and largest raw (unaligned) lengths of the sequences.' },
+    avglen: { sum: 'Total # residues ÷ number of sequences.',
+        src: 'esl-alistat.c', doc: 'printf("Average length: %.1f\\n", (double) nres / (double) nseq);' },
+    avgid: { sum: 'Mean pairwise identity, esl-alipid definition (identical residues ÷ shorter unaligned length), over every pair. esl-alistat itself averages 1,000 random pairs when there are more than 1,000 pairs, and prints a whole percent, so its value can differ slightly.',
+        src: 'esl_distance.c, esl_dst_XAverageId (esl-alistat sets max_comparisons = 1000)', doc: 'If an exhaustive calculation would require more than <max_comparisons> pairwise comparisons, then instead of looking at all pairs, calculate the average over a stochastic sample of <max_comparisons> random pairs. [...] Each fractional pairwise identity (range [0..pid..1]) is calculated using esl_dst_XPairId().' },
+    gaps: { sum: 'Not an esl-alistat value (ViewAlign addition): cells holding "-" or ".", including the implied padding of shorter rows; the percentage is of all cells (sequences × columns).', src: '', doc: '' },
+    defEsl: { sum: 'Identity = identical residues ÷ the shorter of the two unaligned sequence lengths, as esl-alipid. Identical IUPAC codes (e.g. N/N) count as identities, as in esl_dst_XPairId.',
+        src: 'esl-alipid man page', doc: '<%id> is the percent identity, <nid> is the number of identical aligned pairs, and <denomid> is the denominator used for the calculation: the shorter of the two (unaligned) sequence lengths. The %identity is defined as 100*nid/denomid. [...] alignments of a gap character in both sequences, --, aren\'t counted.' },
+    defCols: { sum: 'Identity = identical residues ÷ columns where both sequences have a residue (not esl-alipid\'s definition; switch "over" to shorter sequence for it). Useful to compare the aligned parts only, but fragments that barely overlap can score very high.',
+        src: 'esl-alipid man page, on this definition', doc: 'Several ways to calculate %identity, such as ignoring columns with gaps (100* n_identities / (n_identities + n_mismatches)) , or dividing by the total alignment length (100 * n_identities / ali_len), are not robust to having overlapping fragments or long indels, because you can get spuriously high or low %id\'s.' },
+    mean: { sum: 'Mean of the pairwise identities over all pairs, with the definition chosen under the matrix ("over").', src: '', doc: '' },
+    min: { sum: 'Lowest pairwise identity and the pair(s) that have it. Click a pair to find it in the matrix.', src: '', doc: '' },
+    max: { sum: 'Highest pairwise identity and the pair(s) that have it. Click a pair to find it in the matrix.', src: '', doc: '' },
+    pairs: { sum: 'n × (n − 1) ÷ 2: every pair, as esl-alipid outputs one line per pair.',
+        src: 'esl-alipid man page', doc: 'For each sequence pair, it outputs a line of <seqname1> <seqname2> <%id> <nid> <denomid> <%match> <nmatch> <denommatch>' },
+    zeroEsl: { sum: 'Pairs where one sequence has no residues at all; their identity is 0%.',
+        src: 'esl-alipid man page', doc: 'if the denominator is zero [...], the resulting % is defined to be 0.' },
+    zeroCols: { sum: 'Pairs with no column where both have a residue (fragments that do not overlap); their identity is 0% here. With the esl-alipid definition they are compared over the shorter sequence instead.', src: '', doc: '' },
+};
+
+function _statsTipShow(target) {
+    const card = document.getElementById('statsTipCard');
+    const t = _STATS_TIPS[target.dataset.tip];
+    const win = document.getElementById('statsModal');
+    if (!card || !t || !win) return;
+    card.innerHTML = `<div class="sum">${_escStats(t.sum)}</div>` +
+        (t.doc ? `<div class="doc"><div class="from">From ${_escStats(t.src)}:</div>“${_escStats(t.doc)}”</div>` : '');
+    card.hidden = false;
+    const r = target.getBoundingClientRect(), w = win.getBoundingClientRect();
+    const cw = Math.min(420, w.width - 20);
+    card.style.width = cw + 'px';
+    card.style.left = Math.max(8, Math.min(r.left - w.left, w.width - cw - 8)) + 'px';
+    const below = r.bottom - w.top + 6;
+    card.style.top = below + 'px';
+    const ch = card.getBoundingClientRect().height;
+    if (w.top + below + ch > window.innerHeight - 8) card.style.top = Math.max(8, r.top - w.top - ch - 6) + 'px';
+}
+
+function _statsTipHide() {
+    const card = document.getElementById('statsTipCard');
+    if (card) card.hidden = true;
+}
+
+// ── Statistics window: floating (drag, resize from any edge or corner, minimize,
+// maximize) or docked on the right ──
 let _statsDockW = 460;
 let _statsFloatRect = null;
+let _statsPreMaxRect = null;
 
 function _statsPrefs() {
     try { return JSON.parse(localStorage.getItem('msaviewer_statsWin') || '{}') || {}; } catch (e) { return {}; }
@@ -15451,10 +15554,18 @@ function _statsShow() {
         _statsSetFloatRect(_statsDefaultRect());
         makeModalDraggableResizable('statsModal', 'statsHeader', 'statsContent');
         const btns = w.querySelector('.ge-window-btns');
-        btns.querySelectorAll('button').forEach(b => { if (b.id !== 'statsDockBtn' && b.id !== 'statsCloseBtn') b.classList.add('stats-min-btn'); });
+        btns.querySelectorAll('button').forEach(b => { if (!['statsDockBtn', 'statsCloseBtn', 'statsMaxBtn'].includes(b.id)) b.classList.add('stats-min-btn'); });
         _statsInitDockResizer(w);
+        _statsInitEdgeResizers(w);
+        document.getElementById('statsMaxBtn')?.addEventListener('click', (e) => { e.stopPropagation(); _statsToggleMax(); });
+        document.getElementById('statsHeader')?.addEventListener('dblclick', (e) => {
+            if (e.target.closest('button') || w.classList.contains('stats-docked')) return;
+            _statsToggleMax();
+        });
         window.addEventListener('resize', () => {
-            if (w.classList.contains('stats-docked') && w.style.display !== 'none') w.style.top = _statsDockTop() + 'px';
+            if (w.style.display === 'none') return;
+            if (w.classList.contains('stats-docked')) w.style.top = _statsDockTop() + 'px';
+            else if (w.classList.contains('stats-max')) _statsApplyMaxRect();
         });
     }
     if (prefs.docked) _statsApplyDock();
@@ -15463,7 +15574,7 @@ function _statsShow() {
 
 function _statsDefaultRect() {
     const width = Math.min(1000, window.innerWidth - 40);
-    const height = Math.min(780, window.innerHeight - 80);
+    const height = Math.min(800, window.innerHeight - 80);
     return { left: Math.max(10, (window.innerWidth - width) / 2), top: 50, width, height };
 }
 
@@ -15473,9 +15584,65 @@ function _statsSetFloatRect(r) {
         right: '', bottom: '', transform: 'none', margin: '0', maxHeight: 'none', maxWidth: 'none' });
 }
 
+function _statsRect() {
+    const r = document.getElementById('statsModal').getBoundingClientRect();
+    return { left: r.left, top: r.top, width: r.width, height: r.height };
+}
+
 function _statsDockTop() {
     const c = document.getElementById('controls');
     return c ? Math.max(0, Math.round(c.getBoundingClientRect().bottom)) : 0;
+}
+
+// Maximize: fill the window below the menu bar; the same button (or a double-click on the
+// title bar) restores the previous size and place
+function _statsApplyMaxRect() {
+    const top = _statsDockTop() + 4;
+    _statsSetFloatRect({ left: 4, top, width: window.innerWidth - 8, height: window.innerHeight - top - 4 });
+}
+function _statsToggleMax() {
+    const w = document.getElementById('statsModal');
+    if (w.classList.contains('stats-docked')) _statsUndock();
+    const content = document.getElementById('statsContent');
+    if (content && content.style.display === 'none') w.querySelector('.stats-min-btn')?.click();
+    const btn = document.getElementById('statsMaxBtn');
+    if (w.classList.contains('stats-max')) {
+        w.classList.remove('stats-max');
+        _statsSetFloatRect(_statsPreMaxRect || _statsDefaultRect());
+        if (btn) { btn.innerHTML = '&#9633;'; btn.title = 'Maximize (or double-click the title bar)'; }
+    } else {
+        _statsPreMaxRect = _statsRect();
+        w.classList.add('stats-max');
+        _statsApplyMaxRect();
+        if (btn) { btn.innerHTML = '&#10064;'; btn.title = 'Restore the previous size (or double-click the title bar)'; }
+    }
+}
+
+// Resize from any edge or corner (the shared helper only had a lower-right grip)
+function _statsInitEdgeResizers(w) {
+    let drag = null;
+    const MIN_W = 380, MIN_H = 220;
+    w.querySelectorAll('.stats-rz').forEach(h => h.addEventListener('mousedown', (e) => {
+        if (w.classList.contains('stats-docked') || w.classList.contains('stats-max')) return;
+        e.preventDefault(); e.stopPropagation();
+        drag = { dir: h.dataset.dir, x: e.clientX, y: e.clientY, r: _statsRect() };
+        document.body.style.userSelect = 'none';
+    }));
+    document.addEventListener('mousemove', (e) => {
+        if (!drag) return;
+        const dx = e.clientX - drag.x, dy = e.clientY - drag.y, r = drag.r, d = drag.dir;
+        let { left, top, width, height } = r;
+        if (d.includes('e')) width = Math.max(MIN_W, r.width + dx);
+        if (d.includes('s')) height = Math.max(MIN_H, r.height + dy);
+        if (d.includes('w')) { width = Math.max(MIN_W, r.width - dx); left = r.left + r.width - width; }
+        if (d.includes('n')) { height = Math.max(MIN_H, r.height - dy); top = Math.max(0, r.top + r.height - height); height = r.top + r.height - top; }
+        _statsSetFloatRect({ left, top, width, height });
+    });
+    document.addEventListener('mouseup', () => {
+        if (!drag) return;
+        drag = null;
+        document.body.style.userSelect = '';
+    });
 }
 
 function _statsUpdateDockBtn(docked) {
@@ -15494,6 +15661,11 @@ function _statsApplyDock() {
     const w = document.getElementById('statsModal');
     const content = document.getElementById('statsContent');
     if (content && content.style.display === 'none') w.querySelector('.stats-min-btn')?.click();   // restore if minimized
+    if (w.classList.contains('stats-max')) {
+        w.classList.remove('stats-max');
+        const btn = document.getElementById('statsMaxBtn');
+        if (btn) { btn.innerHTML = '&#9633;'; btn.title = 'Maximize (or double-click the title bar)'; }
+    }
     w.classList.add('stats-docked', 'ge-docked');
     const width = Math.min(_statsDockW, window.innerWidth - 300);
     Object.assign(w.style, { left: 'auto', right: '0', top: _statsDockTop() + 'px', bottom: '0', width: width + 'px',
@@ -15505,8 +15677,7 @@ function _statsApplyDock() {
 
 function _statsDock() {
     const w = document.getElementById('statsModal');
-    const r = w.getBoundingClientRect();
-    _statsFloatRect = { left: r.left, top: r.top, width: r.width, height: r.height };
+    _statsFloatRect = w.classList.contains('stats-max') ? (_statsPreMaxRect || _statsDefaultRect()) : _statsRect();
     _statsSavePrefs({ docked: true });
     _statsApplyDock();
 }
@@ -15546,6 +15717,7 @@ function closeStats() {
     const w = document.getElementById('statsModal');
     if (!w) return;
     w.style.display = 'none';
+    _statsTipHide();
     if (w.classList.contains('stats-docked')) {
         w.classList.remove('stats-docked', 'ge-docked');   // the docked preference is kept for next time
         document.body.style.paddingRight = '';
@@ -15553,31 +15725,57 @@ function closeStats() {
     }
 }
 
-// ── Matrix export ──
-function _statsMatrixGrid(kind) {
+// ── Output ──
+function _statsDownload(blob, name) {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    showMessage(`Saved ${name}`, 1800);
+}
+
+function _statsMatrixGrid(kind, cols) {
     const d = state._statsData;
-    return [[''].concat(d.names)].concat(d[kind].map((r, i) => [d.names[i]].concat(r)));
+    const js = cols && cols.length ? cols : d.names.map((_, j) => j);
+    return [[''].concat(js.map(j => d.names[j]))].concat(d[kind].map((r, i) => [d.names[i]].concat(js.map(j => r[j]))));
 }
 
 function _statsFileBase(kind) {
-    return (state.currentFilename || 'alignment').replace(/\.[^.]+$/, '') + (kind === 'distance' ? '_p-distance' : '_identity');
+    const d = state._statsData;
+    return (state.currentFilename || 'alignment').replace(/\.[^.]+$/, '') + (kind === 'distance' ? '_distance' : '_identity') + (d && d.mode === 'cols' ? '_sharedcols' : '');
 }
 
 function _statsCurrentKind() {
     return document.querySelector('#statsSummaryTab .stats-mx-body')?.dataset.kind || 'identity';
 }
 
+function _statsSelectedCols() {
+    return [...(state._statsSelCols || [])].sort((a, b) => a - b);
+}
+
+// Copy: the selected columns if any are selected, else the whole matrix
 function copyStatsMatrix(kind) {
     kind = kind || _statsCurrentKind();
     if (!state._statsData?.[kind]) {
         showMessage('No statistics matrix available to copy.', 2200);
         return;
     }
+    const cols = _statsSelectedCols();
     const clean = v => String(v).replace(/[\t\r\n]+/g, ' ');
-    const text = _statsMatrixGrid(kind).map(r => r.map(clean).join('\t')).join('\n') + '\n';
+    const text = _statsMatrixGrid(kind, cols).map(r => r.map(clean).join('\t')).join('\n') + '\n';
+    const what = cols.length ? `${cols.length} column${cols.length > 1 ? 's' : ''}` : `${kind === 'distance' ? 'Distance' : 'Identity'} matrix`;
     navigator.clipboard.writeText(text)
-        .then(() => showMessage(`${kind === 'distance' ? 'Distance' : 'Identity'} matrix copied (tab-separated, full names).`, 1800))
+        .then(() => showMessage(`${what} copied (tab-separated, full names).`, 1800))
         .catch(() => showMessage('Failed to copy statistics matrix.', 2500));
+}
+
+function _statsDelimited(grid, fmt) {
+    const sep = fmt === 'csv' ? ',' : '\t';
+    const cell = fmt === 'csv'
+        ? v => /[",\r\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v)
+        : v => String(v).replace(/[\t\r\n]+/g, ' ');
+    return grid.map(r => r.map(cell).join(sep)).join('\r\n') + '\r\n';
 }
 
 function saveStatsMatrix(fmt, kind) {
@@ -15585,25 +15783,11 @@ function saveStatsMatrix(fmt, kind) {
     if (!state._statsData?.[kind]) { showMessage('No statistics matrix available to save.', 2200); return; }
     const grid = _statsMatrixGrid(kind);
     const base = _statsFileBase(kind);
-    let blob, name;
     if (fmt === 'xlsx') {
-        blob = _xlsxBlob(grid, kind === 'distance' ? 'p-distance' : 'identity');
-        name = base + '.xlsx';
+        _statsDownload(_xlsxBlob(grid, kind === 'distance' ? 'distance' : 'identity'), base + '.xlsx');
     } else {
-        const sep = fmt === 'csv' ? ',' : '\t';
-        const cell = fmt === 'csv'
-            ? v => /[",\r\n]/.test(String(v)) ? '"' + String(v).replace(/"/g, '""') + '"' : String(v)
-            : v => String(v).replace(/[\t\r\n]+/g, ' ');
-        blob = new Blob([grid.map(r => r.map(cell).join(sep)).join('\r\n') + '\r\n'],
-            { type: fmt === 'csv' ? 'text/csv;charset=utf-8' : 'text/tab-separated-values;charset=utf-8' });
-        name = base + '.' + fmt;
+        _statsDownload(new Blob([_statsDelimited(grid, fmt)], { type: fmt === 'csv' ? 'text/csv;charset=utf-8' : 'text/tab-separated-values;charset=utf-8' }), base + '.' + fmt);
     }
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    showMessage(`Saved ${name}`, 1800);
 }
 
 // Minimal .xlsx writer: one sheet, header row and column frozen. Names are inline
@@ -15678,13 +15862,117 @@ function _xlsxBlob(grid, sheetName) {
     ], 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
 }
 
+// ── Pair filter: pairs at or above / at or below a value of the shown matrix ──
+function _statsFilterHits() {
+    const d = state._statsData, f = state._statsFilter;
+    if (!d || !f) return [];
+    const n = d.n, pid = d.pid[d.mode];
+    const hits = [];
+    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+        const id = pid[i * n + j];
+        const v = f.kind === 'distance' ? 1 - id / 100 : id;
+        if (f.op === 'ge' ? v >= f.value - 1e-12 : v <= f.value + 1e-12) hits.push([i, j, id]);
+    }
+    hits.sort((a, b) => f.op === 'ge' ? b[2] - a[2] : a[2] - b[2]);
+    return f.kind === 'distance' ? hits.reverse() : hits;
+}
+
+function _statsCellHit(i, j, rawId) {
+    const f = state._statsFilter;
+    if (!f || i === j) return false;
+    const v = f.kind === 'distance' ? 1 - rawId / 100 : rawId;
+    return f.op === 'ge' ? v >= f.value - 1e-12 : v <= f.value + 1e-12;
+}
+
+function _statsReadFilter() {
+    const kind = _statsCurrentKind();
+    const op = document.getElementById('statsFilterOp')?.value || 'ge';
+    const raw = document.getElementById('statsFilterValue')?.value;
+    const value = parseFloat(raw);
+    state._statsFilter = raw === '' || raw == null || !Number.isFinite(value) ? null : { kind, op, value };
+}
+
+function _statsUpdateFilterUI() {
+    const d = state._statsData;
+    const kind = _statsCurrentKind();
+    const metric = document.getElementById('statsFilterMetric');
+    if (metric) metric.textContent = kind === 'distance' ? 'distance' : 'identity %';
+    const valueEl = document.getElementById('statsFilterValue');
+    if (valueEl) { valueEl.min = 0; valueEl.max = kind === 'distance' ? 1 : 100; valueEl.step = kind === 'distance' ? 0.01 : 0.5; }
+    const count = document.getElementById('statsFilterCount');
+    const saveBtn = document.getElementById('statsFilterSaveBtn');
+    const clear = document.getElementById('statsFilterClear');
+    const f = state._statsFilter;
+    if (!f || !d) {
+        if (count) count.textContent = '';
+        if (saveBtn) saveBtn.disabled = true;
+        if (clear) clear.hidden = true;
+        state._statsHits = [];
+        return;
+    }
+    const hits = _statsFilterHits();
+    state._statsHits = hits;
+    const seqsIn = new Set();
+    hits.forEach(([i, j]) => { seqsIn.add(i); seqsIn.add(j); });
+    if (count) count.textContent = `${hits.length.toLocaleString()} pair${hits.length === 1 ? '' : 's'} · ${seqsIn.size} sequence${seqsIn.size === 1 ? '' : 's'}`;
+    if (saveBtn) saveBtn.disabled = hits.length === 0;
+    if (clear) clear.hidden = false;
+}
+
+function _statsSavePairs(what) {
+    const d = state._statsData, hits = state._statsHits || [], f = state._statsFilter;
+    if (!d || !f || !hits.length) return;
+    const base = (state.currentFilename || 'alignment').replace(/\.[^.]+$/, '') +
+        `_pairs_${f.kind === 'distance' ? 'dist' : 'id'}_${f.op}${String(f.value).replace('.', 'p')}`;
+    const idx = [...new Set(hits.flatMap(([i, j]) => [i, j]))].sort((a, b) => a - b);
+    const header = q => (q.fullHeader != null ? q.fullHeader : q.header);
+    if (what === 'pairs') {
+        const def = d.mode === 'esl' ? 'identity_pct_over_shorter_seq' : 'identity_pct_over_shared_columns';
+        const grid = [['sequence_1', 'sequence_2', def, 'distance']].concat(hits.map(([i, j, id]) => [d.names[i], d.names[j], id.toFixed(1), (1 - id / 100).toFixed(4)]));
+        _statsDownload(new Blob([_statsDelimited(grid, 'tsv')], { type: 'text/tab-separated-values;charset=utf-8' }), base + '.tsv');
+    } else if (what === 'names') {
+        _statsDownload(new Blob([idx.map(i => d.names[i]).join('\n') + '\n'], { type: 'text/plain;charset=utf-8' }), base + '_names.txt');
+    } else {
+        const raw = what === 'fasta-raw';
+        const fa = idx.map(i => `>${header(d.seqs[i])}\n${raw ? d.seqs[i].seq.replace(/[-.]/g, '') : d.seqs[i].seq}`).join('\n') + '\n';
+        _statsDownload(new Blob([fa], { type: 'text/plain;charset=utf-8' }), base + (raw ? '_ungapped' : '_aligned') + '.fasta');
+    }
+}
+
+// Pair list view: the matching pairs, closest (or farthest) first; click one to see it in the matrix
+function _statsRenderPairList(body) {
+    const d = state._statsData, hits = state._statsHits || [], f = state._statsFilter;
+    const CAP = 3000;
+    if (!f) { body.innerHTML = '<div class="stats-empty">Set a value in “Pairs with …” to list the matching pairs.</div>'; return; }
+    if (!hits.length) { body.innerHTML = '<div class="stats-empty">No pair matches.</div>'; return; }
+    const esc = _escStats;
+    let html = `<div class="stats-mx-scroll"><table class="stats-pairs"><thead><tr><th>#</th><th>Sequence 1</th><th>Sequence 2</th><th>Identity %</th><th>Distance</th></tr></thead><tbody>`;
+    hits.slice(0, CAP).forEach(([i, j, id], k) => {
+        html += `<tr data-i="${i}" data-j="${j}"><td>${k + 1}</td><td>${esc(d.names[i])}</td><td>${esc(d.names[j])}</td><td>${id.toFixed(1)}</td><td>${(1 - id / 100).toFixed(4)}</td></tr>`;
+    });
+    html += '</tbody></table></div>';
+    if (hits.length > CAP) html += `<div class="stats-note">Showing the first ${CAP.toLocaleString()} of ${hits.length.toLocaleString()} pairs; “Save pairs” writes them all.</div>`;
+    body.innerHTML = html;
+}
+
+function _statsView() {
+    return document.querySelector('#statsSummaryTab .stats-view button.on')?.dataset.view || 'matrix';
+}
+
+function _statsSetView(view) {
+    document.querySelectorAll('#statsSummaryTab .stats-view button').forEach(b => b.classList.toggle('on', b.dataset.view === view));
+    _renderOpenStatsMatrices();
+}
+
+// ── Matrix table ──
 function _statsLabelOpts() {
     let saved = null;
     try { saved = JSON.parse(localStorage.getItem('msaviewer_statsLabels') || 'null'); } catch (e) {}
     const style = ['angled', 'vertical', 'numbers'].includes(saved?.style) ? saved.style : 'angled';
     const chars = Math.max(3, Math.min(80, parseInt(saved?.chars, 10) || 20));
     const kind = saved?.kind === 'distance' ? 'distance' : 'identity';
-    return { style, chars, kind };
+    const idMode = saved?.idMode === 'cols' ? 'cols' : 'esl';
+    return { style, chars, kind, idMode };
 }
 
 function _statsSaveLabelOpts(patch) {
@@ -15709,16 +15997,22 @@ function _statsMatrixCtx(kind) {
     const { style, chars } = _statsLabelOpts();
     const short = name => name.length > chars ? name.slice(0, chars - 1) + '…' : name;
     const labels = d.names.map(short);
-    return { d, m, n, style, chars, labels, windowed: n > STATS_MX_WINDOW_MIN };
+    return { d, m, n, style, chars, labels, windowed: n > STATS_MX_WINDOW_MIN, sel: state._statsSelCols || new Set(), pid: d.pid[d.mode] };
 }
 
 function _statsMatrixRows(ctx, i0, i1) {
-    const { d, m, n, style, labels } = ctx;
+    const { d, m, n, style, labels, sel, pid } = ctx;
+    const filtering = !!state._statsFilter;
     let html = '';
     for (let i = i0; i < i1; i++) {
         let row = `<tr><th class="rn" data-r="${i}" title="${_escStats(d.names[i])}"><span class="ix">${i + 1}</span> ${_escStats(labels[i])}</th>`;
         const mi = m[i];
-        for (let j = 0; j < n; j++) row += i === j ? `<td class="dg">${mi[j]}</td>` : `<td>${mi[j]}</td>`;
+        for (let j = 0; j < n; j++) {
+            let cls = i === j ? 'dg' : '';
+            if (sel.has(j)) cls += ' cs';
+            if (filtering && i !== j) cls += _statsCellHit(i, j, pid[i * n + j]) ? ' hit' : ' miss';
+            row += cls ? `<td class="${cls.trim()}">${mi[j]}</td>` : `<td>${mi[j]}</td>`;
+        }
         html += row + (style === 'angled' ? '<td class="pad"></td>' : '') + '</tr>';
     }
     return html;
@@ -15731,22 +16025,24 @@ function _statsSpacer(ctx, px) {
 function _buildStatsMatrixTable(kind) {
     if (!state._statsData) return '';
     const ctx = _statsMatrixCtx(kind);
-    const { d, n, style, chars, labels } = ctx;
+    const { d, n, style, chars, labels, sel } = ctx;
     const longest = Math.max(1, ...labels.map(l => l.length));
     const cellW = kind === 'distance' ? 7 : 6;   // in ch, fits "0.1234" / "100.0"
+    const hcls = (j, extra) => `c${extra}${sel.has(j) ? ' cs' : ''}`;
+    const htitle = j => `${_escStats(d.names[j])} (click to select this column; Ctrl-click adds, Shift-click selects a range)`;
     let head;
     if (style === 'numbers') {
-        head = labels.map((l, j) => `<th class="c" data-c="${j}" title="${_escStats(d.names[j])}">${j + 1}</th>`).join('');
+        head = labels.map((l, j) => `<th class="${hcls(j, '')}" data-c="${j}" title="${htitle(j)}">${j + 1}</th>`).join('');
     } else if (style === 'vertical') {
-        head = labels.map((l, j) => `<th class="c v" data-c="${j}" title="${_escStats(d.names[j])}"><div>${_escStats(l)}</div></th>`).join('');
+        head = labels.map((l, j) => `<th class="${hcls(j, ' v')}" data-c="${j}" title="${htitle(j)}"><div>${_escStats(l)}</div></th>`).join('');
     } else {
         const h = Math.ceil(longest * 0.72) + 2;   // text length x sin 45°, in ch
-        head = labels.map((l, j) => `<th class="c a" data-c="${j}" title="${_escStats(d.names[j])}"><div style="height:${h}ch;"><span>${_escStats(l)}</span></div></th>`).join('')
+        head = labels.map((l, j) => `<th class="${hcls(j, ' a')}" data-c="${j}" title="${htitle(j)}"><div style="height:${h}ch;"><span>${_escStats(l)}</span></div></th>`).join('')
             + `<th class="pad" style="width:${h}ch;"></th>`;   // room for the last labels' overhang
     }
     const rowNameW = Math.min(longest, chars) + String(n).length + 2;
     const firstRows = ctx.windowed ? Math.min(n, 3 * STATS_MX_ROW_MARGIN) : n;
-    let html = `<div class="stats-mx-scroll"><table class="stats-mx" data-kind="${kind}" style="--cw:${cellW}ch;">` +
+    let html = `<div class="stats-mx-scroll"><table class="stats-mx${state._statsFilter ? ' filtering' : ''}" data-kind="${kind}" style="--cw:${cellW}ch;">` +
         `<thead><tr><th class="corner" style="min-width:${rowNameW}ch;"></th>${head}</tr></thead>` +
         `<tbody data-r0="0" data-r1="${firstRows}"${ctx.windowed ? ' data-placed="1"' : ''}>${_statsMatrixRows(ctx, 0, firstRows)}</tbody></table></div>`;
     if (style === 'numbers') {
@@ -15772,6 +16068,7 @@ function _statsMarkFocus(table) {
 // Scroll the matrix so row i / column j sit just inside the sticky labels, and mark them.
 // Pass -1 to leave an axis where it is.
 function _statsJumpTo(i, j) {
+    if (_statsView() !== 'matrix') _statsSetView('matrix');
     const sc = document.querySelector('#statsSummaryTab .stats-mx-scroll');
     const table = sc?.querySelector('table.stats-mx');
     if (!table) return;
@@ -15808,7 +16105,8 @@ function _attachStatsWindow(body) {
         const r0 = +tbody.dataset.r0, r1 = +tbody.dataset.r1;
         if (first >= r0 && last <= r1 && tbody.rows.length > 0 && tbody.dataset.placed) return;
         const n0 = Math.max(0, first - STATS_MX_ROW_MARGIN), n1 = Math.min(ctx.n, last + STATS_MX_ROW_MARGIN);
-        tbody.innerHTML = (n0 > 0 ? _statsSpacer(ctx, n0 * rowH) : '') + _statsMatrixRows(ctx, n0, n1) +
+        const live = _statsMatrixCtx(table.dataset.kind);   // selection / filter may have changed
+        tbody.innerHTML = (n0 > 0 ? _statsSpacer(ctx, n0 * rowH) : '') + _statsMatrixRows(live, n0, n1) +
             (n1 < ctx.n ? _statsSpacer(ctx, (ctx.n - n1) * rowH) : '');
         tbody.dataset.r0 = n0; tbody.dataset.r1 = n1; tbody.dataset.placed = '1';
         _statsMarkFocus(table);
@@ -15820,8 +16118,9 @@ function _attachStatsWindow(body) {
 
 function _fillStatsMatrices(bodies) {
     bodies.forEach(body => {
+        if (_statsView() === 'list') { _statsRenderPairList(body); body.dataset.built = '1'; return; }
         const old = body.querySelector('.stats-mx-scroll');
-        const keep = old ? { top: old.scrollTop, left: old.scrollLeft } : null;
+        const keep = old && old.querySelector('table.stats-mx') ? { top: old.scrollTop, left: old.scrollLeft } : null;
         body.innerHTML = _buildStatsMatrixTable(body.dataset.kind);
         body.dataset.built = '1';
         _attachStatsWindow(body);
@@ -15839,9 +16138,64 @@ function _statsSetKind(kind) {
     const body = document.querySelector('#statsSummaryTab .stats-mx-body');
     if (!body || body.dataset.kind === kind) return;
     _statsSaveLabelOpts({ kind });
-    document.querySelectorAll('#statsSummaryTab .stats-seg button').forEach(b => b.classList.toggle('on', b.dataset.kind === kind));
+    document.querySelectorAll('#statsSummaryTab .stats-mx-toolbar .stats-seg button').forEach(b => b.classList.toggle('on', b.dataset.kind === kind));
     body.dataset.kind = kind;
+    // A threshold means something different for the other matrix: clear it
+    const v = document.getElementById('statsFilterValue');
+    if (v) v.value = '';
+    state._statsFilter = null;
+    _statsUpdateFilterUI();
     _fillStatsMatrices([body]);
+}
+
+function _statsSetIdMode(mode) {
+    const d = state._statsData;
+    if (!d || d.mode === mode) return;
+    d.mode = mode;
+    _statsSaveLabelOpts({ idMode: mode });
+    _statsBuildStrings();
+    _statsRenderIdCard();
+    _statsReadFilter();
+    _statsUpdateFilterUI();
+    _renderOpenStatsMatrices();
+}
+
+// Column selection: click a column name; Ctrl/Cmd-click adds or removes, Shift-click takes a range
+function _statsClickColumn(j, ev) {
+    const sel = state._statsSelCols || (state._statsSelCols = new Set());
+    if (ev.shiftKey && sel.size) {
+        const anchor = state._statsSelAnchor ?? [...sel].pop();
+        const [a, b] = anchor < j ? [anchor, j] : [j, anchor];
+        for (let k = a; k <= b; k++) sel.add(k);
+    } else if (ev.ctrlKey || ev.metaKey) {
+        if (sel.has(j)) sel.delete(j); else sel.add(j);
+        state._statsSelAnchor = j;
+    } else {
+        const only = sel.size === 1 && sel.has(j);
+        sel.clear();
+        if (!only) sel.add(j);
+        state._statsSelAnchor = j;
+    }
+    _statsApplySelection();
+}
+
+function _statsApplySelection() {
+    const sel = state._statsSelCols || new Set();
+    const table = document.querySelector('#statsSummaryTab table.stats-mx');
+    if (table) {
+        [...table.tHead.rows[0].cells].forEach((th, k) => { if (k > 0 && th.dataset.c != null) th.classList.toggle('cs', sel.has(+th.dataset.c)); });
+        for (const tr of table.tBodies[0].rows) {
+            if (!tr.cells[0]?.dataset.r) continue;
+            for (let k = 1; k < tr.cells.length; k++) tr.cells[k].classList.toggle('cs', sel.has(k - 1));
+        }
+    }
+    const chip = document.getElementById('statsSelChip');
+    const copy = document.getElementById('statsCopyBtn');
+    if (chip) {
+        chip.hidden = !sel.size;
+        chip.innerHTML = sel.size ? `${sel.size} column${sel.size > 1 ? 's' : ''} selected <button type="button" class="stats-x" data-clear-sel title="Clear the selection (Esc)">×</button>` : '';
+    }
+    if (copy) copy.textContent = sel.size ? `Copy ${sel.size} column${sel.size > 1 ? 's' : ''}` : 'Copy';
 }
 
 // Find a sequence by (part of) its name; Enter moves to the next match
@@ -15870,16 +16224,35 @@ function initStatsTabs() {
         e.stopPropagation();
         if (document.getElementById('statsModal').classList.contains('stats-docked')) _statsUndock(); else _statsDock();
     });
+    let filterTimer = null;
     summaryTab.addEventListener('click', (event) => {
         const t = event.target;
-        if (t.closest?.('.stats-seg button')) { _statsSetKind(t.closest('.stats-seg button').dataset.kind); return; }
+        const menus = [document.getElementById('statsFilterMenu'), document.getElementById('statsMatrixMenu')];
+        const toggle = { statsFilterSaveBtn: menus[0], statsMatrixSaveBtn: menus[1] }[t.id];
+        menus.forEach(m => { if (m && m !== toggle) m.hidden = true; });
+        if (toggle) { toggle.hidden = !toggle.hidden; return; }
+        if (t.closest?.('.stats-save')) { saveStatsMatrix(t.closest('.stats-save').dataset.fmt); return; }
+        if (t.closest?.('.stats-menu button[data-out]')) { _statsSavePairs(t.closest('button').dataset.out); return; }
+        if (t.closest?.('.stats-view button')) { _statsSetView(t.closest('button').dataset.view); return; }
+        if (t.closest?.('.stats-mx-toolbar .stats-seg button')) { _statsSetKind(t.closest('button').dataset.kind); return; }
+        if (t.closest?.('[data-clear-sel]')) { state._statsSelCols = new Set(); _statsApplySelection(); return; }
+        if (t.id === 'statsFilterClear') {
+            document.getElementById('statsFilterValue').value = '';
+            state._statsFilter = null; _statsUpdateFilterUI(); _renderOpenStatsMatrices(); return;
+        }
         if (t.id === 'statsCopyBtn') { copyStatsMatrix(); return; }
         if (t.classList?.contains('stats-save')) { saveStatsMatrix(t.dataset.fmt); return; }
+        const th = t.closest?.('table.stats-mx thead th[data-c]');
+        if (th) { _statsClickColumn(+th.dataset.c, event); return; }
+        const pr = t.closest?.('table.stats-pairs tbody tr');
+        if (pr) { _statsJumpTo(+pr.dataset.i, +pr.dataset.j); return; }
         const pair = t.closest?.('.pair a[data-i]');
         if (pair) _statsJumpTo(+pair.dataset.i, +pair.dataset.j);
     });
     summaryTab.addEventListener('change', (event) => {
         const id = event.target?.id;
+        if (id === 'statsIdMode') { _statsSetIdMode(event.target.value); return; }
+        if (id === 'statsFilterOp') { _statsReadFilter(); _statsUpdateFilterUI(); _renderOpenStatsMatrices(); return; }
         if (id !== 'statsLabelStyle' && id !== 'statsLabelChars') return;
         const style = document.getElementById('statsLabelStyle').value;
         const chars = Math.max(3, Math.min(80, parseInt(document.getElementById('statsLabelChars').value, 10) || 20));
@@ -15890,6 +16263,10 @@ function initStatsTabs() {
         const t = event.target;
         if (t.id === 'statsFindRow') _statsFind(t, 'row', false);
         if (t.id === 'statsFindCol') _statsFind(t, 'col', false);
+        if (t.id === 'statsFilterValue') {
+            clearTimeout(filterTimer);
+            filterTimer = setTimeout(() => { _statsReadFilter(); _statsUpdateFilterUI(); _renderOpenStatsMatrices(); }, 250);
+        }
     });
     summaryTab.addEventListener('keydown', (event) => {
         const t = event.target;
@@ -15897,9 +16274,18 @@ function initStatsTabs() {
         event.preventDefault();
         _statsFind(t, t.id === 'statsFindRow' ? 'row' : 'col', true);
     });
+    document.addEventListener('keydown', (event) => {
+        if (event.key !== 'Escape' || !(state._statsSelCols && state._statsSelCols.size)) return;
+        const w = document.getElementById('statsModal');
+        if (!w || w.style.display === 'none' || !w.contains(document.activeElement) && document.activeElement !== document.body) return;
+        state._statsSelCols = new Set();
+        _statsApplySelection();
+    });
     // Hover a cell: highlight its row name and column label, and name the pair in the tooltip
     let lit = [];
     summaryTab.addEventListener('mouseover', (event) => {
+        const tip = event.target.closest?.('.tip[data-tip]');
+        if (tip) _statsTipShow(tip);
         const td = event.target.closest?.('table.stats-mx td');
         lit.forEach(el => el.classList.remove('hl')); lit = [];
         if (!td || td.classList.contains('pad')) return;
@@ -15911,6 +16297,9 @@ function initStatsTabs() {
         lit = [rn, ch]; lit.forEach(el => el.classList.add('hl'));
         const names = state._statsData?.names;
         if (names) td.title = `${names[i]}  ×  ${names[j]}: ${td.textContent}`;
+    });
+    summaryTab.addEventListener('mouseout', (event) => {
+        if (event.target.closest?.('.tip[data-tip]') && !event.relatedTarget?.closest?.('.tip[data-tip]')) _statsTipHide();
     });
 }
 
@@ -18604,7 +18993,8 @@ function _initNumSliderPop() {
     document.addEventListener('focusin', (e) => {
         const inp = e.target;
         if (pop.contains(inp)) return;
-        if (inp instanceof HTMLInputElement && inp.type === 'number') show(inp);
+        // data-no-slider-pop: windows (Statistics) whose number boxes should not grow a slider
+        if (inp instanceof HTMLInputElement && inp.type === 'number' && !inp.closest('[data-no-slider-pop]')) show(inp);
         else hide();
     });
     document.addEventListener('pointerup', () => {

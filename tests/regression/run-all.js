@@ -732,7 +732,7 @@ check('Statistics matrices: named labels, windowed rows, switch, find, TSV copy'
       const sc = document.querySelector('#statsSummaryTab .stats-mx-scroll'), table = sc.querySelector('table');
       const head = [...table.tHead.rows[0].cells].filter(c => c.classList.contains('c'));
       const n = state._statsData.names.length, m = state._statsData.identity;
-      const headOk = head.length === n && head.every((c, j) => c.title === state._statsData.names[j] &&
+      const headOk = head.length === n && head.every((c, j) => c.title.startsWith(state._statsData.names[j]) &&
         (style === 'numbers' ? c.textContent === String(j + 1) : state._statsData.names[j].startsWith(c.textContent.replace('…', ''))));
       sc.scrollTop = 0.6 * (sc.scrollHeight - sc.clientHeight);
       await new Promise(r => setTimeout(r, 150));
@@ -768,56 +768,112 @@ check('Statistics matrices: named labels, windowed rows, switch, find, TSV copy'
   return { pass: ok, detail: JSON.stringify({ ...out, nav, tsv }) };
 });
 
-// Statistics window: tooltips on every summary field, min/max name their pairs, it docks
-// beside the alignment (which narrows instead of being covered) and undocks, and CSV and
-// Excel files hold the matrix
-check('Statistics window: field tooltips, min/max pairs, dock/undock, CSV and Excel files', async (page) => {
+// Statistics window: esl-alistat fields and esl-alipid identity match a calculation done
+// here from the FASTA file; every field has a documented tooltip (no underline); min/max
+// name their pairs; it maximizes/restores, resizes from all 8 edges/corners, docks beside the
+// alignment; clicking column names selects them for Copy; the pair filter counts, lists and
+// saves the right pairs; CSV and Excel files hold the matrix
+check('Statistics window: esl values, tooltips, maximize, 8-way resize, dock, column copy, pair filter, files', async (page) => {
+  const fs = require('fs');
   const path = require('path');
-  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  const FA = path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa');
+  const recs = [];
+  for (const line of fs.readFileSync(FA, 'utf8').split(/\r?\n/)) {
+    if (line.startsWith('>')) recs.push({ name: line.slice(1).trim().split(/\s+/)[0], seq: '' });
+    else if (line.trim()) recs[recs.length - 1].seq += line.trim().toUpperCase();
+  }
+  const n = recs.length, L = Math.max(...recs.map(r => r.seq.length));
+  const gap = c => c === undefined || c === '-' || c === '.';
+  const rawLen = recs.map(r => [...r.seq].filter(c => !gap(c)).length);
+  const esl = [];
+  for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+    let nid = 0;
+    for (let p = 0; p < L; p++) { const a = recs[i].seq[p], b = recs[j].seq[p]; if (!gap(a) && !gap(b) && a === b) nid++; }
+    const m = Math.min(rawLen[i], rawLen[j]);
+    esl.push({ i, j, v: m ? nid / m * 100 : 0 });
+  }
+  const exp = { nres: rawLen.reduce((a, b) => a + b, 0).toLocaleString('en-US'), small: String(Math.min(...rawLen)), large: String(Math.max(...rawLen)),
+    avgid: (esl.reduce((s, x) => s + x.v, 0) / esl.length).toFixed(1) + '%', ge95: esl.filter(x => x.v >= 95 - 1e-12).length };
+
+  await page.setInputFiles('#fileInput', FA);
   await page.waitForTimeout(1500);
-  await page.evaluate(() => { try { localStorage.removeItem('msaviewer_statsWin'); localStorage.removeItem('msaviewer_statsLabels'); } catch (e) {} openStats(); });
+  await page.evaluate(() => { try { localStorage.removeItem('msaviewer_statsWin'); localStorage.removeItem('msaviewer_statsLabels'); } catch (e) {}
+    window._copied = null; navigator.clipboard.writeText = t => { window._copied = t; return Promise.resolve(); }; openStats(); });
   await page.waitForFunction(() => document.querySelector('#statsSummaryTab table.stats-mx'), null, { timeout: 30000 });
-  const sum = await page.evaluate(() => {
-    const d = state._statsData, n = d.names.length;
-    let min = Infinity, max = -Infinity, minP = [], maxP = [];
-    for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
-      const v = parseFloat(d.identity[i][j]);
-      if (v < min) { min = v; minP = [`${d.names[i]} × ${d.names[j]}`]; } else if (v === min) minP.push(`${d.names[i]} × ${d.names[j]}`);
-      if (v > max) { max = v; maxP = [`${d.names[i]} × ${d.names[j]}`]; } else if (v === max) maxP.push(`${d.names[i]} × ${d.names[j]}`);
-    }
-    const rows = Object.fromEntries([...document.querySelectorAll('.stats-card tr')].map(tr => [tr.cells[0].textContent, tr]));
-    const pairs = label => [...rows[label].querySelectorAll('.pair a')].map(a => a.textContent);
-    return { tips: [...document.querySelectorAll('.stats-card .tip')].filter(e => e.title.length > 20).length,
-      fields: Object.keys(rows).length, minOk: pairs('Min identity').every(p => minP.includes(p)) && pairs('Min identity').length > 0,
-      maxOk: pairs('Max identity').every(p => maxP.includes(p)) && pairs('Max identity').length > 0 };
+  const r = {};
+  r.fields = await page.evaluate(() => Object.fromEntries([...document.querySelectorAll('.stats-card tr')].map(tr => [tr.cells[0].textContent.trim(), tr.cells[1].textContent.trim()])));
+  r.valuesOk = r.fields['Total # residues'] === exp.nres && r.fields['Smallest'] === exp.small && r.fields['Largest'] === exp.large
+    && r.fields['Average identity'] === exp.avgid && r.fields['Mean'] === exp.avgid;
+  r.tips = await page.evaluate(() => [...document.querySelectorAll('.stats-card .tip')].map(el => {
+    el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    const card = document.getElementById('statsTipCard'), cs = getComputedStyle(el);
+    const o = { shown: !card.hidden && card.textContent.length > 30, plain: cs.borderBottomStyle === 'none' && cs.textDecorationLine === 'none', doc: !!card.querySelector('.doc') };
+    el.dispatchEvent(new MouseEvent('mouseout', { bubbles: true }));
+    return o;
+  }));
+  r.tipsOk = r.tips.length >= 13 && r.tips.every(t => t.shown && t.plain) && r.tips.filter(t => t.doc).length >= 8;
+  r.pairsOk = await page.evaluate(() => {
+    const d = state._statsData, s = _statsIdentitySummary('esl');
+    const shown = [...document.querySelectorAll('#statsIdCard .pair a')].map(a => [+a.dataset.i, +a.dataset.j]);
+    return shown.length > 0 && shown.every(([i, j]) => Math.abs(d.pid.esl[i * d.n + j] - s.min) < 1e-9 || Math.abs(d.pid.esl[i * d.n + j] - s.max) < 1e-9);
   });
-  const w0 = await page.evaluate(() => document.getElementById('alignmentContainer').getBoundingClientRect().width);
-  await page.click('#statsDockBtn');
-  await page.waitForTimeout(600);
-  const docked = await page.evaluate((w0) => {
-    const w = document.getElementById('statsModal').getBoundingClientRect(), a = document.getElementById('alignmentContainer').getBoundingClientRect();
-    return { right: Math.round(innerWidth - w.right), bottom: Math.round(innerHeight - w.bottom), narrowed: a.width < w0 - 300, noOverlap: a.right <= w.left + 1 };
-  }, w0);
-  await page.click('#statsDockBtn');
-  await page.waitForTimeout(400);
-  const undocked = await page.evaluate((w0) => ({ pad: document.body.style.paddingRight,
-    fullWidth: Math.abs(document.getElementById('alignmentContainer').getBoundingClientRect().width - w0) < 2 }), w0);
-  const files = await page.evaluate(async () => {
-    const got = {};
-    const orig = URL.createObjectURL;
-    URL.createObjectURL = b => { got.blob = b; return orig.call(URL, b); };
-    saveStatsMatrix('csv', 'identity'); const csv = await got.blob.text();
-    saveStatsMatrix('xlsx', 'identity'); const xl = new Uint8Array(await got.blob.arrayBuffer());
+  // maximize and restore
+  const rect = () => page.evaluate(() => { const b = document.getElementById('statsModal').getBoundingClientRect(); return [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)].join(); });
+  const before = await rect();
+  await page.click('#statsMaxBtn'); await page.waitForTimeout(150);
+  r.maxFills = await page.evaluate(() => { const b = document.getElementById('statsModal').getBoundingClientRect(); return b.width >= innerWidth - 10 && b.bottom >= innerHeight - 6; });
+  await page.dblclick('#statsHeader h3'); await page.waitForTimeout(150);
+  r.restored = (await rect()) === before;
+  // resize from each edge and corner
+  r.resize = {};
+  for (const [dir, dx, dy] of [['e', 50, 0], ['w', -50, 0], ['s', 0, 40], ['n', 0, -30], ['se', 30, 20], ['sw', -30, 20], ['ne', 30, -20], ['nw', -30, -20]]) {
+    await page.evaluate(() => _statsSetFloatRect({ left: 250, top: 120, width: 820, height: 560 }));
+    const hb = await page.locator(`.stats-rz[data-dir="${dir}"]`).boundingBox();
+    const x = hb.x + hb.width / 2, y = hb.y + hb.height / 2;
+    await page.mouse.move(x, y); await page.mouse.down(); await page.mouse.move(x + dx, y + dy, { steps: 3 }); await page.mouse.up();
+    const [left, top, w, h] = (await rect()).split(',').map(Number);
+    const ew = 820 + (dir.includes('e') ? dx : dir.includes('w') ? -dx : 0), eh = 560 + (dir.includes('s') ? dy : dir.includes('n') ? -dy : 0);
+    const el = 250 + (dir.includes('w') ? dx : 0), et = 120 + (dir.includes('n') ? dy : 0);
+    r.resize[dir] = Math.abs(w - ew) <= 1 && Math.abs(h - eh) <= 1 && Math.abs(left - el) <= 1 && Math.abs(top - et) <= 1;
+  }
+  // column selection -> Copy copies those columns
+  await page.evaluate(() => _statsSetFloatRect({ left: 60, top: 60, width: 1200, height: 760 }));
+  await page.click('table.stats-mx thead th[data-c="2"]');
+  await page.click('table.stats-mx thead th[data-c="5"]', { modifiers: ['Control'] });
+  await page.click('#statsCopyBtn'); await page.waitForTimeout(150);
+  r.copy = await page.evaluate(() => { const rows = window._copied.trimEnd().split('\n').map(l => l.split('\t')); const d = state._statsData;
+    return rows.length === d.n + 1 && rows[0].length === 3 && rows[0][1] === d.names[2] && rows[0][2] === d.names[5] && rows[7][2] === d.identity[6][5]
+      && document.querySelectorAll('table.stats-mx thead th.cs').length === 2 && document.getElementById('statsCopyBtn').textContent === 'Copy 2 columns'; });
+  await page.keyboard.press('Escape');
+  // pair filter
+  await page.fill('#statsFilterValue', '95'); await page.waitForTimeout(500);
+  r.filter = await page.evaluate(() => ({ hits: state._statsHits.length, cells: document.querySelectorAll('table.stats-mx td.hit').length }));
+  await page.click('.stats-view button[data-view="list"]'); await page.waitForTimeout(200);
+  r.listRows = await page.evaluate(() => document.querySelectorAll('table.stats-pairs tbody tr').length);
+  r.saved = await page.evaluate(async () => {
+    const got = []; const orig = URL.createObjectURL;
+    URL.createObjectURL = b => { got.push(b); return orig.call(URL, b); };
+    _statsSavePairs('pairs'); _statsSavePairs('fasta-raw'); saveStatsMatrix('csv', 'identity'); saveStatsMatrix('xlsx', 'identity');
     URL.createObjectURL = orig;
+    const [pairs, fa, csv] = await Promise.all(got.slice(0, 3).map(b => b.text()));
+    const xl = new Uint8Array(await got[3].arrayBuffer());
     const d = state._statsData;
-    const lines = csv.trimEnd().split('\r\n').map(l => l.split(','));
-    const csvOk = lines.length === d.names.length + 1 && lines[5][0] === d.names[4] && lines[5][9] === d.identity[4][8];
-    const text = new TextDecoder().decode(xl);
-    return { csvOk, zip: xl[0] === 0x50 && xl[1] === 0x4b, sheet: text.includes('xl/worksheets/sheet1.xml') && text.includes(`<t>${d.names[4]}</t>`) };
+    return { pairLines: pairs.trimEnd().split('\r\n').length - 1, faSeqs: (fa.match(/^>/gm) || []).length, faNoGaps: !/-/.test(fa.split('\n').filter(l => !l.startsWith('>')).join('')),
+      csvOk: csv.split('\r\n')[5].split(',')[9] === d.identity[4][8], xlsx: xl[0] === 0x50 && xl[1] === 0x4b };
   });
-  const ok = sum.tips === 9 && sum.fields === 9 && sum.minOk && sum.maxOk && docked.right === 0 && docked.bottom === 0 && docked.narrowed && docked.noOverlap
-    && undocked.pad === '' && undocked.fullWidth && files.csvOk && files.zip && files.sheet;
-  return { pass: ok, detail: JSON.stringify({ sum, docked, undocked, files }) };
+  // dock beside the alignment
+  await page.click('.stats-view button[data-view="matrix"]');
+  const w0 = await page.evaluate(() => document.getElementById('alignmentContainer').getBoundingClientRect().width);
+  await page.click('#statsDockBtn'); await page.waitForTimeout(500);
+  r.dock = await page.evaluate((w0) => { const w = document.getElementById('statsModal').getBoundingClientRect(), a = document.getElementById('alignmentContainer').getBoundingClientRect();
+    return Math.round(innerWidth - w.right) === 0 && a.width < w0 - 300 && a.right <= w.left + 1; }, w0);
+  await page.click('#statsDockBtn'); await page.waitForTimeout(300);
+  r.undock = await page.evaluate(() => document.body.style.paddingRight === '');
+  const ok = r.valuesOk && r.tipsOk && r.pairsOk && r.maxFills && r.restored && Object.values(r.resize).every(Boolean) && r.copy
+    && r.filter.hits === exp.ge95 && r.filter.cells === 2 * exp.ge95 && r.listRows === exp.ge95
+    && r.saved.pairLines === exp.ge95 && r.saved.faSeqs > 0 && r.saved.faNoGaps && r.saved.csvOk && r.saved.xlsx && r.dock && r.undock;
+  delete r.fields; delete r.tips;
+  return { pass: ok, detail: JSON.stringify(r) };
 });
 
 // Window title bars: every dialog's close button is a 26px target centred in its title bar

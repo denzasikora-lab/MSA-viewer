@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=145">
+    <link rel="stylesheet" href="styles.css?v=146">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -1243,19 +1243,25 @@ B: -</pre>
     </div>
 
     <!-- Statistics window: floating (drag, resize, minimize) or docked on the right -->
-    <div id="statsModal" class="stats-win" style="display:none;">
+    <div id="statsModal" class="stats-win" data-no-slider-pop style="display:none;">
         <div id="statsHeader" class="win-titlebar stats-titlebar">
             <h3>Alignment Statistics</h3>
             <div class="ge-window-btns">
+                <button type="button" id="statsMaxBtn" class="ge-win-btn" title="Maximize (or double-click the title bar)">&#9633;</button>
                 <button type="button" id="statsDockBtn" class="ge-win-btn" title="Dock to the right side of the window">&#9707;</button>
                 <button type="button" id="statsCloseBtn" class="win-close" title="Close">×</button>
             </div>
         </div>
         <div id="statsContent" class="stats-content">
             <div id="statsSummaryTab"></div>
-            <div class="stats-foot">Summary follows esl-alistat and esl-alipid (Easel, Eddy lab). Pairwise identity here is identical residues over columns where both sequences are non-gap; esl-alipid divides by the shorter unaligned length.</div>
+            <div class="stats-foot">Reimplements the calculations of Easel esl-alistat and esl-alipid (Eddy lab); hover a field name for how each value is calculated.</div>
         </div>
         <div class="stats-dock-resizer" title="Drag to change the panel width"></div>
+        <div class="stats-rz" data-dir="n"></div><div class="stats-rz" data-dir="s"></div>
+        <div class="stats-rz" data-dir="e"></div><div class="stats-rz" data-dir="w"></div>
+        <div class="stats-rz" data-dir="ne"></div><div class="stats-rz" data-dir="nw"></div>
+        <div class="stats-rz" data-dir="se"></div><div class="stats-rz" data-dir="sw"></div>
+        <div id="statsTipCard" class="stats-tipcard" hidden></div>
     </div>
 
     <!-- Recent Files Dropdown -->
@@ -1266,7 +1272,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=245"></script>
+    <script src="script.js?v=246"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>
