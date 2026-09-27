@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v197';
+const BUILD_TAG = 'v198';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -9355,26 +9355,8 @@ function onShadeModeChange() {
     const picker = document.getElementById(shade + 'ColorPicker');
     const slider = document.getElementById(shade + 'Slider');
     if (label && picker) {
-        // Show picker on hover instead of click
-        label.addEventListener('mouseenter', function() {
-            picker.style.display = 'inline-block';
-        });
-        label.addEventListener('mouseleave', function() {
-            // Hide picker when mouse leaves both label and picker
-            setTimeout(() => {
-                if (!label.matches(':hover') && !picker.matches(':hover')) {
-                    picker.style.display = 'none';
-                }
-            }, 100);
-        });
-        picker.addEventListener('mouseleave', function() {
-            // Hide picker when mouse leaves picker
-            setTimeout(() => {
-                if (!label.matches(':hover') && !picker.matches(':hover')) {
-                    picker.style.display = 'none';
-                }
-            }, 100);
-        });
+        // The picker is an always-visible swatch next to the label (no hover show/hide):
+        // shown on hover it either pushed the row past the panel edge or covered the label.
         picker.addEventListener('input', function() {
             // Update CSS variable for slider fill
             slider.style.setProperty('--slider-fill', picker.value);

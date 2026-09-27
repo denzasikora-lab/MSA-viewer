@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=147">
+    <link rel="stylesheet" href="styles.css?v=148">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -110,8 +110,8 @@
                     <div class="control-group" id="shade-controls">
                         <div class="slider-container shade-row">
                             <div class="shade-controls">
-                                <span class="slider-label" id="blackLabel" style="cursor:pointer; text-decoration:underline;" title="Highly conserved shading">Black</span>
-                                <input type="color" id="blackColorPicker" value="#000000" style="display:none;">
+                                <label class="slider-label shade-label" id="blackLabel" for="blackColorPicker" title="Highly conserved shading: click the swatch to change the colour">Black</label>
+                                <input type="color" id="blackColorPicker" class="shade-swatch" value="#000000" title="Black shading colour">
                                 <button class="reset-button" id="blackReset" title="Reset Black shading to default color">Reset</button>
                             </div>
                             <label class="shade-mode-label">
@@ -122,8 +122,8 @@
                         </div>
                         <div class="slider-container shade-row">
                             <div class="shade-controls">
-                                <span class="slider-label" id="darkLabel" style="cursor:pointer; text-decoration:underline;" title="Moderately conserved shading">Dark</span>
-                                <input type="color" id="darkColorPicker" value="#555555" style="display:none;">
+                                <label class="slider-label shade-label" id="darkLabel" for="darkColorPicker" title="Moderately conserved shading: click the swatch to change the colour">Dark</label>
+                                <input type="color" id="darkColorPicker" class="shade-swatch" value="#555555" title="Dark shading colour">
                                 <button class="reset-button" id="darkReset" title="Reset Dark shading to default color">Reset</button>
                             </div>
                             <label class="shade-mode-label">
@@ -134,8 +134,8 @@
                         </div>
                         <div class="slider-container shade-row">
                             <div class="shade-controls">
-                                <span class="slider-label" id="lightLabel" style="cursor:pointer; text-decoration:underline;" title="Lightly conserved shading">Light</span>
-                                <input type="color" id="lightColorPicker" value="#cccccc" style="display:none;">
+                                <label class="slider-label shade-label" id="lightLabel" for="lightColorPicker" title="Lightly conserved shading: click the swatch to change the colour">Light</label>
+                                <input type="color" id="lightColorPicker" class="shade-swatch" value="#cccccc" title="Light shading colour">
                                 <button class="reset-button" id="lightReset" title="Reset Light shading to default color">Reset</button>
                             </div>
                             <label class="shade-mode-label">
@@ -1272,7 +1272,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=247"></script>
+    <script src="script.js?v=248"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>
