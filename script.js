@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v193';
+const BUILD_TAG = 'v194';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1997,10 +1997,52 @@ function clampGroupConsensusPercent(value) {
     return Math.max(30, Math.min(100, num));
 }
 
+// The slider's max follows the longest name (updateNameLengthSliderRange); clamping to a
+// fixed 50 made the last part of a longer slider snap back.
 function clampNameLength(value) {
     const num = parseInt(value, 10);
     if (Number.isNaN(num)) return DEFAULTS.nameLength;
-    return Math.max(3, Math.min(50, num));
+    const max = parseInt(el('nameLengthSlider')?.max, 10) || 50;
+    return Math.max(3, Math.min(max, num));
+}
+
+// Name length actually shown: the slider value, or with "No limit" the longest name.
+// Every renderer, export and estimate reads this, so "No limit" is not undone by the next
+// render (renderAlignment used to reset --nameLen to the slider value and cut the names).
+function effectiveNameLength() {
+    if (el('nameLengthNoLimit')?.checked) {
+        let longest = 3;
+        for (const q of state.seqs || []) longest = Math.max(longest, (q.header || '').length);
+        return longest;
+    }
+    return clampNameLength(el('nameLengthSlider')?.value);
+}
+
+// Restore the "No limit" checkbox from a preset or snapshot (older ones lack it: off)
+function _applyNameLenNoLimit(on) {
+    const cb = el('nameLengthNoLimit');
+    if (!cb) return;
+    cb.checked = on;
+    const slider = el('nameLengthSlider'), input = el('nameLengthInput');
+    if (slider) slider.disabled = on;
+    if (input) input.disabled = on;
+    applyNameLengthLive(effectiveNameLength());
+}
+
+function _truncName(name, n) {
+    return name.length > n ? name.slice(0, Math.max(1, n - 1)) + '\u2026' : name;
+}
+
+// Width and labels change together, at once, with no re-render: the name column's width
+// used to follow the slider immediately while the names were re-cut only after the next
+// render, so while dragging they never matched.
+function applyNameLengthLive(n) {
+    document.documentElement.style.setProperty('--nameLen', n);
+    document.querySelectorAll('#alignmentContainer .seq-line[data-seq-index] > .seq-name').forEach(nm => {
+        const q = state.seqs[+nm.dataset.seqIndex];
+        if (q) _setSeqNameLabel(nm, _truncName(q.header, n));
+    });
+    window._syncHorizontalScrollbar?.();
 }
 function clampMinCoverage(value) {
     const num = parseInt(value, 10);
@@ -2010,7 +2052,7 @@ function clampMinCoverage(value) {
 
 function setNameLengthUI(value, triggerRender = false) {
     if (el('nameLengthNoLimit')?.checked) {
-        document.documentElement.style.setProperty('--nameLen', '9999');
+        applyNameLengthLive(effectiveNameLength());
         if (triggerRender) debounceRender();
         return;
     }
@@ -2024,7 +2066,7 @@ function setNameLengthUI(value, triggerRender = false) {
     if (input) {
         input.value = clamped;
     }
-    document.documentElement.style.setProperty('--nameLen', clamped);
+    applyNameLengthLive(clamped);
     if (triggerRender) {
         debounceRender();
     }
@@ -4191,7 +4233,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             // position:sticky + white background); non-sticky mode scrolls it
             // away with the content, like .seq-name.static.
             const name = state.seqs[i].header || ('Seq' + (i + 1));
-            const displayName = name.length > nameLen ? name.substring(0, nameLen) + '\u2026' : name;
+            const displayName = _truncName(name, nameLen);
             ctx.font = nameFontStr;
             const nameAscent = (_canvasState.metrics && _canvasState.metrics.ascent) || (CHAR_H - 3);
             const nameBaselineY = y + nameAscent;
@@ -6527,7 +6569,7 @@ function renderAlignment(options = {}) {
     }
 
     const blockWidth = parseInt(el('blockSizeSlider').value);
-    const nameLen = parseInt(nameLengthSlider.value);
+    const nameLen = effectiveNameLength();
     // Update CSS variable for scale ruler padding
     document.documentElement.style.setProperty('--nameLen', nameLen);
     const standard = new Set(['A', 'C', 'G', 'T', 'U', 'N', '-', '.', 'a', 'c', 'g', 't', 'u', 'n']);
@@ -7874,7 +7916,7 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
     if (displayName.length > nameLenInt) {
         // One "…" inside the column: "..." after nameLen characters overflowed it and showed
         // only its first dot, stuck to the sequence
-        _setSeqNameLabel(nameSpan, displayName.slice(0, Math.max(1, nameLenInt - 1)) + '…');
+        _setSeqNameLabel(nameSpan, _truncName(displayName, nameLenInt));
         nameSpan.title = `${displayName} (length: ${state.seqs[index].seq.length})`;
     } else {
         _setSeqNameLabel(nameSpan, displayName);
@@ -9153,7 +9195,7 @@ function _computeLargeAlignmentBlockChars() {
     // bug ("screen fit is too narrow") once fitBlockSizeBeforeInitialRender
     // started using this estimate for the real initial render.
     const charPx = 7.8 * zoom;
-    const namePx = (parseInt(el('nameLengthSlider')?.value || 25) * charPx) + 8;
+    const namePx = ((effectiveNameLength() + 1) * charPx) + 16;   // .seq-name: nameLen ch + 1ch gap + 16px
     // Use window.innerWidth instead of container.clientWidth to avoid forcing
     // a synchronous reflow over the (potentially already-rendered) DOM —
     // millions of child spans make clientWidth reads take 30+ seconds. This
@@ -10635,7 +10677,8 @@ function savePreset() {
         enableBlack: el('enableBlack').checked,
         enableDark: el('enableDark').checked,
         enableLight: el('enableLight').checked,
-        stickyNames: el('stickyNames').checked
+        stickyNames: el('stickyNames').checked,
+        nameLenNoLimit: !!el('nameLengthNoLimit')?.checked
     };
     localStorage.setItem('msaviewer_preset_v44', JSON.stringify(preset));
     showMessage("Preset saved!", 2000);
@@ -10705,6 +10748,7 @@ function loadPreset() {
     el('modeBlocks').checked = p.mode === 'blocks';
     el('modeSingle').checked = p.mode !== 'blocks';
     el('stickyNames').checked = p.stickyNames !== undefined ? p.stickyNames : true;
+    _applyNameLenNoLimit(!!p.nameLenNoLimit);
     onModeChange();
     toggleStickyNames();
     const consTypeEl = document.querySelector(`input[name="consensusType"][value="${p.consensusType}"]`);
@@ -10790,6 +10834,7 @@ function _buildSnapshotPayload() {
             enableDark: !!el('enableDark')?.checked,
             enableLight: !!el('enableLight')?.checked,
             stickyNames: !!el('stickyNames')?.checked,
+            nameLenNoLimit: !!el('nameLengthNoLimit')?.checked,
             selectedRows: Array.from(state.selectedRows).sort((a, b) => a - b),
             selectedColumns: Array.from(state.selectedColumns).sort((a, b) => a - b),
             scrollLeft: alignmentContainer?.scrollLeft || 0,
@@ -10856,6 +10901,7 @@ function _applySnapshotView(view) {
         onModeChange();
     }
 
+    if (view.nameLenNoLimit !== undefined) _applyNameLenNoLimit(!!view.nameLenNoLimit);
     if (view.stickyNames !== undefined) {
         el('stickyNames').checked = !!view.stickyNames;
         toggleStickyNames();
@@ -11469,7 +11515,7 @@ function exportAlignmentAsRtf() {
     }
 
     // Sequences
-    const nameLen = parseInt(el('nameLengthSlider')?.value || 25);
+    const nameLen = effectiveNameLength();
     for (let i = 0; i < state.seqs.length; i++) {
         const name = (state.seqs[i].header || `Seq${i + 1}`).padEnd(nameLen).substring(0, nameLen);
         let seqLine = '';
@@ -18536,7 +18582,7 @@ function attachUIListeners() {
                     const clamped = clampNameLength(slider.value);
                     slider.value = clamped;
                     input.value = clamped;
-                    document.documentElement.style.setProperty('--nameLen', clamped);
+                    applyNameLengthLive(clamped);
                 } else {
                     input.value = slider.value;
                 }
@@ -18544,8 +18590,12 @@ function attachUIListeners() {
                 if (sliderId.includes('black') || sliderId.includes('dark') || sliderId.includes('light')) {
                     validateThresholds();
                 }
+                // Name length is applied live (width + labels); a full render per drag step
+                // queued behind each ~150 ms relayout doubled the cost. Render once on release.
+                if (sliderId === 'nameLengthSlider') return;
                 renderCb();
             });
+            if (sliderId === 'nameLengthSlider') slider.addEventListener('change', () => renderCb());
 
             input.addEventListener('input', () => {
                 if (sliderId === 'consensusThreshold') {
@@ -18557,10 +18607,21 @@ function attachUIListeners() {
                     slider.value = clamped;
                     input.value = clamped;
                 } else if (sliderId === 'nameLengthSlider') {
-                    const clamped = clampNameLength(input.value);
-                    slider.value = clamped;
-                    input.value = clamped;
-                    document.documentElement.style.setProperty('--nameLen', clamped);
+                    // Apply only a complete number inside the range and leave the box alone
+                    // while typing: clamping each keystroke turned "1" (of "12") into 3 and
+                    // then "32". Out-of-range values are corrected on change (Enter / leaving).
+                    // Applied after a short pause, so typing "42" does not show 4 on the way.
+                    clearTimeout(input._nameLenTimer);
+                    input._nameLenTimer = setTimeout(() => {
+                        const num = Number(input.value);
+                        const max = parseInt(slider.max, 10) || 50;
+                        if (input.value === '' || !Number.isInteger(num) || num < 3 || num > max) return;
+                        slider.value = num;
+                        updateSliderBackground(slider);
+                        applyNameLengthLive(num);
+                        renderCb();
+                    }, 400);
+                    return;
                 } else if (sliderId === 'consensusMinCoverage') {
                     const clamped = clampMinCoverage(input.value);
                     slider.value = clamped;
@@ -18586,6 +18647,7 @@ function attachUIListeners() {
             // slider's current (last valid) value instead of staying blank or
             // silently keeping an invalid number.
             input.addEventListener('change', () => {
+                if (sliderId === 'nameLengthSlider') return;   // clamps to the range instead (its own handler)
                 const n = Number(input.value);
                 if (input.value === '' || Number.isNaN(n) || n < Number(slider.min) || n > Number(slider.max)) {
                     input.value = slider.value;
@@ -18758,23 +18820,23 @@ function attachUIListeners() {
     const sticky = el('stickyNames');
     if (sticky) sticky.addEventListener('change', toggleStickyNames);
 
+    // Name length box: on Enter / leaving, correct an out-of-range or partial entry
+    el('nameLengthInput')?.addEventListener('change', () => {
+        clearTimeout(el('nameLengthInput')._nameLenTimer);
+        if (el('nameLengthNoLimit')?.checked) return;
+        setNameLengthUI(clampNameLength(el('nameLengthInput').value), true);
+    });
+
     // Name length "No limit" checkbox
     const noLimit = el('nameLengthNoLimit');
     if (noLimit) {
         noLimit.addEventListener('change', () => {
             const slider = el('nameLengthSlider');
             const input = el('nameLengthInput');
-            if (noLimit.checked) {
-                if (slider) slider.disabled = true;
-                if (input) input.disabled = true;
-                state.nameLength = 9999;
-                document.documentElement.style.setProperty('--nameLen', '9999');
-            } else {
-                if (slider) slider.disabled = false;
-                if (input) input.disabled = false;
-                state.nameLength = parseInt(slider?.value || 50);
-                document.documentElement.style.setProperty('--nameLen', state.nameLength);
-            }
+            if (slider) slider.disabled = noLimit.checked;
+            if (input) input.disabled = noLimit.checked;
+            state.nameLength = effectiveNameLength();
+            applyNameLengthLive(state.nameLength);
             debounceRender();
         });
     }

@@ -919,6 +919,62 @@ check('Codon analysis: frameshift only for internal gaps, late rows keep frame, 
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+// Name Len: "No limit" shows every name in full and survives the render it triggers and a
+// preset round-trip; typing in the box is not clamped per keystroke (12 stays 12) and an
+// over-range entry clamps to the max on Enter; while dragging, the column width and the cut
+// names always agree
+check('Name Len: No limit works, typing 12 gives 12, Enter clamps, width and names agree', async (page) => {
+  const names = Array.from({ length: 12 }, (_, i) => `sequence_with_a_long_name_number_${String(i).padStart(2, '0')}`);
+  const seq = 'ACGTACGTAC'.repeat(8);
+  await page.setInputFiles('#fileInput', { name: 'names.fa', mimeType: 'text/plain', buffer: Buffer.from(names.map(n => `>${n}\n${seq}`).join('\n') + '\n') });
+  await page.waitForTimeout(1200);
+  const look = () => page.evaluate(() => {
+    const rows = [...document.querySelectorAll('.seq-line[data-seq-index] > .seq-name')].filter(r => state.seqs[+r.parentElement.dataset.seqIndex]);
+    const css = +getComputedStyle(document.documentElement).getPropertyValue('--nameLen');
+    const texts = rows.map(r => r.textContent.trim());
+    return { css, slider: +el('nameLengthSlider').value, max: +el('nameLengthSlider').max, box: el('nameLengthInput').value,
+      full: texts.filter((t, i) => t === state.seqs[+rows[i].parentElement.dataset.seqIndex].header).length, n: rows.length,
+      maxShown: Math.max(...texts.map(t => t.length)) };
+  });
+  const r = {};
+  await page.hover('.section-header[data-section="display"]');
+  await page.waitForTimeout(300);
+  await page.click('#nameLengthNoLimit'); await page.waitForTimeout(600);
+  r.noLimit = await look();
+  // preset round-trip keeps No limit
+  await page.evaluate(() => { savePreset(); const cb = el('nameLengthNoLimit'); cb.checked = false; cb.dispatchEvent(new Event('change')); });
+  await page.waitForTimeout(400);
+  await page.evaluate(() => loadPreset());
+  await page.waitForTimeout(600);
+  r.afterPreset = { ...(await look()), checked: await page.evaluate(() => el('nameLengthNoLimit').checked) };
+  await page.click('#nameLengthNoLimit'); await page.waitForTimeout(600);
+  r.unticked = await look();
+  await page.click('#nameLengthInput', { clickCount: 3 });
+  await page.keyboard.type('12'); await page.waitForTimeout(700);
+  r.typed12 = await look();
+  await page.click('#nameLengthInput', { clickCount: 3 });
+  await page.keyboard.type('99'); await page.keyboard.press('Enter'); await page.waitForTimeout(700);
+  r.enter99 = await look();
+  r.drag = await page.evaluate(async () => {
+    const s = el('nameLengthSlider'); const bad = [];
+    for (const v of [30, 22, 15, 8]) {
+      s.value = v; s.dispatchEvent(new Event('input', { bubbles: true }));
+      const css = +getComputedStyle(document.documentElement).getPropertyValue('--nameLen');
+      const shown = Math.max(...[...document.querySelectorAll('.seq-line[data-seq-index] > .seq-name')].filter(r => state.seqs[+r.parentElement.dataset.seqIndex]).map(x => x.textContent.trim().length));
+      if (css !== v || shown !== v) bad.push({ v, css, shown });
+    }
+    return bad;
+  });
+  const longest = Math.max(...names.map(n => n.length));
+  const ok = r.noLimit.full === r.noLimit.n && r.noLimit.css === longest
+    && r.afterPreset.checked && r.afterPreset.full === r.afterPreset.n
+    && r.unticked.full === 0 && r.unticked.css === r.unticked.slider
+    && r.typed12.css === 12 && r.typed12.box === '12' && r.typed12.maxShown === 12
+    && r.enter99.slider === r.enter99.max && r.enter99.box === String(r.enter99.max) && r.enter99.css === r.enter99.max
+    && r.drag.length === 0;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

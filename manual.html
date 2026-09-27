@@ -533,7 +533,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </p>
   <ul>
     <li><strong>Save Preset</strong> (<kbd>Ctrl+Shift+S</kbd>) - saves the current view settings (shading
-    thresholds and colours, zoom, view mode, block size, name length, consensus settings, colour scheme,
+    thresholds and colours, zoom, view mode, block size, name length and No limit, consensus settings, colour scheme,
     Sticky Names) in the browser's <code>localStorage</code>. There is one preset; saving again replaces
     it. It holds no alignment data.</li>
     <li><strong>Load Preset</strong> (<kbd>Ctrl+O</kbd>) - applies the saved preset</li>
@@ -1212,9 +1212,13 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
 
   <h3 id="di-names">5.7 Name Length</h3>
   <p>
-    Controls how many characters of each sequence name are displayed. The slider ranges
-    from 3 to 50. Check <strong>No limit</strong> to show full names regardless of length.
-    This only affects display, not the underlying data.
+    Controls how many characters of each sequence name are displayed. The slider runs from 3
+    to the longest name in the alignment plus 2; a name longer than the setting ends in "…"
+    (hover it for the full name). Dragging updates the names and the column width together;
+    in the number box, a value is applied when you pause typing, and Enter or leaving the box
+    corrects a value outside the range. Check <strong>No limit</strong> to show every name in
+    full; the slider is then disabled, and unticking returns to its value. Presets and
+    snapshots remember both. This only affects display, not the underlying data.
   </p>
 
 <!-- ════════════════════════════════════════ -->

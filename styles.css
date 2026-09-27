@@ -427,6 +427,15 @@ html {
     display: block !important;
     z-index: 100000 !important;
     max-height: 85vh;
+    /* A floating window, not a drop-down: the drop-down's 1px #ccc border, soft shadow and
+       square top-left corner almost vanished against the white page while dragging */
+    border: 1px solid #aeb6bf;
+    border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.22), 0 2px 6px rgba(0,0,0,0.12);
+}
+.control-group.detached > .panel-detach-handle {
+    border-radius: 8px 8px 0 0;
+    background: #eef1f4;
 }
 .control-group.detached .panel-dock-btn {
     display: inline-block;
