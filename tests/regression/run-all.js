@@ -1204,6 +1204,73 @@ check('Variable-sites top threshold and ambiguous codons (audit batch 2)', async
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+// GLM audit batch 3: the name-similarity sensitivity slider's 0 (strictest) was read as 3
+check('Colour names by similarity: sensitivity 0 is the strictest setting, not 3', async (page) => {
+  const fa = '>alphabeta_01\nACGT\n>alphabeta_02\nACGT\n>zzzzzz_9\nACGT\n';
+  await page.setInputFiles('#fileInput', { name: 'n.fa', mimeType: 'text/plain', buffer: Buffer.from(fa) });
+  await page.waitForTimeout(900);
+  const colours = (sens) => page.evaluate((sens) => {
+    document.getElementById('colourSimilarityChars').value = 12;
+    document.getElementById('colourSimilarityThreshold').value = sens;
+    autoColourBySimilarity();
+    const m = colourState.mappings;
+    return [m.get('alphabeta_01'), m.get('alphabeta_02'), m.get('zzzzzz_9')];
+  }, sens);
+  const s0 = await colours(0), s10 = await colours(10);
+  const r = { strictSame: s0[0] === s0[1], looseSame: s10[0] === s10[1], strictColours: s0, looseColours: s10 };
+  return { pass: !r.strictSame && r.looseSame, detail: JSON.stringify(r) };
+});
+
+// GLM audit batch 3: a heatmap range typed low > high painted every cell one colour; a pair
+// with no shared base became distance 0 when all defined distances were 0 (a false twin)
+check('Heatmap inverted range and tree fill when all defined distances are 0 (audit batch 3)', async (page) => {
+  const r = await page.evaluate(() => {
+    const hc = { lo: 90, hi: 90, reverse: false, stops: [[0, 0, 0], [255, 255, 255]] };
+    const single = [_statsHeatColour(hc, 80).bg, _statsHeatColour(hc, 95).bg];
+    // identical comparable sequences plus one that overlaps none of them
+    const seqs = [{ header: 'a', seq: 'ACGTACGT--------' }, { header: 'b', seq: 'ACGTACGT--------' }, { header: 'c', seq: '--------TTTTGGGG' }];
+    const m = _treeDistanceMatrix(seqs, 'raw');
+    return { single, acDist: m.D[0][2], fill: m.stats.filledWith, nw: buildUPGMATreeFromAlignment(seqs, 'raw').newick };
+  });
+  // inverted range through the UI: typed 100 .. 20 is stored as 20 .. 100
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => { ['msaviewer_statsHeat'].forEach(k => { try { localStorage.removeItem(k); } catch (e) {} }); openStats(); });
+  await page.waitForFunction(() => document.querySelector('#statsSummaryTab table.stats-mx'), null, { timeout: 30000 });
+  await page.click('#statsHeatBtn'); await page.click('#statsHeatOn');
+  await page.fill('#statsHeatLo', '100'); await page.fill('#statsHeatHi', '20'); await page.waitForTimeout(600);
+  r.stored = await page.evaluate(() => _statsHeatOpts().range.identity);
+  r.distinct = await page.evaluate(() => new Set([...document.querySelectorAll('table.stats-mx td')].map(t => t.style.background).filter(Boolean)).size);
+  const ok = r.single[0] === 'rgb(0,0,0)' && r.single[1] === 'rgb(255,255,255)' && r.acDist === 1 && r.fill === 1
+    && r.stored.lo === 20 && r.stored.hi === 100 && r.distinct > 10;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+// Neighbor-Joining against known trees (distance matrix injected): the Wikipedia 5-taxon
+// example, and a long-branch case where the closest pair (a,c) is not a cherry. The tie-break
+// added earlier the same day made the scan ignore Q until it met a pair closer than the first
+// one, so with a,c first the wrong pair was joined (found by the GLM audit)
+check('Neighbor-Joining reproduces known trees (Wikipedia example, long branches)', async (page) => {
+  const r = await page.evaluate(() => {
+    const run = (D, names) => {
+      const orig = window._treeDistanceMatrix;
+      window._treeDistanceMatrix = () => ({ D: D.map(x => x.slice()), stats: { count: names.length, averageDistance: 0, minDistance: 0, maxDistance: 0, noOverlap: [], saturated: [], filledWith: null, names } });
+      try { return buildNJTreeFromAlignment(names.map(n => ({ header: n, seq: 'A' })), 'raw').newick; }
+      finally { window._treeDistanceMatrix = orig; }
+    };
+    return {
+      wiki: run([[0,5,9,9,8],[5,0,10,10,9],[9,10,0,8,7],[9,10,8,0,3],[8,9,7,3,0]], ['a','b','c','d','e']),
+      lba: run([[0,3,5,6],[3,0,6,5],[5,6,0,9],[6,5,9,0]], ['a','c','b','d']),
+    };
+  });
+  // leaf branch lengths from the Newick
+  const len = (nw, leaf) => { const m = nw.match(new RegExp('[(,]' + leaf + ':([0-9.]+)')); return m ? +m[1] : null; };
+  const wikiOk = len(r.wiki, 'a') === 2 && len(r.wiki, 'b') === 3 && len(r.wiki, 'd') === 2 && len(r.wiki, 'e') === 1 && /\(a:2(\.0)?,b:3(\.0)?\)/.test(r.wiki);
+  const lbaOk = /\(a:1(\.0)?,b:4(\.0)?\)/.test(r.lba) && len(r.lba, 'c') === 1 && !/\(a:[0-9.]+,c:/.test(r.lba) && !/\(c:[0-9.]+,a:/.test(r.lba);
+  return { pass: wikiOk && lbaOk, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

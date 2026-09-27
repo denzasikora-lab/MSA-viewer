@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v200';
+const BUILD_TAG = 'v201';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -14849,7 +14849,7 @@ function _treeIsBase(char) {
 }
 
 // Pairwise distance metrics for phylogenetic trees
-// Returns { pDistance, transitions, transversions, compared } for model corrections
+// Returns { p, compared, mismatches, transitions, transversions } for model corrections
 function _alignmentPairMetrics(seqOne, seqTwo) {
     // Purine = A,G; Pyrimidine = C,T
     const isPurine = c => c === 'A' || c === 'G';
@@ -14909,10 +14909,6 @@ function _modelPairDistance(seqOne, seqTwo, model) {
     }
 }
 
-// Backward-compat wrapper
-function _alignmentPairDistance(seqOne, seqTwo) {
-    return _alignmentPairMetrics(seqOne, seqTwo).p;
-}
 
 function _newickName(name) {
     const cleaned = String(name || 'seq').replace(/\s+/g, '_');
@@ -14970,8 +14966,10 @@ function _treeDistanceMatrix(seqObjects, model) {
             ? 'no two of these sequences share an aligned base (A/C/G/T/U), so no distance can be computed'
             : 'every pairwise distance is saturated under this model; try p-distance');
     }
-    const fill = pairs ? max : 0;
-    const satFill = fill > 0 ? 2 * fill : 1;
+    // If every defined distance is 0 (all comparable pairs identical), an unknown pair must
+    // not become 0 too: it would be drawn as an identical twin
+    const fill = pairs && max > 0 ? max : 1;
+    const satFill = 2 * fill;
     for (const [i, j] of noOverlap) D[i][j] = D[j][i] = fill;
     for (const [i, j] of saturated) D[i][j] = D[j][i] = satFill;
     return {
@@ -15105,8 +15103,11 @@ function buildNJTreeFromAlignment(seqObjects, model) {
                 // Ties are common (with 4 nodes complementary pairs always tie; with 3 all
                 // do). Scan order used to decide, which put one of three identical
                 // sequences next to the different one. Prefer the closer pair.
+                // The first pair sets minQ: with minQ = Infinity the tolerance was Infinity too,
+                // Infinity - Infinity is NaN, and the scan compared raw distances instead of Q
+                // (found by the GLM audit; a long-branch 4-taxon case joined the wrong pair)
                 const tol = 1e-9 * Math.max(1, Math.abs(minQ));
-                if (q < minQ - tol || (Math.abs(q - minQ) <= tol && dist[a][b] < dist[minI][minJ])) {
+                if (minQ === Infinity || q < minQ - tol || (Math.abs(q - minQ) <= tol && dist[a][b] < dist[minI][minJ])) {
                     minQ = q;
                     minI = a;
                     minJ = b;
@@ -15226,7 +15227,7 @@ function openTreeBuilder() {
                 // Pairs without a usable distance were set to the largest one: say which
                 if (st.filledWith !== null) {
                     const parts = [];
-                    if (st.noOverlap.length) parts.push(`${st.noOverlap.length} pair${st.noOverlap.length > 1 ? 's share' : ' shares'} no aligned base: distance unknown, set to the largest defined (${st.filledWith.toFixed(4)})`);
+                    if (st.noOverlap.length) parts.push(`${st.noOverlap.length} pair${st.noOverlap.length > 1 ? 's share' : ' shares'} no aligned base: distance unknown, set to ${st.filledWith.toFixed(4)} (the largest defined distance, or 1 if all are 0)`);
                     if (st.saturated.length) parts.push(`${st.saturated.length} pair${st.saturated.length > 1 ? 's are' : ' is'} saturated under ${modelName}: set to twice the largest (${st.saturatedFill.toFixed(4)})`);
                     const warn = document.createElement('span');
                     warn.className = 'tree-distance-warning';
@@ -15301,7 +15302,8 @@ function _openStatsNow() {
             showMessage('Need at least two sequences for statistics.', 2200);
             return;
         }
-        const alen = Math.max(...seqs.map(s => s.seq.length));
+        let alen = 0;   // a loop, not Math.max(...): spreading a very long list overflows the call stack
+        for (const s of seqs) if (s.seq.length > alen) alen = s.seq.length;
         const nseq = seqs.length;
         const isGap = ch => ch === undefined || ch === '-' || ch === '.';
         // Rows shorter than the alignment count as gap-padded to alen.
@@ -15772,6 +15774,10 @@ function copyStatsMatrix(kind) {
     const clean = v => String(v).replace(/[\t\r\n]+/g, ' ');
     const text = _statsMatrixGrid(kind, cols).map(r => r.map(clean).join('\t')).join('\n') + '\n';
     const what = cols.length ? `${cols.length} column${cols.length > 1 ? 's' : ''}` : `${kind === 'distance' ? 'Distance' : 'Identity'} matrix`;
+    if (!navigator.clipboard?.writeText) {   // e.g. a page served over plain http
+        showMessage('Copying needs a secure page (https or localhost); use Save matrix instead.', 3500);
+        return;
+    }
     navigator.clipboard.writeText(text)
         .then(() => showMessage(`${what} copied (tab-separated, full names).`, 1800))
         .catch(() => showMessage('Failed to copy statistics matrix.', 2500));
@@ -16236,7 +16242,8 @@ function _statsHeatCtx(kind) {
 }
 
 function _statsHeatColour(hc, v) {
-    let t = hc.hi > hc.lo ? (v - hc.lo) / (hc.hi - hc.lo) : 0.5;
+    // hi === lo (a single threshold): below it the first colour, at or above it the last
+    let t = hc.hi > hc.lo ? (v - hc.lo) / (hc.hi - hc.lo) : (v >= hc.lo ? 1 : 0);
     t = Math.max(0, Math.min(1, t));
     if (hc.reverse) t = 1 - t;
     const s = hc.stops, x = t * (s.length - 1), k = Math.min(s.length - 2, Math.floor(x)), f = x - k;
@@ -16324,7 +16331,9 @@ function _statsHeatReadRange() {
     if (!Number.isFinite(lo) && !Number.isFinite(hi)) h.range[kind] = null;
     else {
         const auto = _statsAutoRange(kind);
-        h.range[kind] = { lo: Number.isFinite(lo) ? lo : auto.lo, hi: Number.isFinite(hi) ? hi : auto.hi };
+        let a = Number.isFinite(lo) ? lo : auto.lo, b = Number.isFinite(hi) ? hi : auto.hi;
+        if (a > b) [a, b] = [b, a];   // typed the wrong way round: every cell used to get the middle colour
+        h.range[kind] = { lo: a, hi: b };
     }
     _statsSaveHeatOpts({ range: h.range });
 }
@@ -21353,8 +21362,11 @@ function applyPatternColour() {
 
 // Auto-color by similarity
 function autoColourBySimilarity() {
-    const maxChars = parseInt(el('colourSimilarityChars').value) || 10;
-    const threshold = parseInt(el('colourSimilarityThreshold').value) || 3;
+    // 0 is a valid sensitivity (the strictest, 90%): `|| 3` turned it into 3
+    const charsRaw = parseInt(el('colourSimilarityChars').value, 10);
+    const maxChars = Number.isFinite(charsRaw) ? Math.max(1, charsRaw) : 10;
+    const thrRaw = parseInt(el('colourSimilarityThreshold').value, 10);
+    const threshold = Number.isFinite(thrRaw) ? thrRaw : 3;
     const mode = _checkedRadioValue('colourMode', 'discrete');
 
     // Use actual sequence headers from state, not truncated display text
@@ -21640,7 +21652,8 @@ function initColourSeqs() {
 
     // Update threshold display
     const updateThresholdLabel = () => {
-        const sens = parseInt(thresholdSlider.value) || 3;
+        const sensRaw = parseInt(thresholdSlider.value, 10);
+        const sens = Number.isFinite(sensRaw) ? sensRaw : 3;   // 0 (strictest) is valid
         const pct = Math.round((0.90 - (sens / 10) * 0.50) * 100);
         el('colourThresholdValue').textContent = pct + '%';
     };
@@ -23014,7 +23027,7 @@ function _buildUngappedToAlignMap(alignedSeq) {
     const map = [];
     for (let i = 0; i < alignedSeq.length; i++) {
         const ch = alignedSeq[i];
-        if (ch !== '-' && ch !== '.') map.push(i + 1);
+        if (ch !== '-' && ch !== '.' && ch !== ' ') map.push(i + 1);   // same characters the plotted sequences drop
     }
     return map;
 }
