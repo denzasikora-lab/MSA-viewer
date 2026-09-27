@@ -42,6 +42,14 @@ function loadTreeFns() {
   return sandbox;
 }
 
+function cite(text, re) {
+  const lines = text.split(/\r?\n/);
+  for (let i = 0; i < lines.length; i++) {
+    if (re.test(lines[i])) return { line: i + 1, quote: lines[i].trim() };
+  }
+  throw new Error('cite failed: ' + re);
+}
+
 function collectAudit() {
   throw new Error('NotImplementedError');
 }
