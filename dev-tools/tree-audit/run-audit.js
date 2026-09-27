@@ -47,7 +47,16 @@ function cite(text, re) {
   for (let i = 0; i < lines.length; i++) {
     if (re.test(lines[i])) return { line: i + 1, quote: lines[i].trim() };
   }
-  throw new Error('cite failed: ' + re);
+  return null;
+}
+
+// A defect is "present" while its original line is still in the source; once fixed, the
+// line of the fix is cited instead (fixed 2026-09-27 on main, commit caf67b9).
+function defectStatus(id, file, text, defectRe, fixRe) {
+  const d = cite(text, defectRe);
+  if (d) return { id, file, status: 'present', line: d.line, quote: d.quote };
+  const f = cite(text, fixRe);
+  return { id, file, status: f ? 'fixed' : 'unknown', line: f ? f.line : null, quote: f ? f.quote : null };
 }
 
 function collectAudit() {
@@ -56,7 +65,7 @@ function collectAudit() {
   const drawText = fs.readFileSync(DRAW_SOURCE, 'utf8');
   const distances = FIXTURES.map(function (row) {
     const distance = fns._modelPairDistance(row.a, row.b, row.model);
-    return { id: row.id, model: row.model, value: Number.isFinite(distance) ? distance : 'Infinity' };
+    return { id: row.id, model: row.model, value: Number.isNaN(distance) ? 'undefined (no shared base)' : Number.isFinite(distance) ? distance : 'Infinity' };
   });
   let zoomIn = 1;
   let zoomOut = 1;
@@ -66,9 +75,11 @@ function collectAudit() {
   }
   const zoomFit = Number(drawText.match(/act === 'zoom-fit'\) st\.zoom = ([0-9.]+);/)[1]);
   const pngScale = Number(drawText.match(/var scale = ([0-9.]+);\s*\/\/ 2x/)[1]);
-  const fit = cite(drawText, /act === 'zoom-fit'\) st\.zoom = [0-9.]+;/);
-  const gap = cite(alignText, /compared === 0\) return 1;/);
-  const tie = cite(alignText, /if \(q < minQ\) \{/);
+  // Fit: zoom 1 is the fitted size (the drawing is computed from the panel width); the real
+  // defect was the tooltip wording and a 12px padding overflow, both fixed.
+  const fit = defectStatus('zoom-fit', DRAW_BASENAME, drawText, /title="Fit to width"/, /data-act="zoom-fit" title="Back to 100%/);
+  const gap = defectStatus('no-overlap', ALIGN_BASENAME, alignText, /compared === 0\) return 1;/, /compared === 0\) return NaN;/);
+  const tie = defectStatus('nj-tie', ALIGN_BASENAME, alignText, /if \(q < minQ\) \{/, /Math\.abs\(q - minQ\) <= tol && dist\[a\]\[b\] < dist\[minI\]\[minJ\]/);
   return {
     distances: distances,
     upgma_newick: fns.buildUPGMATreeFromAlignment(TREE_SEQS, 'raw').newick,
@@ -77,11 +88,7 @@ function collectAudit() {
     zoom_after_30_out: zoomOut,
     zoom_after_fit: zoomFit,
     png_scale: pngScale,
-    defects: [
-      { id: 'zoom-fit', file: DRAW_BASENAME, line: fit.line, quote: fit.quote },
-      { id: 'no-overlap', file: ALIGN_BASENAME, line: gap.line, quote: gap.quote },
-      { id: 'nj-tie', file: ALIGN_BASENAME, line: tie.line, quote: tie.quote }
-    ]
+    defects: [fit, gap, tie]
   };
 }
 
