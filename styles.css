@@ -1,4 +1,5 @@
 :root {
+    --name-gap: 1ch;   /* space between the name column and the sequence */
     --controls-offset: 0px;
     --nameLen: 25;
     --slider-value: 0%;
@@ -1908,11 +1909,11 @@ span.ge-col-flash {
 }
 .seq-name {
     flex: 0 0 auto;
-    min-width: calc(var(--nameLen) * 1ch + 16px);
-    width: calc(var(--nameLen) * 1ch + 16px);
-    max-width: calc(var(--nameLen) * 1ch + 16px);
+    min-width: calc(var(--nameLen) * 1ch + 16px + var(--name-gap));
+    width: calc(var(--nameLen) * 1ch + 16px + var(--name-gap));
+    max-width: calc(var(--nameLen) * 1ch + 16px + var(--name-gap));
     text-align: left;
-    padding: 0 4px 0 12px;
+    padding: 0 calc(4px + var(--name-gap)) 0 12px;
     margin-right: 0;
     margin-left: -12px;
     overflow: hidden;
@@ -2973,9 +2974,9 @@ span.column-selected {
 
 .scale-ruler-line .seq-name {
     /* Keep the name column visible but empty to maintain alignment */
-    min-width: calc(var(--nameLen) * 1ch + 16px);
-    width: calc(var(--nameLen) * 1ch + 16px);
-    max-width: calc(var(--nameLen) * 1ch + 16px);
+    min-width: calc(var(--nameLen) * 1ch + 16px + var(--name-gap));
+    width: calc(var(--nameLen) * 1ch + 16px + var(--name-gap));
+    max-width: calc(var(--nameLen) * 1ch + 16px + var(--name-gap));
 }
 
 .scale-ruler-line .seq-data {
@@ -3317,60 +3318,47 @@ body.highlight-diffs .seq-data > span:not(.diff-highlight) { opacity: 0.4; }
 body.highlight-diffs .seq-data > span.diff-highlight { font-weight: bold; }
 
 
-/* ── Codon Analysis ── */
-/* Codon phase coloring */
-body.codon-mode span.codon-p0 { border-bottom: 2px solid #3498db; }  /* 1st pos: blue */
-body.codon-mode span.codon-p1 { border-bottom: 2px solid #2ecc71; }  /* 2nd pos: green */
-body.codon-mode span.codon-p2 { border-bottom: 2px solid #e67e22; }  /* 3rd pos: orange */
+/* ── Codon Analysis ──
+   Nucleotide rows keep their normal look; the translation track under each row carries the
+   codon structure (boxes over each codon's three bases). The old per-base blue/green/orange
+   underlines and the red bars on every gap cell made rows unreadable. */
+body.codon-mode span.codon-p0, body.codon-mode span.codon-p1, body.codon-mode span.codon-p2 { }
 
-/* In-frame stop codons */
+/* Bases of an in-frame stop codon */
 body.codon-mode span.codon-stop {
-    background: #ff6b6b !important;
-    color: #fff !important;
+    background: #ffd9d6 !important;
+    color: #b3261e !important;
     font-weight: bold;
-    border-radius: 2px;
 }
 
-/* Frameshift positions */
-body.codon-mode span.codon-fs {
-    text-decoration: underline wavy #e74c3c;
-    text-underline-offset: 3px;
-}
+/* Gap cells of a frameshift (internal gap run not a multiple of 3) keep the normal gap look:
+   the track below marks the run once with a red "!" (hover it for the run length). Colouring
+   every such gap turned long runs red, and in non-coding alignments they are everywhere. */
+body.codon-mode span.codon-fs-internal { }
 
-/* Internal frameshift (gap indel not multiple of 3) */
-/* Inset shadows, not borders: a border widens the cell by 4px and pushes every later
-   residue in the row off its column */
-body.codon-mode span.codon-fs-internal {
-    box-shadow: inset 2px 0 #e74c3c, inset -2px 0 #e74c3c;
-    background-color: rgba(231, 76, 60, 0.15) !important;
-}
-
-/* Synonymous mutations */
+/* Synonymous / non-synonymous differences from the first sequence, one thin line each */
 body.codon-mode span.codon-syn {
     text-decoration: underline;
-    text-decoration-color: #27ae60;
+    text-decoration-color: #2e9d57;
     text-underline-offset: 2px;
 }
-
-/* Non-synonymous mutations */
 body.codon-mode span.codon-nonsyn {
     text-decoration: underline;
-    text-decoration-color: #c0392b;
-    text-decoration-style: double;
+    text-decoration-color: #d93025;
+    text-decoration-thickness: 2px;
     text-underline-offset: 2px;
 }
 
-/* AA translation rows - must match .seq-line font metrics for column alignment */
+/* Translation track - must match .seq-line font metrics for column alignment */
 body.codon-mode .aa-row {
     display: flex;
     align-items: flex-start;
     font-family: 'Courier New', monospace;
     font-size: inherit;
     line-height: 1.0;
-    color: #1a5276;
-    background: #f8fdf8;
-    border-bottom: 1px solid #d4efdf;
-    padding: 0;
+    color: #222;
+    background: #fff;
+    padding: 0 0 2px;
     margin: 0;
     min-height: 1em;
     white-space: nowrap;
@@ -3379,20 +3367,20 @@ body.codon-mode .aa-row {
 
 body.codon-mode .aa-name {
     flex: 0 0 auto;
-    min-width: calc(var(--nameLen) * 1ch + 16px);
-    width: calc(var(--nameLen) * 1ch + 16px);
-    max-width: calc(var(--nameLen) * 1ch + 16px);
-    text-align: left;
-    padding: 0 4px 0 12px;
+    box-sizing: border-box;   /* as .seq-name, or the padding is added to the width and the track shifts right */
+    min-width: calc(var(--nameLen) * 1ch + 16px + var(--name-gap));
+    width: calc(var(--nameLen) * 1ch + 16px + var(--name-gap));
+    max-width: calc(var(--nameLen) * 1ch + 16px + var(--name-gap));
+    text-align: right;
+    padding: 0 calc(4px + var(--name-gap)) 0 12px;
     margin-right: 0;
     margin-left: -12px;
     overflow: hidden;
-    text-overflow: ellipsis;
     white-space: nowrap;
-    font-size: inherit;
-    font-weight: bold;
-    color: #95a5a6;
-    background: #f8fdf8;
+    font-size: inherit;   /* the column width is in ch: keep the font, shrink only .aa-tag */
+    font-weight: normal;
+    color: #9aa0a6;
+    background: #fff;
     position: sticky;
     left: -15px;
     z-index: 45;
@@ -3409,17 +3397,28 @@ body.codon-mode .aa-data {
     letter-spacing: 0;
 }
 body.codon-mode .aa-row:empty { display: none; }
+body.codon-mode .aa-name .aa-tag { font-size: 0.75em; font-style: italic; }
 
-/* Frame-specific AA row styling */
-body.codon-mode .aa-row-f0 { color: #2980b9; background: #f0f8ff; }
-body.codon-mode .aa-row-f1 { color: #27ae60; background: #f0fff4; }
-body.codon-mode .aa-row-f2 { color: #e67e22; background: #fff8f0; }
+/* Codon boxes, coloured by amino-acid class (pastel, Clustal-like groups) */
+.aa-data > span.aa-c { font-weight: bold; }
+.aa-data > .aa-first { box-shadow: inset 1px 0 #fff; border-radius: 3px 0 0 3px; }
+.aa-data > .aa-last { box-shadow: inset -1px 0 #fff; border-radius: 0 3px 3px 0; }
+.aa-data > .aa-hyd { background: #d6e6fb; color: #1d4f91; }
+.aa-data > .aa-aro { background: #c9ecec; color: #0f6363; }
+.aa-data > .aa-pos { background: #fad2d2; color: #9b1c1c; }
+.aa-data > .aa-neg { background: #ead6f6; color: #6b2394; }
+.aa-data > .aa-pol { background: #d5f0d2; color: #22662b; }
+.aa-data > .aa-gly { background: #fde3c3; color: #8a4b08; }
+.aa-data > .aa-pro { background: #fbf1b8; color: #6d5d00; }
+.aa-data > .aa-unk { background: #e8e8e8; color: #555; }
+.aa-data > .aa-stop { background: #d93025; color: #fff; }
+.aa-data > .aa-fs { color: #d93025; font-weight: bold; background: #fdecea; }
 
-/* Best frame (auto-detected) highlight */
-body.codon-mode .aa-row-best {
-    font-weight: bold;
-    border-left: 3px solid #3498db;
-}
+/* Three-frame view: coloured frame labels; the best frame's label is bold */
+body.codon-mode .aa-row-f0 .aa-tag { color: #3b6fd6; }
+body.codon-mode .aa-row-f1 .aa-tag { color: #2a8a44; }
+body.codon-mode .aa-row-f2 .aa-tag { color: #c27800; }
+body.codon-mode .aa-row-best .aa-name { font-weight: bold; color: #444; }
 
 /* Recent files dropdown */
 .recent-item:hover { background: #e8f0fe; }

@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v192';
+const BUILD_TAG = 'v193';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -3470,12 +3470,16 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
         let gapRunStart = -1;
         let gapRunLen = 0;
         let outOfFrame = false; // set after indel gaps whose length is not a multiple of 3
+        let seenResidue = false; // leading gaps are missing sequence, not an indel
 
-        const flushGapRun = () => {
+        // Only an internal gap run (residues on both sides) is an indel. Leading and trailing
+        // gaps are where the sequence does not cover the alignment; they used to be flagged as
+        // frameshifts on every cell, which painted whole rows red.
+        const flushGapRun = (atEnd) => {
             if (gapRunLen <= 0) return;
-            if (gapRunLen % 3 !== 0) {
+            if (seenResidue && !atEnd && gapRunLen % 3 !== 0) {
                 for (let g = gapRunStart; g < gapRunStart + gapRunLen; g++) {
-                    frameShifts[i].push({ pos: g, type: 'indel' });
+                    frameShifts[i].push({ pos: g, type: 'indel', runStart: gapRunStart, runLen: gapRunLen });
                 }
                 outOfFrame = true;
             }
@@ -3497,10 +3501,20 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
                 gapRunLen++;
                 continue;
             }
-            flushGapRun();
+            flushGapRun(false);
 
             // Skip non-gap columns before frameOffset (not part of the analyzed CDS)
-            if (pos < frameOffset) continue;
+            if (pos < frameOffset) { seenResidue = true; continue; }
+
+            // A sequence that starts after the frame start begins wherever its first column
+            // falls in the alignment's codon grid, not always at codon position 1 (a row
+            // starting one column late used to be read one base out of frame). The bases of
+            // a codon it only partly covers get a phase but no amino acid.
+            if (!seenResidue) {
+                seenResidue = true;
+                const lead = (pos - frameOffset) % 3;
+                if (lead > 0) { codonPhase = lead; codonBuf = '?'.repeat(lead); }
+            }
 
             // Non-gap base - add to codon
             phase[i][pos] = codonPhase;
@@ -3508,6 +3522,12 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
             codonCols.push(pos);
             codonPhase++;
 
+            if (codonPhase >= 3 && codonBuf.includes('?')) {
+                codonPhase = 0;
+                codonBuf = '';
+                codonCols = [];
+                continue;
+            }
             if (codonPhase >= 3) {
                 const codon = codonBuf.replace(/[Nn]/g, 'N');
                 const aa = activeCode[codon] || 'X';
@@ -3542,11 +3562,9 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
                 codonCols = [];
             }
         }
-        flushGapRun();
-
-        if (codonPhase > 0 && codonPhase < 3) {
-            frameShifts[i].push({ pos: len - 1, phase: codonPhase, type: 'incomplete' });
-        }
+        flushGapRun(true);
+        // A last codon cut short by the end of the sequence is not flagged: that is where the
+        // sequence stops, not a frameshift (it was marked on the alignment's last column).
 
         if (i === refIdx) {
             for (const entry of aaSeq[refIdx]) refCodonByCol.set(entry.cols[0], entry);
@@ -3586,38 +3604,48 @@ function _computeMultiFrameCodonAnalysis(seqs, len) {
 }
 
 // Build AA translation row aligned to alignment columns (handles gaps + reading-frame offset).
-function _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd) {
+// Amino-acid class of each residue, for the translation-track box colours
+const _AA_CLASS = {};
+for (const [cls, aas] of Object.entries({ hyd: 'AILMVC', aro: 'FWY', pos: 'KRH', neg: 'DE', pol: 'NQST', gly: 'G', pro: 'P' })) {
+    for (const aa of aas) _AA_CLASS[aa] = cls;
+}
+
+// Translation track under a nucleotide row, one cell per alignment column like the row
+// above it (so it stays aligned at any zoom). Each codon is a box over its own three
+// nucleotide columns, coloured by amino-acid class, with the letter over the middle base;
+// stops are red. A frameshift (internal gap run whose length is not a multiple of 3) is
+// marked once, with "!" at the start of the run.
+function _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd, frameShifts) {
     dataCol.textContent = '';
-    if (!aaSeqData || aaSeqData.length === 0) return;
-
-    const codonAt = new Map();
-    for (const entry of aaSeqData) {
-        if (!entry.cols || entry.cols.length === 0) continue;
-        codonAt.set(entry.cols[0], entry);
+    const cell = new Array(viewEnd - viewStart).fill(null);
+    for (const entry of aaSeqData || []) {
+        const cols = entry.cols || [];
+        if (!cols.length || cols[cols.length - 1] < viewStart || cols[0] >= viewEnd) continue;
+        const cls = entry.aa === '*' ? 'stop' : (_AA_CLASS[entry.aa] || 'unk');
+        const mid = cols[Math.floor(cols.length / 2)];
+        cols.forEach((c, k) => {
+            if (c < viewStart || c >= viewEnd) return;
+            cell[c - viewStart] = { cls, text: c === mid ? entry.aa : '', first: k === 0, last: k === cols.length - 1,
+                title: `${entry.aa === '*' ? 'Stop' : entry.aa} (${entry.codon}), columns ${cols[0] + 1}-${cols[cols.length - 1] + 1}` };
+        });
     }
-
-    let pos = viewStart;
-    while (pos < viewEnd) {
-        const entry = codonAt.get(pos);
-        if (entry) {
-            const endCol = entry.cols[entry.cols.length - 1] + 1;
-            const width = endCol - entry.cols[0];
-            const aaSpan = document.createElement('span');
-            const aa = entry.aa;
-            aaSpan.style.cssText = 'display:inline-block;text-align:center;' +
-                `width:${width}ch;` + (aa === '*' ? 'color:#e74c3c;font-weight:bold;' : '');
-            aaSpan.textContent = aa;
-            aaSpan.dataset.col = String(entry.cols[0]);
-            dataCol.appendChild(aaSpan);
-            pos = endCol;
+    const fsStart = new Map();
+    for (const f of frameShifts || []) {
+        if (f.type === 'indel' && f.runStart != null && !fsStart.has(f.runStart)) fsStart.set(f.runStart, f.runLen);
+    }
+    let html = '';
+    for (let c = viewStart; c < viewEnd; c++) {
+        const x = cell[c - viewStart];
+        if (x) {
+            html += `<span class="aa-c aa-${x.cls}${x.first ? ' aa-first' : ''}${x.last ? ' aa-last' : ''}" title="${x.title}">${x.text || '\u00A0'}</span>`;
+        } else if (fsStart.has(c)) {
+            const n = fsStart.get(c);
+            html += `<span class="aa-fs" title="Frameshift: ${n}-column gap inside the sequence (not a multiple of 3); the reading frame shifts by ${n % 3} after it">!</span>`;
         } else {
-            const gapSpan = document.createElement('span');
-            gapSpan.style.cssText = 'display:inline-block;width:1ch;';
-            gapSpan.textContent = '\u00A0';
-            dataCol.appendChild(gapSpan);
-            pos++;
+            html += '<span>\u00A0</span>';
         }
     }
+    dataCol.innerHTML = html;
 }
 
 // CANVAS-BASED RENDERER - for large alignments
@@ -6678,24 +6706,30 @@ function renderAlignment(options = {}) {
             // Check if already has AA rows
             if (rowEl.nextElementSibling?.classList.contains('aa-row')) return;
 
-            const buildAARow = (aaSeqData, frameLabel, isBest, viewStart, viewEnd) => {
+            const buildAARow = (aaSeqData, frameLabel, isBest, viewStart, viewEnd, frameShifts) => {
                 const aaRow = document.createElement('div');
                 aaRow.className = 'aa-row';
                 if (frameLabel !== null) aaRow.classList.add('aa-row-f' + frameLabel);
                 if (isBest) aaRow.classList.add('aa-row-best');
                 const nameCol = document.createElement('div');
                 nameCol.className = 'aa-name';
+                // One translation row: no label (the frame is shown in the Codon bar above).
+                // Three rows: a short frame tag so they can be told apart.
                 if (frameLabel !== null) {
-                    nameCol.textContent = 'Pos ' + (frameLabel + 1) + ':';
+                    const tag = document.createElement('span');   // smaller text in a full-size column, so ch widths still match
+                    tag.className = 'aa-tag';
+                    tag.textContent = 'frame ' + (frameLabel + 1);
+                    nameCol.appendChild(tag);
+                    nameCol.title = 'Translation reading from alignment column ' + (frameLabel + 1) + (isBest ? ' (best frame: fewest stops)' : '');
                 } else {
                     const fr = state._codonActiveFrame >= 0 ? state._codonActiveFrame : (state._codonFrames?.bestFrame ?? 0);
-                    nameCol.textContent = 'Pos ' + (fr + 1) + ':';
+                    nameCol.textContent = '';
                     nameCol.title = 'Amino acid translation (reading from alignment column ' + (fr + 1) + ')';
                 }
                 aaRow.appendChild(nameCol);
                 const dataCol = document.createElement('div');
                 dataCol.className = 'aa-data';
-                _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd);
+                _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd, frameShifts);
                 aaRow.appendChild(dataCol);
                 return aaRow;
             };
@@ -6713,11 +6747,11 @@ function renderAlignment(options = {}) {
                 for (let fr = 2; fr >= 0; fr--) {
                     const frData = state._codonFrames.frames[fr];
                     if (!frData) continue;
-                    const aaRow = buildAARow(frData.aaSeq[seqIdx], fr, fr === best, viewStart, viewEnd);
+                    const aaRow = buildAARow(frData.aaSeq[seqIdx], fr, fr === best, viewStart, viewEnd, frData.frameShifts?.[seqIdx]);
                     rowEl.insertAdjacentElement('afterend', aaRow);
                 }
             } else {
-                const aaRow = buildAARow(cd.aaSeq[seqIdx], null, false, viewStart, viewEnd);
+                const aaRow = buildAARow(cd.aaSeq[seqIdx], null, false, viewStart, viewEnd, cd.frameShifts?.[seqIdx]);
                 rowEl.insertAdjacentElement('afterend', aaRow);
             }
         });
@@ -7838,7 +7872,9 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
     let displayName = state.seqs[index].header;
     let nameLenInt = parseInt(nameLen, 10);
     if (displayName.length > nameLenInt) {
-        _setSeqNameLabel(nameSpan, displayName.slice(0, nameLenInt) + '...');
+        // One "…" inside the column: "..." after nameLen characters overflowed it and showed
+        // only its first dot, stuck to the sequence
+        _setSeqNameLabel(nameSpan, displayName.slice(0, Math.max(1, nameLenInt - 1)) + '…');
         nameSpan.title = `${displayName} (length: ${state.seqs[index].seq.length})`;
     } else {
         _setSeqNameLabel(nameSpan, displayName);

@@ -1175,18 +1175,21 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <p>When active, the following visual annotations appear:</p>
   <table>
     <tr><th>Feature</th><th>Visual</th></tr>
-    <tr><td>Codon positions (1st/2nd/3rd)</td><td>Blue / green / orange underlines</td></tr>
-    <tr><td>In-frame stop codons</td><td>Red background, white bold text</td></tr>
-    <tr><td>Frameshifts</td><td>Wavy red underline at indel positions that break the reading frame</td></tr>
-    <tr><td>Synonymous mutations</td><td>Green underline - amino acid unchanged relative to reference</td></tr>
-    <tr><td>Non-synonymous mutations</td><td>Double red underline - amino acid changed</td></tr>
-    <tr><td>AA translation row</td><td>Amino acid letters below each sequence; stops in bold red <code>*</code></td></tr>
+    <tr><td>Translation track</td><td>A row under each sequence. Each codon is a box over its own three bases, coloured by amino-acid class (hydrophobic blue, aromatic teal, positive red, negative purple, polar green, G orange, P yellow), with the letter over the middle base. Hover a box for the codon and its columns. With <strong>Frame: All 3</strong>, three rows labelled frame 1-3; the best frame's label is bold</td></tr>
+    <tr><td>In-frame stop codons</td><td>Red box with <code>*</code> in the track; the three bases are bold red on pink</td></tr>
+    <tr><td>Frameshifts</td><td>A red <code>!</code> in the track at the start of a gap inside the sequence whose length is not a multiple of 3 (hover for the length). Gaps before a sequence starts or after it ends are not frameshifts: that is where the sequence does not cover the alignment</td></tr>
+    <tr><td>Synonymous mutations</td><td>Thin green underline - amino acid unchanged relative to the first sequence</td></tr>
+    <tr><td>Non-synonymous mutations</td><td>Thicker red underline - amino acid changed</td></tr>
   </table>
+  <p>
+    A sequence that starts after the frame start is read from wherever its first base falls in
+    the alignment's codon grid; the bases of a codon it only partly covers get no amino acid.
+  </p>
   <figure style="margin: 12px 0;">
     <img src="img/codon-example.png" alt="Codon analysis on examples/synthetic/synth_msa.fa, columns 1 to 60, with the translation under each row."
       style="max-width: 100%; border: 1px solid #ddd; border-radius: 4px;">
     <figcaption style="font-size: 11px; color: #666; margin-top: 5px;">
-      <code>examples/synthetic/synth_msa.fa</code>, columns 1-60 (the coding part; see <code>examples/synthetic/README.md</code>), conservation shading off, Standard code, frame auto-selected. Coloured underlines mark codon positions 1-3. <code>alpha_syn</code>: CTG&rarr;TTG in codon 3 is synonymous (green underline, still L). <code>alpha_mis</code>: GCA&rarr;GAA in codon 2 is non-synonymous (double red underline, A&rarr;E). <code>beta_stop</code>: TAC&rarr;TAA in codon 10 is an in-frame stop. <code>beta_fs</code>: the one-base gap at column 5 shifts the frame, so every later codon translates differently and new stops appear. <code>beta_del</code>: the three-base gap removes codon 7 and the frame is kept. TAG at columns 58-60 is the normal stop codon. Regenerate with <code>node scratch/build_manual_figures.js &amp;&amp; python scratch/build_manual_figures.py</code>.
+      <code>examples/synthetic/synth_msa.fa</code>, columns 1-60 (the coding part; see <code>examples/synthetic/README.md</code>), conservation shading off, Standard code, frame auto-selected. <code>alpha_syn</code>: CTG&rarr;TTG in codon 3 is synonymous (green underline, still L). <code>alpha_mis</code>: GCA&rarr;GAA in codon 2 is non-synonymous (red underline, A&rarr;E). <code>beta_stop</code>: TAC&rarr;TAA in codon 10 is an in-frame stop. <code>beta_fs</code>: the one-base gap at column 5 (red <code>!</code>) shifts the frame, so every later codon translates differently and new stops appear. <code>beta_del</code>: the three-base gap removes codon 7 and the frame is kept. TAG at columns 58-60 is the normal stop codon. Regenerate with <code>node scratch/build_manual_figures.js &amp;&amp; python scratch/build_manual_figures.py</code>.
     </figcaption>
   </figure>
 
@@ -1936,13 +1939,13 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
 
   <h3 id="tp-coding">12.3 Coding Sequence Analysis</h3>
   <ul>
-    <li>Ensure your alignment is in-frame (length multiples of 3) before enabling Codon mode</li>
+    <li>Codon mode is for coding sequences; on non-coding alignments (repeats, SINEs) most gaps are not multiples of 3 and the track fills with stops and <code>!</code> marks</li>
     <li>Select the correct genetic code - mitochondrial genes use different codes than nuclear</li>
-    <li>Wavy red underlines (frameshifts) often indicate sequencing errors or pseudogenes</li>
-    <li>Clusters of non-synonymous mutations (double red underline) may indicate positive selection</li>
+    <li>Red <code>!</code> marks (frameshifts) in a coding alignment often indicate sequencing errors or pseudogenes</li>
+    <li>Clusters of non-synonymous mutations (red underline) may indicate positive selection</li>
     <li>Mid-CDS stop codons suggest pseudogenisation or misannotation</li>
     <li>Combine <strong>Highlight Diffs</strong> + <strong>Codon Analysis</strong> to rapidly scan for impactful mutations</li>
-    <li>The AA translation row confirms reading frame - if it looks garbled, check your frame</li>
+    <li>The translation track confirms the reading frame - if it looks garbled, check your frame</li>
   </ul>
 
   <h3 id="tp-clustering">12.4 Clustering Best Practices</h3>

@@ -871,6 +871,54 @@ check('Codon analysis: frameshift-marked cells keep the column width (rows stay 
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+// Codon analysis: leading/trailing gaps are not frameshifts, an internal 1-base gap is marked
+// once, a row starting mid-codon is read in the alignment's frame, the translation track lines
+// up with the bases with each letter over its codon's middle base, and long names end in one "…"
+check('Codon analysis: frameshift only for internal gaps, late rows keep frame, track aligned', async (page) => {
+  const cds = 'ATGGCTAAAGGTCTGCAAGAATTCGGTACCTGGAAACCGATGCTTGCAGGTAAAGAACTGTTCCCGGGATCCTAA';
+  const rows = [
+    ['ref', cds],
+    ['late_start_mid_codon', '----' + cds.slice(4)],            // starts at column 5 = 2nd base of codon 2
+    ['short_end', cds.slice(0, 50) + '-'.repeat(cds.length - 50)], // trailing gaps
+    ['internal_1bp_gap_with_a_very_long_name_indeed', cds.slice(0, 20) + '-' + cds.slice(21)],
+  ];
+  await page.setInputFiles('#fileInput', { name: 'cds.fa', mimeType: 'text/plain', buffer: Buffer.from(rows.map(([n, s]) => `>${n}\n${s}`).join('\n') + '\n') });
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => {
+    const n = document.getElementById('nameLengthInput'); n.value = 20; n.dispatchEvent(new Event('input', { bubbles: true })); n.dispatchEvent(new Event('change', { bubbles: true }));
+    const c = document.getElementById('codonAnalysis'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.waitForTimeout(1200);
+  const r = await page.evaluate(() => {
+    const cd = state._codonData;
+    const fs = cd.frameShifts.map(f => f.filter(x => x.type === 'indel').length);
+    const refCodon5 = cd.aaSeq[0].find(e => e.cols[0] === 6);      // codon 3 of ref: columns 7-9
+    const lateCodon = cd.aaSeq[1].find(e => e.cols[0] === 6);
+    const lateFirst = cd.aaSeq[1][0]?.cols[0];
+    let misaligned = 0, notMid = 0;
+    document.querySelectorAll('.seq-line[data-seq-index]').forEach(line => {
+      const aa = line.nextElementSibling; if (!aa?.classList.contains('aa-row')) return;
+      const nt = [...line.querySelector('.seq-data').children].filter(k => k.dataset.pos != null);
+      const ac = [...aa.querySelector('.aa-data').children];
+      const i = +line.dataset.seqIndex;
+      ac.forEach((a, k) => {
+        if (nt[k] && Math.abs(a.getBoundingClientRect().left - nt[k].getBoundingClientRect().left) > 0.6) misaligned++;
+        if (a.classList.contains('aa-c') && a.textContent.trim()) {
+          const e = cd.aaSeq[i].find(x => x.cols.includes(k));
+          if (!e || e.cols[1] !== k || e.aa !== a.textContent) notMid++;
+        }
+      });
+    });
+    const marks = [...document.querySelectorAll('.aa-row')].map(a => a.querySelectorAll('.aa-fs').length);
+    const longName = document.querySelector('.seq-line[data-seq-index="3"] .seq-name').textContent.trim();
+    return { fs, marks, lateFirst, lateOk: !!lateCodon && lateCodon.aa === refCodon5.aa && lateCodon.codon === refCodon5.codon,
+      misaligned, notMid, longName, nameFits: longName.length <= 20 && longName.endsWith('…') && !longName.includes('...') };
+  });
+  const ok = r.fs[0] === 0 && r.fs[1] === 0 && r.fs[2] === 0 && r.fs[3] === 1 && r.marks.join() === '0,0,0,1'
+    && r.lateFirst === 6 && r.lateOk && r.misaligned === 0 && r.notMid === 0 && r.nameFits;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
