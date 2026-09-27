@@ -3583,3 +3583,5 @@ table.stats-mx th.fx, table.stats-mx th.fx span { background: #ffe082; color: #0
 /* BLAST dialogs use the same title-bar look as .win-titlebar */
 .blast-text-title-bar { background: #f5f6f8; border-bottom-color: #e2e5e8; padding: 6px 8px 6px 14px; border-radius: 8px 8px 0 0; }
 .blast-text-title-bar > span:first-child { font-size: 14px !important; font-weight: 650 !important; color: #222; }
+.tree-distance-warning { color: #b3261e; font-weight: bold; cursor: help; }
+.aa-data > .aa-fs-at { box-shadow: inset 2px 0 #d93025; }

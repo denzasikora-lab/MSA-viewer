@@ -478,10 +478,15 @@
   function draw() {
     var box = document.getElementById('treeSvgCanvas');
     if (!box || !st.root) return;
+    // clientWidth/Height include the panel's padding; drawing to them made the tree 12px
+    // wider than the space inside it, so it always scrolled sideways at Fit (100%)
+    var cs = getComputedStyle(box);
+    var innerW = box.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight);
+    var innerH = box.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom);
     box.innerHTML = buildTreeSVGString(st.root, {
       measure: measurer(st.fontFamily),
-      width: box.clientWidth || 700,
-      height: box.clientHeight || 520,
+      width: innerW > 0 ? innerW : 700,
+      height: innerH > 0 ? innerH : 520,
       zoom: st.zoom,
       layout: st.layout,
       labelSpacing: st.labelSpacing,
@@ -686,7 +691,7 @@
         '<button type="button" class="tree-tool" data-act="zoom-out" title="Zoom out">&minus;</button>' +
         '<span id="treeZoomLabel" style="min-width:34px;text-align:center;">100%</span>' +
         '<button type="button" class="tree-tool" data-act="zoom-in" title="Zoom in">+</button>' +
-        '<button type="button" class="tree-tool" data-act="zoom-fit" title="Fit to width">Fit</button>' +
+        '<button type="button" class="tree-tool" data-act="zoom-fit" title="Back to 100%: the tree drawn to fit the panel (rooted: its width; unrooted: the whole panel)">Fit</button>' +
         '<span id="treeSpacingGroup" style="display:none;align-items:center;gap:6px;">' +
           '<span style="width:1px;height:14px;background:#c5d2df;margin:0 2px;"></span>' +
           '<span style="color:#6b8299;" title="How far apart unrooted-tree leaf labels are spaced, independent of Zoom">Label spacing</span>' +

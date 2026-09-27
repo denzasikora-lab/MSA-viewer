@@ -975,6 +975,54 @@ check('Name Len: No limit works, typing 12 gives 12, Enter clamps, width and nam
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+// Tree builder: identical sequences cluster together under both methods (NJ breaks tied Q
+// scores toward the closer pair); a pair with no shared aligned base gets no invented
+// distance and is reported; a saturated JC69 pair does not turn branch lengths into NaN
+check('Tree builder: NJ ties, no-shared-base and saturated pairs', async (page) => {
+  const r = await page.evaluate(() => {
+    const ident = [
+      { header: 'Alpha one', seq: 'ACGTACGT' }, { header: 'Alpha two', seq: 'ACGTACGT' },
+      { header: 'beta', seq: 'GCGTACGT' }, { header: "O'Brien", seq: 'ACGTACGT' }];
+    const nj = buildNJTreeFromAlignment(ident, 'raw').newick;
+    const upgma = buildUPGMATreeFromAlignment(ident, 'raw').newick;
+    // beta must be outside the clade holding the three identical sequences
+    const betaOutside = nw => { const t = nw.replace(/:[0-9.]+/g, ''); return /^\(beta,\(.*\)\);$/.test(t) || /^\(\(.*\),beta\);$/.test(t); };
+    const noShare = [
+      { header: 'left', seq: 'ACGTACGTAC----------' }, { header: 'left2', seq: 'ACGAACGTAC----------' },
+      { header: 'right', seq: '----------TTGCATGCAA' }];
+    const ns = buildUPGMATreeFromAlignment(noShare, 'raw');
+    const sat = [
+      { header: 's1', seq: 'ACGTACGTACGT' }, { header: 's2', seq: 'ACGTACGTACGA' }, { header: 's3', seq: 'TGCATGCATGCA' }];
+    const sj = buildNJTreeFromAlignment(sat, 'jc69');
+    return { nj, upgma, njOk: betaOutside(nj), upgmaOk: betaOutside(upgma),
+      nsDistance: _modelPairDistance('ACGTACGT', '--------', 'raw'), nsPairs: ns.stats.noOverlap.length, nsFill: ns.stats.filledWith, nsMax: ns.stats.maxDistance,
+      satPairs: sj.stats.saturated.length, satNewick: sj.newick, satNaN: /NaN|Infinity/.test(sj.newick),
+      // s3 differs from s1/s2 everywhere: its distance must stay larger than theirs
+      satFar: (() => { const u = buildUPGMATreeFromAlignment(sat, 'jc69').newick.replace(/:[0-9.]+/g, ''); return /^\(s3,\(s1,s2\)\);$|^\(\(s1,s2\),s3\);$/.test(u); })() };
+  });
+  const ok = r.njOk && r.upgmaOk && Number.isNaN(r.nsDistance) && r.nsPairs === 2 && r.nsFill === r.nsMax
+    && r.satPairs === 2 && !r.satNaN && r.satFar;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+// Frameshifts are judged against the other rows: one row with an extra base is the only
+// row flagged, not the four rows that have a 1-column gap opposite it
+check('Codon analysis: an insertion in one row flags that row only', async (page) => {
+  const cds = 'ATGGCTAAAGGTCTGCAAGAATTCGGTACCTGGAAACCGATGCTTGCAGGTAAAGAACTGTTCCCGGGATCCTAA';
+  const gapped = cds.slice(0, 30) + '-' + cds.slice(30);
+  const rows = [['r1', gapped], ['r2', gapped], ['r3', gapped], ['r4', gapped], ['ins', cds.slice(0, 30) + 'T' + cds.slice(30)]];
+  await page.setInputFiles('#fileInput', { name: 'ins.fa', mimeType: 'text/plain', buffer: Buffer.from(rows.map(([n, s]) => `>${n}\n${s}`).join('\n') + '\n') });
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => { const c = document.getElementById('codonAnalysis'); c.checked = true; c.dispatchEvent(new Event('change', { bubbles: true })); });
+  await page.waitForTimeout(1200);
+  const r = await page.evaluate(() => ({
+    fs: state._codonData.frameShifts.map(f => f.length),
+    marked: [...document.querySelectorAll('.aa-row')].map(a => a.querySelectorAll('.aa-fs, .aa-fs-at').length),
+  }));
+  const ok = r.fs.join() === '0,0,0,0,1' && r.marked.join() === '0,0,0,0,1';
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

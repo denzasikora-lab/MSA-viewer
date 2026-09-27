@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v194';
+const BUILD_TAG = 'v195';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -3511,20 +3511,10 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
         let codonCols = [];
         let gapRunStart = -1;
         let gapRunLen = 0;
-        let outOfFrame = false; // set after indel gaps whose length is not a multiple of 3
         let seenResidue = false; // leading gaps are missing sequence, not an indel
 
-        // Only an internal gap run (residues on both sides) is an indel. Leading and trailing
-        // gaps are where the sequence does not cover the alignment; they used to be flagged as
-        // frameshifts on every cell, which painted whole rows red.
-        const flushGapRun = (atEnd) => {
-            if (gapRunLen <= 0) return;
-            if (seenResidue && !atEnd && gapRunLen % 3 !== 0) {
-                for (let g = gapRunStart; g < gapRunStart + gapRunLen; g++) {
-                    frameShifts[i].push({ pos: g, type: 'indel', runStart: gapRunStart, runLen: gapRunLen });
-                }
-                outOfFrame = true;
-            }
+        // Gap runs no longer decide frameshifts on their own (see the pass after this loop).
+        const flushGapRun = () => {
             gapRunStart = -1;
             gapRunLen = 0;
         };
@@ -3582,7 +3572,7 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
                 // Syn/non-syn vs the reference codon that starts at the SAME alignment column
                 // (not the same ordinal index in the codon list, which drifts out of sync as
                 // soon as one sequence has an in-frame indel the other doesn't).
-                if (i !== refIdx && !outOfFrame) {
+                if (i !== refIdx) {
                     const refEntry = refCodonByCol.get(codonCols[0]);
                     if (refEntry) {
                         const refCodon = refEntry.codon;
@@ -3613,7 +3603,60 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
         }
     }
 
+    _markRelativeFrameshifts(phase, frameShifts, len);
     return { phase, stops, frameShifts, synNonSyn, aaSeq, refIdx, frameOffset };
+}
+
+// Frameshifts are judged against the other sequences, not by a gap's own length. The
+// translation already skips gaps, so a gap only matters if it moves a sequence's codons
+// out of step with the rest: where one row has an extra base, all the others have a
+// 1-column gap opposite it, and those used to be flagged although nothing shifted in them.
+// At each column the reference codon position is the most common one among the rows that
+// have a base there (used only where at least half of the rows spanning the column have a
+// base, and the most common position is held by at least half of them). A row's offset is
+// its own codon position minus the reference; where the offset changes, that row's frame
+// has shifted relative to the others. It is marked once, over the stretch where it happened.
+function _markRelativeFrameshifts(phase, frameShifts, len) {
+    const n = phase.length;
+    const cover = new Int32Array(len + 1);
+    const counts = new Int32Array(len * 3);
+    for (let i = 0; i < n; i++) {
+        let first = -1, last = -1;
+        const ph = phase[i];
+        for (let c = 0; c < len; c++) {
+            if (ph[c] < 0) continue;
+            if (first < 0) first = c;
+            last = c;
+            counts[c * 3 + ph[c]]++;
+        }
+        if (first >= 0) { cover[first]++; cover[last + 1]--; }
+    }
+    const refPhase = new Int8Array(len).fill(-1);
+    let spanning = 0;
+    for (let c = 0; c < len; c++) {
+        spanning += cover[c];
+        const a = counts[c * 3], b = counts[c * 3 + 1], d = counts[c * 3 + 2];
+        const bases = a + b + d;
+        if (bases < 2 || bases * 2 < spanning) continue;
+        const top = Math.max(a, b, d);
+        if (top * 2 < bases) continue;
+        refPhase[c] = a === top ? 0 : b === top ? 1 : 2;
+    }
+    for (let i = 0; i < n; i++) {
+        const ph = phase[i];
+        let prevOffset = -1, lastCol = -1;
+        for (let c = 0; c < len; c++) {
+            if (ph[c] < 0 || refPhase[c] < 0) continue;
+            const off = (ph[c] - refPhase[c] + 3) % 3;
+            if (prevOffset >= 0 && off !== prevOffset) {
+                const runStart = lastCol + 1;
+                const runLen = Math.max(1, c - runStart);
+                frameShifts[i].push({ pos: runStart, type: 'indel', runStart, runLen, shift: (off - prevOffset + 3) % 3 });
+            }
+            prevOffset = off;
+            lastCol = c;
+        }
+    }
 }
 
 // Compute codon analysis for all three reading frames
@@ -3673,16 +3716,20 @@ function _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd, frameShif
     }
     const fsStart = new Map();
     for (const f of frameShifts || []) {
-        if (f.type === 'indel' && f.runStart != null && !fsStart.has(f.runStart)) fsStart.set(f.runStart, f.runLen);
+        if (f.type === 'indel' && f.runStart != null && !fsStart.has(f.runStart)) fsStart.set(f.runStart, f);
     }
     let html = '';
     for (let c = viewStart; c < viewEnd; c++) {
         const x = cell[c - viewStart];
-        if (x) {
+        if (x && fsStart.has(c)) {
+            // The shift starts on one of this row's own bases (an insertion): red edge on the codon box
+            const f = fsStart.get(c);
+            html += `<span class="aa-c aa-${x.cls} aa-fs-at${x.first ? ' aa-first' : ''}${x.last ? ' aa-last' : ''}" title="Frameshift: from here this sequence reads ${f.shift === 1 ? 'one base ahead of' : 'one base behind'} most sequences">${x.text || ' '}</span>`;
+        } else if (x) {
             html += `<span class="aa-c aa-${x.cls}${x.first ? ' aa-first' : ''}${x.last ? ' aa-last' : ''}" title="${x.title}">${x.text || '\u00A0'}</span>`;
         } else if (fsStart.has(c)) {
-            const n = fsStart.get(c);
-            html += `<span class="aa-fs" title="Frameshift: ${n}-column gap inside the sequence (not a multiple of 3); the reading frame shifts by ${n % 3} after it">!</span>`;
+            const f = fsStart.get(c);
+            html += `<span class="aa-fs" title="Frameshift: from column ${f.runStart + f.runLen + 1} on, this sequence reads ${f.shift === 1 ? 'one base ahead of' : 'one base behind'} most sequences (a gap or insertion here whose length is not a multiple of 3, columns ${f.runStart + 1}-${f.runStart + f.runLen})">!</span>`;
         } else {
             html += '<span>\u00A0</span>';
         }
@@ -14844,9 +14891,11 @@ function _k80Distance(P, Q) {
 }
 
 // Compute pairwise distance using the selected model
+// NaN when the pair shares no aligned base: there is nothing to compare, so no distance.
+// (It used to return 1 for every model, as if the two were completely different.)
 function _modelPairDistance(seqOne, seqTwo, model) {
     const m = _alignmentPairMetrics(seqOne, seqTwo);
-    if (m.compared === 0) return 1;
+    if (m.compared === 0) return NaN;
     switch (model) {
         case 'jc69': return _jc69Distance(m.p);
         case 'k80':
@@ -14892,26 +14941,54 @@ function _treeNodeToText(node, indent = '', isRoot = true) {
     return text;
 }
 
-function buildUPGMATreeFromAlignment(seqObjects, model) {
-    model = model || 'raw';
-    const sequenceCount = seqObjects.length;
-    const baseDistances = Array.from({ length: sequenceCount }, () => new Array(sequenceCount).fill(0));
-    let distanceTotal = 0;
-    let distancePairs = 0;
-    let distanceMin = Infinity;
-    let distanceMax = 0;
-
-    for (let firstIndex = 0; firstIndex < sequenceCount; firstIndex++) {
-        for (let secondIndex = firstIndex + 1; secondIndex < sequenceCount; secondIndex++) {
-            const distance = _modelPairDistance(seqObjects[firstIndex].seq, seqObjects[secondIndex].seq, model);
-            baseDistances[firstIndex][secondIndex] = distance;
-            baseDistances[secondIndex][firstIndex] = distance;
-            distanceTotal += distance;
-            distancePairs++;
-            distanceMin = Math.min(distanceMin, distance);
-            distanceMax = Math.max(distanceMax, distance);
+// Pairwise distances for UPGMA and NJ. Two kinds of pair have no usable distance, and
+// neither can enter the clustering arithmetic (Infinity made branch lengths NaN, drawn as 0):
+// - no shared aligned base (NaN): unknown, set to the largest defined distance;
+// - JC69/K80 saturation (Infinity): known to be very large, set to twice the largest
+//   (the largest alone drew a completely different sequence as a close relative).
+// The pairs are returned so the tree window can say so. Summary numbers use defined
+// distances only.
+function _treeDistanceMatrix(seqObjects, model) {
+    const n = seqObjects.length;
+    const D = Array.from({ length: n }, () => new Array(n).fill(0));
+    const noOverlap = [], saturated = [];
+    let total = 0, pairs = 0, min = Infinity, max = -Infinity;
+    for (let i = 0; i < n; i++) {
+        for (let j = i + 1; j < n; j++) {
+            const d = _modelPairDistance(seqObjects[i].seq, seqObjects[j].seq, model);
+            if (Number.isNaN(d)) noOverlap.push([i, j]);
+            else if (!Number.isFinite(d)) saturated.push([i, j]);
+            else { total += d; pairs++; min = Math.min(min, d); max = Math.max(max, d); }
+            D[i][j] = D[j][i] = d;
         }
     }
+    if (n > 1 && pairs === 0) {
+        throw new Error(noOverlap.length
+            ? 'no two of these sequences share an aligned base (A/C/G/T/U), so no distance can be computed'
+            : 'every pairwise distance is saturated under this model; try p-distance');
+    }
+    const fill = pairs ? max : 0;
+    const satFill = fill > 0 ? 2 * fill : 1;
+    for (const [i, j] of noOverlap) D[i][j] = D[j][i] = fill;
+    for (const [i, j] of saturated) D[i][j] = D[j][i] = satFill;
+    return {
+        D,
+        stats: {
+            count: n,
+            averageDistance: pairs ? total / pairs : 0,
+            minDistance: pairs ? min : 0,
+            maxDistance: pairs ? max : 0,
+            noOverlap, saturated,
+            filledWith: (noOverlap.length || saturated.length) ? fill : null,
+            saturatedFill: saturated.length ? satFill : null,
+            names: seqObjects.map((q, k) => q.header || `seq_${k + 1}`)
+        }
+    };
+}
+
+function buildUPGMATreeFromAlignment(seqObjects, model) {
+    model = model || 'raw';
+    const { D: baseDistances, stats: distanceStats } = _treeDistanceMatrix(seqObjects, model);
 
     const clusters = seqObjects.map((seqObj, index) => ({
         name: seqObj.header || `seq_${index + 1}`,
@@ -14981,12 +15058,7 @@ function buildUPGMATreeFromAlignment(seqObjects, model) {
     return {
         newick: _treeNodeToNewick(root, true),
         text: _treeNodeToText(root).trimEnd(),
-        stats: {
-            count: sequenceCount,
-            averageDistance: distancePairs ? distanceTotal / distancePairs : 0,
-            minDistance: distanceMin === Infinity ? 0 : distanceMin,
-            maxDistance: distanceMax
-        }
+        stats: distanceStats
     };
 }
 
@@ -14997,20 +15069,7 @@ function buildUPGMATreeFromAlignment(seqObjects, model) {
 function buildNJTreeFromAlignment(seqObjects, model) {
     model = model || 'raw';
     const n = seqObjects.length;
-    // Compute pairwise distances
-    const baseDist = Array.from({ length: n }, () => new Array(n).fill(0));
-    let distanceTotal = 0, distancePairs = 0, distanceMin = Infinity, distanceMax = 0;
-    for (let i = 0; i < n; i++) {
-        for (let j = i + 1; j < n; j++) {
-            const d = _modelPairDistance(seqObjects[i].seq, seqObjects[j].seq, model);
-            baseDist[i][j] = d;
-            baseDist[j][i] = d;
-            distanceTotal += d;
-            distancePairs++;
-            distanceMin = Math.min(distanceMin, d);
-            distanceMax = Math.max(distanceMax, d);
-        }
-    }
+    const { D: baseDist, stats: distanceStats } = _treeDistanceMatrix(seqObjects, model);
 
     // Initialize clusters
     const clusters = seqObjects.map((s, i) => ({
@@ -15040,7 +15099,11 @@ function buildNJTreeFromAlignment(seqObjects, model) {
         for (let a = 0; a < m; a++) {
             for (let b = a + 1; b < m; b++) {
                 const q = (m - 2) * dist[a][b] - r[a] - r[b];
-                if (q < minQ) {
+                // Ties are common (with 4 nodes complementary pairs always tie; with 3 all
+                // do). Scan order used to decide, which put one of three identical
+                // sequences next to the different one. Prefer the closer pair.
+                const tol = 1e-9 * Math.max(1, Math.abs(minQ));
+                if (q < minQ - tol || (Math.abs(q - minQ) <= tol && dist[a][b] < dist[minI][minJ])) {
                     minQ = q;
                     minI = a;
                     minJ = b;
@@ -15122,12 +15185,7 @@ function buildNJTreeFromAlignment(seqObjects, model) {
     return {
         newick: _treeNodeToNewick(root, true),
         text: _treeNodeToText(root).trimEnd(),
-        stats: {
-            count: n,
-            averageDistance: distancePairs ? distanceTotal / distancePairs : 0,
-            minDistance: distanceMin === Infinity ? 0 : distanceMin,
-            maxDistance: distanceMax
-        }
+        stats: distanceStats
     };
 }
 
@@ -15160,7 +15218,21 @@ function openTreeBuilder() {
             const textOutput = document.getElementById('treeTextOutput');
             const scope = state.selectedRows.size >= 2 ? 'selected sequences' : 'all sequences';
             if (summary) {
-                summary.textContent = `${result.stats.count} ${scope} | ${modelName} | ${method.toUpperCase()} | avg ${result.stats.averageDistance.toFixed(4)} | range ${result.stats.minDistance.toFixed(4)}-${result.stats.maxDistance.toFixed(4)}`;
+                const st = result.stats;
+                summary.textContent = `${st.count} ${scope} | ${modelName} | ${method.toUpperCase()} | avg ${st.averageDistance.toFixed(4)} | range ${st.minDistance.toFixed(4)}-${st.maxDistance.toFixed(4)}`;
+                // Pairs without a usable distance were set to the largest one: say which
+                if (st.filledWith !== null) {
+                    const parts = [];
+                    if (st.noOverlap.length) parts.push(`${st.noOverlap.length} pair${st.noOverlap.length > 1 ? 's share' : ' shares'} no aligned base: distance unknown, set to the largest defined (${st.filledWith.toFixed(4)})`);
+                    if (st.saturated.length) parts.push(`${st.saturated.length} pair${st.saturated.length > 1 ? 's are' : ' is'} saturated under ${modelName}: set to twice the largest (${st.saturatedFill.toFixed(4)})`);
+                    const warn = document.createElement('span');
+                    warn.className = 'tree-distance-warning';
+                    warn.textContent = ` | ${parts.join('; ')}`;
+                    const list = pairs => pairs.slice(0, 30).map(([i, j]) => `${st.names[i]} × ${st.names[j]}`).join('\n');
+                    warn.title = [st.noOverlap.length ? 'No shared aligned base:\n' + list(st.noOverlap) : '',
+                        st.saturated.length ? 'Saturated:\n' + list(st.saturated) : ''].filter(Boolean).join('\n\n');
+                    summary.appendChild(warn);
+                }
             }
             if (newickOutput) newickOutput.value = result.newick;
             if (textOutput) textOutput.textContent = result.text;
