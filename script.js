@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v199';
+const BUILD_TAG = 'v200';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -3582,7 +3582,9 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
                         // Only the bases that differ from the reference codon are marked (all three
                         // used to be, including unchanged ones); each is classed by what that single
                         // change would do to the reference amino acid
-                        if (codon !== refCodon) {
+                        // Codons with an ambiguous base (N, R, Y, ...) are left unmarked: the
+                        // change cannot be classed (AAN vs AAA was marked non-synonymous)
+                        if (codon !== refCodon && /^[ACGT]{3}$/.test(codon) && /^[ACGT]{3}$/.test(refCodon)) {
                             for (let k = 0; k < 3; k++) {
                                 if (codon[k] === refCodon[k]) continue;
                                 if (aa === refAA) { synNonSyn[i][codonCols[k]] = 'syn'; continue; }
@@ -6401,9 +6403,12 @@ function _computeVarSites(len) {
     const varThresholdMode = document.getElementById('varThresholdMode')?.value || 'pct';
     const varThresholdRaw = parseInt(document.getElementById('varSitesThreshold')?.value) || 0;
     const nSeq = state.seqs.length;
-    const varThreshold = varThresholdMode === 'count'
+    // At most nSeq - 1 sequences can differ from a column's consensus (the consensus is one of
+    // them), so a threshold of nSeq (the old count maximum, or 100%) could never be met and
+    // "Variable sites only" blanked the whole alignment
+    const varThreshold = Math.min(Math.max(nSeq - 1, 1), varThresholdMode === 'count'
         ? varThresholdRaw
-        : (varThresholdRaw === 0 ? 0 : Math.ceil((varThresholdRaw / 100) * nSeq));
+        : (varThresholdRaw === 0 ? 0 : Math.ceil((varThresholdRaw / 100) * nSeq)));
     const showBreakpoints = document.getElementById('varSitesBreakpoints')?.checked !== false;
     if ((highlightDiffs || varSites) && state.seqs.length > 1) {
         const diffCols = new Set();
@@ -6431,6 +6436,9 @@ function _computeVarSites(len) {
             if (varThreshold === 0 || diffCount >= varThreshold) diffCols.add(pos);
         }
         state._diffColumns = diffCols;
+        if (varThreshold > 0 && diffCols.size === 0 && typeof showMessage === 'function') {
+            showMessage(`No column has ${varThreshold} or more sequences differing from its consensus; lower the threshold to see columns.`, 4000);
+        }
         if (varSites) {
             const hiddenRanges = [];
             let hiddenStart = -1;
@@ -11922,7 +11930,7 @@ function updateVarThresholdBounds() {
     const slider = document.getElementById('varSitesThreshold');
     const input = document.getElementById('varSitesThresholdInput');
     const nSeq = state.seqs ? state.seqs.length : 0;
-    const max = mode === 'count' ? Math.max(nSeq, 1) : 100;
+    const max = mode === 'count' ? Math.max(nSeq - 1, 1) : 100;   // at most nSeq - 1 can differ
     [slider, input].forEach(elRef => {
         if (!elRef) return;
         elRef.max = String(max);

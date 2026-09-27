@@ -1170,6 +1170,40 @@ check('Clusterability verdict: whole outcome compared, ties keep current setting
   return { pass: ok, detail: JSON.stringify({ a: r.a.slice(0, 300), b: r.b.slice(0, 160), c: r.c.slice(0, 200) }) };
 });
 
+// GLM audit batch 2: at most n-1 sequences can differ from a column's consensus, so the
+// variable-sites count maximum is n-1 and 100% still finds the most variable column (it
+// blanked the alignment); codons with an ambiguous base get no syn/nonsyn mark
+check('Variable-sites top threshold and ambiguous codons (audit batch 2)', async (page) => {
+  // column 4 has A/C/G/T (3 differ from any consensus); column 2 has one difference
+  const fa = '>s1\nATGAAAGCT\n>s2\nATCACAGCT\n>s3\nATGAGAGCT\n>s4\nATGATAGCN\n';
+  await page.setInputFiles('#fileInput', { name: 'v.fa', mimeType: 'text/plain', buffer: Buffer.from(fa) });
+  await page.waitForTimeout(1000);
+  const r = await page.evaluate(async () => {
+    const set = (id, v) => { const e = document.getElementById(id); if (e.type === 'checkbox') e.checked = v; else e.value = v; e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); };
+    const out = {};
+    set('varSitesOnly', true);
+    set('varThresholdMode', 'count');
+    await new Promise(r => setTimeout(r, 400));
+    out.countMax = document.getElementById('varSitesThreshold').max;
+    set('varSitesThreshold', 3);
+    await new Promise(r => setTimeout(r, 400));
+    out.count3 = [...state._diffColumns].join(',');
+    set('varThresholdMode', 'pct'); set('varSitesThreshold', 100);
+    await new Promise(r => setTimeout(r, 400));
+    out.pct100 = [...state._diffColumns].join(',');
+    set('varSitesOnly', false); set('varSitesThreshold', 0);
+    set('codonAnalysis', true);
+    await new Promise(r => setTimeout(r, 600));
+    const cd = state._codonData;
+    out.s4marks = cd.synNonSyn[3].map((v, c) => v ? c + ':' + v : null).filter(Boolean).join(' ');
+    out.s2marks = cd.synNonSyn[1].map((v, c) => v ? c + ':' + v : null).filter(Boolean).join(' ');
+    return out;
+  });
+  // s4's last codon GCN (vs GCT) has an N: no mark there; s2's ATC (vs ATG) is marked at column 2
+  const ok = r.countMax === '3' && r.count3 === '4' && r.pct100 === '4' && !/(^|\s)8:/.test(r.s4marks) && /(^|\s)2:nonsyn/.test(r.s2marks);
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

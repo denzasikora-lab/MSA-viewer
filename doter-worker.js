@@ -23,7 +23,7 @@ self.addEventListener('message', (event) => {
     for (let j = 0; j < M; j++) bEnc[j] = unk.has(seqB[j]) ? 2000 : seqB.charCodeAt(j);
 
     const scores = new Int16Array(N * M);
-    const maxDiagLen = Math.max(N, M);
+    const maxDiagLen = Math.min(N, M);   // no diagonal is longer than the shorter sequence
     const prefix = new Int32Array(maxDiagLen + 1);
 
     let globalMin = 0x7FFF;
