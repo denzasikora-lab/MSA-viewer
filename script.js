@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v209';
+const BUILD_TAG = 'v210';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -23522,7 +23522,7 @@ function _dotUpdateHoverInfo(row, col, options = {}) {
             hoverEl.textContent = `Frozen at A:${frozenRow + 1}/${S.rows}  B:${frozenCol + 1}/${S.cols}`;
         }
         if (panelEl) {
-            panelEl.style.border = '2px solid #4a9eff';
+            panelEl.style.boxShadow = 'inset 0 0 0 1px #4a9eff'; panelEl.style.borderColor = '#4a9eff';
             panelEl.style.background = '#f0f8ff';
         }
         return;
@@ -23569,7 +23569,8 @@ function _dotUpdateHoverInfo(row, col, options = {}) {
     }
 
     if (panelEl) {
-        panelEl.style.border = S._frozen ? '2px solid #4a9eff' : '1px solid #d8d8d8';
+        panelEl.style.borderColor = S._frozen ? '#4a9eff' : '#d8d8d8';
+        panelEl.style.boxShadow = S._frozen ? 'inset 0 0 0 1px #4a9eff' : 'none';
         panelEl.style.background = S._frozen ? '#f0f8ff' : '#f7f7f7';
 
         var aLabel = Math.max(1, row - ctx + 1);
@@ -23907,45 +23908,107 @@ function _dotFitView() {
 }
 
 // Detect top-scoring diagonal runs for the side navigation list
+// Regions for the side list. One region is one similar stretch: the diagonal runs that
+// continue the same alignment across mismatches (short gaps) and small indels (a shift of a
+// few diagonals) are chained into one entry. Listing raw runs split a single homologous
+// stretch into many entries on neighbouring diagonals. A self-plot lists only the upper
+// triangle, the lower one being its mirror image (the list was also empty there: no single
+// unbroken run reached the old minimum length).
 function _dotDetectRegions() {
     const S = _dotPlotState;
-    if ((!S.scores && !S.matchMap)) return;
-    const regions = [];
+    S.regions = [];
+    if ((!S.scores && !S.matchMap)) { _dotRenderRegionList(); return; }
     const spin = S.spinMode && !!S.matchMap;
-    // SPIN: a single chance word hit gives a run of one word length, so ask for two.
-    // Dotter: a run of windows at or above the threshold.
-    const minRun = spin ? Math.max(8, 2 * S.windowSize)
-                        : Math.max(6, Math.min(15, Math.floor(Math.min(S.rows, S.cols) * 0.12)));
-    const minScore = S.threshold * S.windowSize;
-    for (let d = -(S.rows - 1); d < S.cols; d++) {
-        let runStart = -1, runSum = 0, runLen = 0;
-        const startR = d < 0 ? -d : 0;
-        const endR = Math.min(S.rows, S.cols - d);
-        const flush = () => {
-            if (runLen >= minRun) {
-                regions.push({ row: runStart, col: runStart + d, length: runLen,
-                    avgScore: spin ? 1 : runSum / (runLen * S.windowSize), diagonal: d });
-            }
-            runStart = -1; runSum = 0; runLen = 0;
-        };
-        for (let r = startR; r < endR; r++) {
-            const i = r * S.cols + r + d;
-            const on = spin ? S.matchMap[i] === 1 : S.scores[i] >= minScore;
-            if (on) {
-                if (runStart < 0) runStart = r;
-                runSum += spin ? 1 : S.scores[i];
-                runLen++;
-            } else if (runLen) {
-                flush();
+    const w = S.windowSize || 1;
+    const isSelf = S.sourceSeqA === S.sourceSeqB && S.rows === S.cols && !/\(RevComp\)$/.test(S.nameB || '');
+    const seedMin = spin ? 2 : 3;               // shorter runs are mostly chance hits
+    const minMatched = spin ? Math.max(8, 2 * w)
+                            : Math.max(6, Math.min(15, Math.floor(Math.min(S.rows, S.cols) * 0.12)));
+    // mismatches bridged along the diagonal; a SPIN cell is the first base of a w-long word,
+    // so the gap between words is w - 1 cells shorter in bases
+    const gapTol = Math.max(10, 2 * w) + (spin ? w - 1 : 0);
+    const shiftTol = 8;                         // indels: diagonals a chain may drift by
+
+    // Raw runs (row, diagonal, length, mean identity), from the drawing runs when present
+    const raw = [];
+    const push = (r, d, L, ident) => { if (L >= seedMin && (!isSelf || d > 0)) raw.push({ r, d, L, ident }); };
+    const rows = S.rows;
+    if (S.runs) {
+        const R = S.runs;
+        for (let k = 0; k < rows + S.cols - 1; k++) {
+            const d = k - (rows - 1);
+            if (isSelf && d <= 0) continue;
+            for (let t = R.diagStart[k]; t < R.diagStart[k + 1]; t++) push(R.R[t], d, R.L[t], spin ? 1 : 1 - R.V[t] / 255);
+        }
+    } else {
+        const thr = S.threshold * w;
+        for (let d = isSelf ? 1 : -(rows - 1); d < S.cols; d++) {
+            const r0 = d < 0 ? -d : 0, r1 = Math.min(rows, S.cols - d);
+            let rs = -1, sum = 0;
+            for (let r = r0; r <= r1; r++) {
+                const i = r * S.cols + r + d;
+                const on = r < r1 && (spin ? S.matchMap[i] === 1 : S.scores[i] >= thr);
+                if (on) { if (rs < 0) { rs = r; sum = 0; } sum += spin ? 1 : S.scores[i] / w; }
+                else if (rs >= 0) { push(rs, d, r - rs, sum / (r - rs)); rs = -1; }
             }
         }
-        flush();
+    }
+    raw.sort((a, b) => a.r - b.r || a.d - b.d);
+
+    // Chain runs that continue each other
+    const chains = [];
+    let active = [];
+    for (const run of raw) {
+        let best = null, bestCost = Infinity;
+        const keep = [];
+        for (const ch of active) {
+            if (ch.endR + gapTol < run.r) continue;          // too far behind: retire
+            keep.push(ch);
+            if (run.r < ch.endR - shiftTol || Math.abs(run.d - ch.d) > shiftTol) continue;
+            const cost = Math.max(0, run.r - ch.endR) + 2 * Math.abs(run.d - ch.d);
+            if (cost < bestCost) { bestCost = cost; best = ch; }
+        }
+        active = keep;
+        const c = run.r + run.d;
+        if (best) {
+            // count each row once: Dotter windows next to a match also pass on nearby diagonals
+            const fresh = Math.max(0, run.r + run.L - Math.max(run.r, best.endR));
+            best.endR = Math.max(best.endR, run.r + run.L);
+            best.endC = Math.max(best.endC, c + run.L);
+            best.startC = Math.min(best.startC, c);
+            best.matched += fresh; best.identSum += fresh * run.ident; best.d = run.d;
+            if (run.L > best.longest.L) best.longest = run;
+        } else {
+            const ch = { startR: run.r, endR: run.r + run.L, startC: c, endC: c + run.L, d: run.d,
+                matched: run.L, identSum: run.L * run.ident, longest: run };
+            chains.push(ch); active.push(ch);
+        }
     }
 
-    const isSelf = S.seqA === S.seqB && S.rows === S.cols;
-    const filtered = regions.filter(r => !(r.diagonal === 0 && isSelf && r.length >= S.rows * 0.8));
-    filtered.sort((a, b) => b.length - a.length || b.avgScore - a.avgScore);
-    S.regions = filtered.slice(0, 30);
+    // Best first; drop a chain that covers mostly the same stretch as a better one
+    chains.sort((a, b) => b.matched - a.matched || b.identSum - a.identSum);
+    const overlap = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+    const kept = [];
+    for (const ch of chains) {
+        if (ch.matched < minMatched) break;
+        const span = Math.max(1, ch.endR - ch.startR);
+        const dup = kept.some(k => overlap(ch.startR, ch.endR, k.startR, k.endR) >= 0.5 * span
+            && overlap(ch.startC, ch.endC, k.startC, k.endC) >= 0.5 * Math.max(1, ch.endC - ch.startC));
+        if (!dup) kept.push(ch);
+        if (kept.length >= 30) break;
+    }
+
+    // Sequence coordinates: a SPIN cell is the first base of a word; a Dotter cell is the
+    // centre of a window, which reaches (w - 1) / 2 bases each way
+    const before = spin ? 0 : (w - 1) >> 1, after = spin ? w - 1 : w - 1 - ((w - 1) >> 1);
+    S.regions = kept.map(ch => {
+        const a0 = Math.max(0, ch.startR - before), a1 = Math.min(S.seqA.length, ch.endR + after);
+        const b0 = Math.max(0, ch.startC - before), b1 = Math.min(S.seqB.length, ch.endC + after);
+        return { row: ch.longest.r, col: ch.longest.r + ch.longest.d, length: ch.longest.L,
+            aStart: a0, aEnd: a1, bStart: b0, bEnd: b1, matched: ch.matched,
+            avgScore: ch.identSum ? ch.identSum / ch.matched : ch.longest.ident, diagonal: ch.longest.d,
+            spanRows: ch.endR - ch.startR, cellStartR: ch.startR, cellStartC: ch.startC };
+    });
     _dotRenderRegionList();
 }
 
@@ -23956,19 +24019,21 @@ function _dotRenderRegionList() {
     if (!listEl || !itemsEl) return;
     listEl.style.display = 'block';
     if (!S.regions || S.regions.length === 0) {
-        itemsEl.innerHTML = '<div style="padding:4px 6px;color:#888;">No diagonal runs above the current settings.</div>';
+        itemsEl.innerHTML = '<div style="padding:4px 6px;color:#888;">No similar stretches above the current settings.</div>';
         return;
     }
+    const spin = S.spinMode && !!S.matchMap;
     itemsEl.innerHTML = S.regions.map((r, i) => {
-        const pct = (r.avgScore * 100).toFixed(1);
-        const what = S.spinMode ? 'exact word matches' : `${pct}% mean window identity`;
+        const pct = Math.round(r.avgScore * 100);
+        const len = r.aEnd - r.aStart;
+        const tip = spin ? `${len} bp stretch; ${r.matched} matching word positions` : `${len} bp stretch; mean window identity ${pct}%`;
         return `<div style="padding:3px 6px;cursor:pointer;border-bottom:1px solid #eee;"
             onmouseenter="this.style.background='#d0e4ff'"
             onmouseleave="this.style.background=''"
             onclick="_dotGoToRegion(${i})"
-            title="Diagonal run of ${r.length} positions, ${what}">
-            <b>#${i + 1}</b> ${r.length}bp${S.spinMode ? '' : ' ' + pct + '%'}
-            <span style="color:#888;font-size:10px;">A${r.row + 1}-${r.row + r.length} / B${r.col + 1}-${r.col + r.length}</span>
+            title="${tip}. Runs broken by mismatches or small indels are counted as one stretch.">
+            <b>#${i + 1}</b> ${len}bp${spin ? '' : ' ' + pct + '%'}
+            <span style="color:#888;font-size:10px;">A${r.aStart + 1}-${r.aEnd} / B${r.bStart + 1}-${r.bEnd}</span>
           </div>`;
     }).join('');
 }
@@ -23980,8 +24045,10 @@ function _dotGoToRegion(idx) {
     const { vp, vw, vh } = _dotViewport();
     if (!vp) return;
     // Centre the run in the plot area
-    vp.scrollLeft = Math.max(0, (r.col + r.length / 2) * S.zoom - (vw - DOT_AXIS_PAD) / 2);
-    vp.scrollTop = Math.max(0, (r.row + r.length / 2) * S.zoom - (vh - DOT_AXIS_PAD) / 2);
+    const midC = r.cellStartC != null ? r.cellStartC + r.spanRows / 2 : r.col + r.length / 2;
+    const midR = r.cellStartR != null ? r.cellStartR + r.spanRows / 2 : r.row + r.length / 2;
+    vp.scrollLeft = Math.max(0, midC * S.zoom - (vw - DOT_AXIS_PAD) / 2);
+    vp.scrollTop = Math.max(0, midR * S.zoom - (vh - DOT_AXIS_PAD) / 2);
     _dotRender();
     S.lastRow = r.row; S.lastCol = r.col;
     _dotDrawOverlay(r.row, r.col);
@@ -24226,10 +24293,11 @@ async function _dotUnfreeze() {
     S._frozen = false;
     S._frozenRow = S._frozenCol = -1;
     const bar = document.getElementById('dotPlotSpinScroll');
-    if (bar) bar.style.display = 'none';
+    if (bar) bar.style.visibility = 'hidden';   // keeps its space: showing / hiding it resized the plot
     const panelEl = document.getElementById('dotPlotAlignPanel');
     if (panelEl) {
-        panelEl.style.border = '1px solid #d8d8d8';
+        panelEl.style.borderColor = '#d8d8d8';
+        panelEl.style.boxShadow = 'none';
         panelEl.style.background = '#f7f7f7';
     }
 }
@@ -24400,7 +24468,7 @@ function _initDotPlotEvents() {
                 _dotUpdateHoverInfo(row, col, { force: true });
                 _dotDrawOverlay(row, col);
                 const bar = document.getElementById('dotPlotSpinScroll');
-                if (bar) bar.style.display = 'block';
+                if (bar) bar.style.visibility = 'visible';
                 showMessage('FROZEN - double-click to unfreeze.', 3000);
             }
         });

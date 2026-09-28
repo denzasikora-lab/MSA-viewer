@@ -1810,6 +1810,43 @@ check('Number-box slider and menus: a click in the alignment closes both', async
   return { pass: ok, detail: JSON.stringify(out) };
 });
 
+// Dot plot regions: one entry per similar stretch (runs broken by mismatches / small indels
+// are chained), no overlapping duplicates, only the upper triangle of a self-plot (the list
+// was empty there, or doubled); double-click (freeze) does not resize the plot.
+check('Dot plot regions: chained stretches, no duplicates, self-plot upper half; freeze keeps size', async (page) => {
+  let seed = 21; const rnd = () => Math.floor((seed = (seed * 1103515245 + 12345) % 2147483648) / 65536);
+  const rb = (n) => Array.from({ length: n }, () => 'ACGT'[rnd() % 4]).join('');
+  const rep = rb(80);
+  // copy 2 of the repeat carries 3 mismatches and a 2 bp deletion
+  const rep2 = rep.slice(0, 20) + 'T' + rep.slice(21, 40) + rep.slice(42, 60) + 'G' + rep.slice(61, 70) + 'C' + rep.slice(71);
+  const self = rb(40) + rep + rb(120) + rep2 + rb(40);
+  await page.evaluate((self) => { state.seqs = [{ header: 'self', seq: self }]; openDotPlot(self, self, 'self', 'self'); }, self);
+  await page.waitForTimeout(1500);
+  const out = {};
+  out.self = await page.evaluate(() => _dotPlotState.regions.map(r => [r.aStart + 1, r.aEnd, r.bStart + 1, r.bEnd, r.matched]));
+  // the planted repeat: A 41-120 vs B 241-318, found as ONE upper-triangle entry
+  const hits = out.self.filter(r => r[0] <= 50 && r[1] >= 110 && r[2] >= 230 && r[3] <= 330);
+  out.selfOne = hits.length === 1;
+  out.selfUpper = out.self.every(r => r[2] > r[0]);
+  // pair: two related sequences; no two entries cover mostly the same A and B stretch
+  const other = rb(30) + rep2 + rb(60);
+  await page.evaluate(([a, b]) => openDotPlot(a, b, 'a', 'b'), [self, other]);
+  await page.waitForTimeout(1500);
+  out.pair = await page.evaluate(() => _dotPlotState.regions.map(r => [r.aStart, r.aEnd, r.bStart, r.bEnd, r.matched]));
+  const ov = (a0, a1, b0, b1) => Math.max(0, Math.min(a1, b1) - Math.max(a0, b0));
+  out.pairNoDup = out.pair.every((x, i) => out.pair.every((y, j) => j <= i || !(ov(x[0], x[1], y[0], y[1]) > 0.5 * (x[1] - x[0]) && ov(x[2], x[3], y[2], y[3]) > 0.5 * (x[3] - x[2]))));
+  out.matchedWithin = out.pair.concat(out.self).every(r => r[4] <= (r[1] - r[0]) + 1);
+  // freeze by double-click: nothing changes size
+  const before = await page.evaluate(() => [document.getElementById('dotPlotViewport').clientHeight, _dotPlotState.zoom]);
+  const box = await page.locator('#dotPlotOverlay').boundingBox();
+  const pt = await page.evaluate(() => _dotCellToScreen(60, 60));
+  await page.mouse.dblclick(box.x + pt.x, box.y + pt.y); await page.waitForTimeout(400);
+  const after = await page.evaluate(() => [document.getElementById('dotPlotViewport').clientHeight, _dotPlotState.zoom, _dotPlotState._frozen]);
+  out.freezeSteady = after[2] === true && after[0] === before[0] && after[1] === before[1];
+  const ok = out.selfOne && out.selfUpper && out.pairNoDup && out.matchedWithin && out.freezeSteady;
+  return { pass: ok, detail: JSON.stringify(out) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
