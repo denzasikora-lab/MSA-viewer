@@ -1541,6 +1541,169 @@ check('Scrollbars: dragging the thumb moves the view with the mouse, never back'
   return { pass: Object.values(out).every(good), detail: JSON.stringify(out) };
 });
 
+// Undo / Redo history lists: open under the caret even when the page is scrolled (it opened
+// off screen), show action names (it showed "undefined" / "redo-snapshot"), jump N steps with
+// one redraw, and the plain Undo button (a click handler) still redraws.
+check('Undo history list: visible after scrolling, named entries, N-step jump, redo names', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1500);
+  const order = () => page.evaluate(() => state.seqs.map(s => s.header).join(','));
+  const original = await order();
+  await page.evaluate(async () => { sortByName(); await new Promise(r => setTimeout(r, 200)); sortByLength(); await new Promise(r => setTimeout(r, 200)); sortBySimilarity(); await new Promise(r => setTimeout(r, 400)); });
+  await page.evaluate(() => window.scrollTo(0, 300));
+  await page.waitForTimeout(200);
+  await page.click('#undoDropdownBtn');
+  await page.waitForTimeout(200);
+  const r = await page.evaluate(() => {
+    const d = document.querySelector('.undo-redo-dropdown'); const b = document.getElementById('undoDropdownBtn').getBoundingClientRect();
+    const q = d.getBoundingClientRect();
+    return { names: [...d.querySelectorAll('.undo-redo-name')].map(n => n.textContent), onScreen: q.top >= 0 && Math.abs(q.top - b.bottom) < 6 };
+  });
+  // pick entry 3 = undo all three sorts
+  await page.click('.undo-redo-dropdown .undo-redo-item:nth-of-type(3)');
+  await page.waitForTimeout(800);
+  r.restored = (await order()) === original;
+  r.listClosed = await page.evaluate(() => !document.querySelector('.undo-redo-dropdown'));
+  await page.click('#redoDropdownBtn'); await page.waitForTimeout(200);
+  r.redoNames = await page.evaluate(() => [...document.querySelectorAll('.undo-redo-dropdown .undo-redo-name')].map(n => n.textContent));
+  await page.click('#redoDropdownBtn'); await page.waitForTimeout(200);
+  r.toggleCloses = await page.evaluate(() => !document.querySelector('.undo-redo-dropdown'));
+  await page.click('#redoDropdownBtn'); await page.waitForTimeout(200);
+  await page.click('.undo-redo-dropdown .undo-redo-item:nth-of-type(2)'); await page.waitForTimeout(800);
+  r.redoTwo = await page.evaluate(() => state.redoHistory.length === 1 && state.deletedHistory.length === 2);
+  // plain Undo button: undoes one step and the page is redrawn to match
+  await page.evaluate(() => { window.__m2 = document.querySelector('#alignmentContainer .seq-line:not(.scale-ruler-line) .seq-data'); });
+  await page.click('#undoButton'); await page.waitForTimeout(800);
+  r.buttonRedraws = await page.evaluate(() => !window.__m2.isConnected && state.deletedHistory.length === 1);
+  const ok = r.onScreen && r.names.join('|') === 'Sort by similarity|Sort by length|Sort by name' && r.restored && r.listClosed
+    && r.redoNames.join('|') === 'Sort by name|Sort by length|Sort by similarity' && r.toggleCloses && r.redoTwo && r.buttonRedraws;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+// Repeat Finder redesign: the panel leaves the alignment usable (no blocking backdrop); TSD
+// results say how many copies have a TSD, list the ones that do not with a reason, and show
+// each pair with its mismatches; a repeat found in one sequence is highlighted in that
+// sequence only (it used to colour the same columns in every row).
+check('Repeat Finder: non-blocking panel, TSD summary and misses, row-specific highlights', async (page) => {
+  // high bits only: the low bits of this generator repeat with period 4, which made every
+  // 'random' flank identical
+  let seed = 9; const rnd = () => Math.floor((seed = (seed * 1103515245 + 12345) % 2147483648) / 65536);
+  const rb = (n) => Array.from({ length: n }, () => 'ACGT'[rnd() % 4]).join('');
+  const body = rb(120);
+  // row 1 is the gap-padded consensus, as on a SINEderella plate; Auto reads the body from it
+  let fa = `>consensus
+${'-'.repeat(31)}${body}AAAAAAAAAA${'-'.repeat(31)}
+`;
+  for (let i = 0; i < 20; i++) {
+    const tsd = rb(6);
+    const b = body.split('').map(c => (rnd() % 20 === 0 ? 'ACGT'[rnd() % 4] : c)).join('');
+    const tsd3 = i < 12 ? (i === 0 ? tsd.slice(0, 5) + (tsd[5] === 'A' ? 'C' : 'A') : tsd) : rb(6);   // rows 12-19: no TSD
+    fa += `>copy${i}\n${rb(25)}${tsd}${b}AAAAAAAAAA${tsd3}${rb(25)}\n`;
+  }
+  // one extra row with a tandem repeat inside its body, for the highlight test
+  fa += `>tandem\n${rb(31)}${'ACGTTGCA'.repeat(4)}${body.slice(32)}AAAAAAAAAA${rb(31)}\n`;
+  await page.setInputFiles('#fileInput', { name: 'tsd.fa', mimeType: 'text/plain', buffer: Buffer.from(fa) });
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => openRepeatFinder(0));
+  await page.waitForTimeout(300);
+  const out = {};
+  out.alignmentClickable = await page.evaluate(() => {
+    const e = document.elementFromPoint(40, 300);
+    return !!e && !!e.closest('#alignmentContainer');
+  });
+  await page.click('label:has(input[name="repeatMode"][value="tsd"])');
+  await page.click('#repeatRunBtn');
+  await page.waitForTimeout(1500);
+  const t = await page.evaluate(() => {
+    const trs = [...document.querySelectorAll('#repeatResults tbody tr')];
+    const mm = trs.map(tr => parseInt(tr.children[4].textContent, 10));
+    // planted rows copy1..copy11 carry an identical 6 bp pair right at the SINE ends
+    const planted = [];
+    for (let i = 1; i <= 11; i++) {
+      const r = _lastTsdResults.find(x => x.seqName === 'copy' + i);
+      planted.push(!!r && r.tsdLen === 6 && r.upTSD === r.downTSD);
+    }
+    return {
+      summary: document.querySelector('#repeatResults .rf-big')?.textContent || '',
+      rows: trs.length,
+      misses: document.querySelectorAll('#repeatResults .rf-misses li').length,
+      missReason: document.querySelector('#repeatResults .rf-misses li')?.textContent || '',
+      plantedFound: planted.every(Boolean),
+      mmConsistent: document.querySelectorAll('#repeatResults .rf-mm').length === 2 * mm.reduce((a, b) => a + b, 0),
+      bodyChip: [...document.querySelectorAll('#repeatResults .rf-chip')].map(c => c.textContent).find(t => /SINE body/.test(t)) || '',
+      tools: !document.getElementById('tsdResultTools').hidden,
+    };
+  });
+  Object.assign(out, t);
+  // tandem: search all, highlight the first result, count highlighted spans per row
+  await page.click('label:has(input[name="repeatMode"][value="tandem"])');
+  await page.click('label:has(input[name="repeatScope"][value="all"])');
+  await page.fill('#repeatMinLen', '8');
+  await page.click('#repeatRunBtn');
+  await page.waitForTimeout(1500);
+  out.tandemFound = await page.evaluate(() => document.querySelectorAll('#repeatResults tbody tr').length);
+  await page.click('#repeatResults tbody tr:first-child');
+  await page.waitForTimeout(400);
+  out.hlRows = await page.evaluate(() => [...new Set([...document.querySelectorAll('.seq-data > span[data-repeat-hl="1"]')].map(s => s.closest('.seq-line').dataset.seqIndex))]);
+  out.hlRowMatches = await page.evaluate(() => { const tr = document.querySelector('#repeatResults tbody tr:first-child'); return tr.dataset.row; });
+  await page.click('#repeatClearHighlightsBtn');
+  out.cleared = await page.evaluate(() => document.querySelectorAll('.seq-data > span[data-repeat-hl="1"]').length === 0);
+  const ok = out.alignmentClickable && new RegExp(`TSD in ${out.rows} of 21 copies`).test(out.summary) && out.rows + out.misses === 21
+    && out.plantedFound && /no pair/.test(out.missReason) && out.mmConsistent && /columns 32–161/.test(out.bodyChip) && out.tools
+    && out.tandemFound > 0 && out.hlRows.length === 1 && out.hlRows[0] === out.hlRowMatches && out.cleared;
+  return { pass: ok, detail: JSON.stringify(out) };
+});
+
+// Dot plot window: the "?" and Copy region buttons sit in the toolbar at normal size (they
+// stretched across the whole window); the window moves by its title bar and resizes, with
+// the plot following the new size.
+check('Dot plot window: compact help button, draggable, resizable with the plot following', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => { const a = state.seqs[1], c = state.seqs[2]; openDotPlot(a.seq.replace(/-/g, ''), c.seq.replace(/-/g, ''), a.header, c.header); });
+  await page.waitForTimeout(1500);
+  const out = await page.evaluate(() => {
+    const w = id => document.getElementById(id).getBoundingClientRect().width;
+    return { help: Math.round(w('dotPlotHelpBtn')), copy: Math.round(w('dotPlotCopyRegion')), dialog: Math.round(w('dotPlotDialog')),
+      resizable: getComputedStyle(document.getElementById('dotPlotDialog')).resize };
+  });
+  const bar = await page.locator('#dotPlotTitleBar').boundingBox();
+  const before = await page.evaluate(() => document.getElementById('dotPlotDialog').getBoundingClientRect().left);
+  await page.mouse.move(bar.x + 200, bar.y + 12); await page.mouse.down();
+  await page.mouse.move(bar.x + 120, bar.y + 40, { steps: 5 }); await page.mouse.up();
+  out.moved = Math.round(await page.evaluate(() => document.getElementById('dotPlotDialog').getBoundingClientRect().left) - before);
+  // resize (as the corner handle does) and check the plot canvases follow the viewport
+  out.afterResize = await page.evaluate(async () => {
+    const d = document.getElementById('dotPlotDialog'); d.style.width = '700px'; d.style.height = '560px';
+    await new Promise(r => setTimeout(r, 300));
+    const vp = document.getElementById('dotPlotViewport'), cv = document.getElementById('dotPlotCanvas');
+    return { vp: vp.clientWidth, canvas: parseInt(cv.style.width, 10) };
+  });
+  const ok = out.help <= 30 && out.copy < 150 && out.resizable === 'both' && out.moved === -80 && out.afterResize.vp === out.afterResize.canvas;
+  return { pass: ok, detail: JSON.stringify(out) };
+});
+
+// Alignment menu: the six action buttons form an even grid (they had different heights,
+// wrapping their labels onto two or three lines) and stay inside the menu.
+check('Alignment menu: even button grid inside the menu, labels on one line', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1000);
+  await page.hover('.section-header[data-section="alignment"]');
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(() => {
+    const ids = ['realignAllButton', 'realignSelectedButton', 'realignBlockButton', 'addSequencesButton', 'degapBlockLeftButton', 'degapBlockRightButton'];
+    const boxes = ids.map(id => document.getElementById(id).getBoundingClientRect());
+    const menu = document.getElementById('alignment-controls').getBoundingClientRect();
+    const lineH = parseFloat(getComputedStyle(document.getElementById('realignAllButton')).fontSize) * 1.6;
+    return { heights: [...new Set(boxes.map(b => Math.round(b.height)))], oneLine: boxes.every(b => b.height <= lineH + 12),
+      inside: boxes.every(b => b.left >= menu.left - 1 && b.right <= menu.right + 1), rows: [...new Set(boxes.map(b => Math.round(b.top)))].length };
+  });
+  return { pass: r.heights.length === 1 && r.oneLine && r.inside && r.rows === 2, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

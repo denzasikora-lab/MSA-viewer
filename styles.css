@@ -3719,3 +3719,94 @@ table.stats-mx.heat td:hover { outline: 2px solid #111; outline-offset: -2px; }
     background: #f3f8ff;
     z-index: 60; user-select: text; -webkit-user-select: text;
 }
+/* Undo / Redo history list: fixed to the viewport, under the caret that opened it */
+.undo-redo-dropdown { position: fixed; z-index: 10000; min-width: 190px; max-width: 320px; max-height: 60vh; overflow-y: auto;
+    background: #fff; border: 1px solid #c9ced6; border-radius: 6px; box-shadow: 0 6px 18px rgba(0,0,0,0.18); padding: 4px 0; font-size: 12px; }
+.undo-redo-head { padding: 3px 10px 5px; color: #6b7280; font-size: 11px; border-bottom: 1px solid #eef0f3; margin-bottom: 2px; }
+.undo-redo-item { display: flex; align-items: baseline; gap: 8px; width: 100%; padding: 4px 10px; border: 0; background: none;
+    text-align: left; font: inherit; color: #1f2937; cursor: pointer; }
+.undo-redo-item.in-range { background: #e8f0fe; }
+.undo-redo-item:focus-visible { outline: 2px solid #1976d2; outline-offset: -2px; }
+.undo-redo-num { flex: 0 0 auto; min-width: 1.6em; text-align: right; color: #9aa1ab; font-variant-numeric: tabular-nums; }
+.undo-redo-name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---- Repeat Finder: floating panel (no backdrop; the alignment stays visible and usable) ---- */
+.rf-layer { position: fixed; inset: 0; z-index: 10002; pointer-events: none; }
+.rf-panel { pointer-events: auto; position: absolute; top: 48px; right: 20px; width: 640px; min-width: 420px; max-width: calc(100vw - 24px);
+    height: min(640px, calc(100vh - 70px)); min-height: 260px; max-height: calc(100vh - 16px); display: flex; flex-direction: column;
+    background: #fff; border: 1px solid #c9ced6; border-radius: 8px; box-shadow: 0 8px 28px rgba(0,0,0,0.22); resize: both; overflow: hidden;
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 12px; color: #1f2937; }
+.rf-body { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 8px 14px 12px; }
+.rf-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.rf-label { flex: 0 0 64px; color: #6b7280; font-weight: 600; font-size: 11px; }
+.rf-num { width: 52px; font-size: 12px; padding: 1px 3px; }
+.rf-seqselect { max-width: 230px; font-size: 12px; height: 24px; }
+.rf-seg { display: inline-flex; border: 1px solid #c9ced6; border-radius: 6px; overflow: hidden; background: #f7f8fa; }
+.rf-seg label { position: relative; padding: 3px 11px; cursor: pointer; border-left: 1px solid #c9ced6; white-space: nowrap; user-select: none; }
+.rf-seg label:first-child { border-left: 0; }
+.rf-seg input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
+.rf-seg label:hover { background: #eef2f7; }
+.rf-seg label:has(input:checked) { background: #1976d2; color: #fff; }
+.rf-seg label:has(input:focus-visible) { outline: 2px solid #1976d2; outline-offset: -2px; }
+.rf-btn { font: inherit; font-size: 12px; padding: 3px 10px; border: 1px solid #c9ced6; border-radius: 5px; background: #fff; color: #1f2937; cursor: pointer; }
+.rf-btn:hover { background: #f1f4f8; }
+.rf-btn-primary { background: #1976d2; border-color: #1976d2; color: #fff; font-weight: 600; padding: 4px 18px; }
+.rf-btn-primary:hover { background: #1565c0; }
+.rf-actions { padding-top: 2px; border-top: 1px solid #eef0f3; margin-top: 2px; }
+.rf-tools { background: #f7f8fa; border: 1px solid #eef0f3; border-radius: 6px; padding: 4px 8px; }
+.rf-tools[hidden] { display: none; }
+.rf-color { width: 28px; height: 22px; padding: 0; border: 1px solid #c9ced6; }
+.rf-results { flex: 1 1 auto; min-height: 60px; overflow: auto; border: 1px solid #e3e6ea; border-radius: 6px; padding: 8px; background: #fcfcfd; }
+.rf-summary { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin-bottom: 6px; }
+.rf-summary .rf-big { font-size: 14px; font-weight: 700; margin-right: 6px; }
+.rf-chip { display: inline-block; padding: 1px 7px; border-radius: 10px; background: #eef2f7; color: #374151; font-size: 11px; white-space: nowrap; }
+.rf-chip.rf-warn { background: #fff4e5; color: #8a4b00; }
+.rf-hint { color: #6b7280; font-size: 11px; margin: 2px 0 6px; }
+.rf-histo { display: inline-flex; align-items: flex-end; gap: 2px; height: 26px; vertical-align: middle; margin-left: 4px; }
+.rf-histo span { display: inline-block; width: 9px; background: #90b4dd; border-radius: 2px 2px 0 0; position: relative; }
+.rf-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; }
+.rf-table th { position: sticky; top: -8px; background: #f1f3f6; text-align: left; font-weight: 600; font-size: 11px; color: #4b5563; padding: 3px 6px; border-bottom: 1px solid #dde1e6; cursor: default; }
+.rf-table th[data-sort] { cursor: pointer; }
+.rf-table th[data-sort]:hover { color: #1976d2; }
+.rf-table td { padding: 3px 6px; border-bottom: 1px solid #f0f2f5; vertical-align: middle; }
+.rf-table tbody tr { cursor: pointer; }
+.rf-table tbody tr:hover { background: #eef5fd; }
+.rf-table tbody tr.rf-active { background: #e3eefc; }
+.rf-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rf-num-cell { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.rf-pair { font-family: "Courier New", monospace; font-size: 12px; line-height: 1.25; white-space: nowrap; }
+.rf-pair .rf-mm { background: #ffd6d6; color: #b00020; border-radius: 2px; }
+.rf-pair .rf-tag { color: #9aa1ab; font-family: system-ui, sans-serif; font-size: 10px; display: inline-block; width: 16px; }
+.rf-cols { color: #6b7280; font-size: 11px; white-space: nowrap; }
+.rf-swatch { display: inline-block; width: 12px; height: 12px; border-radius: 2px; vertical-align: middle; }
+.rf-x { background: none; border: 0; color: #9aa1ab; cursor: pointer; font-size: 14px; line-height: 1; padding: 0 2px; }
+.rf-x:hover { color: #b00020; }
+.rf-misses { margin-top: 8px; }
+.rf-misses summary { cursor: pointer; color: #374151; font-weight: 600; }
+.rf-misses li { margin: 1px 0; }
+@keyframes rfFlash { 0%,60% { background: #ffe082; } 100% { background: transparent; } }
+.seq-name.rf-flash { animation: rfFlash 1.6s ease-out; }
+.rf-panel > .win-titlebar { margin: 0; padding: 6px 8px 6px 14px; flex: 0 0 auto; }
+.rf-panel input.rf-num { width: 58px; }
+
+/* ---- Alignment menu: even button grid, settings in a two-column grid ---- */
+.al-menu { padding: 2px 2px 6px; }
+#alignment-controls { width: 470px; max-width: calc(100vw - 24px); box-sizing: border-box; }
+.al-btngrid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5px; margin-bottom: 8px; }
+.al-btngrid button { height: 26px; padding: 0 8px; margin: 0; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.al-settings { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 10px; align-items: center; border-top: 1px solid #eee; padding-top: 8px; font-size: 12px; }
+.al-settings > label, .al-head { text-align: right; color: #555; font-size: 11px; }
+.al-head { align-self: start; padding-top: 2px; font-weight: 600; }
+.al-settings select { height: 22px; font-size: 12px; max-width: 190px; }
+.al-settings input[type="number"] { width: 58px; font-size: 12px; }
+.al-pair { display: inline-flex; align-items: center; gap: 6px; }
+.al-inline { color: #555; font-size: 11px; }
+.al-checks { display: flex; flex-direction: column; gap: 3px; }
+.al-checks label { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; font-size: 12px; white-space: nowrap; }
+.al-kline { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.al-checks .al-k input { width: 46px; }
+/* Dot plot: a movable, resizable window (was fixed-size, centred with margin:auto) */
+#dotPlotDialog.dot-window { position: absolute; left: max(8px, calc(50vw - 450px)); top: 30px; margin: 0; width: 900px; height: calc(100vh - 60px);
+    min-width: 560px; min-height: 420px; max-width: calc(100vw - 16px); max-height: calc(100vh - 16px); padding: 16px; box-sizing: border-box;
+    background: #fff; border-radius: 8px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); display: flex; flex-direction: column; overflow: hidden; resize: both; }
+.dot-help-btn { width: 22px; height: 22px; padding: 0; border-radius: 50%; font-size: 12px; font-weight: 700; line-height: 1; }

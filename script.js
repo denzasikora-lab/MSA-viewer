@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v206';
+const BUILD_TAG = 'v207';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -7435,7 +7435,7 @@ function groupRowsByType(rowIdxs) {
         if (want.has(s.header)) matched.push(s);
         else rest.push(s);
     }
-    pushUndo();
+    pushUndo('group-by-type');
     state.seqs = [...matched, ...rest];
     state.lastAction = 'sort';
     renderAlignment();
@@ -10074,7 +10074,7 @@ function reverseComplementAll() {
 
 // -- Sort functions --
 function sortByName() {
-    pushUndo();
+    pushUndo('sort-name');
     const indices = state.seqs.map((s, i) => ({ idx: i, name: s.header.toLowerCase() }));
     indices.sort((a, b) => a.name.localeCompare(b.name));
     state.seqs = indices.map(e => state.seqs[e.idx]);
@@ -10082,7 +10082,7 @@ function sortByName() {
     renderWithNotice('Sorting by name…').then(() => showMessage('Sorted by name', 2000));
 }
 function sortByLength() {
-    pushUndo();
+    pushUndo('sort-length');
     const indices = state.seqs.map((s, i) => ({ idx: i, len: s.seq.replace(/[-.]/g, '').length }));
     indices.sort((a, b) => b.len - a.len);
     state.seqs = indices.map(e => state.seqs[e.idx]);
@@ -10091,7 +10091,7 @@ function sortByLength() {
 }
 function sortBySimilarity() {
     if (state.seqs.length < 2) return;
-    pushUndo();
+    pushUndo('sort-similarity');
     const ref = state.seqs[0].seq;
     const scored = state.seqs.map((s, i) => {
         let match = 0, total = 0;
@@ -10144,7 +10144,7 @@ function importOrder() {
                 }
                 reordered.sort((a, b) => orderMap.get(a.header) - orderMap.get(b.header));
                 const extra = data.order.filter(h => !currentHeaders.has(h));
-                pushUndo();
+                pushUndo('import-order');
                 state.seqs = [...reordered, ...unmatched];
                 state.lastAction = 'sort';
                 renderAlignment();
@@ -10249,7 +10249,7 @@ function trimAlignmentWidthTo(target) {
     return true;
 }
 
-function applyRowSeqPatch(entry, useAfter) {
+function applyRowSeqPatch(entry, useAfter, skipDom = false) {
     const rowIndex = entry?.rowIndex;
     if (!Number.isInteger(rowIndex) || !state.seqs[rowIndex]) return false;
     const nextSeq = useAfter ? entry.afterSeq : entry.beforeSeq;
@@ -10272,6 +10272,7 @@ function applyRowSeqPatch(entry, useAfter) {
         normalizeAlignmentLengths();
     }
     refreshAllGaplessPositions();
+    if (skipDom) return true;   // several steps in a row: the caller redraws once at the end
 
     // One row changed, so only its columns need repainting (shading in them depends on the
     // column composition, hence across all rows). Rebuilding every span costs ~1.4 s at 97k
@@ -10294,23 +10295,27 @@ function applyRowSeqPatch(entry, useAfter) {
     return true;
 }
 
-function undoDelete() {
+// quiet: one of several steps taken from the history list; no redraw or message
+function undoDelete(quiet) {
+    quiet = quiet === true;   // also called as a click handler, with the event as argument
     if (state.deletedHistory.length === 0) {
-        showMessage("Nothing to undo.", 3000);
+        if (!quiet) showMessage("Nothing to undo.", 3000);
         return;
     }
     const last = state.deletedHistory.pop();
     if (last.patchType === 'row-seq') {
         state.redoHistory.push(last);
-        if (applyRowSeqPatch(last, false)) {
+        if (applyRowSeqPatch(last, false, quiet)) {
             state.lastAction = null;
-            showMessage(`Undo: ${last.type}`, 2000);
+            if (!quiet) showMessage(`Undo: ${undoEntryLabel(last)}`, 2000);
         }
         return;
     }
-    // Save current state to redo stack before restoring
+    // Save current state to redo stack before restoring; it keeps the undone action's
+    // name, so the Redo list says what redo will bring back (was 'redo-snapshot').
     state.redoHistory.push({
-        type: 'redo-snapshot',
+        type: last.type,
+        label: last.label,
         seqs: JSON.parse(JSON.stringify(state.seqs)),
         selectedRows: new Set(state.selectedRows),
         selectedColumns: new Set(state.selectedColumns)
@@ -10320,27 +10325,30 @@ function undoDelete() {
     state.selectedColumns = last.selectedColumns || new Set();
     state.selectedNucs.clear();
     state.lastAction = null;
+    if (quiet) return;
     renderAlignment();
-    showMessage(`Undo: ${last.type}`, 2000);
+    showMessage(`Undo: ${undoEntryLabel(last)}`, 2000);
 }
 
-function redoAction() {
+function redoAction(quiet) {
+    quiet = quiet === true;   // also called as a click handler, with the event as argument
     if (state.redoHistory.length === 0) {
-        showMessage("Nothing to redo.", 3000);
+        if (!quiet) showMessage("Nothing to redo.", 3000);
         return;
     }
     const next = state.redoHistory.pop();
     if (next.patchType === 'row-seq') {
         state.deletedHistory.push(next);
-        if (applyRowSeqPatch(next, true)) {
+        if (applyRowSeqPatch(next, true, quiet)) {
             state.lastAction = null;
-            showMessage("Redo completed!", 2000);
+            if (!quiet) showMessage(`Redo: ${undoEntryLabel(next)}`, 2000);
         }
         return;
     }
-    // Save current state to undo stack before redo
+    // Save current state to undo stack before redo, under the redone action's name
     state.deletedHistory.push({
-        type: 'before-redo',
+        type: next.type,
+        label: next.label,
         seqs: JSON.parse(JSON.stringify(state.seqs)),
         selectedRows: new Set(state.selectedRows),
         selectedColumns: new Set(state.selectedColumns)
@@ -10350,8 +10358,9 @@ function redoAction() {
     state.selectedColumns = next.selectedColumns || new Set();
     state.selectedNucs.clear();
     state.lastAction = null;
+    if (quiet) return;
     renderAlignment();
-    showMessage("Redo completed!", 2000);
+    showMessage(`Redo: ${undoEntryLabel(next)}`, 2000);
 }
 function copySelected() {
     if (state.selectedNucs.size > 0) {
@@ -17957,9 +17966,47 @@ function seqEditApply() {
 // Undo/Redo Dropdown Menus
 // ============================================================
 
+// Names shown in the Undo / Redo history lists and messages. Entries carry the internal
+// action type; typing and drag edits also carry their own label.
+const UNDO_TYPE_LABELS = {
+    'order': 'Reorder rows', 'reorder': 'Reorder rows', 'rename': 'Rename', 'delete': 'Delete sequences',
+    'duplicate': 'Duplicate sequences', 'revcomp': 'Reverse complement',
+    'sort-name': 'Sort by name', 'sort-length': 'Sort by length', 'sort-similarity': 'Sort by similarity',
+    'sort-by-color': 'Sort by colour', 'group-colored': 'Group coloured rows', 'group-by-type': 'Group by type',
+    'import-order': 'Load sequence order',
+    'tsd-mark-lowercase': 'Mark TSDs in lower case',
+    'seqedit': 'Edit sequence', 'seqedit-add': 'Add sequence', 'seqedit-multi': 'Edit sequences',
+    'add-sequences': 'Add sequences', 'add-and-align': 'Add and align',
+    'replaceWithConsensus': 'Replace with consensus', 'insertConsensus': 'Insert consensus',
+    'insertGap': 'Insert gaps', 'insertSingleGap': 'Insert gap', 'removeGaps': 'Remove gaps',
+    'removeSingleGap': 'Remove gap', 'deleteColumns': 'Delete columns',
+    'degap-block-left': 'Degap block (left)', 'degap-block-right': 'Degap block (right)',
+    'realign-all': 'Realign all', 'realign-selected': 'Realign selected', 'realign-block': 'Realign block',
+    'realign-to-consensus': 'Realign to consensus', 'geneDocResidueEdit': 'Edit residue',
+};
+function undoEntryLabel(entry) {
+    if (!entry) return 'Edit';
+    const named = UNDO_TYPE_LABELS[entry.type];
+    if (entry.label && entry.label !== entry.type) {
+        // Row edits: say which sequence changed
+        const row = Number.isInteger(entry.rowIndex) ? state.seqs[entry.rowIndex]?.header : null;
+        const base = entry.label === 'TypeResidue' ? 'Type residue' : entry.label;
+        return row ? `${base} (${row})` : base;
+    }
+    return named || (entry.type ? String(entry.type) : 'Edit');
+}
+
+// History list under the Undo / Redo carets. Picking entry N takes N steps back (or
+// forward) and redraws once. Positioned against the viewport: the toolbar is fixed, so
+// page coordinates put the list off screen once the page was scrolled (it opened at
+// top -271 px after scrolling 300 px).
 function showUndoRedoDropdown(buttonEl, stack, actionFn, labelPrefix) {
-    // Remove any existing dropdown
-    document.querySelectorAll('.undo-redo-dropdown').forEach(d => d.remove());
+    const open = document.querySelector('.undo-redo-dropdown');
+    if (open) {
+        const sameButton = open._owner === buttonEl;
+        open._close();
+        if (sameButton) return;   // second click on the same caret closes the list
+    }
 
     if (stack.length === 0) {
         showMessage(`Nothing to ${labelPrefix.toLowerCase()}.`, 2000);
@@ -17968,57 +18015,61 @@ function showUndoRedoDropdown(buttonEl, stack, actionFn, labelPrefix) {
 
     const dropdown = document.createElement('div');
     dropdown.className = 'undo-redo-dropdown';
-    dropdown.style.cssText = 'position:absolute; background:white; border:1px solid #ccc; box-shadow:0 2px 8px rgba(0,0,0,0.2); z-index:10000; max-height:200px; overflow-y:auto; min-width:140px; font-size:11px;';
-
+    dropdown._owner = buttonEl;
+    dropdown.setAttribute('role', 'menu');
     const rect = buttonEl.getBoundingClientRect();
-    dropdown.style.left = `${rect.left}px`;
+    dropdown.style.left = `${Math.max(4, Math.min(rect.left, window.innerWidth - 260))}px`;
     dropdown.style.top = `${rect.bottom + 2}px`;
 
-    // Show items in reverse order (most recent first)
+    const head = document.createElement('div');
+    head.className = 'undo-redo-head';
+    head.textContent = `${labelPrefix} history (newest first)`;
+    dropdown.appendChild(head);
+
+    const items = [];
     for (let i = stack.length - 1; i >= 0; i--) {
-        const entry = stack[i];
-        const item = document.createElement('div');
-        item.style.cssText = 'padding:4px 8px; cursor:pointer; border-bottom:1px solid #eee;';
-        const num = stack.length - i;
-        // Drag entries carry a label saying how far the move went; others just name the action.
-        item.textContent = `${num}. ${entry.label || entry.type}`;
-        item.title = `${labelPrefix} to this point (${num} step${num > 1 ? 's' : ''})`;
-        item.addEventListener('mouseenter', () => item.style.background = '#e8f0fe');
-        item.addEventListener('mouseleave', () => item.style.background = 'white');
-        const stepsToUndo = stack.length - i;
+        const steps = stack.length - i;
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'undo-redo-item';
+        item.setAttribute('role', 'menuitem');
+        item.innerHTML = `<span class="undo-redo-num">${steps}</span><span class="undo-redo-name"></span>`;
+        item.querySelector('.undo-redo-name').textContent = undoEntryLabel(stack[i]);
+        item.title = `${labelPrefix} ${steps} step${steps > 1 ? 's' : ''}, back to before this action`;
+        if (labelPrefix === 'Redo') item.title = `Redo ${steps} step${steps > 1 ? 's' : ''}, up to and including this action`;
+        // Hovering an entry marks it and every newer one: those are the steps that will be taken
+        item.addEventListener('mouseenter', () => items.forEach((it, k) => it.classList.toggle('in-range', k < steps)));
         item.addEventListener('click', () => {
-            dropdown.remove();
-            cleanup();
-            for (let j = 0; j < stepsToUndo; j++) {
-                actionFn();
+            close();
+            const quiet = steps > 1;
+            for (let j = 0; j < steps; j++) actionFn(quiet);
+            if (quiet) {
+                renderWithNotice(`${labelPrefix} ${steps} steps\u2026`);
+                showMessage(`${labelPrefix}: ${steps} steps`, 2000);
             }
         });
+        items.push(item);
         dropdown.appendChild(item);
     }
+    dropdown.addEventListener('mouseleave', () => items.forEach(it => it.classList.remove('in-range')));
 
     document.body.appendChild(dropdown);
 
     const closeHandler = (ev) => {
-        if (!dropdown.contains(ev.target)) {
-            dropdown.remove();
-            cleanup();
-        }
+        if (!dropdown.contains(ev.target) && ev.target !== buttonEl && !buttonEl.contains(ev.target)) close();
     };
-    const escHandler = (ev) => {
-        if (ev.key === 'Escape') {
-            dropdown.remove();
-            cleanup();
-        }
-    };
-    const cleanup = () => {
-        document.removeEventListener('click', closeHandler);
+    const escHandler = (ev) => { if (ev.key === 'Escape') close(); };
+    function close() {
+        dropdown.remove();
+        document.removeEventListener('mousedown', closeHandler, true);
         document.removeEventListener('keydown', escHandler);
-    };
-
-    // Close on click outside or Escape key
+        window.removeEventListener('resize', close);
+    }
+    dropdown._close = close;
     setTimeout(() => {
-        document.addEventListener('click', closeHandler);
+        document.addEventListener('mousedown', closeHandler, true);
         document.addEventListener('keydown', escHandler);
+        window.addEventListener('resize', close);
     }, 0);
 }
 
@@ -24194,6 +24245,30 @@ function _initDotPlotEvents() {
     document.querySelectorAll('input[name="dotPlotMode"]').forEach(r => {
         r.addEventListener('change', _dotOnModeChange);
     });
+
+    // Move the window by its title bar (it resizes from its lower-right corner, CSS resize);
+    // the plot follows through the viewport's ResizeObserver
+    const dlg = document.getElementById('dotPlotDialog');
+    const bar = document.getElementById('dotPlotTitleBar');
+    if (dlg && bar && !bar._dotDragBound) {
+        bar._dotDragBound = true;
+        bar.addEventListener('pointerdown', (e) => {
+            if (e.button !== 0 || e.target.closest('button')) return;
+            e.preventDefault();
+            const r = dlg.getBoundingClientRect();
+            const dx = e.clientX - r.left, dy = e.clientY - r.top;
+            bar.setPointerCapture(e.pointerId);
+            const move = (ev) => {
+                const x = Math.min(Math.max(ev.clientX - dx, 8 - r.width + 120), window.innerWidth - 120);
+                const y = Math.min(Math.max(ev.clientY - dy, 0), window.innerHeight - 40);
+                dlg.style.left = x + 'px';
+                dlg.style.top = y + 'px';
+            };
+            const up = () => { bar.removeEventListener('pointermove', move); bar.removeEventListener('pointerup', up); };
+            bar.addEventListener('pointermove', move);
+            bar.addEventListener('pointerup', up);
+        });
+    }
 }
 
 // ============================================================================
@@ -24276,6 +24351,11 @@ function _syncRepeatFinderModeUI() {
     if (tsdPanel) tsdPanel.style.display = isTsd ? '' : 'none';
     if (clearBtn) clearBtn.style.display = isTsd ? 'none' : '';
     if (scopeRow) scopeRow.style.display = isTsd ? 'none' : '';
+    const tools = document.getElementById('tsdResultTools');
+    if (tools) tools.hidden = !(isTsd && _lastTsdResults && _lastTsdResults.length);
+    const scope = document.querySelector('input[name="repeatScope"]:checked')?.value || 'single';
+    const seqSel = document.getElementById('repeatFinderSeqSelect');
+    if (seqSel) seqSel.style.display = scope === 'single' ? '' : 'none';
     if (isTsd) _initTsdColumnDefaults();
     _syncTsdModeSubUI();
 }
@@ -24309,8 +24389,8 @@ function openRepeatFinder(seqIndex, preferredMode = null) {
     }
     const mode = document.querySelector('input[name="repeatMode"]:checked')?.value || 'tandem';
     document.getElementById('repeatResults').textContent = mode === 'tsd'
-        ? 'Set pre/post-SINE regions (or use Auto), then click Run Analysis.'
-        : 'Click "Run Analysis" to start.';
+        ? 'The SINE body is found automatically (or set it under Manual); press Find to search both flanks of every copy.'
+        : 'Choose what to find, then press Find.';
 }
 
 function _initRepeatFinderDrag() {
@@ -24819,6 +24899,14 @@ function _findSineBoundaryColumns(seqs, mode, params, aliLen) {
             }
         }
 
+        // The first/last window that passes can still start in the flank: 3 conserved columns
+        // and 5 random ones average above the threshold. Trim each edge inward, within that
+        // window, to the first column that is itself conserved, or the edge sits on the TSD
+        // (it did, by 4-5 columns on each side, on a plate with planted TSDs).
+        if (leftBoundary >= 0 && rightBoundary >= leftBoundary) {
+            for (let k = 0; k < windowWidth - 1 && leftBoundary < rightBoundary && scores[leftBoundary] < threshold; k++) leftBoundary++;
+            for (let k = 0; k < windowWidth - 1 && rightBoundary > leftBoundary && scores[rightBoundary] < threshold; k++) rightBoundary--;
+        }
         if (leftBoundary >= 0 && rightBoundary >= leftBoundary) {
             return {
                 leftBoundary,
@@ -24905,6 +24993,7 @@ function _findTSD(seqs, mode, params) {
     const flankSize = params.flankSize || 30;
     const boundaries = _findSineBoundaryColumns(seqs, mode, params, aliLen);
 
+    const misses = [];   // copies searched without a TSD, with the reason (shown in the results)
     for (let seqIndex = 0; seqIndex < seqs.length; seqIndex++) {
         if (_isTsdReferenceRow(seqs[seqIndex], seqIndex) && _tsdGapFraction(seqs[seqIndex].seq) >= 0.2) {
             continue;
@@ -24924,9 +25013,16 @@ function _findTSD(seqs, mode, params) {
             downstreamWindow = _collectUngappedBasesWithColumns(seq, boundaries.rightBoundary + 1, downstreamEndCol);
         }
 
-        if (upstreamWindow.bases.length < minTsdLen || downstreamWindow.bases.length < minTsdLen) continue;
+        if (upstreamWindow.bases.length < minTsdLen || downstreamWindow.bases.length < minTsdLen) {
+            const side = upstreamWindow.bases.length < minTsdLen ? '5′' : '3′';
+            misses.push({ seqIndex, seqName: seqs[seqIndex].header, reason: `no ${side} flank bases next to the SINE body (copy truncated or flank all gaps)` });
+            continue;
+        }
         const bestTsd = _findBestTsdInFlanks(upstreamWindow, downstreamWindow, boundaries.rightBoundary, minTsdLen, maxTsdLen, maxDiv);
-        if (!bestTsd) continue;
+        if (!bestTsd) {
+            misses.push({ seqIndex, seqName: seqs[seqIndex].header, reason: `no pair of ${minTsdLen}–${maxTsdLen} bp with ≤${Math.round(maxDiv * 100)}% mismatch near the SINE ends` });
+            continue;
+        }
 
         const upFirst = bestTsd.upCols[0] ?? boundaries.upStart;
         const upLast = bestTsd.upCols[bestTsd.upCols.length - 1] ?? boundaries.upEnd;
@@ -24948,6 +25044,8 @@ function _findTSD(seqs, mode, params) {
             downstreamOffset: downFirst - (boundaries.rightBoundary + 1)
         });
     }
+    results.misses = misses;
+    results.boundaries = boundaries;
     return results;
 }
 
@@ -25000,6 +25098,8 @@ function runRepeatAnalysis() {
                 }
                 const seqResults = _findRepeats(t.seq, minLen, maxDiv, mode);
                 const mapped = seqResults.map(r => {
+                    r.seqIndex = t.index;
+                    r.seqName = t.name;
                     if (mode === 'tandem') {
                         const sG = r.start;
                         r.start = (sG >= 0 && sG < gs2al.length) ? (gs2al[sG] ?? r.start) : r.start;
@@ -25017,6 +25117,13 @@ function runRepeatAnalysis() {
                             col++;
                         }
                         r.alignEnd = col;
+                        // second copy's end column, so both copies can be highlighted
+                        let colB = r.posB, basesB = 0;
+                        while (colB < t.fullSeq.length && basesB < oL) {
+                            if (!' -.'.includes(t.fullSeq[colB])) basesB++;
+                            colB++;
+                        }
+                        r.alignEndB = colB;
                     }
                     return r;
                 });
@@ -25074,197 +25181,235 @@ function runTsdAnalysis() {
 }
 
 function _renderTsdResultsHTML(el, results, tsdMode, params) {
+    const esc = _escapeHtml;
+    const tools = document.getElementById('tsdResultTools');
+    if (tools) tools.hidden = !results.length;
+    const misses = results.misses || [];
+    const tested = results.length + misses.length;
+    const b = results.boundaries;
+    const bodyChip = (b && Number.isInteger(b.leftBoundary) && Number.isInteger(b.rightBoundary) && tsdMode !== 'manual')
+        ? `<span class="rf-chip" title="${esc(b.label || '')}">SINE body: columns ${b.leftBoundary + 1}–${b.rightBoundary + 1}</span>` : '';
+    const missesHtml = misses.length ? `<details class="rf-misses"><summary>${misses.length} cop${misses.length === 1 ? 'y' : 'ies'} without a TSD</summary><ul>` +
+        misses.map(m => `<li><a href="#" data-row="${m.seqIndex}" class="rf-goto">${esc(m.seqName)}</a>: ${esc(m.reason)}</li>`).join('') + '</ul></details>' : '';
+
     if (!results.length) {
-        let hint = 'Try widening flank windows, increasing max divergence, or switching boundary mode.';
-        if (tsdMode === 'manual') {
-            hint = `No TSD found in pre-SINE cols ${params.upStart}-${params.upEnd} vs post-SINE cols ${params.downStart}-${params.downEnd}. ${hint}`;
-        }
-        el.textContent = hint;
+        let hint = 'Try a wider search window, a higher mismatch limit, or another way of finding the SINE body.';
+        if (tsdMode === 'manual') hint = `Columns ${params.upStart}–${params.upEnd} (5′) against ${params.downStart}–${params.downEnd} (3′). ` + hint;
+        el.innerHTML = `<div class="rf-summary"><span class="rf-big">No TSD found</span><span class="rf-chip">${tested} copies searched</span>${bodyChip}</div>` +
+            `<div class="rf-hint">${esc(hint)}</div>${missesHtml}`;
+        _wireTsdGoto(el);
         return;
     }
 
-    let html = `<div style="margin-bottom:6px;font-weight:bold;font-size:12px;">TSD results: ${results.length} / ${state.seqs.length} sequences</div>`;
-    html += '<div style="font-size:10px;color:#666;margin-bottom:4px;">Upstream and downstream copies of the target site duplication. Click a row to scroll to the upstream TSD.</div>';
-    html += `<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="background:#f0f0f0;">` +
-        `<th style="text-align:left;padding:2px 4px;">#</th>` +
-        `<th style="text-align:left;padding:2px 4px;">Sequence</th>` +
-        `<th style="text-align:right;padding:2px 4px;">Len</th>` +
-        `<th style="text-align:right;padding:2px 4px;">Div%</th>` +
-        `<th style="text-align:left;padding:2px 4px;">Up TSD</th>` +
-        `<th style="text-align:left;padding:2px 4px;">Cols</th>` +
-        `<th style="text-align:left;padding:2px 4px;">Down TSD</th>` +
-        `<th style="text-align:left;padding:2px 4px;">Cols</th>` +
-        `</tr></thead><tbody>`;
-
-    results.forEach((r, i) => {
-        const name = r.seqName.length > 28 ? r.seqName.substring(0, 28) + '...' : r.seqName;
-        const scrollCol = r.upPositions?.[0] ?? 0;
-        html += `<tr data-scroll-col="${scrollCol}" style="cursor:pointer;" ` +
-            `onmouseover="this.style.background='#e8f5e9'" onmouseout="this.style.background=''" ` +
-            `onclick="_scrollToColumn(parseInt(this.dataset.scrollCol))">` +
-            `<td style="padding:2px 4px;">${i + 1}</td>` +
-            `<td style="padding:2px 4px;" title="${r.seqName}">${name}</td>` +
-            `<td style="text-align:right;padding:2px 4px;">${r.tsdLen}</td>` +
-            `<td style="text-align:right;padding:2px 4px;">${r.divergence}%</td>` +
-            `<td style="padding:2px 4px;font-family:monospace;">${r.upTSD}</td>` +
-            `<td style="padding:2px 4px;">${r.upCols}</td>` +
-            `<td style="padding:2px 4px;font-family:monospace;">${r.downTSD}</td>` +
-            `<td style="padding:2px 4px;">${r.downCols}</td>` +
-            `</tr>`;
-    });
-    html += '</tbody></table>';
-    if (results[0]?.boundary) {
-        html += `<div style="font-size:10px;color:#666;margin-top:6px;">Boundary mode: ${tsdMode} (${results[0].boundary})</div>`;
+    const lens = results.map(r => r.tsdLen).sort((x, y) => x - y);
+    const median = lens[Math.floor(lens.length / 2)];
+    const exact = results.filter(r => Number(r.mismatches) === 0).length;
+    const counts = new Map();
+    lens.forEach(n => counts.set(n, (counts.get(n) || 0) + 1));
+    const maxCount = Math.max(...counts.values());
+    let histo = '<span class="rf-histo" title="Number of copies per TSD length">';
+    for (let n = lens[0]; n <= lens[lens.length - 1]; n++) {
+        const c = counts.get(n) || 0;
+        histo += `<span style="height:${c ? Math.max(3, Math.round(24 * c / maxCount)) : 1}px" title="${n} bp: ${c}"></span>`;
     }
-    html += '<div style="font-size:10px;color:#666;margin-top:4px;">Use <b>Mark</b> above to highlight TSDs in the alignment.</div>';
+    histo += '</span>';
+    const pct = Math.round(100 * results.length / Math.max(1, tested));
+    let html = `<div class="rf-summary"><span class="rf-big">TSD in ${results.length} of ${tested} copies (${pct}%)</span>` +
+        `<span class="rf-chip">length ${lens[0]}–${lens[lens.length - 1]} bp, median ${median}</span>${histo}` +
+        `<span class="rf-chip">${exact} identical pair${exact === 1 ? '' : 's'}</span>${bodyChip}</div>` +
+        '<div class="rf-hint">Each row shows the 5′ copy above the 3′ copy; mismatches are red. Click a row to show it in the alignment. Click a column title to sort.</div>' +
+        '<table class="rf-table"><colgroup><col style="width:30px"><col><col style="width:27%"><col style="width:48px"><col style="width:62px"><col style="width:92px"></colgroup>' +
+        '<thead><tr><th data-sort="order">#</th><th data-sort="name">Sequence</th><th>TSD (5′ / 3′)</th>' +
+        '<th data-sort="len" class="rf-num-cell">Length</th><th data-sort="mm" class="rf-num-cell">Mismatch</th><th>Columns</th></tr></thead><tbody></tbody></table>' + missesHtml;
     el.innerHTML = html;
+
+    const pair = (up, down) => {
+        let a = '', c = '';
+        for (let k = 0; k < Math.max(up.length, down.length); k++) {
+            const x = up[k] || '', y = down[k] || '';
+            const mm = x.toUpperCase() !== y.toUpperCase();
+            a += mm ? `<span class="rf-mm">${esc(x)}</span>` : esc(x);
+            c += mm ? `<span class="rf-mm">${esc(y)}</span>` : esc(y);
+        }
+        return `<div class="rf-pair"><span class="rf-tag">5′</span>${a}<br><span class="rf-tag">3′</span>${c}</div>`;
+    };
+    const rows = results.map((r, i) => ({ r, i }));
+    const tbody = el.querySelector('tbody');
+    const draw = (key, dir) => {
+        const cmp = { order: (a, z) => a.i - z.i, name: (a, z) => a.r.seqName.localeCompare(z.r.seqName),
+            len: (a, z) => a.r.tsdLen - z.r.tsdLen, mm: (a, z) => a.r.mismatches - z.r.mismatches }[key];
+        rows.sort((a, z) => dir * cmp(a, z) || a.i - z.i);
+        tbody.innerHTML = rows.map(({ r, i }) =>
+            `<tr data-row="${r.seqIndex}" data-col="${r.upPositions?.[0] ?? 0}">` +
+            `<td class="rf-num-cell">${i + 1}</td>` +
+            `<td class="rf-name" title="${esc(r.seqName)}">${esc(r.seqName)}</td>` +
+            `<td>${pair(r.upTSD, r.downTSD)}</td>` +
+            `<td class="rf-num-cell">${r.tsdLen}</td>` +
+            `<td class="rf-num-cell" title="${r.divergence}%">${r.mismatches}/${r.tsdLen}</td>` +
+            `<td class="rf-cols">${esc(r.upCols)}<br>${esc(r.downCols)}</td></tr>`).join('');
+    };
+    let sortKey = 'order', sortDir = 1;
+    draw(sortKey, sortDir);
+    el.querySelectorAll('th[data-sort]').forEach(th => th.addEventListener('click', () => {
+        sortDir = (sortKey === th.dataset.sort) ? -sortDir : 1;
+        sortKey = th.dataset.sort;
+        draw(sortKey, sortDir);
+    }));
+    tbody.addEventListener('click', (ev) => {
+        const tr = ev.target.closest('tr[data-row]');
+        if (!tr) return;
+        tbody.querySelectorAll('tr.rf-active').forEach(x => x.classList.remove('rf-active'));
+        tr.classList.add('rf-active');
+        _showRowInAlignment(parseInt(tr.dataset.row, 10), parseInt(tr.dataset.col, 10));
+    });
+    _wireTsdGoto(el);
+}
+
+// Scroll the alignment to a row (if it is drawn) and a column, and flash the row name
+function _showRowInAlignment(row, col) {
+    const container = document.getElementById('alignmentContainer');
+    // Block mode draws a row once per block: go to the block that holds the column
+    const cell = Number.isInteger(col) ? container?.querySelector(`.seq-line[data-seq-index="${row}"] .seq-data > span[data-pos="${col}"]`) : null;
+    if (cell) {
+        cell.scrollIntoView({ block: 'center', inline: 'center' });
+        const name = cell.closest('.seq-line')?.querySelector('.seq-name');
+        if (name) { name.classList.remove('rf-flash'); void name.offsetWidth; name.classList.add('rf-flash'); }
+        return;
+    }
+    const line = container?.querySelector(`.seq-line[data-seq-index="${row}"]`);
+    if (line) {
+        line.scrollIntoView({ block: 'center', inline: 'nearest' });
+        const name = line.querySelector('.seq-name');
+        if (name) { name.classList.remove('rf-flash'); void name.offsetWidth; name.classList.add('rf-flash'); }
+    }
+    if (Number.isInteger(col)) requestAnimationFrame(() => _scrollToColumn(col));
+}
+function _wireTsdGoto(el) {
+    el.querySelectorAll('a.rf-goto').forEach(a => a.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        _showRowInAlignment(parseInt(a.dataset.row, 10), null);
+    }));
+}
+function _copyTsdTable() {
+    const res = _lastTsdResults || [];
+    if (!res.length) { showMessage('Run the TSD search first.', 2000); return; }
+    const lines = ['sequence\ttsd_length\tmismatches\ttsd_5prime\ttsd_3prime\tcolumns_5prime\tcolumns_3prime'];
+    res.forEach(r => lines.push([r.seqName, r.tsdLen, r.mismatches, r.upTSD, r.downTSD, r.upCols, r.downCols].join('\t')));
+    (res.misses || []).forEach(m => lines.push([m.seqName, '', '', '', '', '', '', m.reason].join('\t')));
+    const text = lines.join('\n') + '\n';
+    if (navigator.clipboard?.writeText) {
+        navigator.clipboard.writeText(text).then(() => showMessage(`Copied ${res.length} TSDs`, 1800), () => showMessage('Clipboard not available', 2500));
+    } else showMessage('Clipboard not available', 2500);
 }
 
 function _renderRepeatResultsHTML(el, results, mode, seqName, seqLength) {
+    const esc = _escapeHtml;
     const colors = _repeatColorPalette;
     const hl = state.repeatHighlights;
-
-    let html = `<div style="margin-bottom:8px;font-weight:bold;font-size:12px;">${mode} repeats in ${seqName} (${seqLength} bp) - ${results.length} found</div>`;
-    html += '<div style="font-size:11px;color:#666;margin-bottom:4px;">Click a row to highlight in alignment. Click again to remove.</div>';
-
-    if (mode === 'tandem') {
-        html += `<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="background:#f0f0f0;">` +
-            `<th style="text-align:left;padding:2px 4px;width:30px;">#</th>` +
-            `<th style="text-align:left;padding:2px 4px;">Colour</th>` +
-            `<th style="text-align:right;padding:2px 4px;">Start</th>` +
-            `<th style="text-align:right;padding:2px 4px;">End</th>` +
-            `<th style="text-align:right;padding:2px 4px;">Unit</th>` +
-            `<th style="text-align:right;padding:2px 4px;">Copies</th>` +
-            `<th style="text-align:right;padding:2px 4px;">Div%</th>` +
-            `<th style="text-align:left;padding:2px 4px;">Unit seq</th>` +
-            `<th style="padding:2px 4px;width:20px;"></th>` +
-            `</tr></thead><tbody>`;
-        results.forEach((r, i) => {
-            const color = colors[i % colors.length];
-            const rid = 'tandem-' + i;
-            const active = hl.has(rid);
-            const bg = active ? color : 'transparent';
-            html += `<tr data-repeat-id="${rid}" data-start="${r.start}" data-end="${r.end}" data-color="${color}" data-active="${active ? '1' : ''}"` +
-                ` style="cursor:pointer;background:${bg};" ` +
-                ` onmouseover="if(!this.dataset.active)this.style.background='${color}33'" ` +
-                ` onmouseout="if(!this.dataset.active)this.style.background='transparent'" ` +
-                ` onclick="_toggleRepeatHighlight(this)">` +
-                `<td style="padding:2px 4px;">${i+1}</td>` +
-                `<td style="padding:2px 4px;"><span style="display:inline-block;width:14px;height:14px;background:${color};border-radius:2px;vertical-align:middle;"></span></td>` +
-                `<td style="text-align:right;padding:2px 4px;">${r.start+1}</td>` +
-                `<td style="text-align:right;padding:2px 4px;">${r.end}</td>` +
-                `<td style="text-align:right;padding:2px 4px;">${r.unitLen}bp</td>` +
-                `<td style="text-align:right;padding:2px 4px;">${r.copies}x</td>` +
-                `<td style="text-align:right;padding:2px 4px;">${r.divergence}%</td>` +
-                `<td style="padding:2px 4px;font-family:monospace;">${r.unit}</td>` +
-                `<td style="padding:2px 4px;text-align:center;"><button class="repeat-remove-btn" style="background:none;border:none;color:#c00;font-size:14px;cursor:pointer;line-height:1;padding:0 2px;" title="Remove this highlight" onclick="event.stopPropagation();_removeRepeatHighlight(this.closest('tr'))">x</button></td>` +
-                `</tr>`;
-        });
-        html += '</tbody></table>';
-    } else {
-        html += `<table style="width:100%;border-collapse:collapse;font-size:11px;"><thead><tr style="background:#f0f0f0;">` +
-            `<th style="text-align:left;padding:2px 4px;width:30px;">#</th>` +
-            `<th style="text-align:left;padding:2px 4px;">Colour</th>` +
-            `<th style="text-align:right;padding:2px 4px;">PosA</th>` +
-            `<th style="text-align:right;padding:2px 4px;">PosB</th>` +
-            `<th style="text-align:right;padding:2px 4px;">Len</th>` +
-            `<th style="text-align:right;padding:2px 4px;">Div%</th>` +
-            `<th style="text-align:left;padding:2px 4px;">SeqA</th>` +
-            `<th style="padding:2px 4px;width:20px;"></th>` +
-            `</tr></thead><tbody>`;
-        results.forEach((r, i) => {
-            const color = colors[i % colors.length];
-            const rid = mode + '-' + i;
-            const active = hl.has(rid);
-            const bg = active ? color : 'transparent';
-            const alignEnd = r.alignEnd != null ? r.alignEnd : (r.posA + r.length);
-            html += `<tr data-repeat-id="${rid}" data-start="${r.posA}" data-end="${alignEnd}" data-color="${color}" data-active="${active ? '1' : ''}"` +
-                ` style="cursor:pointer;background:${bg};" ` +
-                ` onmouseover="if(!this.dataset.active)this.style.background='${color}33'" ` +
-                ` onmouseout="if(!this.dataset.active)this.style.background='transparent'" ` +
-                ` onclick="_toggleRepeatHighlight(this)">` +
-                `<td style="padding:2px 4px;">${i+1}</td>` +
-                `<td style="padding:2px 4px;"><span style="display:inline-block;width:14px;height:14px;background:${color};border-radius:2px;vertical-align:middle;"></span></td>` +
-                `<td style="text-align:right;padding:2px 4px;">${r.posA+1}</td>` +
-                `<td style="text-align:right;padding:2px 4px;">${r.posB+1}</td>` +
-                `<td style="text-align:right;padding:2px 4px;">${r.length}</td>` +
-                `<td style="text-align:right;padding:2px 4px;">${r.divergence}%</td>` +
-                `<td style="padding:2px 4px;font-family:monospace;">${r.seqA.length > 50 ? r.seqA.substring(0,50)+'...' : r.seqA}</td>` +
-                `<td style="padding:2px 4px;text-align:center;"><button class="repeat-remove-btn" style="background:none;border:none;color:#c00;font-size:14px;cursor:pointer;line-height:1;padding:0 2px;" title="Remove this highlight" onclick="event.stopPropagation();_removeRepeatHighlight(this.closest('tr'))">x</button></td>` +
-                `</tr>`;
-        });
-        html += '</tbody></table>';
-    }
+    const tools = document.getElementById('tsdResultTools');
+    if (tools) tools.hidden = true;
+    const multi = new Set(results.map(r => r.seqIndex)).size > 1;
+    const kind = { tandem: 'tandem', direct: 'direct', inverted: 'inverted' }[mode] || mode;
+    let html = `<div class="rf-summary"><span class="rf-big">${results.length} ${kind} repeat${results.length === 1 ? '' : 's'}</span>` +
+        `<span class="rf-chip">${esc(seqName || '')}${seqLength ? `, ${seqLength} bp` : ''}</span></div>` +
+        '<div class="rf-hint">Click a row to highlight the repeat in its sequence; click again to remove.</div>';
+    const head = mode === 'tandem'
+        ? '<th style="width:26px"></th>' + (multi ? '<th>Sequence</th>' : '') + '<th class="rf-num-cell">Columns</th><th class="rf-num-cell">Unit</th><th class="rf-num-cell">Copies</th><th class="rf-num-cell">Div.</th><th>Unit sequence</th><th style="width:22px"></th>'
+        : '<th style="width:26px"></th>' + (multi ? '<th>Sequence</th>' : '') + '<th class="rf-num-cell">Copy A</th><th class="rf-num-cell">Copy B</th><th class="rf-num-cell">Length</th><th class="rf-num-cell">Div.</th><th>Sequence of copy A</th><th style="width:22px"></th>';
+    html += `<table class="rf-table"><thead><tr>${head}</tr></thead><tbody>`;
+    results.forEach((r, i) => {
+        const color = colors[i % colors.length];
+        const rid = mode + '-' + i;
+        const active = hl.has(rid);
+        let segs, cells;
+        if (mode === 'tandem') {
+            segs = `${r.start}-${r.end}`;
+            cells = `<td class="rf-num-cell">${r.start + 1}–${r.end}</td><td class="rf-num-cell">${r.unitLen} bp</td><td class="rf-num-cell">${r.copies}×</td>` +
+                `<td class="rf-num-cell">${r.divergence}%</td><td class="rf-name rf-pair" title="${esc(r.unit)}">${esc(r.unit)}</td>`;
+        } else {
+            const endA = r.alignEnd != null ? r.alignEnd : (r.posA + r.length);
+            const endB = r.alignEndB != null ? r.alignEndB : (r.posB + r.length);
+            segs = `${r.posA}-${endA};${r.posB}-${endB}`;
+            cells = `<td class="rf-num-cell">${r.posA + 1}–${endA}</td><td class="rf-num-cell">${r.posB + 1}–${endB}</td><td class="rf-num-cell">${r.length}</td>` +
+                `<td class="rf-num-cell">${r.divergence}%</td><td class="rf-name rf-pair" title="${esc(r.seqA)}">${esc(r.seqA)}</td>`;
+        }
+        html += `<tr data-repeat-id="${rid}" data-row="${r.seqIndex ?? ''}" data-segs="${segs}" data-color="${color}" data-active="${active ? '1' : ''}"` +
+            `${active ? ` style="background:${color}55"` : ''} onclick="_toggleRepeatHighlight(this)">` +
+            `<td><span class="rf-swatch" style="background:${color}"></span></td>` +
+            (multi ? `<td class="rf-name" title="${esc(r.seqName || '')}">${esc(r.seqName || '')}</td>` : '') + cells +
+            `<td><button class="rf-x repeat-remove-btn" title="Remove this highlight" onclick="event.stopPropagation();_removeRepeatHighlight(this.closest('tr'))">×</button></td></tr>`;
+    });
+    html += '</tbody></table>';
     el.innerHTML = html;
 }
 
 // Direct-DOM highlight removal (fast, no full renderAlignment)
+function _repeatInfoFromRow(tr) {
+    const segs = (tr.dataset.segs || `${tr.dataset.start}-${tr.dataset.end}`).split(';')
+        .map(x => x.split('-').map(Number)).filter(a => a.length === 2 && a.every(Number.isFinite));
+    const row = tr.dataset.row === '' || tr.dataset.row == null ? null : parseInt(tr.dataset.row, 10);
+    return { segs, row: Number.isInteger(row) ? row : null, color: tr.dataset.color };
+}
+// Paint (or unpaint) one highlight on the spans of its own row, not of every row
+function _paintRepeatHighlight(info, on) {
+    const sel = info.row === null ? '.seq-line:not(.consensus-line):not(.scale-ruler-line) .seq-data > span[data-pos]'
+        : `.seq-line[data-seq-index="${info.row}"] .seq-data > span[data-pos]`;
+    document.querySelectorAll(sel).forEach(span => {
+        const pos = parseInt(span.dataset.pos, 10);
+        if (!info.segs.some(([a, z]) => pos >= a && pos < z)) return;
+        if (on) {
+            const ch = span.textContent;
+            if (ch === '-' || ch === '.') return;
+            span.style.setProperty('background-color', info.color + '66', 'important');
+            span.dataset.repeatHl = '1';
+            if (!/repeat region/.test(span.title || '')) span.title = span.title ? span.title + ' | repeat region' : 'repeat region';
+        } else if (span.dataset.repeatHl === '1') {
+            span.style.removeProperty('background-color');
+            delete span.dataset.repeatHl;
+            span.title = (span.title || '').replace(/( \| )?repeat region/g, '');
+        }
+    });
+}
 function _removeRepeatHighlight(row) {
     const rid = row.dataset.repeatId;
-    const start = parseInt(row.dataset.start);
-    const end = parseInt(row.dataset.end);
     const hl = state.repeatHighlights;
     if (hl.has(rid)) {
+        const info = hl.get(rid);
         hl.delete(rid);
-        // Remove backgrounds directly from DOM spans
-        const allSpans = document.querySelectorAll('.seq-data > span[data-pos]');
-        for (const span of allSpans) {
-            const pos = parseInt(span.dataset.pos);
-            if (pos >= start && pos < end) {
-                span.style.removeProperty('background-color');
-                const t = span.title || '';
-                span.title = t.replace(/ \| repeat region/g, '');
-            }
-        }
+        _paintRepeatHighlight(info, false);
+        // another highlight may share those columns in the same row: repaint the survivors
+        hl.forEach(other => _paintRepeatHighlight(other, true));
     }
-    // Update row state
     row.dataset.active = '';
-    row.style.background = 'transparent';
+    row.style.background = '';
 }
 
 function _toggleRepeatHighlight(row) {
     const rid = row.dataset.repeatId;
-    const start = parseInt(row.dataset.start);
-    const end = parseInt(row.dataset.end);
-    const color = row.dataset.color;
     const hl = state.repeatHighlights;
     if (hl.has(rid)) {
-        hl.delete(rid);
-        // Fast path: remove backgrounds directly from DOM
-        const allSpans = document.querySelectorAll('.seq-data > span[data-pos]');
-        for (const span of allSpans) {
-            const pos = parseInt(span.dataset.pos);
-            if (pos >= start && pos < end) {
-                span.style.removeProperty('background-color');
-                const t = span.title || '';
-                span.title = t.replace(/ \| repeat region/g, '');
-            }
-        }
-        row.dataset.active = '';
-        row.style.background = 'transparent';
-    } else {
-        hl.set(rid, { start, end, color });
-        // Fast path: apply backgrounds directly to DOM
-        const allSpans = document.querySelectorAll('.seq-data > span[data-pos]');
-        for (const span of allSpans) {
-            const pos = parseInt(span.dataset.pos);
-            if (isNaN(pos)) continue;
-            const ch = span.textContent;
-            if (ch === '-' || ch === '.') continue;
-            if (pos >= start && pos < end) {
-                span.style.setProperty('background-color', color + '66', 'important');
-                span.title = span.title ? span.title + ' | repeat region' : 'repeat region';
-            }
-        }
-        requestAnimationFrame(() => _scrollToColumn(start));
-        row.dataset.active = '1';
-        row.style.background = color;
+        _removeRepeatHighlight(row);
+        return;
     }
+    const info = _repeatInfoFromRow(row);
+    hl.set(rid, info);
+    _paintRepeatHighlight(info, true);
+    if (info.row !== null) _showRowInAlignment(info.row, info.segs[0]?.[0]);
+    else requestAnimationFrame(() => _scrollToColumn(info.segs[0]?.[0] ?? 0));
+    row.dataset.active = '1';
+    row.style.background = info.color + '55';
 }
 
 function _applyLineHighlights(dataSpan) {
     const hl = state.repeatHighlights;
     if (!hl || hl.size === 0) return;
+    const line = dataSpan.parentElement;
+    if (line?.classList.contains('consensus-line')) return;
+    const rowAttr = line?.dataset?.seqIndex;
+    const row = rowAttr == null ? null : parseInt(rowAttr, 10);
+    const infos = [...hl.values()].map(info => info.segs ? info : { segs: [[info.start, info.end]], row: null, color: info.color })
+        .filter(info => info.row === null || info.row === row);
+    if (!infos.length) return;
     const spans = dataSpan.children;
     for (let i = 0; i < spans.length; i++) {
         const span = spans[i];
@@ -25273,12 +25418,11 @@ function _applyLineHighlights(dataSpan) {
         // Skip gap characters - do not colour gaps within repeats
         const ch = span.textContent;
         if (ch === '-' || ch === '.') continue;
-        for (const [rid, info] of hl) {
-            if (pos >= info.start && pos < info.end) {
-                span.style.setProperty('background-color', info.color + '66', 'important');
-                span.title = span.title ? span.title + ' | repeat region' : 'repeat region';
-                break; // first matching highlight wins
-            }
+        const info = infos.find(inf => inf.segs.some(([a, z]) => pos >= a && pos < z));
+        if (info) {
+            span.style.setProperty('background-color', info.color + '66', 'important');
+            span.dataset.repeatHl = '1';
+            span.title = span.title ? span.title + ' | repeat region' : 'repeat region';
         }
     }
 }
@@ -25286,10 +25430,11 @@ function _applyLineHighlights(dataSpan) {
 function _clearRepeatHighlights() {
     // Fast path: clear all highlight backgrounds directly from DOM
     state.repeatHighlights.clear();
-    document.querySelectorAll('.seq-data > span[data-pos]').forEach(span => {
+    // only spans this finder painted, so other inline colours (e.g. diagnostic marks) survive
+    document.querySelectorAll('.seq-data > span[data-repeat-hl="1"]').forEach(span => {
         span.style.removeProperty('background-color');
-        const t = span.title || '';
-        span.title = t.replace(/ \| repeat region/g, '');
+        delete span.dataset.repeatHl;
+        span.title = (span.title || '').replace(/( \| )?repeat region/g, '');
     });
     // Refresh results table
     const el = document.getElementById('repeatResults');
@@ -25348,6 +25493,11 @@ function _initRepeatFinderEvents() {
     document.querySelectorAll('input[name="tsdMode"]').forEach(radio => {
         radio.addEventListener('change', _syncTsdModeSubUI);
     });
+    document.querySelectorAll('input[name="repeatScope"]').forEach(radio => {
+        radio.addEventListener('change', _syncRepeatFinderModeUI);
+    });
+    const tsdCopyBtn = document.getElementById('tsdCopyBtn');
+    if (tsdCopyBtn) tsdCopyBtn.addEventListener('click', _copyTsdTable);
     const tsdFillBtn = document.getElementById('tsdFillFromSelectionBtn');
     if (tsdFillBtn) tsdFillBtn.addEventListener('click', _fillTsdRegionsFromSelection);
     const tsdMarkBtn = document.getElementById('tsdMarkBtn');

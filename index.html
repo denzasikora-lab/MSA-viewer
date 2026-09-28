@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=151">
+    <link rel="stylesheet" href="styles.css?v=152">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -635,72 +635,47 @@
                         <span class="toggle-icon">v</span>
                     </div>
                     <div class="control-group" id="alignment-controls">
-                        <div class="action-section">
-                            <div class="button-group">
-                                <button id="realignAllButton" title="Realign all sequences with default settings">Realign All</button>
-                                <button id="realignSelectedButton" title="Realign only selected sequences (keeps others unchanged)">Realign Selected</button>
-                                <button id="realignBlockButton" title="Realign selected column span(s) with MAFFT and splice back. Honours Adjust direction / Reorder / Reorder only (Ctrl+Shift+R)">Realign Block</button>
-                                <button id="addSequencesButton" title="Add new sequences and align with existing">Add Seqs & Align</button>
-                                <button id="degapBlockLeftButton" title="Degap selected continuous column block and compact residues to LEFT">Degap Block <-</button>
-                                <button id="degapBlockRightButton" title="Degap selected continuous column block and compact residues to RIGHT">Degap Block -></button>
+                        <div class="action-section al-menu">
+                            <div class="al-btngrid">
+                                <button id="realignAllButton" title="Realign all sequences with the settings below">Realign All</button>
+                                <button id="realignSelectedButton" title="Realign only the selected sequences (the others keep their rows)">Realign Selected</button>
+                                <button id="realignBlockButton" title="Realign the selected column span(s) with MAFFT and splice them back. Honours Adjust direction / Reorder / Reorder only (Ctrl+Shift+R)">Realign Block</button>
+                                <button id="addSequencesButton" title="Add new sequences and align them to the existing alignment">Add &amp; Align…</button>
+                                <button id="degapBlockLeftButton" title="Remove gaps in the selected column block and pack residues to the LEFT">Degap block ←</button>
+                                <button id="degapBlockRightButton" title="Remove gaps in the selected column block and pack residues to the RIGHT">Degap block →</button>
                             </div>
-                            <div style="padding: 4px 0; border-top: 1px solid #eee;">
-                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
-                                    <label style="font-size: 11px; min-width: 55px; text-align: right;">Seq Type:</label>
-                                    <select id="mafftSeqType" style="height: 20px; font-size: 11px;" title="Sequence type">
-                                        <option value="2" selected>Nucleotide</option>
-                                        <option value="1">Protein (BLOSUM62)</option>
-                                        <option value="0">Protein (JTT 200PAM)</option>
-                                    </select>
+                            <div class="al-settings">
+                                <label for="mafftSeqType">Sequence type</label>
+                                <select id="mafftSeqType" title="Sequence type">
+                                    <option value="2" selected>Nucleotide</option>
+                                    <option value="1">Protein (BLOSUM62)</option>
+                                    <option value="0">Protein (JTT 200PAM)</option>
+                                </select>
+                                <label for="mafftGapOpen">Gap open</label>
+                                <span class="al-pair">
+                                    <input type="number" id="mafftGapOpen" value="1.53" min="0" max="10" step="0.1" title="Gap opening penalty (default: 1.53)">
+                                    <label for="mafftGapExt" class="al-inline">extension</label>
+                                    <input type="number" id="mafftGapExt" value="0.0" min="0" max="5" step="0.05" title="Gap extension penalty / offset (default: 0.0 for nucleotides)">
+                                </span>
+                                <label for="mafftSpeed">Speed</label>
+                                <select id="mafftSpeed" title="How many times MAFFT builds the guide tree (--retree). 1 = FFT-NS-1, 2 = FFT-NS-2 (MAFFT's default)">
+                                    <option value="1">Fast (FFT-NS-1)</option>
+                                    <option value="2" selected>Standard (FFT-NS-2)</option>
+                                    <option value="3">Extra (3 guide trees)</option>
+                                </select>
+                                <span class="al-head">Options</span>
+                                <div class="al-checks">
+                                    <label title="Automatically reverse-complement sequences that appear to be in the wrong orientation (nucleotide only)"><input type="checkbox" id="mafftAdjustDir"> Adjust direction</label>
+                                    <label title="Reorder output sequences by similarity (guide-tree order) instead of input order. With Realign Block, you are asked whether to apply that order to the whole MSA (default No)."><input type="checkbox" id="mafftReorder"> Reorder by similarity</label>
+                                    <span class="al-kline">
+                                        <label title="Do not align. Only compute a k-mer guide-tree order (k set on the right). Realign All applies it to the whole MSA. Realign Block orders rows by the selected region and asks before applying (default No)."><input type="checkbox" id="mafftReorderOnly"> Reorder only (no alignment)</label>
+                                        <label class="al-k" title="k-mer length (3-12, default 6) of the similarity tree used by Reorder by similarity and Reorder only. The same setting as k in Clustering, Group by k-mer.">k <input type="number" id="mafftReorderK" min="3" max="12" value="6" step="1"></label>
+                                    </span>
                                 </div>
-                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
-                                    <label style="font-size: 11px; min-width: 55px; text-align: right;">Gap Open:</label>
-                                    <input type="number" id="mafftGapOpen" value="1.53" min="0" max="10" step="0.1" style="width: 55px; height: 20px; font-size: 11px;" title="Gap opening penalty (default: 1.53)">
-                                </div>
-                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
-                                    <label style="font-size: 11px; min-width: 55px; text-align: right;">Gap Ext:</label>
-                                    <input type="number" id="mafftGapExt" value="0.0" min="0" max="5" step="0.05" style="width: 55px; height: 20px; font-size: 11px;" title="Gap extension penalty / offset (default: 0.0 for nucleotides)">
-                                </div>
-                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
-                                    <label style="font-size: 11px; min-width: 55px; text-align: right;">Speed:</label>
-                                    <select id="mafftSpeed" style="height: 20px; font-size: 11px;" title="How many times MAFFT builds the guide tree (--retree). 1 = FFT-NS-1, 2 = FFT-NS-2 (MAFFT's default)">
-                                        <option value="1">Fast (FFT-NS-1)</option>
-                                        <option value="2" selected>Standard (FFT-NS-2)</option>
-                                        <option value="3">Extra (3 guide trees)</option>
-                                    </select>
-                                </div>
-                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
-                                    <label style="font-size: 11px; min-width: 55px; text-align: right;"></label>
-                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer;" title="Automatically reverse-complement sequences that appear to be in the wrong orientation (nucleotide only)">
-                                        <input type="checkbox" id="mafftAdjustDir"> Adjust direction
-                                    </label>
-                                </div>
-                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
-                                    <label style="font-size: 11px; min-width: 55px; text-align: right;"></label>
-                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer;" title="Reorder output sequences by similarity (guide-tree order) instead of input order. With Realign Block, you are asked whether to apply that order to the whole MSA (default No).">
-                                        <input type="checkbox" id="mafftReorder"> Reorder by similarity
-                                    </label>
-                                </div>
-                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
-                                    <label style="font-size: 11px; min-width: 55px; text-align: right;"></label>
-                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer;" title="Do not align. Only compute a k-mer guide-tree order (k set next to this box). Realign All applies it to the whole MSA. Realign Block orders rows by the selected region and asks before applying (default No).">
-                                        <input type="checkbox" id="mafftReorderOnly"> Reorder only (no alignment)
-                                    </label>
-                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px;" title="k-mer length (3-12, default 6) of the similarity tree used by Reorder by similarity and Reorder only. The same setting as k in Clustering, Group by k-mer.">k
-                                        <input type="number" id="mafftReorderK" min="3" max="12" value="6" step="1" style="width: 40px; font-size: 11px;">
-                                    </label>
-                                </div>
-                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
-                                    <label style="font-size: 11px; min-width: 55px; text-align: right;"></label>
-                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer;" title="Skip the Realign Block prompt about reverse-complementing full sequences (stored default: Yes). Uncheck to be asked each time.">
-                                        <input type="checkbox" id="mafftDontAskAdjust"> Don't ask (full-seq RC)
-                                    </label>
-                                </div>
-                                <div style="display: flex; gap: 6px; align-items: center; margin-bottom: 4px;">
-                                    <label style="font-size: 11px; min-width: 55px; text-align: right;"></label>
-                                    <label style="font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer;" title="Skip the Realign Block prompt about applying region order to the whole MSA (stored default: No). Uncheck to be asked each time.">
-                                        <input type="checkbox" id="mafftDontAskReorder"> Don't ask (apply order)
-                                    </label>
+                                <span class="al-head" title="Questions Realign Block asks; tick to stop asking and use the stored answer">Block prompts</span>
+                                <div class="al-checks">
+                                    <label title="Skip the Realign Block prompt about reverse-complementing full sequences (stored default: Yes). Uncheck to be asked each time."><input type="checkbox" id="mafftDontAskAdjust"> Don't ask (full-seq RC)</label>
+                                    <label title="Skip the Realign Block prompt about applying region order to the whole MSA (stored default: No). Uncheck to be asked each time."><input type="checkbox" id="mafftDontAskReorder"> Don't ask (apply order)</label>
                                 </div>
                                 <!-- Offset (-e) omitted: disttbfast treats -e as a boolean flag, not a value-taking option -->
                             </div>
@@ -1058,9 +1033,9 @@
 
     <!-- Dot-Plot Modal -->
     <div id="dotPlotModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:10002;overflow:hidden;">
-        <div id="dotPlotDialog" style="background:white;margin:30px auto;padding:16px;max-width:95vw;height:calc(100vh - 60px);max-height:92vh;width:900px;min-width:560px;min-height:420px;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);position:relative;display:flex;flex-direction:column;overflow:hidden;">
-            <div class="win-titlebar" style="--win-pad:16px;">
-                <h3 id="dotPlotTitle">Dot Plot</h3>
+        <div id="dotPlotDialog" class="dot-window">
+            <div class="win-titlebar" id="dotPlotTitleBar" style="--win-pad:16px;cursor:move;" title="Drag to move; drag the lower-right corner to resize">
+                <h3 id="dotPlotTitle" style="pointer-events:none;">Dot Plot</h3>
                 <button type="button" id="dotPlotCloseBtn" class="win-close" title="Close">×</button>
             </div>
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px;flex-wrap:wrap;">
@@ -1080,6 +1055,10 @@
                 <span style="display:inline-flex;gap:8px;white-space:nowrap;">
                     <button id="dotPlotExport" style="font-size:11px;padding:2px 8px;" title="Save the whole plot as a PNG image">Export PNG</button>
                     <button id="dotPlotExportSvg" style="font-size:11px;padding:2px 8px;" title="Save the whole plot as a vector SVG: each diagonal run of dots is one line">Export SVG</button>
+                </span>
+                <span style="display:inline-flex;gap:8px;white-space:nowrap;margin-left:auto;">
+                    <button id="dotPlotCopyRegion" style="font-size:11px;padding:2px 8px;" title="Copy the aligned region around the pinned or hovered point as FASTA">Copy region</button>
+                    <button id="dotPlotHelpBtn" class="dot-help-btn" title="Show / hide help for the dot plot" aria-label="Help">?</button>
                 </span>
             </div>
             <div style="display:flex;gap:8px;flex:1;min-height:260px;">
@@ -1104,8 +1083,6 @@
    
 B: -</pre>
             <div id="dotPlotSpinScroll" style="display:none;font-size:11px;color:#4a9eff;font-weight:bold;margin-top:3px;">Frozen - double-click to unfreeze</div>
-                <button id="dotPlotCopyRegion" style="margin-top:6px;padding:4px 10px;font-size:12px;cursor:pointer;" title="Copy aligned region as FASTA">Copy Region</button>
-                <button id="dotPlotHelpBtn" style="margin-top:6px;padding:4px 10px;font-size:12px;cursor:pointer;" title="Local help for dot plot">?</button>
             <div id="dotPlotHelp" style="display:none;margin-top:8px;border:1px solid #ddd;padding:10px;background:#fafafa;max-height:36vh;overflow:auto;font-size:11px;line-height:1.35;">
                 <div style="font-weight:bold;margin-bottom:6px;">Dot Plot Help (local)</div>
                 <p style="margin:0 0 8px;">
@@ -1137,82 +1114,94 @@ B: -</pre>
     </div>
 
     <!-- Repeat/TSD Finder Modal -->
-    <div id="repeatFinderModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.3);z-index:10002;overflow:auto;">
-        <div id="repeatFinderModalInner" style="background:white;position:absolute;top:40px;right:20px;padding:16px;max-width:520px;width:480px;max-height:90vh;border-radius:8px;box-shadow:0 4px 20px rgba(0,0,0,0.3);overflow:auto;">
-            <div id="repeatFinderDragHandle" class="win-titlebar" style="--win-pad:16px;cursor:move;user-select:none;" title="Drag to reposition">
+    <!-- Repeat Finder: a floating panel that leaves the alignment visible and usable -->
+    <div id="repeatFinderModal" class="rf-layer" style="display:none;">
+        <div id="repeatFinderModalInner" class="rf-panel">
+            <div id="repeatFinderDragHandle" class="win-titlebar" style="--win-pad:14px;cursor:move;user-select:none;" title="Drag to move; drag the lower-right corner to resize">
                 <h3 style="pointer-events:none;">Repeat Finder</h3>
                 <button type="button" id="repeatFinderCloseBtn" class="win-close" title="Close">×</button>
             </div>
-            <div style="font-size:12px;margin-bottom:8px;">
-                <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
-                    <strong title="Type of repeat to search for">Analysis:</strong>
-                    <label title="Adjacent repeated units (e.g., ATGATGATG)"><input type="radio" name="repeatMode" value="tandem" checked> Tandem repeats</label>
-                    <label title="Two copies of same sequence in same orientation, anywhere in the sequence"><input type="radio" name="repeatMode" value="direct"> Direct repeats</label>
-                    <label title="Two copies in opposite orientation (reverse-complement)"><input type="radio" name="repeatMode" value="inverted"> Inverted repeats</label>
-                    <label title="Target site duplications flanking a SINE/TE element in aligned sequences"><input type="radio" name="repeatMode" value="tsd"> TSD (SINE)</label>
-                </div>
-                <div id="repeatScopeRow" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
-                    <strong title="Which sequences to search for repeats">Scope:</strong>
-                    <label title="Search a single sequence"><input type="radio" name="repeatScope" value="single" checked> Single</label>
-                    <label title="Search all loaded sequences"><input type="radio" name="repeatScope" value="all"> All</label>
-                    <label title="Search only selected sequences"><input type="radio" name="repeatScope" value="selected"> Selected</label>
-                    <label title="Which sequence (single mode)">Seq:
-                        <select id="repeatFinderSeqSelect" style="max-width:180px;font-size:11px;height:22px;" title="Select a sequence to analyze for repeats"></select>
-                    </label>
-                </div>
-                <div id="repeatParamsGeneral" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px;">
-                    <label title="Minimum repeat unit length in base pairs">Min length: <input type="number" id="repeatMinLen" value="10" min="3" max="50" style="width:45px;" title="Shorter repeats are ignored"></label>
-                    <label title="Maximum allowed divergence between repeat copies (0=identical, 50=half mismatched)">Max divergence: <input type="number" id="repeatMaxDiv" value="15" min="0" max="50" style="width:45px;" title="Higher values allow more mismatches">%</label>
-                </div>
-                <div id="repeatParamsTsd" style="display:none;font-size:11px;margin-bottom:6px;border:1px solid #c8e6c9;background:#f1f8e9;border-radius:4px;padding:6px;">
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
-                        <strong title="How to locate the conserved SINE body between host flanks">SINE boundary:</strong>
-                        <label title="Detect conserved SINE block from reference row (row 1 / consensus) or column conservation"><input type="radio" name="tsdMode" value="auto" checked> Auto</label>
-                        <label title="Use row 1 / consensus (gap-padded reference) to locate SINE borders"><input type="radio" name="tsdMode" value="topseq"> Reference</label>
-                        <label title="Specify pre-SINE and post-SINE column ranges manually"><input type="radio" name="tsdMode" value="manual"> Manual</label>
+            <div class="rf-body">
+                <div class="rf-row">
+                    <span class="rf-label">Find</span>
+                    <div class="rf-seg" role="radiogroup" aria-label="Type of repeat">
+                        <label title="Adjacent repeated units (e.g. ATGATGATG)"><input type="radio" name="repeatMode" value="tandem" checked>Tandem</label>
+                        <label title="Two copies of the same sequence in the same orientation, anywhere in the sequence"><input type="radio" name="repeatMode" value="direct">Direct</label>
+                        <label title="Two copies in opposite orientation (reverse complement)"><input type="radio" name="repeatMode" value="inverted">Inverted</label>
+                        <label title="Target-site duplications flanking the SINE in every row of the alignment"><input type="radio" name="repeatMode" value="tsd">TSD (SINE)</label>
                     </div>
-                    <div id="tsdManualRegions" style="display:none;margin-bottom:4px;">
-                        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:3px;">
-                            <span title="Host sequence upstream of SINE where the 5-prime TSD copy is searched">Pre-SINE cols:</span>
-                            <input type="number" id="tsdUpStart" value="1" min="1" style="width:52px;" title="First column of pre-SINE region (1-based)">
-                            <span>-</span>
-                            <input type="number" id="tsdUpEnd" value="30" min="1" style="width:52px;" title="Last column of pre-SINE region (1-based)">
+                </div>
+
+                <div id="repeatScopeRow" class="rf-row">
+                    <span class="rf-label">Search in</span>
+                    <div class="rf-seg" role="radiogroup" aria-label="Which sequences to search">
+                        <label title="One sequence, chosen on the right"><input type="radio" name="repeatScope" value="single" checked>One sequence</label>
+                        <label title="Every loaded sequence"><input type="radio" name="repeatScope" value="all">All</label>
+                        <label title="The rows selected in the alignment (Ctrl+click names)"><input type="radio" name="repeatScope" value="selected">Selected rows</label>
+                    </div>
+                    <select id="repeatFinderSeqSelect" class="rf-seqselect" title="Sequence to search"></select>
+                </div>
+
+                <div id="repeatParamsGeneral" class="rf-row">
+                    <span class="rf-label">Settings</span>
+                    <label title="Shorter repeats are ignored">Min length <input type="number" id="repeatMinLen" value="10" min="3" max="50" class="rf-num"> bp</label>
+                    <label title="Maximum mismatch between repeat copies (0 = identical)">Max divergence <input type="number" id="repeatMaxDiv" value="15" min="0" max="50" class="rf-num"> %</label>
+                </div>
+
+                <div id="repeatParamsTsd" style="display:none;">
+                    <div class="rf-row">
+                        <span class="rf-label" title="How the SINE body (between the two TSD copies) is located">SINE body</span>
+                        <div class="rf-seg" role="radiogroup" aria-label="How to find the SINE body">
+                            <label title="From column conservation, or from the reference / consensus row"><input type="radio" name="tsdMode" value="auto" checked>Auto</label>
+                            <label title="From row 1 or the consensus row (gap-padded reference)"><input type="radio" name="tsdMode" value="topseq">Reference row</label>
+                            <label title="Give the flank columns yourself"><input type="radio" name="tsdMode" value="manual">Manual</label>
                         </div>
-                        <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:3px;">
-                            <span title="Host sequence downstream of SINE where the 3-prime TSD copy is searched">Post-SINE cols:</span>
-                            <input type="number" id="tsdDownStart" value="80" min="1" style="width:52px;" title="First column of post-SINE region (1-based)">
-                            <span>-</span>
-                            <input type="number" id="tsdDownEnd" value="110" min="1" style="width:52px;" title="Last column of post-SINE region (1-based)">
+                    </div>
+                    <div id="tsdAutoRegions" class="rf-row">
+                        <span class="rf-label"></span>
+                        <label title="Bases searched on each side of the detected SINE body">Search <input type="number" id="tsdFlankSize" value="30" min="5" max="200" class="rf-num"> bp on each side</label>
+                    </div>
+                    <div id="tsdManualRegions" style="display:none;">
+                        <div class="rf-row">
+                            <span class="rf-label"></span>
+                            <span title="Host sequence before the SINE, where the 5′ TSD copy is searched">5′ flank columns</span>
+                            <input type="number" id="tsdUpStart" value="1" min="1" class="rf-num" title="First column (1-based)"> –
+                            <input type="number" id="tsdUpEnd" value="30" min="1" class="rf-num" title="Last column (1-based)">
+                            <span title="Host sequence after the SINE, where the 3′ TSD copy is searched" style="margin-left:10px;">3′ flank columns</span>
+                            <input type="number" id="tsdDownStart" value="80" min="1" class="rf-num" title="First column (1-based)"> –
+                            <input type="number" id="tsdDownEnd" value="110" min="1" class="rf-num" title="Last column (1-based)">
                         </div>
-                        <button type="button" id="tsdFillFromSelectionBtn" style="font-size:10px;padding:1px 6px;" title="Use Ctrl+Alt-selected columns as SINE body; fill pre/post flank ranges">Use selected cols as SINE</button>
+                        <div class="rf-row">
+                            <span class="rf-label"></span>
+                            <button type="button" id="tsdFillFromSelectionBtn" class="rf-btn" title="Select the SINE body columns first (Ctrl+Alt+click), then fill both flank ranges from them">Use selected columns as the SINE body</button>
+                        </div>
                     </div>
-                    <div id="tsdAutoRegions" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
-                        <label title="Columns to search on each flank of the auto-detected SINE body">Flank window: <input type="number" id="tsdFlankSize" value="30" min="5" max="200" style="width:45px;"> bp</label>
-                    </div>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:4px;">
-                        <label title="Minimum TSD length">Min TSD: <input type="number" id="tsdMinLen" value="4" min="2" max="30" style="width:40px;"> bp</label>
-                        <label title="Maximum TSD length">Max TSD: <input type="number" id="tsdMaxLen" value="20" min="2" max="50" style="width:40px;"> bp</label>
-                        <label title="Maximum mismatch fraction between upstream and downstream TSD copies">Max div: <input type="number" id="tsdMaxDiv" value="20" min="0" max="50" style="width:40px;">%</label>
-                    </div>
-                    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;">
-                        <span>Mark TSD:</span>
-                        <select id="tsdMarkStyle" style="font-size:10px;height:20px;" title="How to highlight found TSDs in the alignment">
-                            <option value="color" selected>Color</option>
-                            <option value="bold">Bold</option>
-                            <option value="lowercase">Lowercase</option>
-                        </select>
-                        <input type="color" id="tsdMarkColor" value="#ffd54f" title="Highlight color" style="width:28px;height:20px;padding:0;border:1px solid #ccc;">
-                        <button type="button" id="tsdMarkBtn" style="font-size:10px;padding:2px 8px;" title="Highlight all found TSDs in the alignment">Mark</button>
-                        <button type="button" id="tsdUndoMarkBtn" style="font-size:10px;padding:2px 8px;" title="Undo TSD marking">Undo mark</button>
+                    <div class="rf-row">
+                        <span class="rf-label">TSD</span>
+                        <label title="Length range of the duplication">length <input type="number" id="tsdMinLen" value="4" min="2" max="30" class="rf-num"> – <input type="number" id="tsdMaxLen" value="20" min="2" max="50" class="rf-num"> bp</label>
+                        <label title="Maximum fraction of mismatched bases between the two copies">max mismatch <input type="number" id="tsdMaxDiv" value="20" min="0" max="50" class="rf-num"> %</label>
                     </div>
                 </div>
-                <div id="repeatActionRow" style="margin-bottom:6px;">
-                <button id="repeatRunBtn" style="padding:4px 16px;font-size:13px;background:#4CAF50;color:white;border:none;border-radius:4px;cursor:pointer;" title="Search for repeats with current parameters">Run Analysis</button>
-                <button id="repeatClearHighlightsBtn" style="padding:4px 12px;font-size:12px;background:#f44336;color:white;border:none;border-radius:4px;cursor:pointer;margin-left:8px;" title="Remove all repeat highlights from the alignment">Clear Highlights</button>
+
+                <div id="repeatActionRow" class="rf-row rf-actions">
+                    <button id="repeatRunBtn" class="rf-btn rf-btn-primary" title="Search with the current settings">Find</button>
+                    <button id="repeatClearHighlightsBtn" class="rf-btn" title="Remove all repeat highlights from the alignment">Clear highlights</button>
                 </div>
-            </div>
-            <div id="repeatResults" style="max-height:50vh;overflow:auto;font-family:monospace;font-size:11px;white-space:pre-wrap;border:1px solid #ddd;padding:8px;background:#fafafa;min-height:60px;">
-                Click "Run Analysis" to start.
+
+                <div id="tsdResultTools" class="rf-row rf-tools" hidden>
+                    <span class="rf-label">Mark</span>
+                    <select id="tsdMarkStyle" title="How found TSDs are shown in the alignment">
+                        <option value="color" selected>Colour</option>
+                        <option value="bold">Bold</option>
+                        <option value="lowercase">Lower case</option>
+                    </select>
+                    <input type="color" id="tsdMarkColor" value="#ffd54f" title="Highlight colour" class="rf-color">
+                    <button type="button" id="tsdMarkBtn" class="rf-btn" title="Show every found TSD in the alignment">Mark in alignment</button>
+                    <button type="button" id="tsdUndoMarkBtn" class="rf-btn" title="Remove the TSD marks">Remove marks</button>
+                    <button type="button" id="tsdCopyBtn" class="rf-btn" title="Copy the TSD table (tab-separated) for a spreadsheet">Copy table</button>
+                </div>
+
+                <div id="repeatResults" class="rf-results">Choose what to find, then press Find.</div>
             </div>
         </div>
     </div>
@@ -1275,7 +1264,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=256"></script>
+    <script src="script.js?v=257"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>
