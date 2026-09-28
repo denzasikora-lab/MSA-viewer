@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v210';
+const BUILD_TAG = 'v211';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -23328,16 +23328,26 @@ function _dotNormAt(row, col) {
 function _dotUnknownChars(seqA, seqB) {
     // Letters that exist in protein but not in nucleotide IUPAC codes
     const protein = /[EFIJLOPQZ*]/.test(seqA) || /[EFIJLOPQZ*]/.test(seqB);
-    return protein ? 'X*' : 'N';
+    return protein ? 'X*' : 'NX';
 }
 
+const _dotWorkerJobs = {};   // file -> reject function of the job in flight
 function _dotRunWorker(file, message) {
+    // One job per worker: a new job stops the one in flight (its result would be for old settings)
+    if (_dotWorkerJobs[file]) {
+        const cancel = _dotWorkerJobs[file];
+        if (file === 'word') { _dotWordWorker?.terminate(); _dotWordWorker = null; }
+        else { _dotPlotWorker?.terminate(); _dotPlotWorker = null; }
+        cancel(new Error('cancelled'));
+    }
     return new Promise((res, rej) => {
         const w = file === 'word' ? (_dotWordWorker ||= new Worker('doter-word-worker.js?v=' + BUILD_TAG))
                                   : (_dotPlotWorker ||= new Worker('doter-worker.js?v=' + BUILD_TAG));
-        const ok = (e) => { w.removeEventListener('message', ok); w.removeEventListener('error', no);
-            if (e.data.error) { rej(new Error(e.data.error)); return; } res(e.data); };
-        const no = (e) => { w.removeEventListener('message', ok); w.removeEventListener('error', no); rej(e); };
+        const done = () => { w.removeEventListener('message', ok); w.removeEventListener('error', no);
+            if (_dotWorkerJobs[file] === no) delete _dotWorkerJobs[file]; };
+        const ok = (e) => { done(); if (e.data.error) { rej(new Error(e.data.error)); return; } res(e.data); };
+        const no = (e) => { done(); rej(e instanceof Error ? e : new Error(e.message || 'worker error')); };
+        _dotWorkerJobs[file] = no;
         w.addEventListener('message', ok);
         w.addEventListener('error', no);
         w.postMessage(message);
@@ -23378,6 +23388,8 @@ function _dotRecalculate() {
     clearTimeout(_dotLiveTimer);
     _dotMarkDirty(false);
     const S = _dotPlotState;
+    const modal = document.getElementById('dotPlotModal');
+    if (modal && modal.style.display === 'none') return;                               // closed meanwhile
     if (S.computing) { _dotLiveTimer = setTimeout(_dotRecalculate, 250); return; }   // one run at a time
     if (S.sourceSeqA && S.sourceSeqB) openDotPlot(S.sourceSeqA, S.sourceSeqB, S.nameA.replace(/ \(RevComp\)$/, ''), S.nameB.replace(/ \(RevComp\)$/, ''), S.meta);
 }
@@ -23432,7 +23444,7 @@ function _initWindowFrame(win, bar, maxBtn, opts = {}) {
         } else {
             if (d.includes('e')) width = Math.max(MIN_W, Math.min(window.innerWidth - r.left, r.width + dx));
             if (d.includes('s')) height = Math.max(MIN_H, Math.min(window.innerHeight - r.top, r.height + dy));
-            if (d.includes('w')) { width = Math.max(MIN_W, r.width - dx); left = r.left + r.width - width; }
+            if (d.includes('w')) { width = Math.max(MIN_W, r.width - dx); left = Math.max(0, r.left + r.width - width); width = r.left + r.width - left; }
             if (d.includes('n')) { height = Math.max(MIN_H, r.height - dy); top = Math.max(0, r.top + r.height - height); height = r.top + r.height - top; }
         }
         setRect({ left, top, width, height });
@@ -23461,7 +23473,7 @@ function _dotMinZoom() {
     const S = _dotPlotState;
     const { vw, vh } = _dotViewport();
     const fit = Math.min((vw - DOT_AXIS_PAD - 12) / (S.cols || 1), (vh - DOT_AXIS_PAD - 12) / (S.rows || 1));
-    return Math.max(0.01, Math.min(0.5, fit));
+    return Math.max(0.001, Math.min(0.5, fit));
 }
 
 function _dotApplyZoom(factor, anchorX, anchorY) {
@@ -23532,7 +23544,8 @@ function _dotUpdateHoverInfo(row, col, options = {}) {
     var chA = S.seqA[row] || 'N', chB = S.seqB[col] || 'N';
 
     // SPIN-style diagonal registration: column k shows A[row+k] above B[col+k]
-    var ctx = parseInt(document.getElementById('dotPlotContextRadius')?.value) || 30;
+    var ctxRaw = parseInt(document.getElementById('dotPlotContextRadius')?.value, 10);
+    var ctx = Number.isFinite(ctxRaw) ? Math.min(500, Math.max(0, ctxRaw)) : 30;
     var aLine = '', bLine = '', guide = '';
     var aStart = Math.max(0, row - ctx);
     var bStart = Math.max(0, col - ctx);
@@ -23813,7 +23826,7 @@ function _dotPaint(ctx, z, sl, st, vw, vh) {
     if (!vectorDone && c1 > c0 && r1 > r0) {
         const dx = P + c0 * z - sl, dy = P + r0 * z - st;
         const bin = S.overviewBin;
-        if (bin > 1 && z * bin >= 2) {
+        if (bin > 1 && z * bin >= 2 && (c1 - c0) * (r1 - r0) <= 4e6) {
             // Zoomed in past the overview's resolution: draw the visible cells exactly
             const w = c1 - c0, h = r1 - r0;
             const img = new ImageData(w, h);
@@ -23901,7 +23914,7 @@ function _dotFitView() {
     if (!vp || S.cols === 0 || S.rows === 0) return;
     // 12 px spare on the far sides so the last tick labels are not clipped
     const fit = Math.min((vp.clientWidth - DOT_AXIS_PAD - 12) / S.cols, (vp.clientHeight - DOT_AXIS_PAD - 12) / S.rows);
-    const z = Math.min(24, Math.max(0.01, fit));
+    const z = Math.min(24, Math.max(0.001, fit));
     S.zoom = z >= 1 ? Math.floor(z * 10) / 10 : Math.floor(z * 1000) / 1000;
     vp.scrollLeft = vp.scrollTop = 0;
     _dotRender();
@@ -23998,16 +24011,16 @@ function _dotDetectRegions() {
         if (kept.length >= 30) break;
     }
 
-    // Sequence coordinates: a SPIN cell is the first base of a word; a Dotter cell is the
-    // centre of a window, which reaches (w - 1) / 2 bases each way
-    const before = spin ? 0 : (w - 1) >> 1, after = spin ? w - 1 : w - 1 - ((w - 1) >> 1);
+    // Sequence coordinates: SPIN marks every cell of a matched word, so a run already covers the
+    // matched bases; a Dotter cell is the centre of a window, which reaches (w - 1) / 2 bases each way
+    const before = spin ? 0 : (w - 1) >> 1, after = spin ? 0 : w - 1 - ((w - 1) >> 1);
     S.regions = kept.map(ch => {
         const a0 = Math.max(0, ch.startR - before), a1 = Math.min(S.seqA.length, ch.endR + after);
         const b0 = Math.max(0, ch.startC - before), b1 = Math.min(S.seqB.length, ch.endC + after);
         return { row: ch.longest.r, col: ch.longest.r + ch.longest.d, length: ch.longest.L,
             aStart: a0, aEnd: a1, bStart: b0, bEnd: b1, matched: ch.matched,
             avgScore: ch.identSum ? ch.identSum / ch.matched : ch.longest.ident, diagonal: ch.longest.d,
-            spanRows: ch.endR - ch.startR, cellStartR: ch.startR, cellStartC: ch.startC };
+            spanRows: ch.endR - ch.startR, spanCols: ch.endC - ch.startC, cellStartR: ch.startR, cellStartC: ch.startC };
     });
     _dotRenderRegionList();
 }
@@ -24045,7 +24058,7 @@ function _dotGoToRegion(idx) {
     const { vp, vw, vh } = _dotViewport();
     if (!vp) return;
     // Centre the run in the plot area
-    const midC = r.cellStartC != null ? r.cellStartC + r.spanRows / 2 : r.col + r.length / 2;
+    const midC = r.cellStartC != null ? r.cellStartC + (r.spanCols ?? r.spanRows) / 2 : r.col + r.length / 2;
     const midR = r.cellStartR != null ? r.cellStartR + r.spanRows / 2 : r.row + r.length / 2;
     vp.scrollLeft = Math.max(0, midC * S.zoom - (vw - DOT_AXIS_PAD) / 2);
     vp.scrollTop = Math.max(0, midR * S.zoom - (vh - DOT_AXIS_PAD) / 2);
@@ -24154,6 +24167,9 @@ const _DOT_COMPLEMENT = {
 
 async function openDotPlot(seqA, seqB, nameA, nameB, meta = null) {
     const S = _dotPlotState;
+    const gen = S.gen = (S.gen || 0) + 1;     // a later open makes this one stale
+    clearTimeout(_dotLiveTimer);
+    S.lower = null;
     // Uppercase; U and T are the same base
     const norm = s => s.toUpperCase().replace(/U/g, 'T');
     S.seqA = norm(seqA); S.seqB = norm(seqB);
@@ -24225,11 +24241,14 @@ async function openDotPlot(seqA, seqB, nameA, nameB, meta = null) {
             S.scoreMin = result.min; S.scoreMax = result.max;
         }
     } catch (err) {
+        if (gen !== S.gen) return;
+        S.matchMap = S.scores = S.overview = null;
+        S.rows = S.cols = 0;
         if (statusEl) statusEl.textContent = `Error: ${err.message}`;
         S.computing = false; return;
     }
+    if (gen !== S.gen) return;
     // Lower half with its own settings (self-plot only: the halves are mirror images)
-    S.lower = null;
     const splitBox = document.getElementById('dotPlotSplit');
     const selfPlot = S.sourceSeqA === S.sourceSeqB && !revComp;
     if (splitBox) {
@@ -24246,9 +24265,11 @@ async function openDotPlot(seqA, seqB, nameA, nameB, meta = null) {
                 const res = await _dotRunWorker('window', { seqA: S.seqA, seqB: S.seqB, windowSize: L.windowSize, mode: 'identity', unknown: S.unknown });
                 L.scores = new Int16Array(res.scores); L.matchMap = null;
             }
+            if (gen !== S.gen) return;
             L.ready = true;
             S.lower = L;
         } catch (err) {
+            if (gen !== S.gen) return;
             if (statusEl) statusEl.textContent = `Lower half: ${err.message}`;
         }
     }
@@ -24508,9 +24529,11 @@ function _initDotPlotEvents() {
         viewport.addEventListener('scroll', redraw, { passive: true });
         if (typeof ResizeObserver === 'function') new ResizeObserver(redraw).observe(viewport);
     }
+    // A threshold redraw rebuilds the whole image: at most one per frame while dragging
+    const perFrame = (fn) => { let f = 0; return () => { if (!f) f = requestAnimationFrame(() => { f = 0; fn(); }); }; };
     if (threshSlider) {
         _dotOnModeChange();
-        threshSlider.addEventListener('input', () => {
+        threshSlider.addEventListener('input', perFrame(() => {
             const v = parseInt(threshSlider.value);
             if (threshVal) threshVal.textContent = v + '%';
             const S = _dotPlotState;
@@ -24525,7 +24548,7 @@ function _initDotPlotEvents() {
                     _dotUpdateHoverInfo(S.lastRow, S.lastCol);
                 }
             }
-        });
+        }));
     }
     const ctxInput = document.getElementById('dotPlotContextRadius');
     if (ctxInput) {
@@ -24569,7 +24592,7 @@ function _initDotPlotEvents() {
     document.querySelectorAll('input[name="dotPlotModeLower"]').forEach(r => r.addEventListener('change', () => { _dotOnLowerModeChange(); onSettingChange(); }));
     document.getElementById('dotPlotWindowLower')?.addEventListener('input', onSettingChange);
     const lowerThresh = document.getElementById('dotPlotThresholdLower');
-    if (lowerThresh) lowerThresh.addEventListener('input', () => {
+    if (lowerThresh) lowerThresh.addEventListener('input', perFrame(() => {
         const v = parseInt(lowerThresh.value, 10);
         const lv = document.getElementById('dotPlotThreshValLower');
         if (lv) lv.textContent = v + '%';
@@ -24581,7 +24604,7 @@ function _initDotPlotEvents() {
             _dotRender();
             if (S.lastRow >= 0) _dotDrawOverlay(S.lastRow, S.lastCol);
         } else onSettingChange();
-    });
+    }));
     document.getElementById('dotPlotRevComp')?.addEventListener('change', onSettingChange);
     document.querySelectorAll('input[name="dotPlotMode"]').forEach(r => r.addEventListener('change', onSettingChange));
     if (liveBox) liveBox.addEventListener('change', () => { if (liveBox.checked && recalcBtn?.classList.contains('dot-dirty')) _dotRecalculate(); });
@@ -24638,6 +24661,7 @@ function _initDotPlotEvents() {
         closeBtn.addEventListener('click', () => {
             const modal = document.getElementById('dotPlotModal');
             if (modal) modal.style.display = 'none';
+            clearTimeout(_dotLiveTimer);
         });
     }
 
@@ -24671,6 +24695,7 @@ let _repeatFinderSeqIndex = -1;
 // Repeat highlighting state
 state.repeatHighlights = state.repeatHighlights || new Map(); // repeatId => {start, end, color}
 let _lastRepeatResults = [];
+let _lastRepeatView = null;   // mode, label and length the results were made with
 let _lastTsdResults = [];
 const _repeatColorPalette = ["#ff6b6b","#ffa94d","#ffd43b","#69db7c","#4dabf7","#da77f2","#20c997","#ff8787","#74c0fc","#f783ac","#ffe066","#63e6be","#a9e34b","#e599f7","#66d9e8","#fcc419","#94d82d","#ff922b","#be4bdb","#339af0"];
 
@@ -24699,13 +24724,14 @@ function _initTsdColumnDefaults() {
 }
 
 function _readTsdParams() {
+    const num = (id, dflt) => { const v = parseInt(document.getElementById(id)?.value, 10); return Number.isFinite(v) ? v : dflt; };
+    const minLen = Math.max(1, num('tsdMinLen', 4)), maxLen = Math.max(minLen, num('tsdMaxLen', 20));
     return {
-        minLen: parseInt(document.getElementById('tsdMinLen')?.value, 10) || 4,
-        maxLen: parseInt(document.getElementById('tsdMaxLen')?.value, 10) || 20,
-        maxDiv: parseInt(document.getElementById('tsdMaxDiv')?.value, 10) || 20,
-        flankSize: parseInt(document.getElementById('tsdFlankSize')?.value, 10) || 30,
+        minLen, maxLen,
+        maxDiv: Math.min(100, Math.max(0, num('tsdMaxDiv', 20))),
+        flankSize: Math.max(1, num('tsdFlankSize', 30)),
         upStart: parseInt(document.getElementById('tsdUpStart')?.value, 10) || 1,
-        upEnd: parseInt(document.getElementById('tsdUpEnd')?.value, 10) || 30,
+        upEnd: Math.max(0, num('tsdUpEnd', 30)),
         downStart: parseInt(document.getElementById('tsdDownStart')?.value, 10) || 1,
         downEnd: parseInt(document.getElementById('tsdDownEnd')?.value, 10) || 1
     };
@@ -24861,8 +24887,9 @@ function applyTsdMarking() {
         pushUndo('tsd-mark-lowercase');
         state.seqs = state.seqs.map((seqObj, rowIndex) => {
             const markPositions = rowMarks.get(rowIndex);
-            const chars = seqObj.seq.toUpperCase().split('');
-            markPositions?.forEach(position => {
+            if (!markPositions?.size && !markPositions?.length) return seqObj;
+            const chars = seqObj.seq.split('');
+            markPositions.forEach(position => {
                 if (chars[position] && /[A-Z]/.test(chars[position])) chars[position] = chars[position].toLowerCase();
             });
             const nextSeq = chars.join('');
@@ -24913,9 +24940,10 @@ function undoTsdMarking() {
     showMessage('TSD marking undone.', 1600);
 }
 
+const _RF_COMP = { A: 'T', C: 'G', G: 'C', T: 'A', U: 'A', N: 'N', R: 'Y', Y: 'R', S: 'S', W: 'W',
+    K: 'M', M: 'K', B: 'V', V: 'B', D: 'H', H: 'D' };
 function _revComp(seq) {
-    const m = { A: 'T', C: 'G', G: 'C', T: 'A', U: 'A', N: 'N' };
-    return [...seq].reverse().map(b => m[b.toUpperCase()] ?? 'N').join('');
+    return [...seq].reverse().map(b => _RF_COMP[b.toUpperCase()] ?? 'N').join('');
 }
 
 /**
@@ -24923,7 +24951,7 @@ function _revComp(seq) {
  */
 function _findRepeats(seq, minLen, maxDivPct, type) {
     const candidates = [];
-    const seqU = seq.toUpperCase();
+    const seqU = seq.toUpperCase().replace(/U/g, 'T');
     const n = seqU.length;
     if (n < minLen * 2) return [];
 
@@ -24940,7 +24968,7 @@ function _findRepeats(seq, minLen, maxDivPct, type) {
 
     // For direct/inverted: find matches between different positions
     const maxDiv = maxDivPct / 100;
-    const COMP = { A: 'T', C: 'G', G: 'C', T: 'A', U: 'A', N: 'N' };
+    const COMP = _RF_COMP;
 
     if (type === 'inverted') {
         // An inverted repeat pairs seq[i+k] with the complement of seq[jEnd-k]:
@@ -24969,8 +24997,7 @@ function _findRepeats(seq, minLen, maxDivPct, type) {
                     const j = jEnd - matchLen + 1;
                     // Reject self-overlapping pairs (e.g. a plain palindrome matching itself).
                     const aEnd = i + matchLen - 1;
-                    const disjoint = aEnd < j || jEnd < i;
-                    if (!disjoint) continue;
+                    if (aEnd >= j) continue;   // overlapping, or the mirror of a pair found from the other copy
 
                     candidates.push({
                         posA: i,
@@ -25087,8 +25114,14 @@ function _findTandemRepeats(seq, minUnitLen, maxDivPct) {
             if (copies >= 2) {
                 const totalLen = copies * unitLen;
                 const avgDiv = (totalMismatches / ((copies - 1) * unitLen) * 100).toFixed(1);
-                const overlaps = results.some(r =>
-                    Math.abs(r.start - start) < unitLen && Math.abs(r.unitLen - unitLen) < 3);
+                const end = start + totalLen;
+                const overlaps = results.some(r => {
+                    const ov = Math.min(end, r.end) - Math.max(start, r.start);
+                    if (ov <= 0) return false;
+                    const sameArray = r.unitLen === unitLen || unitLen % r.unitLen === 0
+                        || Math.abs(r.unitLen - unitLen) < 3;
+                    return sameArray && ov >= 0.5 * totalLen;
+                });
                 if (!overlaps) {
                     results.push({
                         start, end: start + totalLen,
@@ -25381,7 +25414,7 @@ function _findTSD(seqs, mode, params) {
     const aliLen = Math.max(...seqs.map(seqObj => seqObj.seq.length));
     const minTsdLen = params.minLen || 4;
     const maxTsdLen = params.maxLen || 20;
-    const maxDiv = (params.maxDiv || 20) / 100;
+    const maxDiv = (Number.isFinite(params.maxDiv) ? params.maxDiv : 20) / 100;
     const flankSize = params.flankSize || 30;
     const boundaries = _findSineBoundaryColumns(seqs, mode, params, aliLen);
 
@@ -25470,8 +25503,10 @@ function runRepeatAnalysis() {
         targets = [{ index: si, seq: state.seqs[si]?.seq.replace(/[-. ]/g, '') || '', name: state.seqs[si]?.header || '', fullSeq: state.seqs[si]?.seq || '' }];
     }
 
-    const minLen = parseInt(document.getElementById('repeatMinLen')?.value) || 10;
-    const maxDiv = parseInt(document.getElementById('repeatMaxDiv')?.value) || 15;
+    const num = (id, dflt, lo, hi) => { const v = parseInt(document.getElementById(id)?.value, 10);
+        return Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : dflt; };
+    const minLen = num('repeatMinLen', 10, 3, 1000);
+    const maxDiv = num('repeatMaxDiv', 15, 0, 100);
 
     resultsEl.textContent = `Searching ${scope} ${mode} repeats in ${targets.length} sequence${targets.length!==1?'s':''}...`;
     setTimeout(() => {
@@ -25527,6 +25562,7 @@ function runRepeatAnalysis() {
             }
             _lastRepeatResults = allResults;
             const name = targets.length === 1 ? displayName : `${targets.length} sequences`;
+            _lastRepeatView = { mode, name, totalLen };
             _renderRepeatResultsHTML(resultsEl, allResults, mode, name, totalLen);
         } catch (e) {
             resultsEl.textContent = `Error: ${e.message}`;
@@ -25685,8 +25721,8 @@ function _wireTsdGoto(el) {
 function _copyTsdTable() {
     const res = _lastTsdResults || [];
     if (!res.length) { showMessage('Run the TSD search first.', 2000); return; }
-    const lines = ['sequence\ttsd_length\tmismatches\ttsd_5prime\ttsd_3prime\tcolumns_5prime\tcolumns_3prime'];
-    res.forEach(r => lines.push([r.seqName, r.tsdLen, r.mismatches, r.upTSD, r.downTSD, r.upCols, r.downCols].join('\t')));
+    const lines = ['sequence\ttsd_length\tmismatches\ttsd_5prime\ttsd_3prime\tcolumns_5prime\tcolumns_3prime\tnote'];
+    res.forEach(r => lines.push([r.seqName, r.tsdLen, r.mismatches, r.upTSD, r.downTSD, r.upCols, r.downCols, ''].join('\t')));
     (res.misses || []).forEach(m => lines.push([m.seqName, '', '', '', '', '', '', m.reason].join('\t')));
     const text = lines.join('\n') + '\n';
     if (navigator.clipboard?.writeText) {
@@ -25831,10 +25867,8 @@ function _clearRepeatHighlights() {
     // Refresh results table
     const el = document.getElementById('repeatResults');
     if (el && _lastRepeatResults.length) {
-        const mode = document.querySelector('input[name="repeatMode"]:checked')?.value || 'tandem';
-        const seqIndex = _repeatFinderSeqIndex >= 0 ? _repeatFinderSeqIndex : 0;
-        const seqName = state.seqs[seqIndex]?.header || '';
-        _renderRepeatResultsHTML(el, _lastRepeatResults, mode, seqName);
+        const v = _lastRepeatView || { mode: document.querySelector('input[name="repeatMode"]:checked')?.value || 'tandem' };
+        _renderRepeatResultsHTML(el, _lastRepeatResults, v.mode, v.name || '', v.totalLen);
     }
 }
 

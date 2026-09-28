@@ -1847,6 +1847,53 @@ check('Dot plot regions: chained stretches, no duplicates, self-plot upper half;
   return { pass: ok, detail: JSON.stringify(out) };
 });
 
+// Audit fixes (GLM audit of Repeat Finder + dot plot, 2026-09-28): SPIN region ends are exact;
+// a second open while the first is computing shows the second pair; closing the window stops a
+// pending live recalculation; inverted repeats and tandem arrays are listed once; RNA U pairs A;
+// 0% divergence means identical.
+check('Audit fixes: SPIN region ends, open race, close cancels live, repeats listed once, 0% divergence', async (page) => {
+  let seed = 33; const rnd = () => Math.floor((seed = (seed * 1103515245 + 12345) % 2147483648) / 65536);
+  const rb = (n) => Array.from({ length: n }, () => 'ACGT'[rnd() % 4]).join('');
+  const core = rb(25);
+  const a = rb(100) + core + rb(75), b = rb(50) + core + rb(125);
+  await page.evaluate(() => { const r = document.querySelector('input[name="dotPlotMode"][value="spin"]'); if (r) r.checked = true; });
+  await page.evaluate(([a, b]) => { state.seqs = [{ header: 'a', seq: a }, { header: 'b', seq: b }]; openDotPlot(a, b, 'a', 'b'); }, [a, b]);
+  await page.waitForTimeout(1200);
+  const out = {};
+  out.regions = await page.evaluate(() => _dotPlotState.regions.map(r => [r.aStart + 1, r.aEnd, r.bStart + 1, r.bEnd]));
+  out.spinExact = out.regions.some(r => r[0] === 101 && r[1] === 125 && r[2] === 51 && r[3] === 75);
+  // race: open a big plot, then immediately a small one; the small one must win
+  const big = rb(9000), small1 = rb(60), small2 = rb(70);
+  out.race = await page.evaluate(async ([big, s1, s2]) => {
+    openDotPlot(big, big, 'big', 'big');
+    await new Promise(r => setTimeout(r, 5));
+    await openDotPlot(s1, s2, 's1', 's2');
+    await new Promise(r => setTimeout(r, 1500));
+    const S = _dotPlotState; return [S.rows, S.cols, S.seqA.length, S.seqB.length, S.computing];
+  }, [big, small1, small2]);
+  out.raceOk = out.race[0] === 60 && out.race[1] === 70 && out.race[4] === false;
+  // close cancels a pending live recalculation
+  out.closeStays = await page.evaluate(async () => {
+    document.getElementById('dotPlotWindow').dispatchEvent(new Event('input', { bubbles: true }));
+    document.getElementById('dotPlotWindow').dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('dotPlotCloseBtn').click();
+    const m = document.getElementById('dotPlotModal');
+    await new Promise(r => setTimeout(r, 900));
+    return m.style.display === 'none';
+  });
+  // Repeat Finder functions
+  out.rep = await page.evaluate(() => ({
+    inv: _findRepeats('AAAAAAAAAAACGTACGTACAAAAAAGTACGTACGTAAAAAAAAAA', 10, 0, 'inverted').length,
+    rna: _findRepeats('GGAUAUAUAUAUGGGGAUAUAUAUAUGG', 10, 15, 'inverted').length,
+    tan: _findRepeats('ACGTACGTACGTACGT', 4, 15, 'tandem').map(r => [r.start, r.end, r.unitLen, r.copies]),
+    exact0: _findRepeats('TTTTGATCCAGTACGGTTTTTTTGATCCAGTACGATTTT', 12, 0, 'direct').every(r => Number(r.divergence) === 0),
+  }));
+  out.repOk = out.rep.inv === 1 && out.rep.rna >= 1 && JSON.stringify(out.rep.tan) === '[[0,16,4,4]]' && out.rep.exact0;
+  out.tsd0 = await page.evaluate(() => { const e = document.getElementById('tsdMaxDiv'); if (!e) return null; e.value = '0'; return _readTsdParams().maxDiv; });
+  const ok = out.spinExact && out.raceOk && out.closeStays && out.repOk && (out.tsd0 === 0 || out.tsd0 === null);
+  return { pass: ok, detail: JSON.stringify(out) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
