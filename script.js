@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v208';
+const BUILD_TAG = 'v209';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -1917,6 +1917,20 @@ function setupMenuStability() {
             });
         }
     });
+    // A press anywhere outside the menus (the alignment above all) closes every open menu.
+    // Capture phase: the alignment's mousedown handlers stop propagation, and a focused
+    // number box inside a menu used to hold it open until focus moved elsewhere.
+    document.addEventListener('pointerdown', (e) => {
+        const t = e.target;
+        if (!(t instanceof Element) || t.closest('.menu-section') || t.closest('#numSliderPop')) return;
+        document.querySelectorAll('#controls .menu-section.menu-open, #controls .menu-section.hover-active').forEach(section => {
+            clearMenuCloseDelay(section);
+            section.classList.remove('menu-open');
+            section.classList.remove('hover-active');
+            const focused = section.querySelector(':focus');
+            if (focused && !focused.closest('.control-group.detached')) focused.blur();
+        });
+    }, true);
     setupMenuDocking();
 }
 
@@ -19270,11 +19284,16 @@ function _initNumSliderPop() {
         pop._pinned = !!v;
     }
 
+    // The slider used to hide only when focus moved to another element or on Esc. Clicking
+    // the alignment (whose mousedown prevents the focus change), a menu background or the
+    // page moves no focus, so it stayed on screen, and kept its menu open, for good.
+    let watch = 0;
     function hide() {
         const inp = current;
         pop.style.display = 'none';
         setPinned(false);
         current = null;
+        clearInterval(watch); watch = 0;
         if (inp) {
             const section = inp.closest('.menu-section');
             if (section && !section.matches(':hover')) {
@@ -19338,6 +19357,10 @@ function _initNumSliderPop() {
         if (top + popH > window.innerHeight - 8) top = Math.max(8, rect.top - popH + 1);
         pop.style.top = top + 'px';
         keepMenu(inp);
+        // Hide as soon as the number box is no longer on screen (its menu closed, its window hid)
+        if (!watch) watch = setInterval(() => {
+            if (!current || !current.isConnected || current.getClientRects().length === 0 || current.disabled) hide();
+        }, 250);
     }
 
     function applySlider() {
@@ -19407,6 +19430,16 @@ function _initNumSliderPop() {
     });
     document.addEventListener('pointerup', () => {
         setPinned(false);
+    });
+    // Any press outside the slider and its number box ends it (capture: the alignment's own
+    // handlers stop propagation)
+    document.addEventListener('pointerdown', (e) => {
+        if (!current || pop.style.display === 'none') return;
+        if (pop.contains(e.target) || e.target === current) return;
+        hide();
+    }, true);
+    document.addEventListener('focusout', (e) => {
+        if (e.target === current && !(e.relatedTarget && pop.contains(e.relatedTarget))) hide();
     });
     document.addEventListener('scroll', () => { if (current) show(current); }, true);
     window.addEventListener('resize', () => { if (current) show(current); });

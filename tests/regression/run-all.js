@@ -1768,6 +1768,48 @@ check('Dot plot: maximize/edge resize, Full view, live recalculation, split halv
   return { pass: ok, detail: JSON.stringify(out) };
 });
 
+// The slider under a focused number box goes away when the user clicks anywhere else (it
+// stayed forever: clicking the alignment moves no focus), and a click in the alignment
+// closes the open menu (a focused number box kept it open).
+check('Number-box slider and menus: a click in the alignment closes both', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1200);
+  const state_ = () => page.evaluate(() => ({
+    pop: getComputedStyle(document.getElementById('numSliderPop') || document.body).display !== 'none' && !!document.getElementById('numSliderPop'),
+    menuOpen: !!document.querySelector('#controls .menu-section.menu-open'),
+    k: document.getElementById('mafftReorderK').value,
+  }));
+  const out = {};
+  const openK = async () => {
+    await page.hover('.section-header[data-section="alignment"]');
+    await page.waitForTimeout(300);
+    await page.click('#mafftReorderK');
+    await page.waitForTimeout(200);
+  };
+  await openK();
+  out.opened = await state_();
+  // dragging the slider keeps it (and the menu) open and changes the value
+  const pb = await page.locator('#numSliderPop input[type="range"]').boundingBox();
+  await page.mouse.move(pb.x + 4, pb.y + pb.height / 2); await page.mouse.down();
+  await page.mouse.move(pb.x + pb.width - 4, pb.y + pb.height / 2, { steps: 4 }); await page.mouse.up();
+  await page.waitForTimeout(200);
+  out.afterDrag = await state_();
+  // click a residue in the alignment
+  const cell = await page.locator('.seq-line[data-seq-index="5"] .seq-data span[data-pos="40"]').first().boundingBox();
+  await page.mouse.click(cell.x + 3, cell.y + 4);
+  await page.waitForTimeout(400);
+  out.afterAlignmentClick = await state_();
+  // again, closing with a click on empty page space
+  await openK();
+  await page.mouse.click(700, 890);
+  await page.waitForTimeout(400);
+  out.afterPageClick = await state_();
+  const ok = out.opened.pop && out.opened.menuOpen && out.afterDrag.pop && out.afterDrag.k === '12'
+    && !out.afterAlignmentClick.pop && !out.afterAlignmentClick.menuOpen && !out.afterPageClick.pop && !out.afterPageClick.menuOpen;
+  return { pass: ok, detail: JSON.stringify(out) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
