@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=152">
+    <link rel="stylesheet" href="styles.css?v=153">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -1034,12 +1034,17 @@
     <!-- Dot-Plot Modal -->
     <div id="dotPlotModal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.6);z-index:10002;overflow:hidden;">
         <div id="dotPlotDialog" class="dot-window">
+            <div class="win-rz" data-dir="n"></div><div class="win-rz" data-dir="s"></div><div class="win-rz" data-dir="e"></div><div class="win-rz" data-dir="w"></div>
+            <div class="win-rz" data-dir="ne"></div><div class="win-rz" data-dir="nw"></div><div class="win-rz" data-dir="se"></div><div class="win-rz" data-dir="sw"></div>
             <div class="win-titlebar" id="dotPlotTitleBar" style="--win-pad:16px;cursor:move;" title="Drag to move; drag the lower-right corner to resize">
                 <h3 id="dotPlotTitle" style="pointer-events:none;">Dot Plot</h3>
-                <button type="button" id="dotPlotCloseBtn" class="win-close" title="Close">×</button>
+                <span class="win-btns">
+                    <button type="button" id="dotPlotMaxBtn" class="win-close win-maxbtn" title="Maximize (or double-click the title bar)" aria-label="Maximize">&#9633;</button>
+                    <button type="button" id="dotPlotCloseBtn" class="win-close" title="Close">×</button>
+                </span>
             </div>
             <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;font-size:12px;flex-wrap:wrap;">
-                <span style="font-weight:bold;">Mode:</span>
+                <span style="font-weight:bold;" id="dotPlotUpperLabel">Mode:</span>
                 <label title="Exact word match - faster, sharper diagonals"><input type="radio" name="dotPlotMode" value="spin" checked onchange="_dotOnModeChange()" title="Exact word match - faster, sharper diagonals"> SPIN (word)</label>
                 <label title="Sliding-window identity - tolerant of mismatches, better for diverged copies"><input type="radio" name="dotPlotMode" value="doter" onchange="_dotOnModeChange()" title="Sliding-window identity - tolerant of mismatches, better for diverged copies"> Dotter (window)</label>
                 <span style="border-left:1px solid #ccc;height:16px;display:inline-block;margin:0 4px;"></span>
@@ -1048,9 +1053,11 @@
                 <label>Context: <input type="number" id="dotPlotContextRadius" value="30" min="5" max="100" step="5" style="width:45px;" title="Extra bases to show around the hover position"> bp</label>
                 <label><input type="checkbox" id="dotPlotRevComp" title="Reverse-complement the second sequence/axis, to find inverted repeats"> RevComp B</label>
                 <span style="display:inline-flex;gap:8px;white-space:nowrap;">
+                    <label title="Recalculate as soon as a setting changes. Untick to change several settings, then press Recalculate once (useful for long sequences)" style="white-space:nowrap;"><input type="checkbox" id="dotPlotLive" checked> Live update</label>
                     <button id="dotPlotRecalc" style="font-size:11px;padding:2px 8px;" title="Rerun the dot plot with the current settings">Recalculate</button>
                     <button id="dotPlotZoomOut" style="font-size:11px;padding:2px 8px;" title="Zoom out (Ctrl+wheel)">-</button>
                     <button id="dotPlotZoomIn" style="font-size:11px;padding:2px 8px;" title="Zoom in (Ctrl+wheel)">+</button>
+                    <button id="dotPlotFullView" style="font-size:11px;padding:2px 8px;" title="Show the whole plot in the window (and keep fitting it when the window is resized)">Full view</button>
                 </span>
                 <span style="display:inline-flex;gap:8px;white-space:nowrap;">
                     <button id="dotPlotExport" style="font-size:11px;padding:2px 8px;" title="Save the whole plot as a PNG image">Export PNG</button>
@@ -1059,6 +1066,16 @@
                 <span style="display:inline-flex;gap:8px;white-space:nowrap;margin-left:auto;">
                     <button id="dotPlotCopyRegion" style="font-size:11px;padding:2px 8px;" title="Copy the aligned region around the pinned or hovered point as FASTA">Copy region</button>
                     <button id="dotPlotHelpBtn" class="dot-help-btn" title="Show / hide help for the dot plot" aria-label="Help">?</button>
+                </span>
+            </div>
+            <div id="dotPlotSplitRow" class="dot-split-row">
+                <label title="A sequence plotted against itself is symmetric, so each half can show the same comparison with its own method and settings: the controls above then apply above the diagonal, these below it. Only for a sequence against itself, without RevComp B."><input type="checkbox" id="dotPlotSplit"> Different settings below the diagonal</label>
+                <span id="dotPlotLowerCtl" class="dot-lower-ctl" hidden>
+                    <span style="font-weight:bold;">Lower half:</span>
+                    <label title="Exact word match"><input type="radio" name="dotPlotModeLower" value="spin"> SPIN (word)</label>
+                    <label title="Sliding-window identity"><input type="radio" name="dotPlotModeLower" value="doter" checked> Dotter (window)</label>
+                    <label>Word/Window: <input type="number" id="dotPlotWindowLower" value="11" min="1" max="61" step="1" style="width:45px;" title="Word length (SPIN) or window length (Dotter) for the lower half"></label>
+                    <label>Threshold: <input type="range" id="dotPlotThresholdLower" min="0" max="100" value="55" style="width:100px;vertical-align:middle;" title="Minimum window identity for a dot in the lower half (Dotter)"><span id="dotPlotThreshValLower">55%</span></label>
                 </span>
             </div>
             <div style="display:flex;gap:8px;flex:1;min-height:260px;">
@@ -1264,7 +1281,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=257"></script>
+    <script src="script.js?v=258"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

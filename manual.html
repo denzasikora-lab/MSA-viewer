@@ -1598,15 +1598,20 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>Threshold</td><td>Dotter only: minimum identity of a window, as a percent of the window length, for a dot (0-100%). A window cut short at a sequence end counts its missing positions as mismatches</td></tr>
     <tr><td>Context radius</td><td>Nucleotide context shown on hover (5-100 bp)</td></tr>
     <tr><td>RevComp B</td><td>Reverse-complement axis B to find inverted repeats</td></tr>
+    <tr><td>Live update</td><td>On by default: the plot is recalculated as soon as a setting changes. Turn it off to change several settings on a long pair, then press <strong>Recalculate</strong> (highlighted while the plot is out of date)</td></tr>
+    <tr><td>Different settings below the diagonal</td><td>Self-plots only (a sequence against itself, without RevComp B), whose two halves are mirror images: the controls in the first row then apply above the diagonal and a second row below it, each with its own mode, word/window and threshold, e.g. Dotter above and SPIN below, or Dotter with two windows</td></tr>
   </table>
   <p>Unknown residues (N in DNA, X in protein) never count as matches, so a run of Ns
   does not draw a solid block; U and T are treated as the same base. <strong>Top Regions</strong>
   lists the 30 longest diagonal runs (SPIN: at least twice the word length; Dotter: windows at or
   above the threshold); click one to centre it. Hovering shows the two aligned stretches and,
   when the plot was opened from the alignment, the matching alignment columns. Click to pin a
-  position, double-click to freeze the preview, and <strong>Copy region</strong> (in the toolbar) copies it as FASTA. The window can be moved by its title bar and resized from its lower-right corner; the plot follows the new size.
-  Ctrl+wheel or the +/- buttons zoom up to 24 pixels per position; when zoomed out, a pixel shows
-  a dot if any position under it has one.</p>
+  position, double-click to freeze the preview, and <strong>Copy region</strong> (in the toolbar) copies it as FASTA. The window can be moved by its title bar, resized from any edge or corner, and maximized with
+  the button next to Close or a double-click on the title bar; the plot follows the new size.
+  Ctrl+wheel or the +/- buttons zoom up to 24 pixels per position, and <strong>Full view</strong>
+  fits the whole plot in the window again. Each diagonal run of dots is drawn as one smooth line
+  through the matching positions (an isolated match as a round dot); very dense plots fall back
+  to a pixel image in which, when zoomed out, a pixel shows a dot if any position under it has one.</p>
   <p><strong>Export PNG</strong> saves the whole plot (at least about 1,600 pixels across).
   <strong>Export SVG</strong> saves a vector file in which each diagonal run is one line
   (Dotter runs shaded by their mean identity). Plots are limited to 100 million cells

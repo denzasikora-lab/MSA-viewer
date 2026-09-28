@@ -1667,7 +1667,7 @@ check('Dot plot window: compact help button, draggable, resizable with the plot 
   const out = await page.evaluate(() => {
     const w = id => document.getElementById(id).getBoundingClientRect().width;
     return { help: Math.round(w('dotPlotHelpBtn')), copy: Math.round(w('dotPlotCopyRegion')), dialog: Math.round(w('dotPlotDialog')),
-      resizable: getComputedStyle(document.getElementById('dotPlotDialog')).resize };
+      resizable: document.querySelectorAll('#dotPlotDialog .win-rz').length };   // 8 edge/corner handles
   });
   const bar = await page.locator('#dotPlotTitleBar').boundingBox();
   const before = await page.evaluate(() => document.getElementById('dotPlotDialog').getBoundingClientRect().left);
@@ -1681,7 +1681,7 @@ check('Dot plot window: compact help button, draggable, resizable with the plot 
     const vp = document.getElementById('dotPlotViewport'), cv = document.getElementById('dotPlotCanvas');
     return { vp: vp.clientWidth, canvas: parseInt(cv.style.width, 10) };
   });
-  const ok = out.help <= 30 && out.copy < 150 && out.resizable === 'both' && out.moved === -80 && out.afterResize.vp === out.afterResize.canvas;
+  const ok = out.help <= 30 && out.copy < 150 && out.resizable === 8 && out.moved === -80 && out.afterResize.vp === out.afterResize.canvas;
   return { pass: ok, detail: JSON.stringify(out) };
 });
 
@@ -1702,6 +1702,70 @@ check('Alignment menu: even button grid inside the menu, labels on one line', as
       inside: boxes.every(b => b.left >= menu.left - 1 && b.right <= menu.right + 1), rows: [...new Set(boxes.map(b => Math.round(b.top)))].length };
   });
   return { pass: r.heights.length === 1 && r.oneLine && r.inside && r.rows === 2, detail: JSON.stringify(r) };
+});
+
+// Dot plot: maximize and resize from any edge; Full view; settings recalculate as they
+// change unless Live update is off; a self-plot can use other settings below the diagonal;
+// dots are drawn as runs (lines), not as a scaled raster.
+check('Dot plot: maximize/edge resize, Full view, live recalculation, split halves, vector runs', async (page) => {
+  const path = require('path');
+  await page.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
+  await page.waitForTimeout(1200);
+  const open = (self) => page.evaluate((self) => { const a = state.seqs[1], c = state.seqs[self ? 1 : 2]; openDotPlot(a.seq.replace(/-/g, ''), c.seq.replace(/-/g, ''), a.header, c.header); }, self);
+  await open(true);
+  await page.waitForTimeout(1500);
+  const rect = () => page.evaluate(() => { const r = document.getElementById('dotPlotDialog').getBoundingClientRect(); return [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)]; });
+  const out = {};
+  out.runsUsed = await page.evaluate(() => !!_dotPlotState.runs && _dotPlotState.runs.n > 0);
+  // maximize and restore
+  const r0 = await rect();
+  await page.click('#dotPlotMaxBtn'); await page.waitForTimeout(300);
+  const rMax = await rect();
+  out.maximized = rMax[2] >= 1390 - 20 && rMax[3] >= 900 - 20;
+  await page.click('#dotPlotMaxBtn'); await page.waitForTimeout(300);
+  out.restored = JSON.stringify(await rect()) === JSON.stringify(r0);
+  // resize from the left edge
+  const w = await page.locator('#dotPlotDialog .win-rz[data-dir="w"]').boundingBox();
+  await page.mouse.move(w.x + 3, w.y + 40); await page.mouse.down(); await page.mouse.move(w.x - 97, w.y + 40, { steps: 5 }); await page.mouse.up();
+  const r1 = await rect();
+  out.leftResize = r1[0] === r0[0] - 100 && r1[2] === r0[2] + 100;
+  // Full view refits after zooming in
+  for (let i = 0; i < 4; i++) await page.click('#dotPlotZoomIn');
+  const zoomed = await page.evaluate(() => _dotPlotState.zoom);
+  await page.click('#dotPlotFullView'); await page.waitForTimeout(300);
+  out.fullView = await page.evaluate((z) => _dotPlotState.zoom < z && _dotPlotState._autoFit === true, zoomed);
+  // live: a new word size recalculates without pressing Recalculate
+  await page.fill('#dotPlotWindow', '8'); await page.waitForTimeout(1200);
+  out.liveRecalc = await page.evaluate(() => _dotPlotState.windowSize === 8);
+  // not live: the plot stays, Recalculate is flagged
+  await page.click('#dotPlotLive');
+  await page.fill('#dotPlotWindow', '10'); await page.waitForTimeout(900);
+  out.notLive = await page.evaluate(() => _dotPlotState.windowSize === 8 && document.getElementById('dotPlotRecalc').classList.contains('dot-dirty'));
+  await page.click('#dotPlotRecalc'); await page.waitForTimeout(1000);
+  out.recalcApplies = await page.evaluate(() => _dotPlotState.windowSize === 10);
+  await page.click('#dotPlotLive');
+  // split halves on the self-plot: upper SPIN, lower Dotter
+  await page.click('#dotPlotSplit'); await page.waitForTimeout(1800);
+  out.split = await page.evaluate(() => {
+    const S = _dotPlotState;
+    return { lower: !!(S.lower && S.lower.ready), upperSpin: S.spinMode, lowerSpin: S.lower?.spinMode,
+      upperCell: _dotHalf(2, 50) === S, lowerCell: _dotHalf(50, 2) === S.lower, runs: !!S.runs && !!S.lower?.runs };
+  });
+  const box = await page.locator('#dotPlotOverlay').boundingBox();
+  const hoverAt = async (row, col) => {
+    const p = await page.evaluate(([r, c]) => _dotCellToScreen(r, c), [row, col]);
+    await page.mouse.move(box.x + p.x, box.y + p.y); await page.waitForTimeout(150);
+    return page.evaluate(() => document.getElementById('dotPlotHover').textContent);
+  };
+  out.hoverUpper = /match=/.test(await hoverAt(20, 120));
+  out.hoverLower = /identity=/.test(await hoverAt(120, 20));
+  // different sequences: split is not offered
+  await open(false); await page.waitForTimeout(1500);
+  out.splitDisabledForAB = await page.evaluate(() => document.getElementById('dotPlotSplit').disabled && !_dotPlotState.lower);
+  const s = out.split;
+  const ok = out.runsUsed && out.maximized && out.restored && out.leftResize && out.fullView && out.liveRecalc && out.notLive && out.recalcApplies
+    && s.lower && s.upperSpin === true && s.lowerSpin === false && s.upperCell && s.lowerCell && s.runs && out.hoverUpper && out.hoverLower && out.splitDisabledForAB;
+  return { pass: ok, detail: JSON.stringify(out) };
 });
 
 async function main() {
