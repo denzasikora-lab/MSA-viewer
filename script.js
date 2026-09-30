@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v211';
+const BUILD_TAG = 'v212';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -180,94 +180,162 @@ function _queryAllByClass(className) {
     return Array.from(document.querySelectorAll('[data-search-hit="' + className + '"]'));
 }
 
-function _paintSearchEntryOnAlignment(entry) {
-    if (!entry?.className) return;
-    let searchMotifValue = entry.searchValue || entry.label || '';
-    searchMotifValue = String(searchMotifValue).replace(/\s*\(rev comp\)\s*$/i, '').trim();
-    if (!searchMotifValue && entry.motif) {
-        searchMotifValue = String(entry.motif).replace(/:(fwd|rev comp|rev)$/i, '').trim();
+// ---- Search highlights: a layer derived from state, never baked into spans ----
+// Hits are recomputed from each row's current sequence, so every path that builds
+// or repaints a residue (full render, windowed scroll, drag, typing, undo) gets
+// the right residues. Painting classes onto spans once and hoping edits carry them
+// along is what left highlights on the old columns after an edit.
+
+// Bumped whenever the set of searches or their on/off state changes; part of the
+// per-row hit cache key alongside the row's sequence string.
+let _searchLayerVersion = 0;
+let _searchHitsCache = new Map(); // rowIndex -> { seq, version, hits }
+
+function bumpSearchLayer() {
+    _searchLayerVersion++;
+    _searchHitsCache = new Map();
+}
+
+function _searchEntryMotif(entry) {
+    let v = entry.searchValue || entry.label || '';
+    v = String(v).replace(/\s*\(rev comp\)\s*$/i, '').trim();
+    if (!v && entry.motif) v = String(entry.motif).replace(/:(fwd|rev comp|rev)$/i, '').trim();
+    return v.replace(/U/g, 'T');
+}
+
+// Matches of one search in one degapped, upper-cased, U->T display string.
+// Returns [{ idx, len, matchingPositions }] or null for an invalid regex.
+function _searchMatchesInDegapped(displayString, entry) {
+    const motif = _searchEntryMotif(entry);
+    if (!motif || !displayString) return [];
+    const maxMismatches = Number.isInteger(entry.maxMismatches) ? entry.maxMismatches : 0;
+    if (entry.useRegex) {
+        const matches = [];
+        let re;
+        try { re = new RegExp(motif, 'gi'); } catch (_) { return null; }
+        let m;
+        while ((m = re.exec(displayString)) !== null) {
+            matches.push({ idx: m.index, len: m[0].length || 1, matchingPositions: null });
+            if (m[0].length === 0) re.lastIndex++;
+        }
+        return matches;
     }
-    if (!searchMotifValue) return;
+    return findFuzzyMatches(displayString, motif, maxMismatches)
+        .map(m => ({ idx: m.idx, len: m.len, matchingPositions: m.matchingPositions }));
+}
 
-    const normalizedMotif = searchMotifValue.replace(/U/g, 'T');
-    const maxMismatches = Number.isInteger(entry.maxMismatches) ? entry.maxMismatches : (parseInt(el('maxMismatches')?.value, 10) || 0);
-    const useRegex = !!entry.useRegex;
-    const className = entry.className;
-
-    document.querySelectorAll('.seq-line:not(.consensus-line)').forEach(row => {
-        const index = parseInt(row.dataset.seqIndex, 10);
-        if (!Number.isInteger(index) || index < 0 || index >= state.seqs.length) return;
-        const dataSpan = row.querySelector('.seq-data');
-        if (!dataSpan) return;
-        const spans = Array.from(dataSpan.children);
-        const nonGapSpanIndices = [];
-        const displayedChars = [];
-        for (let si = 0; si < spans.length; si++) {
-            const ch = (spans[si].textContent || '').toUpperCase();
-            if (ch !== '-' && ch !== '.') {
-                nonGapSpanIndices.push(si);
-                displayedChars.push(ch);
-            }
+function _degapForSearch(seq) {
+    const cols = [];
+    const chars = [];
+    for (let col = 0; col < seq.length; col++) {
+        const ch = seq[col];
+        if (ch !== '-' && ch !== '.' && ch !== undefined) {
+            cols.push(col);
+            chars.push(ch);
         }
-        const displayString = displayedChars.join('').replace(/U/g, 'T');
-        if (!displayString) return;
+    }
+    return { cols, text: chars.join('').toUpperCase().replace(/U/g, 'T') };
+}
 
-        let matches;
-        if (useRegex) {
-            matches = [];
-            try {
-                const re = new RegExp(normalizedMotif, 'gi');
-                let m;
-                while ((m = re.exec(displayString)) !== null) {
-                    matches.push({ idx: m.index, len: m[0].length || 1, matchingPositions: null });
-                    if (m[0].length === 0) re.lastIndex++;
-                }
-            } catch (_) {
-                return;
-            }
-        } else {
-            matches = findFuzzyMatches(displayString, normalizedMotif, maxMismatches)
-                .map(m => ({ idx: m.idx, len: m.len, matchingPositions: m.matchingPositions }));
-        }
-
-        const paintPartialMatches = !useRegex && maxMismatches > 0;
+// Map(col -> search entry) for one sequence string. With mismatches allowed only
+// the matching residues are painted, as the search has always done.
+function _computeSearchHitsForSeq(seq) {
+    const hits = new Map();
+    const entries = (state.searchHistory || []).filter(e => e.className && e.enabled !== false);
+    if (!entries.length || !seq) return hits;
+    const { cols, text } = _degapForSearch(seq);
+    if (!text) return hits;
+    entries.forEach(entry => {
+        const matches = _searchMatchesInDegapped(text, entry);
+        if (!matches) return;
+        const partial = !entry.useRegex && (entry.maxMismatches || 0) > 0;
         matches.forEach(m => {
-            if (paintPartialMatches && m.matchingPositions?.length) {
-                m.matchingPositions.forEach(offset => {
-                    const si = nonGapSpanIndices[m.idx + offset];
-                    const span = si !== undefined ? spans[si] : null;
-                    if (span) {
-                        span.classList.add(className);
-                        span.dataset.searchHit = className;
-                    }
+            if (partial && m.matchingPositions?.length) {
+                m.matchingPositions.forEach(off => {
+                    const col = cols[m.idx + off];
+                    if (col !== undefined) hits.set(col, entry);
                 });
             } else {
                 for (let j = 0; j < m.len; j++) {
-                    const si = nonGapSpanIndices[m.idx + j];
-                    const span = si !== undefined ? spans[si] : null;
-                    if (span) {
-                        span.classList.add(className);
-                        span.dataset.searchHit = className;
-                    }
+                    const col = cols[m.idx + j];
+                    if (col !== undefined) hits.set(col, entry);
                 }
             }
         });
     });
+    return hits;
 }
 
+function _getSearchHitsForRow(rowIndex) {
+    const seq = state.seqs[rowIndex]?.seq;
+    if (!seq || !state.searchHistory?.length) return _EMPTY_HITS;
+    const cached = _searchHitsCache.get(rowIndex);
+    if (cached && cached.seq === seq && cached.version === _searchLayerVersion) return cached.hits;
+    const hits = _computeSearchHitsForSeq(seq);
+    _searchHitsCache.set(rowIndex, { seq, version: _searchLayerVersion, hits });
+    return hits;
+}
+const _EMPTY_HITS = new Map();
+
+// ' search-hit-xxx' for a residue span, or ''.
+function searchClassAt(rowIndex, pos) {
+    if (!state.searchHistory?.length || rowIndex < 0) return '';
+    const e = _getSearchHitsForRow(rowIndex).get(pos);
+    return e ? ' ' + e.className : '';
+}
+
+function _ensureSearchStyle(entry) {
+    let style = document.querySelector(`style[data-search-class="${entry.className}"]`);
+    if (!style) {
+        style = document.createElement('style');
+        style.setAttribute('data-search-class', entry.className);
+        style.setAttribute('data-motif', entry.motif);
+        document.head.appendChild(style);
+    }
+    style.textContent = `.${entry.className} { background-color: ${entry.color || '#ffcc00'} !important; color: black !important; font-weight: bold; }`;
+}
+
+function _removeSearchStyle(entry) {
+    document.querySelector(`style[data-search-class="${entry.className}"]`)?.remove();
+}
+
+// Bring every rendered residue span in line with the search layer. Touches only
+// spans whose highlight actually changes.
 function reapplySearchHighlights() {
-    if (!state.searchHistory?.length) return;
-    if (document.getElementById('modeCanvas')?.checked || document.getElementById('modeReads')?.checked) return;
-    state.searchHistory.forEach(entry => {
-        if (!entry.className) return;
-        if (!document.querySelector(`style[data-motif="${entry.motif}"]`)) {
-            const style = document.createElement('style');
-            style.textContent = `.${entry.className} { background-color: ${entry.color || '#ffcc00'} !important; color: black !important; font-weight: bold; }`;
-            style.setAttribute('data-motif', entry.motif);
-            document.head.appendChild(style);
+    (state.searchHistory || []).forEach(_ensureSearchStyle);
+    if (!alignmentContainer || isCanvasMode() || document.getElementById('modeReads')?.checked) {
+        if (isCanvasMode()) _canvasState.scheduleDraw?.();
+        return;
+    }
+    const any = state.searchHistory?.length > 0;
+    alignmentContainer.querySelectorAll('.seq-line[data-seq-index]:not(.consensus-line)').forEach(row => {
+        const index = parseInt(row.dataset.seqIndex, 10);
+        if (!Number.isInteger(index) || index < 0 || index >= state.seqs.length) return;
+        const hits = any ? _getSearchHitsForRow(index) : _EMPTY_HITS;
+        const dataEl = row.querySelector('.seq-data');
+        if (!dataEl) return;
+        if (!hits.size && !dataEl.querySelector('[data-search-hit]')) return;
+        const spans = dataEl.children;
+        for (let i = 0; i < spans.length; i++) {
+            const span = spans[i];
+            const p = span.dataset.pos;
+            if (p === undefined) continue;
+            _setSpanSearchClass(span, hits.get(+p));
         }
-        _paintSearchEntryOnAlignment(entry);
     });
+}
+
+function _setSpanSearchClass(span, entry) {
+    const want = entry ? entry.className : '';
+    const have = span.dataset.searchHit || '';
+    if (want === have) return;
+    if (have) span.classList.remove(have);
+    if (want) {
+        span.classList.add(want);
+        span.dataset.searchHit = want;
+    } else {
+        delete span.dataset.searchHit;
+    }
 }
 
 function _rebuildClusterCharMap() {
@@ -3958,100 +4026,8 @@ function _getCanvasShadePalette() {
     };
 }
 
-// Cache for search-hit highlights in Canvas mode. Maps rowIndex -> { seq, searchLen, hits }.
-// Invalidated on re-render and when the sequence or search history changes.
-let _canvasSearchHitsCache = null;
-
-// Compute search-hit positions for a single row, mirroring _paintSearchEntryOnAlignment's
-// logic but returning a Map(col -> color) instead of adding CSS classes to DOM spans.
-function _computeSearchHitsForRow(rowIndex) {
-    const hits = new Map();
-    if (!state.searchHistory?.length) return hits;
-    if (rowIndex < 0 || rowIndex >= state.seqs.length) return hits;
-
-    const seq = state.seqs[rowIndex].seq;
-    // Build mapping: degapped index -> alignment column (mirrors _paintSearchEntryOnAlignment)
-    const nonGapCols = [];
-    const displayedChars = [];
-    for (let col = 0; col < seq.length; col++) {
-        const ch = (seq[col] || '-').toUpperCase();
-        if (ch !== '-' && ch !== '.') {
-            nonGapCols.push(col);
-            displayedChars.push(ch);
-        }
-    }
-    const displayString = displayedChars.join('').replace(/U/g, 'T');
-    if (!displayString) return hits;
-
-    state.searchHistory.forEach(entry => {
-        if (!entry.className) return;
-        let searchMotifValue = entry.searchValue || entry.label || '';
-        searchMotifValue = String(searchMotifValue).replace(/\s*\(rev comp\)\s*$/i, '').trim();
-        if (!searchMotifValue && entry.motif) {
-            searchMotifValue = String(entry.motif).replace(/:(fwd|rev comp|rev)$/i, '').trim();
-        }
-        if (!searchMotifValue) return;
-
-        const normalizedMotif = searchMotifValue.replace(/U/g, 'T');
-        const maxMismatches = Number.isInteger(entry.maxMismatches) ? entry.maxMismatches : (parseInt(el('maxMismatches')?.value, 10) || 0);
-        const useRegex = !!entry.useRegex;
-        const color = entry.color || '#ffcc00';
-
-        let matches;
-        if (useRegex) {
-            matches = [];
-            try {
-                const re = new RegExp(normalizedMotif, 'gi');
-                let m;
-                while ((m = re.exec(displayString)) !== null) {
-                    matches.push({ idx: m.index, len: m[0].length || 1, matchingPositions: null });
-                    if (m[0].length === 0) re.lastIndex++;
-                }
-            } catch (_) {
-                return;
-            }
-        } else {
-            matches = findFuzzyMatches(displayString, normalizedMotif, maxMismatches)
-                .map(m => ({ idx: m.idx, len: m.len, matchingPositions: m.matchingPositions }));
-        }
-
-        const paintPartialMatches = !useRegex && maxMismatches > 0;
-        matches.forEach(m => {
-            if (paintPartialMatches && m.matchingPositions?.length) {
-                m.matchingPositions.forEach(offset => {
-                    const col = nonGapCols[m.idx + offset];
-                    if (col !== undefined) hits.set(col, color);
-                });
-            } else {
-                for (let j = 0; j < m.len; j++) {
-                    const col = nonGapCols[m.idx + j];
-                    if (col !== undefined) hits.set(col, color);
-                }
-            }
-        });
-    });
-
-    return hits;
-}
-
-// Cached per-row search-hit lookup. Invalidates when the sequence string or
-// search history length changes, so edits and search add/remove are handled.
-function _getSearchHitsForRow(rowIndex) {
-    const seq = state.seqs[rowIndex]?.seq;
-    if (!seq) return new Map();
-    if (!_canvasSearchHitsCache) _canvasSearchHitsCache = new Map();
-    const cached = _canvasSearchHitsCache.get(rowIndex);
-    if (cached && cached.seq === seq && cached.searchLen === state.searchHistory.length) {
-        return cached.hits;
-    }
-    const hits = _computeSearchHitsForRow(rowIndex);
-    _canvasSearchHitsCache.set(rowIndex, { seq, searchLen: state.searchHistory.length, hits });
-    return hits;
-}
-
 function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, darkThresh, lightThresh,
                                   enableBlack, enableDark, enableLight, nameLen, stickyNames) {
-    _canvasSearchHitsCache = null; // invalidate search-hit cache on re-render
     alignmentContainer.innerHTML = '';
     alignmentContainer.style.overflow = 'hidden';
     alignmentContainer.style.position = 'relative';
@@ -4142,7 +4118,9 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             draw();
         });
     }
-    _canvasState.scheduleDraw = scheduleDraw;
+    // Outside callers ask for a redraw because state changed (selection, search, edit), not
+    // the offset; without marking dirty, draw() skipped them unless the view had moved.
+    _canvasState.scheduleDraw = () => { _markDirty(); scheduleDraw(); };
 
     resize();
     if (_canvasState.resizeHandler) window.removeEventListener('resize', _canvasState.resizeHandler);
@@ -4271,7 +4249,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
 
                 // Search hit override (mirrors CSS .search-hit-* { background-color; color: black })
                 if (searchHits.has(p)) {
-                    bgFill = searchHits.get(p);
+                    bgFill = searchHits.get(p).color || '#ffcc00';
                     textFill = '#000';
                 }
 
@@ -6535,6 +6513,7 @@ function _refreshDiffHighlightInPlace() {
 }
 
 function renderAlignment(options = {}) {
+    if (typeof _cancelPendingSpanRepaint === 'function') _cancelPendingSpanRepaint();
     // Catch-all sync: covers every path that flips a mode radio programmatically
     // (BAM load, snapshot/session restore, the auto-switch heuristic below,
     // etc.) without going through onModeChange, so the top-bar quick switcher
@@ -6839,7 +6818,9 @@ function renderAlignment(options = {}) {
     if (typeof applyColourToSeqNames === 'function' && colourState && colourState.mappings.size > 0) {
         applyColourToSeqNames(colourState.mappings);
     }
-    reapplySearchHighlights();
+    // Rows are built with their search highlights (createSequenceLine); only the colour rules
+    // need to exist.
+    (state.searchHistory || []).forEach(_ensureSearchStyle);
     applyClusterVisualsFromState();
 
     // Post-process: AA translation rows (phase/stops now built inline)
@@ -7973,6 +7954,22 @@ function setSpanTsdMarkDisplay(span, rowIndex, pos) {
 // residue in this row, and no other row was touched, so the column consensus is
 // identical. Only repositioned residues drop to unshaded. Without a reference the row
 // falls back to unshaded throughout, which is what a plain refresh has always done.
+// Repaint one residue span in place from state: letter, shading, column selection, TSD
+// mark and search highlight. Every in-place path goes through here, so a span can never
+// keep a highlight that belonged to the residue that used to sit in its column.
+function repaintResidueSpan(span, rowIndex, pos, base, config, conservationData) {
+    const t = span.firstChild;
+    if (t && t.nodeType === 3) { if (t.nodeValue !== base) t.nodeValue = base; }
+    else span.textContent = base;
+    const hit = state.searchHistory?.length ? _getSearchHitsForRow(rowIndex).get(pos) : undefined;
+    const cls = getSequenceBaseRenderClass(base, pos, config, conservationData) + (hit ? ' ' + hit.className : '');
+    // Nucleotide-selection classes are reapplied by scheduleNucSelectionRefresh, like before.
+    if (span.className !== cls) span.className = cls;
+    if (hit) span.dataset.searchHit = hit.className;
+    else if (span.dataset.searchHit !== undefined) delete span.dataset.searchHit;
+    setSpanTsdMarkDisplay(span, rowIndex, pos);
+}
+
 function refreshSequenceRowDom(rowIndex, limitPositions = null, referenceSeq = null) {
     const seqObj = state.seqs[rowIndex];
     if (!seqObj || !alignmentContainer) return false;
@@ -7989,11 +7986,11 @@ function refreshSequenceRowDom(rowIndex, limitPositions = null, referenceSeq = n
         if (limitPositions && !limitPositions.has(pos)) return;
         const base = seqObj.seq[pos] || GENEDOC_FILLER;
         const repositioned = referenceSeq !== null && base !== (referenceSeq[pos] || GENEDOC_FILLER);
-        span.textContent = base;
-        span.className = getSequenceBaseRenderClass(
-            base, pos, config, repositioned ? NO_CONSERVATION_DATA : conservationData);
-        setSpanTsdMarkDisplay(span, rowIndex, pos);
+        repaintResidueSpan(span, rowIndex, pos, base, config, repositioned ? NO_CONSERVATION_DATA : conservationData);
     });
+    // A changed residue can make or break a motif match that reaches outside the
+    // repainted columns (undo of a typed residue, for one)
+    if (limitPositions && state.searchHistory?.length) refreshSequenceRowSearch(rowIndex);
 
     if (state.selectedNucs.size) scheduleNucSelectionRefresh();
     updateEditActiveCell();
@@ -8147,6 +8144,7 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
     const brkBeforePos = state._brkBeforePos || new Set();
     const brkInfo = state._brkInfo || {};
 
+    const searchHits = _getSearchHitsForRow(index);
     for (let pos = start; pos < end; pos++) {
             // Insert breakpoint marker before this position if needed
             if (showBrk && brkBeforePos.has(pos)) {
@@ -8194,7 +8192,8 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
 
             const colSelected = selectedCols.has(pos) ? ' column-selected' : '';
             const tsdDisplay = getTsdMarkDisplay(index, pos);
-            const finalClass = `${cls}${baseClass ? ' ' + baseClass : ''}${colSelected}${tsdDisplay.className}`;
+            const hit = searchHits.get(pos);
+            const finalClass = `${cls}${baseClass ? ' ' + baseClass : ''}${colSelected}${tsdDisplay.className}${hit ? ' ' + hit.className : ''}`;
             const charPaint = _clusterCharPaint(state.seqs[index].header, pos, base);
             let extraAttr = tsdDisplay.style || '';
             if (charPaint) {
@@ -8205,7 +8204,8 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
                     extraAttr = ` style="${charPaint.style}" title="${titleEsc}"`;
                 }
             }
-            htmlParts.push(`<span class="${finalClass}${charPaint ? ' diagnostic-mutation' : ''}" data-pos="${pos}"${extraAttr}>${base}</span>`);
+            const searchAttr = hit ? ` data-search-hit="${hit.className}"` : '';
+            htmlParts.push(`<span class="${finalClass}${charPaint ? ' diagnostic-mutation' : ''}" data-pos="${pos}"${extraAttr}${searchAttr}>${base}</span>`);
         }
     // Add sequence length at the end (only for last block)
     if (showLength) {
@@ -9045,7 +9045,10 @@ async function parseAndRender(isFromDrop = false) {
         // --- Audit C3: comprehensive state reset on new file load ---
         state._diffColumns = null;
         state.searchResults = null;
+        (state.searchHistory || []).forEach(_removeSearchStyle);
         state.searchHistory = [];
+        bumpSearchLayer();
+        _resetSelectionStash();
         state.colourState = { mappings: new Map(), history: new Map() };
         state.manuallyColoured = new Set();
         state.dragStartCol = null;
@@ -9846,7 +9849,15 @@ function handleKeyDown(e) {
         // A rename box handles its own Esc (cancel); closing menus here blurred it, and the
         // blur saved the name, so Esc used to commit the rename
         if (document.activeElement?.classList?.contains('seq-name-edit')) return;
+        // First Esc closes whatever is open; with nothing open it clears the selection
+        // (rows, columns, residues). Undo in the Selections panel brings it back.
+        const somethingOpen = !!document.querySelector('#controls .menu-section.menu-open')
+            || EXCLUSIVE_MODAL_IDS.some(id => { const m = el(id); return m && m.style.display && m.style.display !== 'none'; })
+            || !!document.querySelector('.context-menu')
+            || (document.activeElement && document.activeElement !== document.body && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName));
         closeAllMenusViaEsc();
+        closeContextMenu();
+        if (!somethingOpen && !state.editDrag) clearActiveSelection();
         e.preventDefault();
         return;
     }
@@ -11010,8 +11021,11 @@ function _buildSnapshotPayload() {
         },
         colourState: colourMappings.length > 0 ? { mappings: colourMappings } : null,
         searchHistory: state.searchHistory.length > 0 ? state.searchHistory.map(h => ({
-            motif: h.motif, color: h.color, label: h.label, strand: h.strand
-        })) : null
+            motif: h.motif, color: h.color, label: h.label, strand: h.strand,
+            searchValue: h.searchValue, useRegex: !!h.useRegex, maxMismatches: h.maxMismatches || 0,
+            enabled: h.enabled !== false, matchCount: h.matchCount || 0, sequencesWithMatches: h.sequencesWithMatches || 0
+        })) : null,
+        selections: _snapshotSelections()
     };
 }
 
@@ -11160,6 +11174,9 @@ function _loadSnapshotPayload(payload) {
         if (payload.searchHistory) {
             _applySnapshotSearchHistory(payload.searchHistory);
         }
+        if (payload.selections) {
+            _applySnapshotSelections(payload.selections);
+        }
     });
 }
 
@@ -11178,23 +11195,35 @@ function _applySnapshotColourState(cs) {
 
 function _applySnapshotSearchHistory(sh) {
     if (!Array.isArray(sh)) return;
+    state.searchHistory.forEach(_removeSearchStyle);
     state.searchHistory = [];
     sh.forEach(entry => {
         const strand = entry.strand || 'fwd';
         const rawMotif = (entry.motif || '').replace(/:(fwd|rev comp|rev)$/i, '');
         const motifKey = entry.motif && entry.motif.includes(':') ? entry.motif : `${rawMotif}:${strand}`;
         const className = 'search-hit-' + Math.random().toString(36).substring(2, 12);
+        // Older snapshots have no searchValue; their motif key is "<motif>:<strand>", with
+        // a trailing ":rev" on the reverse-complement key (the label is display text only).
+        const legacyValue = rawMotif.replace(/:rev$/i, '');
+        let legacyRegex = null;
+        const re = !entry.searchValue && /^restriction:[^:]*:([^:]+):(fwd|rev)/i.exec(motifKey);
+        if (re) legacyRegex = restrictionSiteToRegex(re[2] === 'rev' ? reverseComplement(re[1]).replace(/U/g, 'T') : re[1]);
         state.searchHistory.push({
+            id: className,
             motif: motifKey,
             color: entry.color || '#ffcc00',
             className,
             label: entry.label || rawMotif,
             strand,
-            searchValue: entry.label || rawMotif,
-            matchCount: 0,
-            sequencesWithMatches: 0
+            searchValue: entry.searchValue || legacyRegex || (/rev comp/i.test(strand) ? reverseComplement(legacyValue) : legacyValue),
+            useRegex: !!entry.useRegex || !!legacyRegex,
+            maxMismatches: Number.isInteger(entry.maxMismatches) ? entry.maxMismatches : 0,
+            enabled: entry.enabled !== false,
+            matchCount: entry.matchCount || 0,
+            sequencesWithMatches: entry.sequencesWithMatches || 0
         });
     });
+    bumpSearchLayer();
     reapplySearchHighlights();
     updateActiveSearchesPanel();
 }
@@ -12095,11 +12124,13 @@ function searchMotif(options = {}) {
         return null;
     }
     const raw = options.motif ?? (el('searchInput').value || '');
-    const motif = raw.trim().replace(/\s+/g, '').toUpperCase();
+    const useRegex = options.useRegex ?? el('searchRegex')?.checked;
+    // A regex keeps its case: upper-casing turns \w, \s, \d into their negations.
+    // Matching is case-insensitive either way (flag i, and sequences are upper-cased).
+    const motif = useRegex ? raw.trim() : raw.trim().replace(/\s+/g, '').toUpperCase();
     if (!motif) return;
     const color = options.color || el('searchColor').value;
     const maxMismatches = options.maxMismatches ?? (parseInt(el('maxMismatches').value) || 0);
-    const useRegex = options.useRegex ?? el('searchRegex')?.checked;
     const checkboxEl = el('searchBothStrands');
     const bothStrands = options.bothStrands ?? (checkboxEl && checkboxEl.checked);
 
@@ -12148,127 +12179,57 @@ function searchMotif(options = {}) {
     let revSeqs = new Set();
     const searchResults = [];
 
+    // Degap every row once; all motifs of this search reuse it. Counts come from state,
+    // not from the rendered spans, so windowed views count rows that are off screen.
+    const degapped = state.seqs.map(sq => _degapForSearch(sq.seq));
+
     motifsToSearch.forEach(({ motif: searchMotifValue, color: searchColorValue, label, strand, key }) => {
-        debugLog(`Searching for motif: "${searchMotifValue}" (${label}, ${strand})`);
         let motifMatches = 0;
         const motifAlignmentSites = new Set();
-        let motifSeqsWithMatches = new Set();
+        const motifSeqsWithMatches = new Set();
         const motifKey = `${key || searchMotifValue}:${strand}`;
         const className = 'search-hit-' + Math.random().toString(36).substring(2, 12);
+        const entry = {
+            id: className, motif: motifKey, className, color: searchColorValue, label, strand,
+            searchValue: searchMotifValue, useRegex: !!useRegex,
+            maxMismatches: useRegex ? 0 : maxMismatches, enabled: true
+        };
 
-        // Remove any existing identical motif highlights first
+        // Re-running an identical search replaces it rather than stacking a copy
         state.searchHistory = state.searchHistory.filter(item => {
-            if (item.motif === motifKey) {
-                _queryAllByClass(item.className).forEach(span => {
-                    span.classList.remove(item.className);
-                    delete span.dataset.searchHit;
-                });
-                document.querySelector(`style[data-motif="${item.motif}"]`)?.remove();
-                return false;
-            }
+            if (item.motif === motifKey) { _removeSearchStyle(item); return false; }
             return true;
         });
 
-        const style = document.createElement('style');
-        style.textContent = `.${className} { background-color: ${searchColorValue} !important; color: black !important; font-weight: bold; }`;
-        style.setAttribute('data-motif', motifKey);
-        document.head.appendChild(style);
-
-        // For each sequence row, map degapped indices back to span elements robustly
-        document.querySelectorAll('.seq-line:not(.consensus-line)').forEach(row => {
-            const index = parseInt(row.dataset.seqIndex);
-            if (isNaN(index) || index < 0 || index >= state.seqs.length) return;
-            const dataSpan = row.querySelector('.seq-data');
-            if (!dataSpan) return;
-            const spans = Array.from(dataSpan.children);
-
-            // Build mapping and the displayed degapped string from the visible spans only
-            const nonGapSpanIndices = [];
-            const displayedChars = [];
-            for (let si = 0; si < spans.length; si++) {
-                const ch = (spans[si].textContent || '').toUpperCase();
-                if (ch !== '-' && ch !== '.') {
-                    nonGapSpanIndices.push(si);
-                    displayedChars.push(ch);
-                }
-            }
-
-            const displayString = displayedChars.join('');
-            if (!displayString) return;
-
-            // Treat U and T as equivalent for DNA/RNA searches
-            const normalizedDisplay = displayString.replace(/U/g, 'T');
-            const normalizedMotif = searchMotifValue;
-
-            // Find matches with mismatches allowed (or regex)
-            let matches;
-            let matchLen = normalizedMotif.length; // default for exact/mismatch search
-            if (useRegex) {
-                matches = [];
-                try {
-                    const re = new RegExp(normalizedMotif, 'gi');
-                    let m;
-                    while ((m = re.exec(normalizedDisplay)) !== null) {
-                        matches.push({ idx: m.index, len: m[0].length || 1 });
-                        if (m[0].length === 0) re.lastIndex++;
-                    }
-                } catch(e) {
-                    showMessage('Invalid regex: ' + e.message, 4000);
-                    return;
-                }
-            } else {
-                const fuzzyMatches = findFuzzyMatches(normalizedDisplay, normalizedMotif, maxMismatches);
-                matches = fuzzyMatches.map(m => ({ idx: m.idx, len: m.len, matchingPositions: m.matchingPositions }));
-            }
-            debugLog(`  Seq ${index}: "${displayString}" vs "${normalizedMotif}" -> ${matches.length} matches`);
-            if (matches.length > 0) {
-                motifSeqsWithMatches.add(index);
-                const isReverseStrand = String(strand || '').includes('rev comp');
-                if (isReverseStrand) {
-                    revSeqs.add(index);
-                } else {
-                    fwdSeqs.add(index);
-                }
-            }
+        let invalid = false;
+        const isRev = String(strand || '').includes('rev comp');
+        degapped.forEach(({ cols, text }, index) => {
+            if (invalid || !text) return;
+            const matches = _searchMatchesInDegapped(text, entry);
+            if (matches === null) { invalid = true; return; }
+            if (!matches.length) return;
+            motifSeqsWithMatches.add(index);
+            (isRev ? revSeqs : fwdSeqs).add(index);
             totalMatches += matches.length;
             motifMatches += matches.length;
-            if (String(strand || '').includes('rev comp')) {
-                revMatches += matches.length;
-            } else {
-                fwdMatches += matches.length;
-            }
-
-            // Highlight matching spans (only exact positions when mismatches allowed)
-            const paintPartialMatches = !useRegex && maxMismatches > 0;
+            if (isRev) revMatches += matches.length; else fwdMatches += matches.length;
             matches.forEach(m => {
-                const startSpanIndex = nonGapSpanIndices[m.idx];
-                const startPos = startSpanIndex !== undefined ? spans[startSpanIndex]?.dataset?.pos : undefined;
-                if (startPos !== undefined) motifAlignmentSites.add(`${startPos}:${m.len}`);
-                if (paintPartialMatches && m.matchingPositions?.length) {
-                    m.matchingPositions.forEach(degappedPos => {
-                        const spanIndex = nonGapSpanIndices[degappedPos];
-                        if (spanIndex !== undefined && spans[spanIndex]) {
-                            spans[spanIndex].classList.add(className);
-                            spans[spanIndex].dataset.searchHit = className;
-                        }
-                    });
-                } else {
-                    for (let i = 0; i < m.len; i++) {
-                        const spanIndex = nonGapSpanIndices[m.idx + i];
-                        if (spanIndex !== undefined && spans[spanIndex]) {
-                            spans[spanIndex].classList.add(className);
-                            spans[spanIndex].dataset.searchHit = className;
-                        }
-                    }
-                }
+                const startCol = cols[m.idx];
+                if (startCol !== undefined) motifAlignmentSites.add(`${startCol}:${m.len}`);
             });
         });
+        if (invalid) {
+            try { new RegExp(searchMotifValue, 'gi'); } catch (e) { showMessage('Invalid regex: ' + e.message, 4000); }
+            return;
+        }
 
-        // Track search history
         const displayMatches = options.countMode === 'alignmentSites' ? motifAlignmentSites.size : motifMatches;
-        state.searchHistory.push({ motif: motifKey, color: searchColorValue, className, matchCount: displayMatches, rawMatchCount: motifMatches, sequencesWithMatches: motifSeqsWithMatches.size, label, strand });
+        Object.assign(entry, { matchCount: displayMatches, rawMatchCount: motifMatches, sequencesWithMatches: motifSeqsWithMatches.size });
+        state.searchHistory.push(entry);
         searchResults.push({ label, strand, matchCount: displayMatches, rawMatchCount: motifMatches, sequencesWithMatches: motifSeqsWithMatches.size, sequenceIndices: Array.from(motifSeqsWithMatches) });
     });
+    bumpSearchLayer();
+    reapplySearchHighlights();
 
     updateActiveSearchesPanel();
     if (!options.suppressMessage) {
@@ -12287,72 +12248,576 @@ function searchMotif(options = {}) {
 function updateActiveSearchesPanel() {
     const panel = el('activeSearches');
     const list = el('searchList');
-
-    if (state.searchHistory.length === 0) {
-        panel.style.display = 'none';
-        return;
+    if (panel && list) {
+        if (state.searchHistory.length === 0) {
+            panel.style.display = 'none';
+        } else {
+            panel.style.display = 'block';
+            list.innerHTML = '';
+            state.searchHistory.forEach(search => list.appendChild(_buildSearchListItem(search)));
+        }
     }
-
-    panel.style.display = 'block';
-    list.innerHTML = '';
-
-    state.searchHistory.forEach((search, index) => {
-        const item = document.createElement('div');
-        item.className = 'search-item';
-
-        const swatch = document.createElement('div');
-        swatch.className = 'search-swatch';
-        swatch.style.backgroundColor = search.color;
-
-    const text = document.createElement('span');
-    const label = search.label || search.motif;
-    text.textContent = `${label} (${search.matchCount || 0})`;
-
-        const remove = document.createElement('button');
-        remove.className = 'search-remove';
-    remove.innerHTML = 'x';
-        remove.title = 'Remove this search';
-        remove.addEventListener('click', () => {
-            // Remove this specific search
-            _queryAllByClass(search.className).forEach(span => {
-                span.classList.remove(search.className);
-                delete span.dataset.searchHit;
-            });
-            document.querySelector(`style[data-motif="${search.motif}"]`)?.remove();
-            state.searchHistory.splice(index, 1);
-            updateActiveSearchesPanel();
-        });
-
-        item.appendChild(swatch);
-        item.appendChild(text);
-        item.appendChild(remove);
-        list.appendChild(item);
-    });
+    if (typeof refreshSelectionsPanel === 'function') refreshSelectionsPanel();
 }
 
+function _buildSearchListItem(search) {
+    const item = document.createElement('div');
+    item.className = 'search-item' + (search.enabled === false ? ' is-off' : '');
+    const toggle = document.createElement('input');
+    toggle.type = 'checkbox';
+    toggle.checked = search.enabled !== false;
+    toggle.title = 'Show or hide this search';
+    toggle.addEventListener('change', () => setSearchEnabled(search, toggle.checked));
+    const swatch = document.createElement('div');
+    swatch.className = 'search-swatch';
+    swatch.style.backgroundColor = search.color;
+    const text = document.createElement('span');
+    text.textContent = `${search.label || search.motif} (${search.matchCount || 0})`;
+    const remove = document.createElement('button');
+    remove.className = 'search-remove';
+    remove.textContent = 'x';
+    remove.title = 'Remove this search';
+    remove.addEventListener('click', () => removeSearch(search));
+    item.append(toggle, swatch, text, remove);
+    return item;
+}
+
+function setSearchEnabled(search, on) {
+    search.enabled = !!on;
+    bumpSearchLayer();
+    reapplySearchHighlights();
+    updateActiveSearchesPanel();
+}
+
+function removeSearch(search) {
+    const i = state.searchHistory.indexOf(search);
+    if (i < 0) return;
+    state.searchHistory.splice(i, 1);
+    bumpSearchLayer();
+    reapplySearchHighlights();
+    _removeSearchStyle(search);
+    updateActiveSearchesPanel();
+}
 
 function clearLastSearch() {
     if (state.searchHistory.length === 0) {
         showMessage("No searches to clear.", 3000);
         return;
     }
-    const last = state.searchHistory.pop();
-    document.querySelectorAll(`.${last.className}`).forEach(span => span.classList.remove(last.className));
-    document.querySelector(`style[data-motif="${last.motif}"]`)?.remove();
-    updateActiveSearchesPanel();
+    removeSearch(state.searchHistory[state.searchHistory.length - 1]);
     showMessage("Last search cleared!", 2000);
 }
-function clearAllSearches() {
-    state.searchHistory.forEach(item => {
-        document.querySelectorAll(`.${item.className}`).forEach(span => {
-            span.classList.remove(item.className);
-        });
-        document.querySelector(`style[data-motif="${item.motif}"]`)?.remove();
-    });
+function clearAllSearches(quiet) {
+    const old = state.searchHistory;
     state.searchHistory = [];
+    bumpSearchLayer();
+    reapplySearchHighlights();
+    old.forEach(_removeSearchStyle);
     updateActiveSearchesPanel();
-    showMessage("All searches cleared!", 2000);
+    if (quiet !== true) showMessage("All searches cleared!", 2000);
 }
+// ============================================================================
+// Selections panel: every kind of selection and highlight in one list
+// ============================================================================
+// Rows, columns, residue blocks, each search, TSD marks, repeat highlights and name
+// colours. Each can be switched off (kept, not shown, not acted on) and back on, removed,
+// or all cleared at once; the last removal can be undone. The whole set, including what
+// is switched off, is saved in snapshots.
+//
+// "Off" moves a selection into state.selectionStash, so everything that acts on the live
+// selection (delete, copy, realign...) ignores it without knowing the panel exists.
+// Searches are the exception: they stay in searchHistory with enabled = false, because the
+// search layer already skips disabled entries. Switched-off rows and residues are kept by
+// sequence object, not index, so they follow their sequences through moves and deletes.
+
+state.selectionStash = { rows: null, cols: null, nucs: null, tsd: null, repeats: null, names: null };
+let _selectionsUndo = null;           // what the last removal took away, for Undo
+let _selectionsPanelPending = false;
+
+function _resetSelectionStash() {
+    state.selectionStash = { rows: null, cols: null, nucs: null, tsd: null, repeats: null, names: null };
+    _selectionsUndo = null;
+}
+
+function _nucCount(map) {
+    let n = 0;
+    map?.forEach(set => { n += set.size; });
+    return n;
+}
+
+function _copyNucMap(map) {
+    const out = new Map();
+    map?.forEach((set, row) => out.set(row, new Set(set)));
+    return out;
+}
+
+// "3-7, 12, 40-41" (1-based, as the ruler shows them)
+function _formatColumnRanges(cols, maxParts = 4) {
+    const sorted = [...cols].map(Number).filter(Number.isInteger).sort((a, b) => a - b);
+    const parts = [];
+    for (let i = 0; i < sorted.length;) {
+        let j = i;
+        while (j + 1 < sorted.length && sorted[j + 1] === sorted[j] + 1) j++;
+        parts.push(sorted[i] === sorted[j] ? String(sorted[i] + 1) : `${sorted[i] + 1}-${sorted[j] + 1}`);
+        i = j + 1;
+    }
+    return parts.length > maxParts ? parts.slice(0, maxParts).join(', ') + `, ... (${parts.length} ranges)` : parts.join(', ');
+}
+
+function _rowNames(rows, max = 3) {
+    const list = [...rows].sort((a, b) => a - b).map(i => state.seqs[i]?.header).filter(Boolean);
+    return list.length > max ? list.slice(0, max).join(', ') + ', ...' : list.join(', ');
+}
+
+// Stashed rows are sequence objects; these convert to and from current row indices.
+function _rowsToObjs(rows) { return new Set([...rows].map(i => state.seqs[i]).filter(Boolean)); }
+function _objsToRows(objs) {
+    const out = new Set();
+    objs?.forEach(o => { const i = state.seqs.indexOf(o); if (i >= 0) out.add(i); });
+    return out;
+}
+function _nucsToObjs(map) {
+    const out = new Map();
+    map?.forEach((set, row) => { const o = state.seqs[row]; if (o) out.set(o, new Set(set)); });
+    return out;
+}
+function _objsToNucs(map) {
+    const out = new Map();
+    map?.forEach((set, o) => { const i = state.seqs.indexOf(o); if (i >= 0) out.set(i, new Set(set)); });
+    return out;
+}
+
+function collectSelectionItems() {
+    const st = state.selectionStash;
+    const items = [];
+    const rowsLive = state.selectedRows.size, rowsHidden = st.rows?.size || 0;
+    if (rowsLive || rowsHidden) {
+        const on = rowsLive > 0;
+        items.push({ key: 'rows', kind: 'Rows', on, icon: 'rows',
+            count: on ? rowsLive : rowsHidden,
+            detail: (on ? _rowNames(state.selectedRows) : _rowNames(_objsToRows(st.rows))) + (on && rowsHidden ? ` (+${rowsHidden} off)` : ''),
+            canGo: true });
+    }
+    const colsLive = state.selectedColumns.size, colsHidden = st.cols?.size || 0;
+    if (colsLive || colsHidden) {
+        const on = colsLive > 0;
+        items.push({ key: 'cols', kind: 'Columns', on, icon: 'cols',
+            count: on ? colsLive : colsHidden,
+            detail: _formatColumnRanges(on ? state.selectedColumns : st.cols) + (on && colsHidden ? ` (+${colsHidden} off)` : ''),
+            canGo: true });
+    }
+    const nucLive = _nucCount(state.selectedNucs), nucHidden = _nucCount(st.nucs);
+    if (nucLive || nucHidden) {
+        const on = nucLive > 0;
+        const rows = on ? state.selectedNucs.size : st.nucs.size;   // same count whether keyed by index or object
+        items.push({ key: 'nucs', kind: 'Residues', on, icon: 'nucs',
+            count: on ? nucLive : nucHidden,
+            detail: `in ${rows} row${rows === 1 ? '' : 's'}` + (on && nucHidden ? ` (+${nucHidden} off)` : ''),
+            canGo: true });
+    }
+    (state.searchHistory || []).forEach(entry => {
+        items.push({ key: 'search:' + entry.className, kind: 'Search', on: entry.enabled !== false,
+            color: entry.color, count: entry.matchCount || 0,
+            detail: `${entry.label || entry.searchValue}` + (entry.sequencesWithMatches ? ` in ${entry.sequencesWithMatches} seq` : ''),
+            canGo: (entry.matchCount || 0) > 0, entry });
+    });
+    const tsdLive = state.tsdMarks?.size || 0, tsdHidden = st.tsd?.size || 0;
+    if (tsdLive || tsdHidden) {
+        items.push({ key: 'tsd', kind: 'TSD marks', on: tsdLive > 0, color: state.tsdMarkColor || '#ffd54f',
+            count: tsdLive || tsdHidden, detail: `in ${tsdLive || tsdHidden} sequence${(tsdLive || tsdHidden) === 1 ? '' : 's'}` });
+    }
+    const repLive = state.repeatHighlights?.size || 0, repHidden = st.repeats?.size || 0;
+    if (repLive || repHidden) {
+        const first = (repLive ? state.repeatHighlights : st.repeats).values().next().value;
+        items.push({ key: 'repeats', kind: 'Repeat highlights', on: repLive > 0, color: first?.color,
+            count: repLive || repHidden, detail: '' });
+    }
+    const namesLive = colourState?.mappings?.size || 0, namesHidden = st.names?.size || 0;
+    if (namesLive || namesHidden) {
+        const first = (namesLive ? colourState.mappings : st.names).values().next().value;
+        items.push({ key: 'names', kind: 'Name colours', on: namesLive > 0, color: first,
+            count: namesLive || namesHidden, detail: `${namesLive || namesHidden} sequence${(namesLive || namesHidden) === 1 ? '' : 's'}` });
+    }
+    return items;
+}
+
+// ---- snapshot of everything the panel manages (for Undo and Clear all) ----
+function _captureSelections() {
+    const st = state.selectionStash;
+    return {
+        rows: new Set(state.selectedRows), cols: new Set(state.selectedColumns), nucs: _copyNucMap(state.selectedNucs),
+        searches: (state.searchHistory || []).map(e => ({ ...e })),
+        tsd: state.tsdMarks ? new Map([...state.tsdMarks].map(([r, s]) => [r, new Set(s)])) : new Map(),
+        repeats: new Map(state.repeatHighlights || []),
+        names: new Map(colourState?.mappings || []),
+        stash: {
+            rows: st.rows ? new Set(st.rows) : null, cols: st.cols ? new Set(st.cols) : null,
+            nucs: st.nucs ? new Map([...st.nucs].map(([o, s]) => [o, new Set(s)])) : null,
+            tsd: st.tsd ? new Map(st.tsd) : null, repeats: st.repeats ? new Map(st.repeats) : null,
+            names: st.names ? new Map(st.names) : null
+        }
+    };
+}
+
+function _restoreSelections(b) {
+    state.selectedRows = new Set(b.rows);
+    state.selectedColumns = new Set(b.cols);
+    state.selectedNucs = _copyNucMap(b.nucs);
+    (state.searchHistory || []).forEach(_removeSearchStyle);
+    state.searchHistory = b.searches.map(e => ({ ...e }));
+    state.tsdMarks = b.tsd;
+    state.repeatHighlights = b.repeats;
+    colourState.mappings.clear();
+    b.names.forEach((c, n) => colourState.mappings.set(n, c));
+    state.selectionStash = b.stash;
+    bumpSearchLayer();
+    renderAlignment({ deferConservation: true });
+    applyColourToSeqNames(colourState.mappings);
+    updateActiveSearchesPanel();
+}
+
+function _rememberForUndo(label) {
+    _selectionsUndo = { label, bundle: _captureSelections() };
+}
+
+function undoSelectionsRemoval() {
+    const u = _selectionsUndo;
+    if (!u) return;
+    _selectionsUndo = null;
+    _restoreSelections(u.bundle);
+    showMessage(`Restored: ${u.label}`, 1800);
+}
+
+// ---- per-kind on/off and remove ----
+function _refreshRowColNucDom() {
+    updateRowSelections();
+    updateColumnSelections();
+    scheduleNucSelectionRefresh();
+    if (isCanvasMode()) _canvasState.scheduleDraw?.();
+}
+
+function setSelectionItemOn(key, on) {
+    const st = state.selectionStash;
+    if (key.startsWith('search:')) {
+        const entry = state.searchHistory.find(e => 'search:' + e.className === key);
+        if (entry) setSearchEnabled(entry, on);
+        return;
+    }
+    if (key === 'rows') {
+        if (on) { _objsToRows(st.rows).forEach(i => state.selectedRows.add(i)); st.rows = null; }
+        else { st.rows = new Set([...(st.rows || []), ..._rowsToObjs(state.selectedRows)]); state.selectedRows.clear(); }
+        _refreshRowColNucDom();
+    } else if (key === 'cols') {
+        if (on) { st.cols?.forEach(c => state.selectedColumns.add(c)); st.cols = null; }
+        else { st.cols = new Set([...(st.cols || []), ...state.selectedColumns]); state.selectedColumns.clear(); }
+        _refreshRowColNucDom();
+    } else if (key === 'nucs') {
+        if (on) {
+            _objsToNucs(st.nucs).forEach((set, row) => {
+                const cur = state.selectedNucs.get(row) || new Set();
+                set.forEach(p => cur.add(p));
+                state.selectedNucs.set(row, cur);
+            });
+            st.nucs = null;
+        } else {
+            const merged = new Map([...(st.nucs || [])].map(([o, s]) => [o, new Set(s)]));
+            _nucsToObjs(state.selectedNucs).forEach((set, o) => {
+                const cur = merged.get(o) || new Set();
+                set.forEach(p => cur.add(p));
+                merged.set(o, cur);
+            });
+            st.nucs = merged;
+            state.selectedNucs.clear();
+            state.pendingNucStart = null;
+        }
+        _refreshRowColNucDom();
+    } else if (key === 'tsd') {
+        if (on) { if (st.tsd) state.tsdMarks = st.tsd; st.tsd = null; }
+        else { st.tsd = state.tsdMarks; state.tsdMarks = new Map(); }
+        renderAlignment({ deferConservation: true });
+    } else if (key === 'repeats') {
+        if (on) {
+            if (st.repeats) state.repeatHighlights = st.repeats;
+            st.repeats = null;
+            renderAlignment({ deferConservation: true });
+        } else {
+            st.repeats = new Map(state.repeatHighlights);
+            _clearRepeatHighlights();
+        }
+    } else if (key === 'names') {
+        if (on) { st.names?.forEach((c, n) => colourState.mappings.set(n, c)); st.names = null; }
+        else { st.names = new Map(colourState.mappings); colourState.mappings.clear(); }
+        applyColourToSeqNames(colourState.mappings);
+    }
+    scheduleSelectionsPanelRefresh();
+}
+
+function _removeSelectionItemNoUndo(key) {
+    const st = state.selectionStash;
+    if (key.startsWith('search:')) {
+        const entry = state.searchHistory.find(e => 'search:' + e.className === key);
+        if (entry) removeSearch(entry);
+        return;
+    }
+    if (key === 'rows') { state.selectedRows.clear(); st.rows = null; state.lastSelectedIndex = null; }
+    else if (key === 'cols') { state.selectedColumns.clear(); st.cols = null; }
+    else if (key === 'nucs') { state.selectedNucs.clear(); state.pendingNucStart = null; st.nucs = null; }
+    else if (key === 'tsd') { state.tsdMarks = new Map(); st.tsd = null; state.tsdMarkUndo = null; renderAlignment({ deferConservation: true }); }
+    else if (key === 'repeats') { _clearRepeatHighlights(); st.repeats = null; }
+    else if (key === 'names') { colourState.mappings.clear(); st.names = null; applyColourToSeqNames(colourState.mappings); }
+    if (key === 'rows' || key === 'cols' || key === 'nucs') _refreshRowColNucDom();
+}
+
+function removeSelectionItem(key, label) {
+    _rememberForUndo(label || key);
+    _removeSelectionItemNoUndo(key);
+    scheduleSelectionsPanelRefresh();
+}
+
+// Rows, columns and residues: what Esc and "Clear selection" remove. Highlights stay.
+function clearActiveSelection(quiet) {
+    const had = state.selectedRows.size || state.selectedColumns.size || state.selectedNucs.size || state.pendingNucStart;
+    if (!had) return false;
+    _rememberForUndo('selection');
+    state.selectedRows.clear();
+    state.selectedColumns.clear();
+    state.selectedNucs.clear();
+    state.pendingNucStart = null;
+    state.lastSelectedIndex = null;
+    _refreshRowColNucDom();
+    scheduleSelectionsPanelRefresh();
+    if (!quiet) showMessage('Selection cleared (Undo in Selections)', 1600);
+    return true;
+}
+
+function clearAllSelections() {
+    const items = collectSelectionItems();
+    if (!items.length) return;
+    _rememberForUndo('all selections and highlights');
+    const st = state.selectionStash;
+    state.selectedRows.clear(); state.selectedColumns.clear(); state.selectedNucs.clear();
+    state.pendingNucStart = null; state.lastSelectedIndex = null;
+    const hadRender = (state.tsdMarks?.size || 0) > 0;
+    state.tsdMarks = new Map(); state.tsdMarkUndo = null;
+    if (state.repeatHighlights?.size) _clearRepeatHighlights();
+    colourState.mappings.clear();
+    Object.keys(st).forEach(k => { st[k] = null; });
+    clearAllSearches(true);
+    applyColourToSeqNames(colourState.mappings);
+    if (hadRender) renderAlignment({ deferConservation: true });
+    else _refreshRowColNucDom();
+    scheduleSelectionsPanelRefresh();
+    showMessage('Cleared all selections and highlights', 1600);
+}
+
+function setAllSelectionsOn(on) {
+    collectSelectionItems().forEach(it => { if (it.on !== on) setSelectionItemOn(it.key, on); });
+}
+
+// ---- "go to": bring the item into view; repeated clicks step through it ----
+function _gotoSelectionItem(item) {
+    if (item.key === 'rows') {
+        const rows = [...state.selectedRows].sort((a, b) => a - b);
+        if (!rows.length) return;
+        const i = (item._cursor = ((_gotoCursor.rows ?? -1) + 1) % rows.length);
+        _gotoCursor.rows = i;
+        _showRowInAlignment(rows[i], null);
+    } else if (item.key === 'cols') {
+        const cols = [...state.selectedColumns].sort((a, b) => a - b);
+        if (!cols.length) return;
+        // step by contiguous range
+        const starts = cols.filter((c, k) => k === 0 || cols[k - 1] !== c - 1);
+        const i = ((_gotoCursor.cols ?? -1) + 1) % starts.length;
+        _gotoCursor.cols = i;
+        _scrollToColumn(starts[i]);
+    } else if (item.key === 'nucs') {
+        const rows = [...state.selectedNucs.keys()].filter(r => r >= 0).sort((a, b) => a - b);
+        if (!rows.length) return;
+        const i = ((_gotoCursor.nucs ?? -1) + 1) % rows.length;
+        _gotoCursor.nucs = i;
+        _showRowInAlignment(rows[i], Math.min(...state.selectedNucs.get(rows[i])));
+    } else if (item.entry) {
+        _gotoNextSearchHit(item.entry);
+    }
+}
+const _gotoCursor = {};
+
+function _gotoNextSearchHit(entry) {
+    const n = state.seqs.length;
+    if (!n) return;
+    const cur = entry._cursor || { row: 0, col: -1 };
+    for (let k = 0; k <= n; k++) {
+        const row = (cur.row + k) % n;
+        const { cols, text } = _degapForSearch(state.seqs[row].seq);
+        const matches = _searchMatchesInDegapped(text, entry) || [];
+        const starts = matches.map(m => cols[m.idx]).filter(c => c !== undefined).sort((a, b) => a - b);
+        const next = starts.find(c => (k === 0 ? c > cur.col : true));
+        if (next !== undefined) {
+            entry._cursor = { row, col: next };
+            if (entry.enabled === false) setSearchEnabled(entry, true);
+            _showRowInAlignment(row, next);
+            return;
+        }
+    }
+}
+
+// ---- the panel ----
+function scheduleSelectionsPanelRefresh() {
+    if (_selectionsPanelPending) return;
+    _selectionsPanelPending = true;
+    requestAnimationFrame(() => {
+        _selectionsPanelPending = false;
+        refreshSelectionsPanel();
+    });
+}
+
+function _selectionIconHtml(item) {
+    if (item.color) return `<span class="sel-swatch" style="background:${_escapeHtml(item.color)}"></span>`;
+    const glyph = { rows: '&#9776;', cols: '&#10074;&#10074;', nucs: '&#9638;' }[item.icon] || '&#9679;';
+    return `<span class="sel-icon sel-icon-${item.icon || 'other'}">${glyph}</span>`;
+}
+
+function refreshSelectionsPanel() {
+    const section = el('selections-menu-section');
+    const list = el('selectionsList');
+    if (!section || !list) return;
+    const items = collectSelectionItems();
+    const group = el('selections-controls');
+    const detached = group?.classList.contains('detached');
+    const onCount = items.filter(i => i.on).length;
+    // The tab appears as soon as there is anything to list (and stays while detached)
+    section.classList.toggle('sel-menu-off', !items.length && !detached && !_selectionsUndo);
+    const badge = el('selectionsBadge');
+    if (badge) {
+        badge.textContent = items.length ? (onCount === items.length ? String(items.length) : `${onCount}/${items.length}`) : '';
+        badge.title = items.length ? `${onCount} shown of ${items.length}` : '';
+    }
+    el('selectionsClearBtn')?.toggleAttribute('disabled', !items.length);
+    el('selectionsClearSelBtn')?.toggleAttribute('disabled', !(state.selectedRows.size || state.selectedColumns.size || state.selectedNucs.size));
+    const allOn = items.length && items.every(i => i.on);
+    const toggleAll = el('selectionsToggleAllBtn');
+    if (toggleAll) {
+        toggleAll.textContent = allOn ? 'Hide all' : 'Show all';
+        toggleAll.toggleAttribute('disabled', !items.length);
+    }
+    const undo = el('selectionsUndoBtn');
+    if (undo) {
+        undo.hidden = !_selectionsUndo;
+        undo.title = _selectionsUndo ? `Bring back: ${_selectionsUndo.label}` : '';
+    }
+
+    list.innerHTML = '';
+    if (!items.length) {
+        const empty = document.createElement('div');
+        empty.className = 'sel-empty';
+        empty.textContent = 'Nothing selected or highlighted.';
+        list.appendChild(empty);
+        return;
+    }
+    items.forEach(item => {
+        const row = document.createElement('div');
+        row.className = 'sel-item' + (item.on ? '' : ' is-off');
+        row.dataset.key = item.key;
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = item.on;
+        cb.title = item.on ? 'Switch off (kept, not shown or used)' : 'Switch back on';
+        cb.addEventListener('change', () => setSelectionItemOn(item.key, cb.checked));
+        const icon = document.createElement('span');
+        icon.className = 'sel-icon-wrap';
+        icon.innerHTML = _selectionIconHtml(item);
+        const text = document.createElement('span');
+        text.className = 'sel-text';
+        const kind = document.createElement('span');
+        kind.className = 'sel-kind';
+        kind.textContent = item.kind;
+        const count = document.createElement('span');
+        count.className = 'sel-count';
+        count.textContent = String(item.count);
+        const detail = document.createElement('span');
+        detail.className = 'sel-detail';
+        detail.textContent = item.detail || '';
+        text.append(kind, count, detail);
+        text.title = `${item.kind}: ${item.count}${item.detail ? ' - ' + item.detail : ''}`;
+        row.append(cb, icon, text);
+        if (item.canGo) {
+            const go = document.createElement('button');
+            go.className = 'sel-go';
+            go.innerHTML = '&#8594;';
+            go.title = item.entry ? 'Go to the next match' : 'Go to it (click again for the next one)';
+            go.addEventListener('click', () => _gotoSelectionItem(item));
+            row.appendChild(go);
+        }
+        const rm = document.createElement('button');
+        rm.className = 'sel-remove';
+        rm.textContent = 'x';
+        rm.title = 'Remove (Undo brings it back)';
+        rm.addEventListener('click', () => removeSelectionItem(item.key, item.kind.toLowerCase()));
+        row.appendChild(rm);
+        list.appendChild(row);
+    });
+}
+
+function _snapshotSelections() {
+    const st = state.selectionStash;
+    const nucs = m => m ? [...m].map(([r, s]) => [r, [...s].sort((a, b) => a - b)]) : null;
+    return {
+        nucs: nucs(state.selectedNucs),
+        tsd: state.tsdMarks?.size ? [...state.tsdMarks].map(([r, s]) => [r, [...s]]) : null,
+        tsdStyle: state.tsdMarkStyle, tsdColor: state.tsdMarkColor,
+        repeats: state.repeatHighlights?.size ? [...state.repeatHighlights] : null,
+        stash: {
+            rows: st.rows ? [..._objsToRows(st.rows)] : null,
+            cols: st.cols ? [...st.cols] : null,
+            nucs: st.nucs ? nucs(_objsToNucs(st.nucs)) : null,
+            tsd: st.tsd ? [...st.tsd].map(([r, s]) => [r, [...s]]) : null,
+            repeats: st.repeats ? [...st.repeats] : null,
+            names: st.names ? [...st.names] : null
+        }
+    };
+}
+
+function _applySnapshotSelections(sel) {
+    if (!sel || typeof sel !== 'object') return;
+    const n = state.seqs.length;
+    const nucMap = arr => {
+        const m = new Map();
+        (arr || []).forEach(([r, ps]) => { if (Number.isInteger(r) && r < n && Array.isArray(ps)) m.set(r, new Set(ps.filter(Number.isInteger))); });
+        return m;
+    };
+    const setMap = arr => new Map((arr || []).filter(([r]) => Number.isInteger(r) && r < n).map(([r, ps]) => [r, new Set(ps)]));
+    state.selectedNucs = nucMap(sel.nucs);
+    if (sel.tsd) { state.tsdMarks = setMap(sel.tsd); state.tsdMarkStyle = sel.tsdStyle || state.tsdMarkStyle; state.tsdMarkColor = sel.tsdColor || state.tsdMarkColor; }
+    if (sel.repeats) state.repeatHighlights = new Map(sel.repeats);
+    const s = sel.stash || {};
+    state.selectionStash = {
+        rows: s.rows ? _rowsToObjs(s.rows.filter(i => Number.isInteger(i) && i < n)) : null,
+        cols: s.cols ? new Set(s.cols) : null,
+        nucs: s.nucs ? _nucsToObjs(nucMap(s.nucs)) : null,
+        tsd: s.tsd ? setMap(s.tsd) : null,
+        repeats: s.repeats ? new Map(s.repeats) : null,
+        names: s.names ? new Map(s.names) : null
+    };
+    _selectionsUndo = null;
+    if (sel.tsd || sel.repeats) renderAlignment({ deferConservation: true });
+    else _refreshRowColNucDom();
+    scheduleSelectionsPanelRefresh();
+}
+
+function initSelectionsPanel() {
+    el('selectionsClearBtn')?.addEventListener('click', clearAllSelections);
+    el('selectionsClearSelBtn')?.addEventListener('click', () => clearActiveSelection());
+    el('selectionsUndoBtn')?.addEventListener('click', undoSelectionsRemoval);
+    el('selectionsToggleAllBtn')?.addEventListener('click', () => {
+        const items = collectSelectionItems();
+        setAllSelectionsOn(!(items.length && items.every(i => i.on)));
+    });
+    // Docking back or detaching changes whether an empty panel should still show
+    new MutationObserver(scheduleSelectionsPanelRefresh)
+        .observe(el('selections-controls'), { attributes: true, attributeFilter: ['class'] });
+    refreshSelectionsPanel();
+}
+
 function openInfoModal() {
     showExclusiveModal('infoModal');
 }
@@ -18312,14 +18777,9 @@ function showContextMenu(e, index) {
 
     const clearSelItem = document.createElement('div');
     clearSelItem.textContent = 'Clear selection';
+    clearSelItem.textContent = 'Clear selection (Esc)';
     clearSelItem.addEventListener('click', () => {
-        state.selectedRows.clear();
-        state.selectedColumns.clear();
-        state.selectedNucs.clear();
-        state.pendingNucStart = null;
-        updateRowSelections();
-        updateColumnSelections();
-        scheduleNucSelectionRefresh();
+        clearActiveSelection(true);
         closeContextMenu();
     });
     contextMenu.appendChild(clearSelItem);
@@ -18517,6 +18977,7 @@ function updateRowSelections() {
         if (e.classList.contains('selected') !== want) e.classList.toggle('selected', want);
     }
     _updateSplitHint();
+    scheduleSelectionsPanelRefresh();
 }
 // Column highlight: toggle .column-selected on the spans of the columns that changed since
 // the last call, nothing else. Rows drawn later (render, windowed scroll) bake the class in
@@ -18561,6 +19022,7 @@ function _forEachSpanInColumns(cols, callback) {
     }
 }
 function updateColumnSelections() {
+    scheduleSelectionsPanelRefresh();
     const sel = state.selectedColumns;
     const changed = [];
     _appliedColumnSel.forEach(pos => { if (!sel.has(pos)) changed.push(pos); });
@@ -18711,6 +19173,7 @@ function scheduleNucSelectionRefresh() {
     raf(() => {
         pendingNucDomUpdate = false;
         refreshNucleotideSelectionsImmediate();
+        scheduleSelectionsPanelRefresh();
     });
 }
 // EVENT LISTENERS
@@ -18718,6 +19181,7 @@ function initializeAppUI() {
     // This function is called once the DOM is fully loaded.
 
     updateVersionIndicator();
+    initSelectionsPanel();
     _initMafftAskPrefs();
     checkSshServer();
 
@@ -20124,6 +20588,265 @@ function reshadeChangedColumnsInPlace(cols) {
     }
 }
 
+// ---- In-place repaint after a column-shifting edit (GeneDoc gap tools) ----
+// A gap inserted or deleted at column P changes rows only from P rightwards, and the
+// alignment grows by at most one column. Rebuilding every span for that cost ~1.3 s on
+// 200 x 1000; patching the existing spans costs a third of it, and doing the on-screen
+// part first and the rest in idle time makes the edit feel instant.
+
+// Rows whose spans still show the alignment as it was before an in-place edit: row ->
+// first stale column. Repainting reads everything from state, so it is idempotent, and
+// a second edit before the first has finished simply merges into this map.
+let _staleRows = new Map();
+let _staleHandle = null;
+let _staleOrder = [];        // rows in the order they should be done (on-screen first)
+
+function _cancelPendingSpanRepaint() {
+    _staleRows = new Map();
+    _staleOrder = [];
+    if (_staleHandle != null) (window.cancelIdleCallback || clearTimeout)(_staleHandle);
+    _staleHandle = null;
+}
+
+function _staleRepaintContext() {
+    return {
+        config: getSequenceRenderConfig(),
+        cons: state.conservationDataCache?.data || NO_CONSERVATION_DATA
+    };
+}
+
+// Finish every stale row now (tests, and anything that needs the whole DOM current).
+function flushPendingSpanRepaint() {
+    if (!_staleRows.size) return;
+    const ctx = _staleRepaintContext();
+    _staleRows.forEach((from, row) => _repaintRowCols(row, from, Infinity, ctx));
+    _cancelPendingSpanRepaint();
+    if (state.selectedNucs.size) scheduleNucSelectionRefresh();
+}
+
+function _repaintRowCols(row, from, to, ctx) {
+    const rowCache = state.spanCache?.get(row);
+    const seq = state.seqs[row]?.seq;
+    if (!rowCache || seq === undefined) return;
+    if (to === Infinity && from === 0) {
+        rowCache.forEach((span, pos) => repaintResidueSpan(span, row, pos, seq[pos] || GENEDOC_FILLER, ctx.config, ctx.cons));
+        return;
+    }
+    // Spans are looked up by column, so a narrow window costs only its own width
+    const last = Math.min(to, seq.length - 1);
+    for (let pos = from; pos <= last; pos++) {
+        const span = rowCache.get(pos);
+        if (span) repaintResidueSpan(span, row, pos, seq[pos] || GENEDOC_FILLER, ctx.config, ctx.cons);
+    }
+}
+
+function _markRowsStale(rows, from, firstRows) {
+    rows.forEach(row => {
+        const prev = _staleRows.get(row);
+        _staleRows.set(row, prev === undefined ? from : Math.min(prev, from));
+    });
+    // Rows on screen go first; the order is rebuilt from the map, so merged edits keep
+    // each row once.
+    const first = [...firstRows].filter(r => _staleRows.has(r));
+    const firstSet = new Set(first);
+    _staleOrder = first.concat([..._staleRows.keys()].filter(r => !firstSet.has(r)));
+    _scheduleStaleRepaint();
+}
+
+function _scheduleStaleRepaint() {
+    if (_staleHandle != null || !_staleRows.size) return;
+    _staleHandle = window.requestIdleCallback
+        ? requestIdleCallback(_runStaleRepaint, { timeout: 300 })
+        : setTimeout(_runStaleRepaint, 16);
+}
+
+function _runStaleRepaint(deadline) {
+    _staleHandle = null;
+    if (!_staleRows.size) return;
+    const t0 = performance.now();
+    // Small slices: each one's layout is paid in the next frame, so keep frames short
+    const more = () => (deadline && typeof deadline.timeRemaining === 'function' && !deadline.didTimeout)
+        ? deadline.timeRemaining() > 4 && performance.now() - t0 < 10
+        : performance.now() - t0 < 8;
+    const ctx = _staleRepaintContext();
+    while (_staleOrder.length && more()) {
+        const row = _staleOrder.shift();
+        const from = _staleRows.get(row);
+        if (from === undefined) continue;
+        _repaintRowCols(row, from, Infinity, ctx);
+        _staleRows.delete(row);
+    }
+    if (_staleRows.size) _scheduleStaleRepaint();
+    else if (state.selectedNucs.size) scheduleNucSelectionRefresh();
+}
+
+// Scrolling brings stale rows into view: finish those rows before the frame is drawn.
+function _repaintStaleRowsOnScreen() {
+    if (!_staleRows.size) return;
+    const { rows } = _onScreenWindow();
+    if (!rows.size) return;
+    const ctx = _staleRepaintContext();
+    rows.forEach(row => {
+        const from = _staleRows.get(row);
+        if (from === undefined) return;
+        _repaintRowCols(row, from, Infinity, ctx);
+        _staleRows.delete(row);
+    });
+    _staleOrder = _staleOrder.filter(r => _staleRows.has(r));
+}
+
+// Rows with a line on screen, and the columns visible in them (with a margin).
+function _onScreenWindow() {
+    const view = visibleAlignmentRect();
+    const rows = new Set();
+    let colFrom = Infinity, colTo = -1;
+    if (!view || !alignmentContainer) return { rows, colFrom: 0, colTo: -1 };
+    const cw = _unifiedCharWidthPx || _measureCharWidth() || 8;
+    const pad = 40;
+    alignmentContainer.querySelectorAll(':scope > .block-block').forEach(block => {
+        const br = block.getBoundingClientRect();
+        if (br.bottom < view.top || br.top > view.bottom) return;
+        block.querySelectorAll(':scope > .seq-line[data-seq-index]').forEach(line => {
+            const i = parseInt(line.dataset.seqIndex, 10);
+            if (!(i >= 0)) return;
+            const r = line.getBoundingClientRect();
+            if (r.bottom < view.top || r.top > view.bottom) return;
+            rows.add(i);
+            const data = line.querySelector('.seq-data');
+            const first = data?.firstElementChild;
+            const firstPos = first ? parseInt(first.dataset.pos, 10) : NaN;
+            if (!Number.isInteger(firstPos)) return;
+            const left = data.getBoundingClientRect().left;
+            colFrom = Math.min(colFrom, firstPos + Math.max(0, Math.floor((view.left - left) / cw) - pad));
+            colTo = Math.max(colTo, firstPos + Math.ceil((view.right - left) / cw) + pad);
+        });
+    });
+    return { rows, colFrom: colFrom === Infinity ? 0 : colFrom, colTo };
+}
+
+function _measureCharWidth() {
+    const sp = alignmentContainer?.querySelector('.seq-data > span[data-pos]');
+    const w = sp ? sp.getBoundingClientRect().width : 0;
+    return w > 0 ? w : null;
+}
+
+function canPatchColumnsInPlace(newWidth, oldWidth) {
+    if (!isSpanRenderMode() || state._needsWindowedDom) return false;
+    if (!state.spanCache || state.spanCache.size < state.seqs.length) return false;
+    if (state._diffColumns?.size || state._brkBeforePos?.size || state.trimBoundaries || state.softTrimBoundaries) return false;
+    if (state._codonData || state._clusterCharMap || state.repeatHighlights?.size || state.blockMask) return false;
+    const grow = newWidth - oldWidth;
+    if (grow !== 0 && grow !== 1) return false;
+    if (grow === 1) {
+        const useBlocks = el('modeBlocks')?.checked;
+        const blockWidth = parseInt(el('blockSizeSlider')?.value, 10);
+        // Block mode: a full last block would need a new block, which only a render can add
+        if (useBlocks && (!(blockWidth > 0) || oldWidth % blockWidth === 0)) return false;
+    }
+    return true;
+}
+
+// Returns false (and changes nothing) when the view can't be patched; the caller renders.
+function patchColumnsInPlace(fromPos, oldWidth) {
+    const len = state.seqs.reduce((m, s) => Math.max(m, s.seq.length), 0);
+    if (!canPatchColumnsInPlace(len, oldWidth)) return false;
+    const blocks = [...alignmentContainer.querySelectorAll(':scope > .block-block')];
+    if (!blocks.length) return false;
+    const blockInfo = blocks.map(block => {
+        const scale = block.querySelector(':scope > .scale-ruler-line .seq-data');
+        const [blen, bstart] = String(scale?.dataset.scale || '').split(':').map(Number);
+        return { block, scale, start: bstart, end: bstart + blen };
+    });
+    if (blockInfo.some(b => !Number.isInteger(b.start) || !Number.isInteger(b.end))) return false;
+    const from = Math.max(0, Math.min(fromPos, oldWidth));
+
+    const onScreen = _onScreenWindow();    // measured before any DOM change
+
+    // 1. A new last column: one span per row, ruler relabelled
+    if (len === oldWidth + 1) {
+        const last = blockInfo.reduce((a, b) => (b.end > a.end ? b : a));
+        const newPos = oldWidth;
+        last.block.querySelectorAll(':scope > .seq-line[data-seq-index]').forEach(line => {
+            const row = parseInt(line.dataset.seqIndex, 10);
+            if (!(row >= 0)) return;
+            const dataEl = line.querySelector('.seq-data');
+            const span = document.createElement('span');
+            span.dataset.pos = String(newPos);
+            span.textContent = GENEDOC_FILLER;
+            dataEl.insertBefore(span, dataEl.querySelector(':scope > .seq-length'));
+            registerSpanInCache(row, newPos, span);
+        });
+        last.end = len;
+        const blen = last.end - last.start;
+        last.scale.dataset.scale = blen + ':' + last.start;
+        last.scale.textContent = generateScale(blen, 10, last.start);
+        last.block.style.setProperty('--cols', String(blen));
+    }
+
+    // 2. Column statistics from `from` rightwards; everything left of it is unchanged
+    const shadeMode = _checkedRadioValue('shadeMode', 'all');
+    const seqCount = state.seqs.length;
+    const cache = state.conservationDataCache;
+    const cons = (cache && cache.shadeMode === shadeMode && cache.len === oldWidth)
+        ? cache.data.slice(0, from) : null;
+    let conservationData;
+    if (cons) {
+        for (let pos = from; pos < len; pos++) cons[pos] = _computeConservationForColumn(state.seqs, seqCount, pos, shadeMode);
+        conservationData = cons;
+    } else {
+        conservationData = preCalculateConservation(state.seqs, len, shadeMode);
+    }
+    state.conservationDataCache = { len, shadeMode, data: conservationData };
+
+    if (el('showConsensus')?.checked) {
+        const opts = _getConsensusOptions();
+        const seqArray = state.seqs.map(s => s.seq);
+        let consensus = (state.consensusCache?.len === oldWidth) ? state.consensusCache.values.slice(0, from) : null;
+        if (consensus) {
+            for (let pos = from; pos < len; pos++) consensus[pos] = _computeConsensusCharForColumn(seqArray, pos, opts);
+        } else {
+            consensus = computeConsensusForSequences(seqArray).split('');
+        }
+        state.consensusCache = { len, values: consensus.slice() };
+        state.consensusSeq = consensus.join('').replace(/-/g, '');
+        // Rebuild the consensus line of every block the edit reaches (one row each; their
+        // hover tooltips close over the consensus array, so patching would leave them stale)
+        const nameLen = effectiveNameLength();
+        const sticky = el('stickyNames').checked;
+        const thr = id => parseInt(el(id).value, 10) / 100;
+        blockInfo.forEach(b => {
+            if (b.end <= from) return;
+            b.block.querySelectorAll(':scope > .consensus-line').forEach(old => {
+                const position = old.classList.contains('consensus-top') ? 'top' : 'bottom';
+                const tmp = document.createElement('div');
+                addConsensusLine(tmp, consensus, b.start, b.end, nameLen, sticky, thr('blackSlider'), thr('darkSlider'), thr('lightSlider'),
+                    el('enableBlack').checked, el('enableDark').checked, el('enableLight').checked, b.end >= len, position, {});
+                old.replaceWith(tmp.firstChild);
+            });
+        });
+    }
+
+    // 3. Residue spans: what is on screen now, everything else in idle time. Every row is
+    //    marked, not only the edited ones: the column shading from `from` on changed too.
+    const ctx = { config: getSequenceRenderConfig(), cons: conservationData };
+    const lo = Math.max(from, onScreen.colFrom);
+    onScreen.rows.forEach(row => _repaintRowCols(row, lo, onScreen.colTo, ctx));
+    const all = [];
+    for (let row = 0; row < state.seqs.length; row++) all.push(row);
+    _markRowsStale(all, from, onScreen.rows);
+
+    updateColumnSelections();
+    scheduleNucSelectionRefresh();
+    updateEditActiveCell();
+    if (typeof updateSourceInfo === 'function') updateSourceInfo();
+    if (typeof refreshSelectionsPanel === 'function') refreshSelectionsPanel();
+    return true;
+}
+
+// Scrolling can reveal rows still waiting for their idle repaint (capture: the alignment
+// container's scroll does not bubble).
+document.addEventListener('scroll', _repaintStaleRowsOnScreen, true);
+
 // Leaving edit mode has to restore true conservation shading, which the session left
 // unshaded on repositioned residues. Do the least work that achieves that.
 function exitEditModeRepaint() {
@@ -20296,10 +21019,14 @@ function refreshAllGaplessPositions() {
     });
 }
 
-function finalizeGeneDocEdit(message, duration = 1800) {
+// fromPos/oldWidth: the edit changed no column left of fromPos, and the alignment was
+// oldWidth wide before it, which lets the view be patched instead of rebuilt.
+function finalizeGeneDocEdit(message, duration = 1800, fromPos = null, oldWidth = null) {
     normalizeAlignmentLengths();
     refreshAllGaplessPositions();
-    renderAlignment();
+    if (!(Number.isInteger(fromPos) && Number.isInteger(oldWidth) && patchColumnsInPlace(fromPos, oldWidth))) {
+        renderAlignment();
+    }
     if (message) showMessage(message, duration);
 }
 
@@ -20588,6 +21315,12 @@ function drawGeneDocDragOverlay(drag) {
     const cw = drag.charWidth;
     const { fg, gapFg, bg } = overlay.style;
     const monochrome = usesMonochromeShading(overlay.scheme);
+    // The spans under the overlay still carry the highlights of the row as it was when
+    // the drag began; any column whose highlight differs now must be painted over too.
+    const searching = state.searchHistory?.length > 0;
+    const nowHits = searching ? _getSearchHitsForRow(drag.rowIndex) : _EMPTY_HITS;
+    if (searching && !drag.startHits) drag.startHits = _computeSearchHitsForSeq(before);
+    const startHits = drag.startHits || _EMPTY_HITS;
 
     for (const L of overlay.layers) {
         L.ctx.clearRect(0, 0, L.width, L.height);
@@ -20597,13 +21330,14 @@ function drawGeneDocDragOverlay(drag) {
             const pos = L.firstPos + i;
             const ch = seq[pos];
             if (ch === undefined) break;
+            const hit = nowHits.get(pos);
             // Untouched column: leave it transparent so its real span shows through.
-            if (ch === (before[pos] === undefined ? GENEDOC_FILLER : before[pos])) continue;
+            if (ch === (before[pos] === undefined ? GENEDOC_FILLER : before[pos]) && hit === startHits.get(pos)) continue;
             const x = L.originX + i * cw - L.left;
             const scheme = monochrome ? null : getResidueSchemeStyle(ch, overlay.scheme);
-            L.ctx.fillStyle = (scheme && scheme.bg) || bg;
+            L.ctx.fillStyle = hit ? (hit.color || '#ffcc00') : ((scheme && scheme.bg) || bg);
             L.ctx.fillRect(x, 0, cw, L.height);
-            L.ctx.fillStyle = (scheme && scheme.fg) || (isGeneDocResidueChar(ch) ? fg : gapFg);
+            L.ctx.fillStyle = hit ? '#000' : ((scheme && scheme.fg) || (isGeneDocResidueChar(ch) ? fg : gapFg));
             L.ctx.fillText(ch, x + cw / 2, L.height / 2);
         }
     }
@@ -20663,6 +21397,11 @@ function startGeneDocMoveDrag(e, rowIndex, pos, tool, span) {
         return;
     }
     clearGeneDocEditDrag();
+    // The drag paints over this row's spans, so they must show its current state
+    if (_staleRows.has(rowIndex)) {
+        _repaintRowCols(rowIndex, _staleRows.get(rowIndex), Infinity, _staleRepaintContext());
+        _staleRows.delete(rowIndex);
+    }
     const canvasMode = isCanvasMode();
     const charWidth = canvasMode
         ? (_canvasState.metrics?.charW || 8)
@@ -20935,6 +21674,7 @@ function handleGeneDocGapToolClick(rowIndex, pos, tool) {
 
     pushUndo(`geneDoc-${tool}`);
     normalizeAlignmentLengths();
+    const oldWidth = state.seqs.reduce((m, s) => Math.max(m, s.seq.length), 0);
     let changed = false;
     targets.forEach(i => {
         const s = state.seqs[i];
@@ -20951,7 +21691,7 @@ function handleGeneDocGapToolClick(rowIndex, pos, tool) {
         return;
     }
     const label = deleting ? 'gap deleted' : 'gap inserted';
-    finalizeGeneDocEdit(`${targets.length} sequence(s): ${label}.`, 1600);
+    finalizeGeneDocEdit(`${targets.length} sequence(s): ${label}.`, 1600, pos, oldWidth);
 }
 
 function handleGeneDocResidueKey(e) {
@@ -21063,10 +21803,18 @@ function fastUpdateEditCellAt(row, pos) {
     }
 
     const base = state.seqs[row].seq[pos] || GENEDOC_FILLER;
-    span.textContent = base;
-    // Update class for correct shading
     const consData = (state.conservationDataCache && state.conservationDataCache.data) || {};
-    span.className = getSequenceBaseRenderClass(base, pos, getSequenceRenderConfig(), consData);
+    // Typing can create or break a motif match anywhere along the row
+    if (state.searchHistory?.length) refreshSequenceRowSearch(row);
+    repaintResidueSpan(span, row, pos, base, getSequenceRenderConfig(), consData);
+}
+
+// Re-evaluate just the search highlights of one rendered row (its letters are current).
+function refreshSequenceRowSearch(rowIndex) {
+    const rowCache = state.spanCache?.get(rowIndex);
+    if (!rowCache) return;
+    const hits = _getSearchHitsForRow(rowIndex);
+    rowCache.forEach((span, pos) => _setSpanSearchClass(span, hits.get(pos)));
 }
 
 /**
@@ -21131,13 +21879,14 @@ function insertSingleGap(rowIndex, pos) {
     if (!s) return;
     pushUndo('insertSingleGap');
     normalizeAlignmentLengths();
+    const oldWidth = state.seqs.reduce((m, q) => Math.max(m, q.seq.length), 0);
     const result = geneDocInsertDashString(s.seq, pos);
     if (!result.changed) {
         showMessage('No gap inserted.', 1800);
         return;
     }
     s.seq = result.seq;
-    finalizeGeneDocEdit('Single GeneDoc gap inserted.', 1800);
+    finalizeGeneDocEdit('Single GeneDoc gap inserted.', 1800, pos, oldWidth);
 }
 
 function removeSingleGap(rowIndex, pos) {
@@ -21149,13 +21898,14 @@ function removeSingleGap(rowIndex, pos) {
     }
     pushUndo('removeSingleGap');
     normalizeAlignmentLengths();
+    const oldWidth = state.seqs.reduce((m, q) => Math.max(m, q.seq.length), 0);
     const result = geneDocDeleteDashString(s.seq, pos);
     if (!result.changed) {
         showMessage('No gap removed.', 1800);
         return;
     }
     s.seq = result.seq;
-    finalizeGeneDocEdit('Single GeneDoc gap removed.', 1800);
+    finalizeGeneDocEdit('Single GeneDoc gap removed.', 1800, pos, oldWidth);
 }
 
 function handleAlignmentPanStart(e) {
@@ -21541,6 +22291,7 @@ function clusterByName(seqNames, maxChars = 10, threshold = 3) {
 
 // Apply color to sequence name elements
 function applyColourToSeqNames(mappings) {
+    scheduleSelectionsPanelRefresh();
     const seqNameElements = document.querySelectorAll('.seq-name');
     seqNameElements.forEach(el => {
         // Use underlying sequence header (not truncated display) for stable mapping

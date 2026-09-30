@@ -3829,3 +3829,142 @@ table.stats-mx.heat td:hover { outline: 2px solid #111; outline-offset: -2px; }
 .dot-split-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: -2px 0 8px; font-size: 12px; }
 .dot-lower-ctl { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 2px 8px; border-left: 3px solid #90b4dd; background: #f4f8fd; border-radius: 3px; }
 .dot-lower-ctl[hidden] { display: none; }
+
+/* ---- Selections panel (top menu) ---- */
+/* Hidden while there is nothing to list, like the Groups tab */
+#selections-menu-section.sel-menu-off {
+    display: none !important;
+}
+.sel-badge {
+    display: inline-block;
+    min-width: 14px;
+    padding: 0 4px;
+    margin-left: 2px;
+    border-radius: 7px;
+    background: #2a6fb0;
+    color: #fff;
+    font-size: 10px;
+    font-weight: bold;
+    line-height: 14px;
+    text-align: center;
+}
+.sel-badge:empty {
+    display: none;
+}
+#selections-controls {
+    min-width: 300px;
+    max-width: 420px;
+    font-size: 11px;
+}
+.sel-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+.sel-toolbar button {
+    height: 22px;
+    font-size: 11px;
+    padding: 0 7px;
+}
+#selectionsUndoBtn {
+    margin-left: auto;
+    color: #2a6fb0;
+}
+.sel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.sel-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 4px;
+    border: 1px solid #ddd;
+    border-radius: 3px;
+    background: #fff;
+}
+.sel-item:hover {
+    background: #f4f7fa;
+}
+.sel-item.is-off .sel-text,
+.sel-item.is-off .sel-icon-wrap {
+    opacity: 0.45;
+}
+.sel-item.is-off .sel-kind {
+    text-decoration: line-through;
+}
+.sel-item input[type="checkbox"] {
+    margin: 0;
+    width: 13px;
+    height: 13px;
+}
+.sel-icon-wrap {
+    display: inline-flex;
+    width: 14px;
+    justify-content: center;
+    flex-shrink: 0;
+}
+.sel-swatch {
+    width: 12px;
+    height: 12px;
+    border: 1px solid #666;
+    border-radius: 2px;
+}
+.sel-icon {
+    color: #2a6fb0;
+    font-size: 11px;
+    line-height: 1;
+}
+.sel-text {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+}
+.sel-kind {
+    font-weight: bold;
+}
+.sel-count {
+    margin: 0 4px;
+    color: #2a6fb0;
+    font-weight: bold;
+}
+.sel-detail {
+    color: #666;
+}
+.sel-go,
+.sel-remove {
+    background: none;
+    border: none;
+    color: #888;
+    cursor: pointer;
+    font-size: 13px;
+    line-height: 1;
+    padding: 0 2px;
+}
+.sel-go:hover,
+.sel-remove:hover {
+    color: #222;
+}
+.sel-empty {
+    color: #888;
+    font-style: italic;
+    padding: 4px 2px;
+}
+.sel-hint {
+    margin-top: 6px;
+    color: #888;
+    font-size: 10px;
+}
+.search-item.is-off > span {
+    opacity: 0.45;
+    text-decoration: line-through;
+}
+.search-item input[type="checkbox"] {
+    margin: 0;
+    width: 12px;
+    height: 12px;
+}

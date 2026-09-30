@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=153">
+    <link rel="stylesheet" href="styles.css?v=154">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -690,6 +690,22 @@
                     <div class="control-group" id="groups-controls">
                     </div>
                 </div>
+                <div class="menu-section sel-menu-off" id="selections-menu-section">
+                    <div class="section-header" data-section="selections" title="Everything selected or highlighted: switch each on/off, go to it, remove it">
+                        <span>Selections <span id="selectionsBadge" class="sel-badge"></span></span>
+                        <span class="toggle-icon">v</span>
+                    </div>
+                    <div class="control-group" id="selections-controls">
+                        <div class="sel-toolbar">
+                            <button id="selectionsClearSelBtn" title="Clear the selected rows, columns and residues (Esc); highlights stay">Clear selection</button>
+                            <button id="selectionsClearBtn" title="Remove every selection and highlight in the list (Undo brings them back)">Clear all</button>
+                            <button id="selectionsToggleAllBtn" title="Switch every item off, or all back on">Hide all</button>
+                            <button id="selectionsUndoBtn" hidden>Undo</button>
+                        </div>
+                        <div id="selectionsList" class="sel-list"></div>
+                        <div class="sel-hint">Unchecked = kept but not shown, and not used by Copy, Delete, Realign. Saved with snapshots.</div>
+                    </div>
+                </div>
             </div>
 
             <div class="quick-mode-switch" id="quickModeSwitch" title="Display mode: Full / Block / Canvas / Reads">
@@ -750,7 +766,7 @@
                         <strong>PgUp / PgDn</strong><span>Scroll one page</span>
                         <strong>Ctrl+M</strong><span>Toggle all menu sections</span>
                         <strong>Ctrl+H</strong><span>Hide/show menu</span>
-                        <strong>Esc</strong><span>Close popups/menus</span>
+                        <strong>Esc</strong><span>Close popups/menus; with none open, clear selection</span>
                         <div class="keys-cat">Presets &amp; help</div>
                         <strong>Ctrl+Shift+S</strong><span>Save preset</span>
                         <strong>Ctrl+O</strong><span>Load preset</span>
@@ -1281,7 +1297,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=261"></script>
+    <script src="script.js?v=262"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

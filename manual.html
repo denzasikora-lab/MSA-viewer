@@ -243,6 +243,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       <a href="#se-mismatch">7.3 Mismatch Tolerance</a>
       <a href="#se-colour">7.4 Search Highlight Colour</a>
       <a href="#se-restriction">7.5 Restriction Sites</a>
+      <a href="#se-selections">7.6 Selections Panel</a>
     </div>
   </div>
 
@@ -432,6 +433,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="gs-updates">1.6 Recent Updates</h3>
   <p>Recent updates added or improved the following features:</p>
   <ul>
+    <li><strong>Selections panel</strong> - one list of every selection and highlight (rows, columns, residues, searches, TSD marks, repeats, name colours), each with on/off, go-to and remove; Clear all with Undo; <kbd>Esc</kbd> clears the selection; saved in snapshots. See §7.6.</li>
+    <li><strong>Search highlights follow edits</strong> - highlights stay on the matching residues after gap insertion, drags, typing and undo; both-strand and restriction-site highlights no longer disappear after a redraw. Gap insertion and deletion in Edit Mode update the view in place (about four times faster on a 200 &times; 1000 alignment).</li>
     <li><strong>Clustering panel</strong> - three separate instruments: <em>Group by k-mer</em> (everyone assigned by overall resemblance), <em>Find SNP groups</em> (exclusive diagnostic columns; leftovers unassigned), and <em>Show 2D</em> (row × column rectangles). Results open in the Group explorer; a Groups menu appears to dock it. See §4.</li>
     <li><strong>Tree drawing</strong> - the Tree window now draws the tree with zoom, rooted and unrooted (equal-angle) layouts, branch swapping, re-rooting on a clicked branch, a resizable box, full screen, and SVG or PNG export of the picture.</li>
     <li><strong>Faster editing</strong> - Move and Slide dragging, entering and leaving Edit Mode, and undo/redo are no longer slowed by alignment size; conservation shading now drops only on residues a drag actually moved, instead of the whole row.</li>
@@ -1288,7 +1291,16 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     Use the colour picker to choose the highlight colour for search results.
     Multiple searches (with <strong>Find</strong> not <strong>Clear Last</strong>)
     accumulate highlights. Use <strong>Clear Last</strong> (<kbd>Ctrl+Shift+F</kbd>)
-    to remove the most recent search highlights.
+    to remove the most recent search highlights. Each search in the
+    <strong>Active searches</strong> list (and in the Selections panel, §7.6) has a
+    checkbox to hide it without losing it.
+  </p>
+  <p>
+    Highlights are worked out from the sequences each time a row is drawn, so they
+    stay on the matching residues through editing: inserted or deleted gaps, Move and
+    Slide drags, typed residues and undo. A match that an edit breaks loses its
+    highlight, and a match an edit creates gains one. Match counts cover every
+    sequence, including rows scrolled out of view in large alignments.
   </p>
 
   <h3 id="se-restriction">7.5 Restriction Sites</h3>
@@ -1302,6 +1314,32 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li>IUPAC ambiguity codes are supported in recognition sites, for example <code>GANTC</code>.</li>
     <li>Enable <strong>Search both strands</strong> to include reverse-complement matches.</li>
     <li>Results are highlighted in the alignment and reported as unique sites, affected sequences, and raw row matches.</li>
+  </ul>
+
+  <h3 id="se-selections">7.6 Selections Panel</h3>
+  <p>
+    As soon as anything is selected or highlighted, a <strong>Selections</strong> tab
+    appears at the end of the top menu row, with a count. It lists everything in one
+    place: selected <strong>rows</strong>, <strong>columns</strong> and
+    <strong>residues</strong>, each <strong>search</strong>, <strong>TSD marks</strong>,
+    <strong>repeat highlights</strong> and <strong>name colours</strong>. Like the other
+    menus it can be dragged off by its title bar into a floating window.
+  </p>
+  <ul>
+    <li><strong>Checkbox</strong>: switches an item off and back on. An item that is off
+      is kept but neither shown nor used, so Copy, Delete, Realign and the other
+      commands act only on what is on. Switched-off rows and residues follow their
+      sequences if rows are moved or deleted.</li>
+    <li><strong>&rarr;</strong>: goes to the item. Clicking again steps to the next
+      selected row, column range, residue block or search match.</li>
+    <li><strong>x</strong>: removes the item.</li>
+    <li><strong>Clear selection</strong> (or <kbd>Esc</kbd> when no menu or dialog is
+      open) removes the selected rows, columns and residues; highlights stay.
+      <strong>Clear all</strong> removes everything in the list. <strong>Hide all</strong>
+      / <strong>Show all</strong> switches every item off or on.</li>
+    <li><strong>Undo</strong> brings back whatever the last removal, Clear or
+      <kbd>Esc</kbd> took away.</li>
+    <li>Snapshots save the whole list, including which items are off.</li>
   </ul>
 </section>
 

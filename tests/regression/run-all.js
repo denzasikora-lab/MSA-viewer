@@ -1894,6 +1894,283 @@ check('Audit fixes: SPIN region ends, open race, close cancels live, repeats lis
   return { pass: ok, detail: JSON.stringify(out) };
 });
 
+// ---- Search highlights, in-place gap edits, Selections panel (v212) ----
+
+// Alignment with real variation (a Park-Miller generator, not the low bits of an LCG,
+// which cycle and turn every row into long runs of one base).
+function variedFasta(nSeq, nCol, seed = 7, trailingGapRows = 0) {
+  let x = seed;
+  const r = () => { x = (x * 16807) % 2147483647; return x; };
+  const base = Array.from({ length: nCol }, () => 'ACGT'[r() % 4]);
+  let out = '';
+  for (let i = 0; i < nSeq; i++) {
+    let s = base.map(c => (r() % 9 === 0 ? 'ACGT-'[r() % 5] : c));
+    if (i < trailingGapRows) s = s.slice(0, nCol - 3).concat(['-', '-', '-']);
+    out += `>s${i}\n${s.join('')}\n`;
+  }
+  return out;
+}
+
+// Rendered search classes vs an independent oracle (exact, overlapping matches of each
+// enabled search in the degapped row). Returns the number of disagreeing residue spans.
+const SEARCH_MISMATCH_SRC = `(() => {
+  let bad = 0, total = 0; const ex = [];
+  document.querySelectorAll('#alignmentContainer .seq-line[data-seq-index]:not(.consensus-line)').forEach(line => {
+    const i = +line.dataset.seqIndex;
+    const seq = state.seqs[i].seq; const cols = []; let text = '';
+    for (let c = 0; c < seq.length; c++) if (seq[c] !== '-' && seq[c] !== '.') { cols.push(c); text += seq[c].toUpperCase(); }
+    const hits = new Set();
+    const rc = t => t.split('').reverse().map(c => ({ A: 'T', C: 'G', G: 'C', T: 'A' }[c] || c)).join('');
+    state.searchHistory.filter(e => e.enabled !== false && !e.useRegex).forEach(e => {
+      const fwd = String(e.motif).split(':')[0];
+      const m = e.searchValue || (/rev comp/.test(e.strand) ? rc(fwd) : fwd);
+      for (let k = text.indexOf(m); k >= 0; k = text.indexOf(m, k + 1)) for (let j = 0; j < m.length; j++) hits.add(cols[k + j]);
+    });
+    line.querySelectorAll('.seq-data > span[data-pos]').forEach(sp => {
+      const p = +sp.dataset.pos; total++;
+      const dom = [...sp.classList].some(c => c.startsWith('search-hit-'));
+      if (dom !== hits.has(p) || sp.textContent !== (seq[p] || '-')) { bad++; if (ex.length < 3) ex.push([i, p, dom, sp.textContent]); }
+    });
+  });
+  return { bad, total, ex };
+})()`;
+
+check('Search highlights stay on the matching residues through gap tools, typing, undo and drags', async (page) => {
+  await loadFasta(page, variedFasta(40, 300, 7, 10));
+  const out = {};
+  const run = async (label, fn) => {
+    await page.evaluate(fn);
+    await page.waitForTimeout(60);
+    out[label] = await page.evaluate(`(typeof flushPendingSpanRepaint === "function" && flushPendingSpanRepaint()), ${SEARCH_MISMATCH_SRC}`);
+  };
+  await run('search', () => {
+    el('searchInput').value = state.seqs[0].seq.replace(/-/g, '').slice(20, 24);
+    el('searchBothStrands').checked = true;
+    el('searchButton').click();
+  });
+  await page.click('#editToggleButton');
+  await page.click('#editInsertGapOtherButton');
+  await page.click('.seq-line[data-seq-index="3"] .seq-data > span[data-pos="10"]');
+  await page.waitForTimeout(60);
+  out.insOther = await page.evaluate(`(typeof flushPendingSpanRepaint === "function" && flushPendingSpanRepaint()), ${SEARCH_MISMATCH_SRC}`);
+  // Same-width Move drag on a row with trailing gaps (the row patch path, no render)
+  await page.click('#editMoveNoGapsButton');
+  const sp = await page.$('.seq-line[data-seq-index="2"] .seq-data > span[data-pos="40"]');
+  const b = await sp.boundingBox();
+  await page.mouse.move(b.x + 2, b.y + 4); await page.mouse.down();
+  for (let k = 1; k <= 2; k++) { await page.mouse.move(b.x + 2 + k * b.width, b.y + 4); await page.waitForTimeout(50); }
+  // while dragging, the overlay must paint over every cell whose DOM highlight is stale
+  out.overlay = await page.evaluate(() => {
+    const d = state.editDrag; if (!d || !d.overlay) return { overlay: false };
+    let uncovered = 0, checked = 0;
+    const hitsNow = _getSearchHitsForRow(d.rowIndex);
+    document.querySelectorAll(`.seq-line[data-seq-index="${d.rowIndex}"] .seq-data > span[data-pos]`).forEach(sp => {
+      const p = +sp.dataset.pos;
+      if (!!sp.dataset.searchHit === hitsNow.has(p) && sp.textContent === state.seqs[d.rowIndex].seq[p]) return;
+      const r = sp.getBoundingClientRect();
+      for (const L of d.overlay.layers) {
+        if (Math.abs(parseFloat(L.canvas.style.top) - r.top) > 1) continue;
+        const x = (r.left + r.width / 2 - L.left) * devicePixelRatio;
+        if (x < 0 || x >= L.canvas.width) continue;
+        checked++;
+        if (L.ctx.getImageData(x | 0, (r.height / 2 * devicePixelRatio) | 0, 1, 1).data[3] < 200) uncovered++;
+      }
+    });
+    return { overlay: true, checked, uncovered };
+  });
+  await page.mouse.up();
+  await page.waitForTimeout(80);
+  out.drag = await page.evaluate(SEARCH_MISMATCH_SRC);
+  await page.click('#editResidueButton');
+  await page.click('.seq-line[data-seq-index="5"] .seq-data > span[data-pos="22"]');
+  await page.keyboard.press('-');
+  await page.waitForTimeout(60);
+  out.type = await page.evaluate(SEARCH_MISMATCH_SRC);
+  await page.keyboard.press('Control+z');
+  await page.waitForTimeout(80);
+  out.undo = await page.evaluate(SEARCH_MISMATCH_SRC);
+  // A full re-render must keep both-strand (label "X (fwd)") highlights
+  await page.evaluate(() => renderAlignment());
+  out.rerender = await page.evaluate(SEARCH_MISMATCH_SRC);
+  const bad = Object.entries(out).filter(([k, v]) => k === 'overlay' ? (!v.overlay || v.uncovered) : v.bad);
+  const hits = await page.evaluate(() => document.querySelectorAll('[data-search-hit]').length);
+  if (!hits) return { pass: false, detail: 'search painted nothing: ' + JSON.stringify(out) };
+  return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(Object.fromEntries(bad)) : `${hits} hit spans; overlay checked ${out.overlay.checked}` };
+});
+
+check('Search highlights: windowed scroll, restriction sites and regex case survive a redraw', async (page) => {
+  // Windowed: rows built on scroll carry the highlight
+  await loadSyntheticFasta(page, 600, 1200);
+  await setMode(page, 'full');
+  const win = await page.evaluate(async () => {
+    el('searchInput').value = 'GTAC'; el('searchButton').click();
+    const c = el('alignmentContainer');
+    c.scrollTop = c.scrollHeight / 2;
+    _refreshUnifiedWindowOnScroll(c);
+    await new Promise(r => setTimeout(r, 50));
+    const spans = [...document.querySelectorAll('.seq-line[data-seq-index] .seq-data > span[data-pos]')];
+    let want = 0, have = 0;
+    document.querySelectorAll('.seq-line[data-seq-index]:not(.consensus-line)').forEach(line => {
+      const i = +line.dataset.seqIndex; const seq = state.seqs[i].seq;
+      line.querySelectorAll('.seq-data > span[data-pos]').forEach(sp => {
+        const p = +sp.dataset.pos;
+        // GTAC at p..p+3 (no gaps in this data)
+        let hit = false;
+        for (let k = Math.max(0, p - 3); k <= p; k++) if (seq.substr(k, 4) === 'GTAC') hit = true;
+        if (hit) want++;
+        if (hit && sp.dataset.searchHit) have++;
+      });
+    });
+    return { rowsShown: document.querySelectorAll('.seq-line[data-seq-index]').length, want, have, total: spans.length, count: state.searchHistory[0]?.matchCount };
+  });
+  // Restriction-site search (label = enzyme name) and a regex with \w keep their hits after a redraw
+  await loadFasta(page, variedFasta(20, 200, 3));
+  const re = await page.evaluate(() => {
+    state.seqs[4].seq = state.seqs[4].seq.slice(0, 50) + 'GAATTC' + state.seqs[4].seq.slice(56);
+    renderAlignment();
+    el('reSiteManualInput').value = 'EcoRI:GAATTC';
+    searchResEnzyme();
+    const before = document.querySelectorAll('[data-search-hit]').length;
+    renderAlignment();
+    const after = document.querySelectorAll('[data-search-hit]').length;
+    clearAllSearches(true);
+    el('searchRegex').checked = true;
+    el('searchInput').value = 'GAA\\w\\wC';
+    el('searchButton').click();
+    const rx = state.searchHistory[0]?.matchCount || 0;
+    return { before, after, rx };
+  });
+  const ok = win.want > 0 && win.have === win.want && win.count > 0 && re.before >= 6 && re.after === re.before && re.rx >= 1;
+  return { pass: ok, detail: JSON.stringify({ win, re }) };
+});
+
+check('Gap tools: in-place update matches a full redraw, and takes the fast path', async (page) => {
+  const snapSrc = `(() => {
+    const out = [];
+    document.querySelectorAll('#alignmentContainer .seq-line').forEach(line => {
+      const kind = line.classList.contains('scale-ruler-line') ? 'R' : line.classList.contains('consensus-line') ? 'C' : 'S' + line.dataset.seqIndex;
+      const data = line.querySelector('.seq-data'); if (!data) return;
+      if (kind === 'R') { out.push(kind + data.textContent + data.dataset.scale); return; }
+      out.push(kind + [...data.children].map(sp => (sp.dataset.pos ?? '_') + sp.textContent
+        + [...sp.classList].filter(c => !/^(nuc-|edit-active)/.test(c)).sort().join('.') + (sp.dataset.searchHit || '')).join(' '));
+    });
+    document.querySelectorAll('#alignmentContainer > .block-block').forEach(b => out.push('B' + b.style.getPropertyValue('--cols')));
+    return out;
+  })()`;
+  const results = [];
+  for (const mode of ['full', 'block']) {
+    for (const [tool, trailing] of [['insertGapOther', 0], ['insertGapAll', 30], ['insertGapSeq', 0], ['deleteGapOther', 0]]) {
+      await loadFasta(page, variedFasta(40, 157, 11, trailing));
+      await setMode(page, mode);
+      const r = await page.evaluate(async ({ tool, snapSrc }) => {
+        el('searchInput').value = state.seqs[4].seq.replace(/-/g, '').slice(30, 34); el('searchButton').click();
+        if (!state.editModeActive) el('editToggleButton').click();
+        if (tool.startsWith('delete')) {
+          state.seqs.forEach(s => { s.seq = s.seq.slice(0, 40) + '-' + s.seq.slice(40); });
+          refreshAllGaplessPositions(); renderAlignment();
+        }
+        let patched = null;
+        const orig = window.patchColumnsInPlace;
+        window.patchColumnsInPlace = function (...a) { return (patched = orig.apply(this, a)); };
+        const t0 = performance.now();
+        handleGeneDocGapToolClick(7, 40, tool);
+        const ms = performance.now() - t0;
+        window.patchColumnsInPlace = orig;
+        flushPendingSpanRepaint();
+        const a = eval(snapSrc);
+        renderAlignment();
+        const b = eval(snapSrc);
+        const diff = a.findIndex((x, i) => x !== b[i]);
+        return { patched, ms: Math.round(ms), same: a.length === b.length && diff < 0, diffLine: diff };
+      }, { tool, snapSrc });
+      results.push({ mode, tool, trailing, ...r });
+    }
+  }
+  const bad = results.filter(r => !r.same || !r.patched);
+  return { pass: bad.length === 0, detail: bad.length ? JSON.stringify(bad) : results.map(r => `${r.mode}/${r.tool}:${r.ms}ms`).join(' ') };
+});
+
+check('Selections panel: lists every kind, on/off, remove + undo, Esc, snapshot round trip', async (page) => {
+  await loadFasta(page, variedFasta(25, 200, 5));
+  const panel = () => page.evaluate(() => ({
+    shown: getComputedStyle(el('selections-menu-section')).display !== 'none',
+    keys: [...document.querySelectorAll('#selectionsList .sel-item')].map(r => (r.classList.contains('is-off') ? '-' : '+') + r.dataset.key.replace(/^search:.*/, 'search'))
+  }));
+  const settle = () => page.waitForTimeout(80);
+  const log = {};
+  log.fresh = await panel();
+  const names = await page.$$('.seq-name[data-seq-index]');
+  await names[2].click({ modifiers: ['Control'] });
+  await names[6].click({ modifiers: ['Control'] });
+  await page.evaluate(() => {
+    [20, 21, 60].forEach(c => state.selectedColumns.add(c)); updateColumnSelections();
+    state.selectedNucs.set(3, new Set([5, 6, 7])); scheduleNucSelectionRefresh();
+    el('searchInput').value = state.seqs[0].seq.replace(/-/g, '').slice(10, 14); el('searchBothStrands').checked = false; el('searchButton').click();
+    colourState.mappings.set(state.seqs[1].header, '#ff0000'); applyColourToSeqNames(colourState.mappings);
+  });
+  await settle();
+  log.all = await panel();
+  // rows off: kept, not live (the menu opens on hover, like the others)
+  const openPanel = async () => { await page.hover('#selections-menu-section .section-header'); await page.waitForTimeout(200); };
+  await openPanel();
+  await page.click('#selectionsList .sel-item[data-key="rows"] input');
+  await page.click('#selectionsList .sel-item[data-key^="search:"] input');
+  await settle();
+  log.off = await panel();
+  log.offState = await page.evaluate(() => ({ live: state.selectedRows.size, hits: document.querySelectorAll('[data-search-hit]').length }));
+  // snapshot keeps on/off; Clear all then Undo restores; reload restores
+  const payload = await page.evaluate(() => JSON.stringify(_buildSnapshotPayload()));
+  await page.evaluate(() => clearAllSelections());
+  await settle();
+  log.cleared = await panel();
+  await page.evaluate(() => undoSelectionsRemoval());
+  await page.waitForTimeout(150);
+  log.undone = await panel();
+  await page.evaluate(async (p) => { _loadSnapshotPayload(JSON.parse(p)); await new Promise(r => setTimeout(r, 1200)); }, payload);
+  log.reloaded = await panel();
+  // turning rows back on after reload selects the same sequences
+  await openPanel();
+  await page.click('#selectionsList .sel-item[data-key="rows"] input');
+  await settle();
+  log.rowsBack = await page.evaluate(() => [...state.selectedRows].sort((a, b) => a - b));
+  // Esc with nothing open clears rows/columns/residues but not highlights; Undo restores
+  await page.mouse.move(700, 600); await page.waitForTimeout(400);   // menus close 120 ms after the pointer leaves
+  await page.keyboard.press('Escape');
+  await settle();
+  log.esc = await panel();
+  await page.evaluate(() => undoSelectionsRemoval());
+  await settle();
+  log.escUndo = await panel();
+  const want = {
+    all: ['+rows', '+cols', '+nucs', '+search', '+names'],
+    off: ['-rows', '+cols', '+nucs', '-search', '+names'],
+    esc: ['-search', '+names'],
+    escUndo: ['+rows', '+cols', '+nucs', '-search', '+names'],
+  };
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  const ok = !log.fresh.shown && log.all.shown && same(log.all.keys, want.all) && same(log.off.keys, want.off)
+    && log.offState.live === 0 && log.offState.hits === 0 && log.cleared.keys.length === 0
+    && same(log.undone.keys, want.off) && same(log.reloaded.keys, want.off) && same(log.rowsBack, [2, 6])
+    && same(log.esc.keys, want.esc) && same(log.escUndo.keys, want.escUndo);
+  return { pass: ok, detail: ok ? '' : JSON.stringify(log) };
+});
+
+check('Canvas: switching a search or selection off in the Selections panel redraws', async (page) => {
+  await loadFasta(page, makeFasta(30, 300));
+  await page.evaluate(() => { el('searchInput').value = 'GTAC'; el('searchButton').click(); });
+  await setMode(page, 'canvas');
+  const yellow = () => page.evaluate(() => {
+    const c = document.getElementById('alignmentCanvas'); const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let y = 0; for (let i = 0; i < d.length; i += 4) if (d[i] > 240 && d[i + 1] > 240 && d[i + 2] < 60) y++; return y;
+  });
+  await page.waitForTimeout(300);
+  const on = await yellow();
+  await page.evaluate(() => setSelectionItemOn('search:' + state.searchHistory[0].className, false));
+  await page.waitForTimeout(200);
+  const off = await yellow();
+  return { pass: on > 1000 && off === 0, detail: `highlighted pixels ${on} -> ${off}` };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
