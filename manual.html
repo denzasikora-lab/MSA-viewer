@@ -433,6 +433,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="gs-updates">1.6 Recent Updates</h3>
   <p>Recent updates added or improved the following features:</p>
   <ul>
+    <li><strong>Overlapping marks</strong> - search hits, TSD marks, repeats, group letters, trim and selections no longer hide each other: each keeps a visible property (fill, bold second font, italic, line, tint), in both view types. TSD marks and repeats follow their residues through edits. See §7.6.</li>
     <li><strong>Selections panel</strong> - one list of every selection and highlight (rows, columns, residues, searches, TSD marks, repeats, name colours), each with on/off, go-to and remove; Clear all with Undo; <kbd>Esc</kbd> clears the selection; saved in snapshots. See §7.6.</li>
     <li><strong>Search highlights follow edits</strong> - highlights stay on the matching residues after gap insertion, drags, typing and undo; both-strand and restriction-site highlights no longer disappear after a redraw. Gap insertion and deletion in Edit Mode update the view in place (about four times faster on a 200 &times; 1000 alignment).</li>
     <li><strong>Clustering panel</strong> - three separate instruments: <em>Group by k-mer</em> (everyone assigned by overall resemblance), <em>Find SNP groups</em> (exclusive diagnostic columns; leftovers unassigned), and <em>Show 2D</em> (row × column rectangles). Results open in the Group explorer; a Groups menu appears to dock it. See §4.</li>
@@ -1340,6 +1341,19 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       / <strong>Show all</strong> switches every item off or on.</li>
     <li><strong>Undo</strong> brings back whatever the last removal, Clear or
       <kbd>Esc</kbd> took away.</li>
+    <li><strong>Marks that meet on one residue all stay visible.</strong> The fill goes, in
+      order, to a search hit, then a TSD mark (colour style), then a repeat highlight, then a
+      group letter (SNP groups), over the shading or colour scheme. The others keep their own
+      text property: TSD marks are always <strong>bold in a second (sans-serif) font</strong>,
+      restriction sites are <em>italic</em>, a covered repeat becomes a line over the letter, a
+      covered group letter keeps its group colour as text colour, and trimmed residues are
+      struck through. Selections (rows, columns, residues, the edit cell) are tints laid over
+      whatever the residue shows. Where one mark covers another's colour, its item here says
+      so, and a search that covers existing marks says so in its message.</li>
+    <li>Name cells: a Colour Names colour fills the cell; a group colour fills it when there is
+      no Colour Names colour, and otherwise shows as a stripe on the left edge.</li>
+    <li>TSD marks and repeat highlights stay on their residues when gaps are inserted or rows
+      are deleted, moved or sorted, and after Undo.</li>
     <li>Snapshots save the whole list, including which items are off, and loading one
       gives back exactly that list. Switched-off columns move with inserted or deleted
       columns; switched-off rows are found again after Undo by sequence name.</li>

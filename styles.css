@@ -1745,11 +1745,15 @@ span.ge-col-flash {
     box-sizing: border-box;
 }
 
+/* Trim preview: tint plus strike-through (the residues will be removed); the strike stays
+   visible when a search, TSD or SNP mark owns the fill */
 .seq-line:not(.consensus-line) .seq-data span.trim-left {
     background-color: rgba(255, 107, 107, 0.28) !important;
+    text-decoration-line: line-through;
 }
 .seq-line:not(.consensus-line) .seq-data span.trim-right {
     background-color: rgba(78, 205, 196, 0.28) !important;
+    text-decoration-line: line-through;
 }
 .consensus-line .seq-data span.trim-left,
 .consensus-line .seq-data span.trim-right {
@@ -2273,8 +2277,7 @@ body.edit-dragging .seq-data {
 .seq-data span.edit-active-cell {
     outline: 1px solid #1976d2;
     outline-offset: -1px;
-    background-color: #e3f2fd !important;
-    color: #111 !important;
+    --t-edit: linear-gradient(rgba(25, 118, 210, 0.22), rgba(25, 118, 210, 0.22));
 }
 .black {
     background-color: var(--blackShading, #000) !important;
@@ -2348,9 +2351,21 @@ body.edit-dragging .seq-data {
     color: #000 !important;
     font-weight: bold;
 }
-.selected .seq-data span {
-    background-color: #e0ffe0 !important;
-    color: black !important;
+/* Selections are tints over whatever the residue shows (shading, colour scheme, search, SNP
+   letters...), never a fill that would hide it. Each kind sets a variable; one rule stacks them. */
+.seq-line.selected {
+    --t-row: linear-gradient(rgba(40, 167, 69, 0.30), rgba(40, 167, 69, 0.30));
+}
+/* Only on selected residues: a rule on every residue made the browser style 450k spans with
+   four image layers on each redraw. Consensus row included (a selected column shows there). */
+.seq-line.selected .seq-data > span[data-pos],
+.seq-data > span.column-selected,
+.seq-data > span.nuc-selected,
+.seq-data > span.edit-active-cell {
+    background-image: var(--t-edit, none), var(--t-nuc, none), var(--t-col, none), var(--t-row, none);
+}
+.seq-line.selected .seq-name {
+    background-image: var(--t-row);
 }
 
 /* Column highlight: left and right pseudo-element bars only, no horizontal lines */
@@ -2963,13 +2978,11 @@ span.column-highlighted::after {
 .context-menu div:hover {
     background: #f0f0f0;
 }
-/* Make nucleotide selection always visible and not glitchy */
+/* Residue selection: yellow tint plus a thin frame, over whatever the residue shows */
 .seq-line.selected .seq-data span.nuc-selected,
 .seq-data span.nuc-selected {
-    background-color: #ffe600 !important; /* bright yellow */
-    color: #222 !important;
-    box-shadow: none !important; /* Remove box-shadow to fix edge glitch */
-    border-radius: 2px; /* Optional: slightly rounded corners */
+    --t-nuc: linear-gradient(rgba(255, 213, 0, 0.55), rgba(255, 213, 0, 0.55));
+    box-shadow: inset 0 0 0 1px rgba(140, 100, 0, 0.9) !important;
 }
 
 /* Scale ruler styling */
@@ -3695,8 +3708,7 @@ table.stats-mx.heat td:hover { outline: 2px solid #111; outline-offset: -2px; }
    per-column <style> rule (.seq-data > span[data-pos="N"], appended to <head>) won over,
    e.g. the selected-row background. script.js toggles the class per changed column. */
 .seq-data > span.column-selected {
-    background-color: var(--column-selected-bg) !important;
-    color: #000 !important;
+    --t-col: linear-gradient(rgba(25, 118, 210, 0.28), rgba(25, 118, 210, 0.28));
 }
 /* Rows off screen skip style, layout and paint (non-windowed views, where every row is in
    the page). At 316k residue spans a full layout cost ~2 s, and zoom, Highlight diffs, sort
@@ -3967,4 +3979,11 @@ table.stats-mx.heat td:hover { outline: 2px solid #111; outline-offset: -2px; }
     margin: 0;
     width: 12px;
     height: 12px;
+}
+
+.sel-note {
+    display: block;
+    color: #8a5a00;
+    font-size: 10px;
+    white-space: normal;
 }

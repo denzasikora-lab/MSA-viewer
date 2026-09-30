@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v215';
+const BUILD_TAG = 'v216';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -307,26 +307,7 @@ function _removeSearchStyle(entry) {
 // spans whose highlight actually changes.
 function reapplySearchHighlights() {
     (state.searchHistory || []).forEach(_ensureSearchStyle);
-    if (!alignmentContainer || isCanvasMode() || document.getElementById('modeReads')?.checked) {
-        if (isCanvasMode()) _canvasState.scheduleDraw?.();
-        return;
-    }
-    const any = state.searchHistory?.length > 0;
-    alignmentContainer.querySelectorAll('.seq-line[data-seq-index]:not(.consensus-line)').forEach(row => {
-        const index = parseInt(row.dataset.seqIndex, 10);
-        if (!Number.isInteger(index) || index < 0 || index >= state.seqs.length) return;
-        const hits = any ? _getSearchHitsForRow(index) : _EMPTY_HITS;
-        const dataEl = row.querySelector('.seq-data');
-        if (!dataEl) return;
-        if (!hits.size && !dataEl.querySelector('[data-search-hit]')) return;
-        const spans = dataEl.children;
-        for (let i = 0; i < spans.length; i++) {
-            const span = spans[i];
-            const p = span.dataset.pos;
-            if (p === undefined) continue;
-            _setSpanSearchClass(span, hits.get(+p));
-        }
-    });
+    syncResidueOverlays();
 }
 
 function _setSpanSearchClass(span, entry) {
@@ -340,6 +321,276 @@ function _setSpanSearchClass(span, entry) {
     } else {
         delete span.dataset.searchHit;
     }
+}
+
+// ---- Residue overlay: every mark a residue can carry, combined by one rule ----
+// Search hits, TSD marks, repeat highlights and SNP-group letters used to be drawn by three
+// mechanisms (CSS classes with !important, inline !important styles, painting once), so which
+// one showed was decided by selector specificity and by which feature ran last. Now one
+// function decides, for DOM and Canvas alike:
+//   fill (first wins): search hit > TSD colour > repeat tint > SNP letter
+//   text channels, always added: TSD -> bold + a second font (sans-serif), plus underline for
+//   the "bold" style; restriction site -> italic; trimmed residue -> line-through.
+//   A mark whose fill is taken keeps a text channel: a repeat -> overline in its colour, an
+//   SNP letter -> text in the group colour, bold.
+// Selections are not fills: they are tints drawn over whatever is there (CSS background-image
+// in the DOM, translucent rectangles in Canvas).
+const _OVERLAY_SANS = "Arial, Helvetica, 'Liberation Sans', sans-serif";
+
+function _overlayRowCtx(row) {
+    const q = state.seqs[row];
+    const ctx = {
+        row,
+        header: q?.header,
+        hits: state.searchHistory?.length ? _getSearchHitsForRow(row) : _EMPTY_HITS,
+        tsd: state.tsdMarks.size ? state.tsdMarks.get(row) : null,
+        rep: state.repeatHighlights?.size ? _repeatColsForRow(row) : _EMPTY_HITS,
+        snp: !!state._clusterCharMap,
+        trim: state.trimBoundaries || null
+    };
+    ctx.any = !!(ctx.hits.size || ctx.tsd?.size || ctx.rep.size || ctx.snp);
+    return ctx;
+}
+
+function _tsdColour() {
+    return /^#[0-9A-Fa-f]{6}$/.test(state.tsdMarkColor || '') ? state.tsdMarkColor : '#ffd54f';
+}
+
+// null, or { bg, fg, bold, sans, italic, deco: [], decoColor, titles: [], hit, tsd, rep, snp, covered: [] }
+function residueOverlay(ctx, pos, base) {
+    if (!ctx.any) return null;
+    const hit = ctx.hits.get(pos);
+    const tsd = !!ctx.tsd?.has(pos);
+    const rep = ctx.rep.get(pos);
+    const snp = ctx.snp ? _clusterCharDiag(ctx.header, pos, base) : null;
+    if (!hit && !tsd && !rep && !snp) return null;
+    const o = { bg: null, fg: null, bold: false, sans: false, italic: false, deco: [], decoColor: null,
+        titles: [], hit: hit || null, tsd, rep: rep || null, snp, covered: [] };
+    if (hit) {
+        o.bg = hit.color || '#ffcc00';
+        o.fg = '#000';
+        o.bold = true;
+        if (/restriction/.test(hit.strand || '')) o.italic = true;
+    }
+    if (tsd) {
+        o.bold = true;
+        o.sans = true;
+        o.titles.push('TSD');
+        if (state.tsdMarkStyle === 'color') {
+            if (!o.bg) { o.bg = _tsdColour(); o.fg = '#111'; } else o.covered.push('tsd');
+        } else if (state.tsdMarkStyle === 'bold') {
+            o.deco.push('underline');
+        }
+    }
+    if (rep) {
+        o.titles.push('repeat region');
+        // the tint is light: dark text, or white text from dark shading becomes unreadable
+        if (!o.bg) { o.bg = rep + '66'; o.fg = '#111'; }
+        else { o.deco.push('overline'); o.decoColor = rep; o.covered.push('repeat'); }
+    }
+    if (snp) {
+        o.titles.push(snp.title);
+        if (!o.bg) { o.bg = snp.bg; o.fg = snp.fg; if (snp.bold) o.bold = true; }
+        else { o.fg = snp.color; o.bold = true; o.covered.push('snp'); }
+    }
+    if (o.deco.length && ctx.trim && (pos <= ctx.trim.leftTrimEnd || pos >= ctx.trim.rightTrimStart)) o.deco.push('line-through');
+    // Same marks -> same look: the class list is computed once per combination
+    o.key = (hit ? hit.className : '') + '|' + (tsd ? state.tsdMarkStyle + _tsdColour() : '') + '|' + (rep || '')
+        + '|' + (snp ? snp.bg + snp.fg + snp.color : '') + '|' + o.deco.join(',');
+    return o;
+}
+
+// The span's whole inline style: the overlay owns it (it was shared by three painters)
+function overlayCss(o) {
+    if (!o) return '';
+    let s = '';
+    if (o.bg) s += `background-color:${o.bg} !important;`;
+    if (o.fg) s += `color:${o.fg} !important;`;
+    if (o.bold) s += 'font-weight:700 !important;';
+    if (o.italic) s += 'font-style:italic !important;';
+    // A second font has other glyph widths: lock the box to the grid's residue width
+    if (o.sans) s += `font-family:${_OVERLAY_SANS} !important;width:var(--res-w) !important;text-align:center;`;
+    if (o.deco.length) s += `text-decoration-line:${o.deco.join(' ')} !important;` + (o.decoColor ? `text-decoration-color:${o.decoColor} !important;` : '');
+    return s;
+}
+
+// Each distinct look becomes one generated CSS class, created the first time it is needed.
+// Marked residues share a handful of looks, so this is a few rules instead of a style
+// attribute the browser has to parse on every marked residue (that doubled redraw time).
+// The selector outranks the colour-scheme rules (#alignmentContainer.color-scheme-x ...),
+// the shading classes and the trim tint, which all use !important too.
+const _ovClassByDecl = new Map();
+let _ovSheet = null;
+function _overlayStyleClass(o) {
+    const decl = overlayCss(o);
+    if (!decl) return '';
+    let cls = _ovClassByDecl.get(decl);
+    if (!cls) {
+        cls = 'ov-' + _ovClassByDecl.size;
+        if (!_ovSheet) {
+            const st = document.createElement('style');
+            st.id = 'residueOverlayStyles';
+            document.head.appendChild(st);
+            _ovSheet = st.sheet;
+        }
+        _ovSheet.insertRule(`#alignmentContainer .seq-line .seq-data > span.${cls}.${cls} { ${decl} }`, _ovSheet.cssRules.length);
+        _ovClassByDecl.set(decl, cls);
+    }
+    return cls;
+}
+
+// Classes the overlay adds: its look, plus the ones tests and CSS use to find marks
+const _ovClassListMemo = new Map();
+function _overlayClassList(o) {
+    if (!o) return '';
+    let memo = _ovClassListMemo.get(o.key);
+    if (memo === undefined) { memo = _overlayClassListNow(o); _ovClassListMemo.set(o.key, memo); }
+    return memo;
+}
+// the overlay's own classes on a span (search-hit-*, tsd-mark*, diagnostic-mutation, ov-*)
+const _OV_CLASS_RE = /^(ov-\d+|search-hit-\w+|tsd-mark(-bold|-color)?|diagnostic-mutation)$/;
+function _overlayClassesOn(span) {
+    const out = [];
+    for (const c of span.classList) if (_OV_CLASS_RE.test(c)) out.push(c);
+    return out;
+}
+function _overlayClassListNow(o) {
+    let c = ' ' + _overlayStyleClass(o);
+    if (o.hit) c += ' ' + o.hit.className;
+    if (o.tsd) c += ' tsd-mark' + (state.tsdMarkStyle === 'bold' ? ' tsd-mark-bold' : state.tsdMarkStyle === 'color' ? ' tsd-mark-color' : '');
+    if (o.snp) c += ' diagnostic-mutation';
+    return c.trim();
+}
+
+// Attributes that go with the overlay (not classes: the caller sets className)
+function _applyOverlayAttrs(span, o) {
+    const title = o && o.titles.length ? o.titles.join(' | ') : '';
+    if (title) { if (span.title !== title) span.title = title; }
+    else if (span.hasAttribute('title')) span.removeAttribute('title');
+    if (o?.hit) span.dataset.searchHit = o.hit.className; else if (span.dataset.searchHit !== undefined) delete span.dataset.searchHit;
+    if (o?.rep) span.dataset.repeatHl = '1'; else if (span.dataset.repeatHl) delete span.dataset.repeatHl;
+}
+
+// Class part only, for passes that do not recompute the base class
+function _syncOverlayClasses(span, o) {
+    const want = _overlayClassList(o);
+    const have = _overlayClassesOn(span);
+    if (want === have.join(' ')) return;
+    if (have.length) span.classList.remove(...have);
+    if (want) span.classList.add(...want.split(' '));
+}
+
+// Bring every rendered residue span in line with the overlay (after a search, a repeat or
+// group change). Rows with nothing to show and nothing shown are skipped.
+function syncResidueOverlays() {
+    if (!alignmentContainer) return;
+    if (isCanvasMode()) { _canvasState.scheduleDraw?.(); return; }
+    if (document.getElementById('modeReads')?.checked) return;
+    alignmentContainer.querySelectorAll('.seq-line[data-seq-index]:not(.consensus-line)').forEach(line => {
+        const row = parseInt(line.dataset.seqIndex, 10);
+        if (!(row >= 0) || row >= state.seqs.length) return;
+        const data = line.querySelector('.seq-data');
+        if (!data) return;
+        const ctx = _overlayRowCtx(row);
+        if (!ctx.any && !data.querySelector('[class*=" ov-"]')) return;
+        const seq = state.seqs[row].seq;
+        for (const span of data.children) {
+            const p = span.dataset.pos;
+            if (p === undefined) continue;
+            const o = ctx.any ? residueOverlay(ctx, +p, seq[+p] || '-') : null;
+            if (!o && !span.className.includes(' ov-')) continue;
+            _syncOverlayClasses(span, o);
+            _applyOverlayAttrs(span, o);
+        }
+    });
+}
+
+// Grid residue width for the second font (spans have no fixed width: a Courier glyph sets it).
+// Taken from the font metrics once per font size: measuring a span would force a layout of the
+// whole alignment on every redraw, and resetting the variable restyles every residue.
+let _resWidthFor = null;
+let _resWidthCtx = null;
+function _syncResidueWidthVar() {
+    if (!alignmentContainer) return;
+    const inline = alignmentContainer.style.fontSize;
+    if (_resWidthFor !== null && _resWidthFor === (inline || 'default')) return;
+    _resWidthFor = inline || 'default';
+    const size = inline || getComputedStyle(alignmentContainer).fontSize;
+    if (!_resWidthCtx) _resWidthCtx = document.createElement('canvas').getContext('2d');
+    _resWidthCtx.font = `${size} "Courier New", monospace`;
+    alignmentContainer.style.setProperty('--res-w', _resWidthCtx.measureText('M').width + 'px');
+}
+
+// ---- Telling the user where one mark covers another's colour ----
+// residueOverlay records, per residue, which marks lost the fill (o.covered). This counts
+// them over the whole alignment, only where more than one kind of mark exists.
+let _coverageCache = null;
+function overlayCoverage() {
+    const c = _coverageCache;
+    if (c && c.search === _searchLayerVersion && c.repeat === _repeatLayerVersion && c.rh === state.repeatHighlights
+        && c.rhn === (state.repeatHighlights?.size || 0) && c.tsd === state._tsdMarks && c.tsdStyle === state.tsdMarkStyle
+        && c.snp === state._clusterCharMap && c.trim === state.trimBoundaries
+        && c.seqs.length === state.seqs.length && c.seqs.every((q, i) => q === state.seqs[i].seq)) return c.out;
+    const out = _overlayCoverageNow();
+    _coverageCache = { out, search: _searchLayerVersion, repeat: _repeatLayerVersion, rh: state.repeatHighlights,
+        rhn: state.repeatHighlights?.size || 0, tsd: state._tsdMarks, tsdStyle: state.tsdMarkStyle,
+        snp: state._clusterCharMap, trim: state.trimBoundaries, seqs: state.seqs.map(q => q.seq) };
+    return out;
+}
+function _overlayCoverageNow() {
+    const out = { tsd: 0, repeat: 0, snp: 0 };
+    const kinds = (state.searchHistory?.length ? 1 : 0) + (state.tsdMarks.size ? 1 : 0)
+        + (state.repeatHighlights?.size ? 1 : 0) + (state._clusterCharMap ? 1 : 0);
+    if (kinds < 2) return out;
+    const snpCols = state._clusterCharMap ? Object.keys(state._clusterCharMap).map(Number) : [];
+    state.seqs.forEach((q, row) => {
+        const ctx = _overlayRowCtx(row);
+        if (!ctx.any) return;
+        const cols = new Set([...ctx.hits.keys(), ...(ctx.tsd || []), ...ctx.rep.keys(), ...snpCols]);
+        cols.forEach(pos => {
+            const o = residueOverlay(ctx, pos, q.seq[pos] || '-');
+            o?.covered.forEach(k => { out[k]++; });
+        });
+    });
+    return out;
+}
+
+// One short sentence for the message line, or ''
+function overlayCoverageSentence(cov = overlayCoverage()) {
+    const parts = [];
+    if (cov.tsd) parts.push(`${cov.tsd} TSD residue${cov.tsd === 1 ? '' : 's'} (kept bold, second font)`);
+    if (cov.repeat) parts.push(`${cov.repeat} repeat residue${cov.repeat === 1 ? '' : 's'} (kept as an overline)`);
+    if (cov.snp) parts.push(`${cov.snp} group letter${cov.snp === 1 ? '' : 's'} (kept as coloured text)`);
+    return parts.length ? 'Colour covered on ' + parts.join(', ') : '';
+}
+
+// ---- Name cells: Colour Names and SNP-group colours, one painter ----
+// Colour Names own the fill; a group colour is the fill when there is no Colour Name, and a
+// stripe on the left edge when there is, so both stay visible whichever ran first.
+function nameCellLook(row) {
+    const h = state.seqs[row]?.header;
+    if (!h) return null;
+    const nc = colourState?.mappings?.get(h) || null;
+    const g = state.clusterMap ? state.clusterMap[h] : undefined;
+    const gc = g && !g.paintOff ? g.color : null;
+    if (!nc && !gc) return g?.paintOff ? { title: (g.name ? g.name + ' (paint off)' : '') } : null;
+    if (nc) return { bg: nc, fg: '#000', stripe: gc, title: `Color: ${nc}` + (gc && g.name ? ` | ${g.name}` : ''), group: !!gc };
+    return { bg: gc, fg: '#000', stripe: null, title: g.name || '', group: true };
+}
+
+function paintNameCells() {
+    document.querySelectorAll('.seq-name[data-seq-index]').forEach(el => {
+        if (el.closest('.consensus-line, .scale-ruler-line')) return;
+        const row = parseInt(el.dataset.seqIndex, 10);
+        const look = row >= 0 ? nameCellLook(row) : null;
+        const css = look && look.bg
+            ? `background-color: ${look.bg} !important; color: ${look.fg} !important; font-weight: bold !important;`
+              + (look.stripe ? ` box-shadow: inset 6px 0 0 ${look.stripe};` : '')
+            : '';
+        if ((el.getAttribute('style') || '') !== css) { if (css) el.setAttribute('style', css); else el.removeAttribute('style'); }
+        el.title = look?.title || '';
+        el.classList.toggle('cluster-colored', !!look?.group);
+    });
 }
 
 // ---- Repeat highlights: derived per row, like search hits ----
@@ -435,19 +686,7 @@ function _setSpanRepeatPaint(span, color) {
 
 // Bring every rendered residue span in line with the repeat layer
 function syncRepeatPaint() {
-    if (!alignmentContainer) return;
-    if (isCanvasMode()) { _canvasState.scheduleDraw?.(); return; }
-    alignmentContainer.querySelectorAll('.seq-line[data-seq-index]:not(.consensus-line)').forEach(line => {
-        const row = parseInt(line.dataset.seqIndex, 10);
-        if (!(row >= 0)) return;
-        const cols = _repeatColsForRow(row);
-        const data = line.querySelector('.seq-data');
-        if (!data || (!cols.size && !data.querySelector('[data-repeat-hl]'))) return;
-        for (const span of data.children) {
-            const p = span.dataset.pos;
-            if (p !== undefined) _setSpanRepeatPaint(span, cols.get(+p));
-        }
-    });
+    syncResidueOverlays();
 }
 
 // ---- Marks tied to residues, not to (row, column) ----
@@ -582,8 +821,15 @@ function _rebuildClusterCharMap() {
             (feats || []).forEach(feature => {
                 const pos0 = feature.pos - 1 + colOffset;
                 if (!map[pos0]) map[pos0] = [];
+                // How many sequences of the other groups share this letter (tooltip)
+                let leak = 0, others = 0;
+                state.clusterResults.clusters.forEach((other, oi) => {
+                    if (oi === clusterIdx) return;
+                    (other.sequences || []).forEach(sq => { others++; if (sq.seq && sq.seq[pos0] === feature.char) leak++; });
+                });
                 map[pos0].push({
-                    color, char: feature.char, headers, isPerfect, isCloudy, clusterName: name
+                    color, char: feature.char, headers, isPerfect, isCloudy, clusterName: name,
+                    leak: others ? { count: leak, total: others, percent: Math.round(leak / others * 100) } : null
                 });
             });
         };
@@ -594,7 +840,8 @@ function _rebuildClusterCharMap() {
     state._clusterCharMap = map;
 }
 
-function _clusterCharPaint(header, pos, base) {
+// The SNP-letter mark of one residue, or null: { bg, fg, bold, color, title }
+function _clusterCharDiag(header, pos, base) {
     const list = state._clusterCharMap && state._clusterCharMap[pos];
     if (!list || !list.length) return null;
     const bu = String(base || '').toUpperCase();
@@ -609,39 +856,16 @@ function _clusterCharPaint(header, pos, base) {
     if (!diag) return null;
     const rgb = hexToRgb(diag.color);
     const alpha = diag.isPerfect ? 1 : 0.72;
-    const fg = diag.isPerfect ? '#fff' : '#111';
-    const weight = diag.isPerfect ? 'bold' : '600';
     const kind = diag.isPerfect ? 'diagnostic' : (diag.isCloudy ? 'shared' : 'partial');
-    const title = `${diag.clusterName}: ${kind} ${diag.char}`;
-    const style = `background-color:rgba(${rgb.r},${rgb.g},${rgb.b},${alpha}) !important;color:${fg} !important;font-weight:${weight} !important;`;
-    return { style, title, isPerfect: diag.isPerfect };
+    let title = `${diag.clusterName}: ${kind} ${diag.char}`;
+    if (diag.leak) title += ` [leaks to ${diag.leak.count}/${diag.leak.total} in other clusters (${diag.leak.percent}%)]`;
+    return { bg: `rgba(${rgb.r},${rgb.g},${rgb.b},${alpha})`, fg: diag.isPerfect ? '#fff' : '#333',
+        bold: diag.isPerfect, color: diag.color, title };
 }
 
 function applyClusterVisualsFromState() {
-    if (!state.clusterMap) return;
     if (document.getElementById('modeCanvas')?.checked || document.getElementById('modeReads')?.checked) return;
-
-    document.querySelectorAll('.seq-name[data-seq-index]').forEach((nameEl) => {
-        const seqIdx = parseInt(nameEl.dataset.seqIndex, 10);
-        if (!Number.isInteger(seqIdx) || seqIdx < 0 || seqIdx >= state.seqs.length) return;
-        const header = state.seqs[seqIdx].header;
-        if (state.clusterMap[header] === undefined) return;
-        const { color, name, paintOff } = state.clusterMap[header];
-        if (paintOff) {
-            nameEl.style.removeProperty('background-color');
-            nameEl.style.removeProperty('color');
-            nameEl.style.removeProperty('font-weight');
-            nameEl.classList.remove('cluster-colored');
-            nameEl.title = name ? (name + ' (paint off)') : '';
-            return;
-        }
-        nameEl.style.setProperty('background-color', color, 'important');
-        nameEl.style.setProperty('color', '#000000', 'important');
-        nameEl.style.setProperty('font-weight', 'bold', 'important');
-        nameEl.title = name;
-        nameEl.classList.add('cluster-colored');
-    });
-    highlightDiagnosticMutations();
+    paintNameCells();
 }
 
 function _syncSelectionDomFromState() {
@@ -4304,8 +4528,9 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     // Glyph cache: pre-rendered (char, bg-color, fg-color) -> off-screen canvas
     // Turns fillRect()+fillText() into a single drawImage() per cell after warm-up
     const _glyphCache = new Map();
-    function _makeGlyph(ch, bg, fg) {
-        const k = ch + '| ' + (bg||' ') + '| ' + fg + '| ' + dpr;
+    // variant: '' or the overlay's font ('b' bold, 'i' italic, 's' second font), same cell size
+    function _makeGlyph(ch, bg, fg, variant = '') {
+        const k = ch + '| ' + (bg||' ') + '| ' + fg + '| ' + dpr + '| ' + variant;
         let g = _glyphCache.get(k);
         if (!g) {
             g = document.createElement('canvas');
@@ -4313,9 +4538,14 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             g.height = Math.ceil(CHAR_H * dpr);
             const c2 = g.getContext('2d');
             c2.setTransform(dpr, 0, 0, dpr, 0, 0);
-            c2.font = fontStr; c2.textBaseline = 'top';
+            const sans = variant.includes('s');
+            c2.font = (variant.includes('i') ? 'italic ' : '') + (variant.includes('b') ? 'bold ' : '')
+                + (sans ? fontSizePx + 'px ' + _OVERLAY_SANS : fontStr);
+            c2.textBaseline = 'top';
             if (bg) { c2.fillStyle = bg; c2.fillRect(0, 0, CHAR_W, CHAR_H); }
-            c2.fillStyle = fg; c2.fillText(ch, 0, 0);
+            c2.fillStyle = fg;
+            if (sans) { c2.textAlign = 'center'; c2.fillText(ch, CHAR_W / 2, 0); }
+            else c2.fillText(ch, 0, 0);
             _glyphCache.set(k, g);
         }
         return g;
@@ -4433,9 +4663,8 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             const y = SCALE_H + i * rowPitch - oy;
             const seq = state.seqs[i].seq;
             const consPos = conservationData;
-            const tsdRowMarks = state.tsdMarks?.get(i);
-            const searchHits = _getSearchHitsForRow(i);
-            const repeatCols = _repeatColsForRow(i);
+            const ovCtx = _overlayRowCtx(i);
+            const trim = state.trimBoundaries;
 
             // Residues (glyph-cached: 1 drawImage per cell vs fillRect+fillText)
             for (let p = firstCol; p <= lastCol; p++) {
@@ -4466,37 +4695,28 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                     bgFill = '#fff';
                 }
 
-                // TSD mark override (mirrors setSpanTsdMarkDisplay for DOM spans)
-                if (tsdRowMarks?.has(p)) {
-                    if (state.tsdMarkStyle === 'color') {
-                        const tsdColor = /^#[0-9A-Fa-f]{6}$/.test(state.tsdMarkColor || '') ? state.tsdMarkColor : '#ffd54f';
-                        bgFill = tsdColor;
-                        textFill = '#111';
-                    } else if (state.tsdMarkStyle === 'bold') {
-                        // A search hit keeps its colour under a bold mark, as in the DOM
-                        const hit = searchHits.get(p);
-                        if (hit) { bgFill = hit.color || '#ffcc00'; textFill = '#000'; }
-                        if (bgFill) { ctx.fillStyle = bgFill; ctx.fillRect(x, y, CHAR_W, CHAR_H); }
-                        ctx.fillStyle = textFill;
-                        ctx.font = 'bold ' + fontStr;
-                        ctx.fillText(base, x, y);
-                        ctx.font = fontStr;
-                        continue;
-                    }
+                // Trim preview tint (DOM: .trim-left / .trim-right)
+                const trimmed = trim && (p <= trim.leftTrimEnd || p >= trim.rightTrimStart);
+                if (trimmed) bgFill = p <= trim.leftTrimEnd ? 'rgba(255,107,107,0.28)' : 'rgba(78,205,196,0.28)';
+
+                // Search hits, TSD marks, repeats, SNP letters: the same rule as the DOM
+                const ov = ovCtx.any ? residueOverlay(ovCtx, p, base) : null;
+                let variant = '';
+                if (ov) {
+                    if (ov.bg) bgFill = ov.bg;
+                    if (ov.fg) textFill = ov.fg;
+                    variant = (ov.bold ? 'b' : '') + (ov.italic ? 'i' : '') + (ov.sans ? 's' : '');
                 }
-
-                // Repeat tint (DOM: inline background colour + 66 alpha)
-                const repeatColor = repeatCols.get(p);
-                if (repeatColor) bgFill = repeatColor + '66';
-
-                // Search hit override (mirrors CSS .search-hit-* { background-color; color: black })
-                if (searchHits.has(p)) {
-                    bgFill = searchHits.get(p).color || '#ffcc00';
-                    textFill = '#000';
-                }
-
                 // Single blit from glyph cache (eliminates fillStyle+fillRect+fillStyle+fillText)
-                ctx.drawImage(_makeGlyph(base, bgFill, textFill), x, y, CHAR_W, CHAR_H);
+                ctx.drawImage(_makeGlyph(base, bgFill, textFill, variant), x, y, CHAR_W, CHAR_H);
+                // Decorations: underline (TSD bold style), overline (covered repeat), line-through (trim)
+                const deco = ov ? ov.deco : null;
+                if ((deco && deco.length) || trimmed) {
+                    ctx.fillStyle = (ov && ov.decoColor) || textFill;
+                    if (deco?.includes('underline')) ctx.fillRect(x, y + CHAR_H - 2, CHAR_W, 1.5);
+                    if (deco?.includes('overline')) ctx.fillRect(x, y, CHAR_W, 1.5);
+                    if (trimmed) { ctx.fillStyle = textFill; ctx.fillRect(x, y + CHAR_H / 2, CHAR_W, 1); }
+                }
             }
 
             // Breakpoint markers (var-sites mode) — drawn on top of residues at
@@ -4529,10 +4749,13 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             ctx.font = nameFontStr;
             const nameAscent = (_canvasState.metrics && _canvasState.metrics.ascent) || (CHAR_H - 3);
             const nameBaselineY = y + nameAscent;
+            const look = nameCellLook(i);
+            const nameX0 = stickyNames ? 0 : -ox;
             if (stickyNames) {
-                ctx.fillStyle = '#fff';
+                ctx.fillStyle = look?.bg || '#fff';
                 ctx.fillRect(0, y, NAME_W, CHAR_H);
-                ctx.fillStyle = '#333';
+                if (look?.stripe) { ctx.fillStyle = look.stripe; ctx.fillRect(0, y, 6, CHAR_H); }
+                ctx.fillStyle = look?.bg ? look.fg : '#333';
                 ctx.textBaseline = 'alphabetic';
                 ctx.fillText(displayName, 4, nameBaselineY);
             } else if (ox < NAME_W) {
@@ -4540,7 +4763,9 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                 ctx.beginPath();
                 ctx.rect(0, y, NAME_W, CHAR_H);
                 ctx.clip();
-                ctx.fillStyle = '#333';
+                if (look?.bg) { ctx.fillStyle = look.bg; ctx.fillRect(nameX0, y, NAME_W, CHAR_H); }
+                if (look?.stripe) { ctx.fillStyle = look.stripe; ctx.fillRect(nameX0, y, 6, CHAR_H); }
+                ctx.fillStyle = look?.bg ? look.fg : '#333';
                 ctx.textBaseline = 'alphabetic';
                 ctx.fillText(displayName, 4 - ox, nameBaselineY);
                 ctx.restore();
@@ -4615,9 +4840,9 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             });
         }
 
-        // Highlight selected rows (semi-transparent horizontal strips)
+        // Highlight selected rows (semi-transparent horizontal strips; same tint as the DOM)
         if (state.selectedRows.size > 0) {
-            ctx.fillStyle = 'rgba(25, 118, 210, 0.15)';
+            ctx.fillStyle = 'rgba(40, 167, 69, 0.30)';
             state.selectedRows.forEach(rowIdx => {
                 const y = SCALE_H + rowIdx * rowPitch - oy;
                 if (y + rowPitch < 0 || y > h) return;
@@ -7064,6 +7289,7 @@ function renderAlignment(options = {}) {
     // Rows are built with their search highlights (createSequenceLine); only the colour rules
     // need to exist.
     (state.searchHistory || []).forEach(_ensureSearchStyle);
+    _syncResidueWidthVar();
     applyClusterVisualsFromState();
 
     // Post-process: AA translation rows (phase/stops now built inline)
@@ -8155,40 +8381,6 @@ function getSequenceBaseRenderClass(base, pos, config, conservationData) {
     return cls;
 }
 
-function getTsdMarkDisplay(rowIndex, pos) {
-    const rowMarks = state.tsdMarks?.get(rowIndex);
-    if (!rowMarks || !rowMarks.has(pos)) return { className: '', style: '' };
-    if (state.tsdMarkStyle === 'bold') return { className: ' tsd-mark tsd-mark-bold', style: '' };
-    if (state.tsdMarkStyle === 'color') {
-        const color = /^#[0-9A-Fa-f]{6}$/.test(state.tsdMarkColor || '') ? state.tsdMarkColor : '#ffd54f';
-        return { className: ' tsd-mark tsd-mark-color', style: ` style="background-color:${color};color:#111;font-weight:bold;"` };
-    }
-    return { className: ' tsd-mark', style: '' };
-}
-
-function setSpanTsdMarkDisplay(span, rowIndex, pos) {
-    const rowMarks = state.tsdMarks?.get(rowIndex);
-    const marked = !!rowMarks?.has(pos);
-    // Unmarked span with nothing to clear: skip seven DOM writes. This runs per residue
-    // on every drag step, and these inline styles are only ever set by this function.
-    if (!marked && !span.classList.contains('tsd-mark')) return;
-    span.classList.remove('tsd-mark', 'tsd-mark-bold', 'tsd-mark-color');
-    span.style.backgroundColor = '';
-    span.style.color = '';
-    span.style.fontWeight = '';
-    if (!marked) return;
-    span.classList.add('tsd-mark');
-    if (state.tsdMarkStyle === 'bold') {
-        span.classList.add('tsd-mark-bold');
-    } else if (state.tsdMarkStyle === 'color') {
-        const color = /^#[0-9A-Fa-f]{6}$/.test(state.tsdMarkColor || '') ? state.tsdMarkColor : '#ffd54f';
-        span.classList.add('tsd-mark-color');
-        span.style.backgroundColor = color;
-        span.style.color = '#111';
-        span.style.fontWeight = 'bold';
-    }
-}
-
 // limitPositions: optional Set of columns to repaint. Everything outside it is left
 // stale, so callers must reconcile the whole row before the edit is considered done
 // (the drag does this on mouse-up).
@@ -8204,14 +8396,13 @@ function repaintResidueSpan(span, rowIndex, pos, base, config, conservationData)
     const t = span.firstChild;
     if (t && t.nodeType === 3) { if (t.nodeValue !== base) t.nodeValue = base; }
     else span.textContent = base;
-    const hit = state.searchHistory?.length ? _getSearchHitsForRow(rowIndex).get(pos) : undefined;
-    const cls = getSequenceBaseRenderClass(base, pos, config, conservationData) + (hit ? ' ' + hit.className : '');
+    const ctx = _overlayRowCtx(rowIndex);
+    const o = ctx.any ? residueOverlay(ctx, pos, base) : null;
+    const ovc = _overlayClassList(o);
+    const cls = getSequenceBaseRenderClass(base, pos, config, conservationData) + (ovc ? ' ' + ovc : '');
     // Nucleotide-selection classes are reapplied by scheduleNucSelectionRefresh, like before.
     if (span.className !== cls) span.className = cls;
-    if (hit) span.dataset.searchHit = hit.className;
-    else if (span.dataset.searchHit !== undefined) delete span.dataset.searchHit;
-    setSpanTsdMarkDisplay(span, rowIndex, pos);
-    if (state.repeatHighlights?.size || span.dataset.repeatHl) _setSpanRepeatPaint(span, _repeatColsForRow(rowIndex).get(pos));
+    _applyOverlayAttrs(span, o);
 }
 
 function refreshSequenceRowDom(rowIndex, limitPositions = null, referenceSeq = null) {
@@ -8388,7 +8579,7 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
     const brkBeforePos = state._brkBeforePos || new Set();
     const brkInfo = state._brkInfo || {};
 
-    const searchHits = _getSearchHitsForRow(index);
+    const ovCtx = _overlayRowCtx(index);
     for (let pos = start; pos < end; pos++) {
             // Insert breakpoint marker before this position if needed
             if (showBrk && brkBeforePos.has(pos)) {
@@ -8435,21 +8626,17 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
             }
 
             const colSelected = selectedCols.has(pos) ? ' column-selected' : '';
-            const tsdDisplay = getTsdMarkDisplay(index, pos);
-            const hit = searchHits.get(pos);
-            const finalClass = `${cls}${baseClass ? ' ' + baseClass : ''}${colSelected}${tsdDisplay.className}${hit ? ' ' + hit.className : ''}`;
-            const charPaint = _clusterCharPaint(state.seqs[index].header, pos, base);
-            let extraAttr = tsdDisplay.style || '';
-            if (charPaint) {
-                const titleEsc = _escapeHtml(charPaint.title);
-                if (extraAttr && extraAttr.indexOf('style="') >= 0) {
-                    extraAttr = extraAttr.replace(/"$/, charPaint.style + '"') + ` title="${titleEsc}"`;
-                } else {
-                    extraAttr = ` style="${charPaint.style}" title="${titleEsc}"`;
-                }
+            const ov = ovCtx.any ? residueOverlay(ovCtx, pos, base) : null;
+            if (!ov) {
+                htmlParts.push(`<span class="${cls}${baseClass ? ' ' + baseClass : ''}${colSelected}" data-pos="${pos}">${base}</span>`);
+                continue;
             }
-            const searchAttr = hit ? ` data-search-hit="${hit.className}"` : '';
-            htmlParts.push(`<span class="${finalClass}${charPaint ? ' diagnostic-mutation' : ''}" data-pos="${pos}"${extraAttr}${searchAttr}>${base}</span>`);
+            const ovc = _overlayClassList(ov);
+            let attrs = '';
+            if (ov.titles.length) attrs += ` title="${_escapeHtml(ov.titles.join(' | '))}"`;
+            if (ov.hit) attrs += ` data-search-hit="${ov.hit.className}"`;
+            if (ov.rep) attrs += ` data-repeat-hl="1"`;
+            htmlParts.push(`<span class="${cls}${baseClass ? ' ' + baseClass : ''}${colSelected}${ovc ? ' ' + ovc : ''}" data-pos="${pos}"${attrs}>${base}</span>`);
         }
     // Add sequence length at the end (only for last block)
     if (showLength) {
@@ -8472,12 +8659,7 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
         }
     }
 
-    lineDiv.appendChild(dataSpan);
-    // Repeat highlights after attaching: _applyLineHighlights reads the row from the parent
-    // line (applied before, row-specific repeats never matched and vanished on every redraw)
-    if (state.repeatHighlights && state.repeatHighlights.size > 0) {
-        _applyLineHighlights(dataSpan);
-    }
+    lineDiv.appendChild(dataSpan);   // repeats are part of the residue overlay above
     if (state.selectedRows.has(index)) {
         lineDiv.classList.add('selected');
     }
@@ -8731,6 +8913,7 @@ function setZoom(percent) {
     const bigDom = !isCanvas && (isWindowedDom || _approxResidueCount() > 60000);
     if (bigDom) alignmentContainer.style.transition = 'none';
     alignmentContainer.style.fontSize = size + 'px';
+    _syncResidueWidthVar();
     el('zoomVal').textContent = percent + '%';
     el('zoomVal').classList.toggle('not-default', percent !== 100);
     // Keep the raw 0-100 log slider, its fill, and the 100% tick in lockstep
@@ -12510,17 +12693,20 @@ function searchMotif(options = {}) {
     reapplySearchHighlights();
 
     updateActiveSearchesPanel();
+    const coverNote = options.suppressMessage ? '' : overlayCoverageSentence();
     if (!options.suppressMessage) {
         if (bothStrands) {
             // a sequence matching on both strands is one sequence
             const nSeqs = new Set([...fwdSeqs, ...revSeqs]).size;
             showMessage(
-                `Found ${totalMatches} match${totalMatches !== 1 ? 'es' : ''} (fwd:${fwdMatches}, rev comp:${revMatches}) in ${nSeqs} sequence${nSeqs !== 1 ? 's' : ''}`,
-                3000
+                `Found ${totalMatches} match${totalMatches !== 1 ? 'es' : ''} (fwd:${fwdMatches}, rev comp:${revMatches}) in ${nSeqs} sequence${nSeqs !== 1 ? 's' : ''}`
+                + (coverNote ? '. ' + coverNote : ''),
+                coverNote ? 5000 : 3000
             );
         } else {
             showMessage(`Found ${totalMatches} match${totalMatches !== 1 ? 'es' : ''} in ${fwdSeqs.size} sequence${fwdSeqs.size !== 1 ? 's' : ''}`
-                + (regexSingleStrand ? ' (regex: forward strand only)' : ''), regexSingleStrand ? 3500 : 2000);
+                + (regexSingleStrand ? ' (regex: forward strand only)' : '') + (coverNote ? '. ' + coverNote : ''),
+                (regexSingleStrand || coverNote) ? 5000 : 2000);
         }
     }
     return { totalMatches, fwdMatches, revMatches, fwdSeqs: fwdSeqs.size, revSeqs: revSeqs.size, results: searchResults };
@@ -12705,6 +12891,7 @@ function _remapStashedColumns(fn) {
 function collectSelectionItems() {
     const st = state.selectionStash;
     const items = [];
+    const cov = overlayCoverage();
     const rowsLive = state.selectedRows.size, rowsHidden = st.rows?.size || 0;
     if (rowsLive || rowsHidden) {
         const on = rowsLive > 0;
@@ -12740,13 +12927,15 @@ function collectSelectionItems() {
     if (tsdLive || tsdHidden) {
         const n = tsdLive || tsdHidden;
         items.push({ key: 'tsd', kind: 'TSD marks', on: tsdLive > 0, color: state.tsdMarkColor || '#ffd54f',
-            count: n, detail: `in ${n} sequence${n === 1 ? '' : 's'}` + (tsdLive && tsdHidden ? ` (+${tsdHidden} off)` : '') });
+            count: n, detail: `in ${n} sequence${n === 1 ? '' : 's'}` + (tsdLive && tsdHidden ? ` (+${tsdHidden} off)` : ''),
+            note: cov.tsd ? `colour under a search at ${cov.tsd}; shown bold, second font` : '' });
     }
     const repLive = state.repeatHighlights?.size || 0, repHidden = st.repeats?.size || 0;
     if (repLive || repHidden) {
         const first = (repLive ? state.repeatHighlights : st.repeats).values().next().value;
         items.push({ key: 'repeats', kind: 'Repeat highlights', on: repLive > 0, color: first?.color,
-            count: repLive || repHidden, detail: repLive && repHidden ? `(+${repHidden} off)` : '' });
+            count: repLive || repHidden, detail: repLive && repHidden ? `(+${repHidden} off)` : '',
+            note: cov.repeat ? `tint under other marks at ${cov.repeat}; shown as an overline` : '' });
     }
     const namesLive = colourState?.mappings?.size || 0, namesHidden = st.names?.size || 0;
     if (namesLive || namesHidden) {
@@ -13061,7 +13250,13 @@ function refreshSelectionsPanel() {
         detail.className = 'sel-detail';
         detail.textContent = item.detail || '';
         text.append(kind, count, detail);
-        text.title = `${item.kind}: ${item.count}${item.detail ? ' - ' + item.detail : ''}`;
+        text.title = `${item.kind}: ${item.count}${item.detail ? ' - ' + item.detail : ''}${item.note ? '\n' + item.note : ''}`;
+        if (item.note) {
+            const note = document.createElement('span');
+            note.className = 'sel-note';
+            note.textContent = item.note;
+            text.appendChild(note);
+        }
         row.append(cb, icon, text);
         if (item.canGo) {
             const go = document.createElement('button');
@@ -14143,257 +14338,10 @@ function colorSequencesByCluster() {
     applyClusterVisualsFromState();
 }
 
+// SNP letters are part of the residue overlay (drawn by the row builder and every in-place
+// repaint); this entry point is kept for callers that change group colours without a redraw.
 function highlightDiagnosticMutations() {
-    if (!state.clusterResults) return;
-
-    const colOffset = _clusterAlignmentColumnOffset();
-
-    // Create a map: position -> [{clusterIdx, color, char, seqIndices, isPerfect}, ...]
-    // seqIndices are the sequences that have this diagnostic feature
-    const diagnosticMap = {};
-
-    state.clusterResults.clusters.forEach((cluster, clusterIdx) => {
-        if (cluster.paintOff) return;
-        const colors = SINEClusterer.getClusterColors();
-        const color = cluster.color || colors[clusterIdx % colors.length];
-
-        // Option: Paint ALL found features (not just validated ones)
-        // This helps diagnose if the algorithm is missing features
-        if (cluster.allFoundFeatures && cluster.allFoundFeatures.length > 0) {
-            cluster.allFoundFeatures.forEach(feature => {
-                const pos = feature.pos + colOffset;
-                const char = feature.char;
-
-                if (!diagnosticMap[pos]) {
-                    diagnosticMap[pos] = [];
-                }
-
-                // Calculate inter-cluster leakage for this feature
-                let leakageCount = 0;
-                let totalOtherClusterSeqs = 0;
-                state.clusterResults.clusters.forEach((otherCluster, otherIdx) => {
-                    if (otherIdx !== clusterIdx) {
-                        totalOtherClusterSeqs += otherCluster.sequences.length;
-                        otherCluster.sequences.forEach(seq => {
-                            // Check if this sequence has this feature at this position
-                            if (seq.seq && seq.seq[pos] === char) {
-                                leakageCount++;
-                            }
-                        });
-                    }
-                });
-
-                const leakagePercent = totalOtherClusterSeqs > 0 ? Math.round((leakageCount / totalOtherClusterSeqs) * 100) : 0;
-
-                // Mark as "all-found" to differentiate from validated features
-                diagnosticMap[pos].push({
-                    clusterIdx,
-                    color,
-                    char: char,
-                    clusterName: `Cluster ${clusterIdx + 1}`,
-                    seqHeaders: new Set(cluster.sequences.map(s => s.id)),
-                    isPerfect: true, // Default to perfect; will be styled differently if unvalidated
-                    isAllFound: true, // Mark that this is from allFoundFeatures
-                    interClusterLeakage: {
-                        count: leakageCount,
-                        total: totalOtherClusterSeqs,
-                        percent: leakagePercent
-                    }
-                });
-            });
-        } else {
-            // Fallback: use validated features if allFoundFeatures not available
-            // Perfect features (full saturation)
-            cluster.perfectFeatures.forEach(feature => {
-                const pos = feature.pos - 1 + colOffset;
-
-                if (!diagnosticMap[pos]) {
-                    diagnosticMap[pos] = [];
-                }
-
-                // Calculate inter-cluster leakage for this feature
-                let leakageCount = 0;
-                let totalOtherClusterSeqs = 0;
-                state.clusterResults.clusters.forEach((otherCluster, otherIdx) => {
-                    if (otherIdx !== clusterIdx) {
-                        totalOtherClusterSeqs += otherCluster.sequences.length;
-                        otherCluster.sequences.forEach(seq => {
-                            // Check if this sequence has this feature at this position
-                            if (seq.seq && seq.seq[pos] === feature.char) {
-                                leakageCount++;
-                            }
-                        });
-                    }
-                });
-
-                const leakagePercent = totalOtherClusterSeqs > 0 ? Math.round((leakageCount / totalOtherClusterSeqs) * 100) : 0;
-
-                diagnosticMap[pos].push({
-                    clusterIdx,
-                    color,
-                    char: feature.char,
-                    clusterName: `Cluster ${clusterIdx + 1}`,
-                    seqHeaders: new Set(cluster.sequences.map(s => s.id)),
-                    isPerfect: true,
-                    interClusterLeakage: {
-                        count: leakageCount,
-                        total: totalOtherClusterSeqs,
-                        percent: leakagePercent
-                    }
-                });
-            });
-
-            // Imperfect features (faint/reduced opacity)
-            if (cluster.imperfectFeatures) {
-                cluster.imperfectFeatures.forEach(feature => {
-                    const pos = feature.pos - 1 + colOffset; // Convert to 0-based index
-
-                    if (!diagnosticMap[pos]) {
-                        diagnosticMap[pos] = [];
-                    }
-
-                    // Calculate inter-cluster leakage for this feature
-                    let leakageCount = 0;
-                    let totalOtherClusterSeqs = 0;
-                    state.clusterResults.clusters.forEach((otherCluster, otherIdx) => {
-                        if (otherIdx !== clusterIdx) {
-                            totalOtherClusterSeqs += otherCluster.sequences.length;
-                            otherCluster.sequences.forEach(seq => {
-                                // Check if this sequence has this feature at this position
-                                if (seq.seq && seq.seq[pos] === feature.char) {
-                                    leakageCount++;
-                                }
-                            });
-                        }
-                    });
-
-                    const leakagePercent = totalOtherClusterSeqs > 0 ? Math.round((leakageCount / totalOtherClusterSeqs) * 100) : 0;
-
-                    diagnosticMap[pos].push({
-                        clusterIdx,
-                        color,
-                        char: feature.char,
-                        countOutside: feature.countOutside,
-                        clusterName: `Cluster ${clusterIdx + 1}`,
-                        seqHeaders: new Set(cluster.sequences.map(s => s.id)),
-                        isPerfect: false,
-                        isCloudy: false,
-                        interClusterLeakage: {
-                            count: leakageCount,
-                            total: totalOtherClusterSeqs,
-                            percent: leakagePercent
-                        }
-                    });
-                });
-            }
-
-            if (cluster.cloudyFeatures) {
-                cluster.cloudyFeatures.forEach(feature => {
-                    const pos = feature.pos - 1 + colOffset;
-
-                    if (!diagnosticMap[pos]) {
-                        diagnosticMap[pos] = [];
-                    }
-
-                    let leakageCount = 0;
-                    let totalOtherClusterSeqs = 0;
-                    state.clusterResults.clusters.forEach((otherCluster, otherIdx) => {
-                        if (otherIdx !== clusterIdx) {
-                            totalOtherClusterSeqs += otherCluster.sequences.length;
-                            otherCluster.sequences.forEach(seq => {
-                                if (seq.seq && seq.seq[pos] === feature.char) {
-                                    leakageCount++;
-                                }
-                            });
-                        }
-                    });
-
-                    const leakagePercent = totalOtherClusterSeqs > 0 ? Math.round((leakageCount / totalOtherClusterSeqs) * 100) : 0;
-
-                    diagnosticMap[pos].push({
-                        clusterIdx,
-                        color,
-                        char: feature.char,
-                        countOutside: feature.countOutside,
-                        clusterName: `Cluster ${clusterIdx + 1}`,
-                        seqHeaders: new Set(cluster.sequences.map(s => s.id)),
-                        isPerfect: false,
-                        isCloudy: true,
-                        interClusterLeakage: {
-                            count: leakageCount,
-                            total: totalOtherClusterSeqs,
-                            percent: leakagePercent
-                        }
-                    });
-                });
-            }
-        }
-    });
-
-    console.log('[Clustering] Found', Object.keys(diagnosticMap).length, 'diagnostic positions');
-
-    // Find all seq-line rows and highlight diagnostic positions
-    const seqLines = document.querySelectorAll('.seq-line');
-
-    seqLines.forEach(seqLine => {
-        // Get the sequence index for this row
-        const seqIdx = parseInt(seqLine.dataset.seqIndex);
-        if (isNaN(seqIdx) || seqIdx < 0 || seqIdx >= state.seqs.length) return;
-
-        const seqDataDiv = seqLine.querySelector('.seq-data');
-        if (!seqDataDiv) return;
-
-        const spans = seqDataDiv.querySelectorAll('span');
-
-        spans.forEach(span => {
-            // Get the alignment position
-            const pos = parseInt(span.dataset.pos);
-            if (isNaN(pos)) return;
-
-            // Check if this position has diagnostics
-            if (diagnosticMap[pos]) {
-                // Find diagnostics relevant to this sequence's cluster
-                // Prefer perfect features over imperfect
-                const relevantDiags = diagnosticMap[pos].filter(diag =>
-                    diag.seqHeaders.has(state.seqs[seqIdx].header)
-                );
-
-                if (relevantDiags.length > 0) {
-                    // Prioritize perfect features
-                    const diag = relevantDiags.find(d => d.isPerfect) || relevantDiags[0];
-
-                    // Only highlight if the base matches the diagnostic character
-                    const baseChar = span.textContent;
-                    if (baseChar.toUpperCase() === String(diag.char || '').toUpperCase()) {
-                        const alpha = diag.isPerfect ? 1.0 : 0.72;
-
-                        // Convert hex color to RGB with alpha
-                        const rgb = hexToRgb(diag.color);
-                        const bgColor = `rgba(${rgb.r}, ${rgb.g}, ${rgb.b}, ${alpha})`;
-                        const textColor = diag.isPerfect ? 'white' : '#333';
-
-                        span.style.setProperty('background-color', bgColor, 'important');
-                        span.style.setProperty('color', textColor, 'important');
-                        span.style.setProperty('font-weight', diag.isPerfect ? 'bold' : 'normal', 'important');
-
-                        // Create enhanced tooltip showing inter-cluster leakage
-                        let title = `${diag.clusterName}: ${diag.isPerfect ? 'diagnostic' : (diag.isCloudy ? 'shared' : 'partial')} ${diag.char}`;
-
-                        // If this feature has inter-cluster leakage info, show it
-                        if (diag.interClusterLeakage) {
-                            title += diag.isCloudy
-                                ? ` [leaks to ${diag.interClusterLeakage.count}/${diag.interClusterLeakage.total} in other clusters (${diag.interClusterLeakage.percent}%)]`
-                                : ` [leaks to ${diag.interClusterLeakage.count}/${diag.interClusterLeakage.total} in other clusters (${diag.interClusterLeakage.percent}%)]`;
-                        } else if (diag.countOutside !== undefined) {
-                            title += ` (found in ${diag.countOutside} outside)`;
-                        }
-                        span.title = title;
-                        span.classList.add('diagnostic-mutation');
-                    }
-                }
-            }
-        });
-    });
+    syncResidueOverlays();
 }
 
 /**
@@ -22153,9 +22101,15 @@ function fastUpdateEditCellAt(row, pos) {
 // Re-evaluate just the search highlights of one rendered row (its letters are current).
 function refreshSequenceRowSearch(rowIndex) {
     const rowCache = state.spanCache?.get(rowIndex);
-    if (!rowCache) return;
-    const hits = _getSearchHitsForRow(rowIndex);
-    rowCache.forEach((span, pos) => _setSpanSearchClass(span, hits.get(pos)));
+    const seq = state.seqs[rowIndex]?.seq;
+    if (!rowCache || seq === undefined) return;
+    const ctx = _overlayRowCtx(rowIndex);
+    rowCache.forEach((span, pos) => {
+        const o = ctx.any ? residueOverlay(ctx, pos, seq[pos] || '-') : null;
+        if (!o && !span.className.includes(' ov-')) return;
+        _syncOverlayClasses(span, o);
+        _applyOverlayAttrs(span, o);
+    });
 }
 
 /**
@@ -22634,19 +22588,8 @@ function clusterByName(seqNames, maxChars = 10, threshold = 3) {
 // Apply color to sequence name elements
 function applyColourToSeqNames(mappings) {
     scheduleSelectionsPanelRefresh();
-    const seqNameElements = document.querySelectorAll('.seq-name');
-    seqNameElements.forEach(el => {
-        // Use underlying sequence header (not truncated display) for stable mapping
-        let headerKey = el.dataset.seqIndex !== undefined ? (state.seqs[parseInt(el.dataset.seqIndex)]?.header || el.textContent.trim()) : el.textContent.trim();
-        if (mappings.has(headerKey)) {
-            const colour = mappings.get(headerKey);
-            el.setAttribute('style', `background-color: ${colour} !important; color: #000 !important; font-weight: bold !important;`);
-            el.title = `Color: ${colour}`;
-        } else {
-            el.removeAttribute('style');
-            el.title = '';
-        }
-    });
+    // Colour Names and group colours share the name cell: one painter decides both
+    paintNameCells();
 }
 
 // Helper: Record color in history
@@ -26922,12 +26865,9 @@ function _clearRepeatHighlights() {
     // Fast path: clear all highlight backgrounds directly from DOM
     state.repeatHighlights.clear();
     bumpRepeatLayer();
-    // only spans this finder painted, so other inline colours (e.g. diagnostic marks) survive
-    document.querySelectorAll('.seq-data > span[data-repeat-hl="1"]').forEach(span => {
-        span.style.removeProperty('background-color');
-        delete span.dataset.repeatHl;
-        span.title = (span.title || '').replace(/( \| )?repeat region/g, '');
-    });
+    // The residue overlay owns the spans' look: resync it (removing only the background left
+    // the overlay's text colour and decoration behind, and would drop marks sharing the cell)
+    syncResidueOverlays();
     // Refresh results table
     const el = document.getElementById('repeatResults');
     if (el && _lastRepeatResults.length) {

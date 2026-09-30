@@ -230,3 +230,36 @@ by measuring every box).
     deletes/moves/sorts/undo (identity remap at the start of every render). Within a row they
     stay on their columns (a region, like the column selection).
   - Check "Marks follow their residues ..." fails on v214.
+- Phase 1 released as v215.
+- Phase 2+3 (working tree): one residue-overlay rule for search hits, TSD marks, repeats and
+  SNP letters (`residueOverlay`), used by the row builder, every in-place repaint and Canvas.
+  Fill order search > TSD colour > repeat > SNP letter; TSD always bold + sans-serif (box
+  width locked to the grid, measured: 0 of 60 boxes move); restriction sites italic; covered
+  repeat -> overline; covered SNP letter -> group-coloured text; trim -> strike-through.
+  Selections are CSS background-image tints (row green, column blue, residue yellow + frame,
+  edit cell blue) stacked over any fill; Canvas uses the same tints. Name cells: one painter,
+  Colour Names fill + group stripe (group fill when no Colour Name), in DOM and Canvas.
+  The imperative SNP painter (`highlightDiagnosticMutations`) is gone; its leakage tooltips
+  moved into the derived map.
+- Clearing repeats resyncs the overlay (the old clear removed only the background and left the
+  overlay's text colour behind: 17 of the remaining pair "conflicts" in the phase-2 re-run).
+- Telling the user: `overlayCoverage()` counts residues where one mark covers another's colour;
+  the Selections items say "colour under a search at N; shown bold, second font" / "tint under
+  other marks at N; shown as an overline", and a search that lands on existing marks says so
+  in its message.
+- Selections tint also applies on the consensus row (a selected column shows there).
+- Remaining "hidden" entries in the matrix, all by design: the colour scheme / shading under a
+  mark (marks sit above base colouring); Highlight diffs' bold at a diff column when another
+  mark is also bold; TSD colour vs TSD bold (one layer, global style); SNP groups vs soft trim
+  (soft trim changes what grouping sees); Highlight diffs vs Variable sites (mutually
+  exclusive options, the other is unticked silently: to be made explicit).
+- Performance correction (after the author asked whether the logic was really simple and
+  quick). Measured on 300 x 1500 with a quarter of residues marked, the first version was
+  slower than v215 (redraw 1.31 s vs 0.96 s, with marks 2.38 s vs 1.28 s, row click 128 vs
+  38 ms). Causes and fixes: the selection-tint rule applied to every residue (now only to
+  selected ones); each marked residue got its own inline style (now one generated CSS class
+  per distinct look, memoised per combination of marks); the residue width was measured by a
+  forced layout on each redraw (now from font metrics, once per font size); the "colour
+  covered" count ran on every selection click (now cached until marks or sequences change).
+  After: redraw 0.78-0.85 s (v215 0.89), with marks 1.27-1.30 s (v215 1.05-1.28), row click
+  26-31 ms (v215 27). Measured by scratch/_claude_cost.js against a v215 worktree.

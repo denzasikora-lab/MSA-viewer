@@ -74,11 +74,12 @@ const SIG = `(() => {
   const span = line?.querySelector('.seq-data > span[data-pos="${COL}"]');
   const name = line?.querySelector('.seq-name');
   const pick = (e, props) => { if (!e) return null; const cs = getComputedStyle(e); const o = {}; props.forEach(p => { o[p] = cs[p]; }); return o; };
-  const cell = pick(span, ['backgroundColor', 'color', 'fontWeight', 'opacity', 'display', 'textDecorationLine', 'outlineStyle', 'boxShadow']);
+  const cell = pick(span, ['backgroundColor', 'color', 'fontWeight', 'opacity', 'display', 'textDecorationLine', 'outlineStyle', 'boxShadow',
+    'backgroundImage', 'fontFamily', 'fontStyle', 'textDecorationColor']);
   if (cell && span) cell.text = span.textContent;
   return {
     cell,
-    name: pick(name, ['backgroundColor', 'color', 'fontWeight']),
+    name: pick(name, ['backgroundColor', 'color', 'fontWeight', 'boxShadow', 'backgroundImage']),
     row: pick(line, ['backgroundColor', 'outlineStyle']),
     overlay: document.querySelectorAll('.block-mask-layer').length,
   };

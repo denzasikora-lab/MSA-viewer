@@ -1312,15 +1312,16 @@ check('Selection: row/column highlight follows the state after delta updates', a
   await page.waitForTimeout(1500);
   const r = await page.evaluate(async () => {
     const frames = () => new Promise(res => requestAnimationFrame(() => requestAnimationFrame(res)));
-    const colBg = getComputedStyle(document.documentElement).getPropertyValue('--column-selected-bg').trim();
-    const probe = document.createElement('span'); probe.style.backgroundColor = colBg; document.body.appendChild(probe);
-    const colRgb = getComputedStyle(probe).backgroundColor; probe.remove();
+    // A selected column is a blue tint (background-image) over whatever the residue shows,
+    // since the conflict-study phase 2; it used to be a fill colour.
+    const COL_TINT = 'rgba(25, 118, 210, 0.28)';
+    const isCol = e => getComputedStyle(e).backgroundImage.includes(COL_TINT);
     // Compare what is painted with the state: every residue span, every row line and name.
     const audit = () => {
       const bad = [];
       document.querySelectorAll('.seq-data > span[data-pos]').forEach(sp => {
         const want = state.selectedColumns.has(+sp.dataset.pos);
-        const got = getComputedStyle(sp).backgroundColor === colRgb;
+        const got = isCol(sp);
         if (want !== got && bad.length < 5) bad.push('col ' + sp.dataset.pos + (want ? ' missing' : ' stale'));
       });
       document.querySelectorAll('.seq-line[data-seq-index], .seq-name[data-seq-index]').forEach(e => {
@@ -1338,11 +1339,11 @@ check('Selection: row/column highlight follows the state after delta updates', a
     for (let c = 20; c < 60; c++) state.selectedColumns.add(c); updateColumnSelections(); await frames(); out.range = audit();
     // a selected column still shows its colour inside a selected row (the old rule's precedence)
     const sp = document.querySelector('.seq-line[data-seq-index="1"] .seq-data > span[data-pos="3"]');
-    out.colOverRow = !!sp && getComputedStyle(sp).backgroundColor === colRgb;
+    out.colOverRow = !!sp && isCol(sp);
     state.selectedColumns = new Set([5, 25]); updateColumnSelections(); await frames(); out.reassigned = audit();
     renderAlignment(); await new Promise(res => setTimeout(res, 600)); out.afterRender = audit();
     const cons = document.querySelector('.consensus-line .seq-data > span[data-pos="25"]');
-    out.consensusBaked = !cons || getComputedStyle(cons).backgroundColor === colRgb;
+    out.consensusBaked = !cons || isCol(cons);
     cols(6); await frames(); out.afterRenderToggle = audit();
     state.selectedColumns.clear(); state.selectedRows.clear(); updateColumnSelections(); updateRowSelections(); await frames(); out.cleared = audit();
     return out;
@@ -2370,6 +2371,66 @@ check('Marks follow their residues: TSD marks, repeats and residue selection thr
   const bad = Object.entries(r.steps).filter(([, v]) => v[0] !== tsd0 || v[1] !== rep0 || (v[2] !== undefined && v[2] !== nuc0));
   const ok = tsd0 === 'seq2:10,seq2:11' && rep0 === 'seq3:30,seq3:31,seq3:32' && nuc0 === 'seq4:5.6' && bad.length === 0;
   return { pass: ok, detail: JSON.stringify(ok ? r.before : r) };
+});
+
+check('Overlapping marks all stay visible, in any order, in DOM and Canvas (conflict study phase 2)', async (page) => {
+  // two groups differing at 10, 20, 30, so SNP grouping paints column 10 of row 2
+  let x = 7; const rnd = () => { x = (x * 16807) % 2147483647; return x; };
+  const base = Array.from({ length: 60 }, () => 'ACGT'[rnd() % 4]);
+  let fa = ''; for (let i = 0; i < 12; i++) { const s = base.slice(); [10, 20, 30].forEach(c => { s[c] = i < 6 ? 'G' : 'C'; }); fa += `>seq${i}\n${s.join('')}\n`; }
+  await loadFasta(page, fa);
+  const r = await page.evaluate(async () => {
+    const cs = (row, pos) => getComputedStyle(document.querySelector(`.seq-line[data-seq-index="${row}"] .seq-data > span[data-pos="${pos}"]`));
+    const nameCs = row => { const n = document.querySelector(`.seq-line[data-seq-index="${row}"] .seq-name`); const c = getComputedStyle(n); return [c.backgroundColor, c.boxShadow].join(' | '); };
+    const left = () => [...document.querySelectorAll('.seq-line[data-seq-index="2"] .seq-data > span[data-pos]')].map(s => Math.round(s.getBoundingClientRect().left));
+    const out = {};
+    const x0 = left();
+    // name cell: Colour Name first, then groups ...
+    colourState.mappings.set(state.seqs[1].header, '#ff8800'); applyColourToSeqNames(colourState.mappings);
+    await clusterSequences();
+    out.nameAB = nameCs(1);
+    // ... and groups first, then Colour Name (clear both, redo in the other order)
+    colourState.mappings.clear(); clearTypePaint();
+    await clusterSequences();
+    colourState.mappings.set(state.seqs[1].header, '#ff8800'); applyColourToSeqNames(colourState.mappings);
+    out.nameBA = nameCs(1);
+    renderAlignment();
+    out.nameRedraw = nameCs(1);
+    // residue marks on column 10 of row 2 (an SNP letter): search + TSD on top of it
+    state.tsdMarkStyle = 'color'; state.tsdMarkColor = '#00e5ff';
+    state.tsdMarks = new Map([[2, new Set([5, 10])]]);
+    searchMotif({ motif: state.seqs[2].seq.slice(8, 12), color: '#ffff00', bothStrands: false, useRegex: false, maxMismatches: 0, suppressMessage: true });
+    state.selectedNucs.set(2, new Set([10])); state.selectedColumns.add(20); state.selectedRows.add(3);
+    renderAlignment();
+    await new Promise(r => setTimeout(r, 100));
+    const c10 = cs(2, 10), c5 = cs(2, 5), c20 = cs(2, 20), r3 = cs(3, 10);
+    out.tsdUnderSearch = [c10.backgroundColor, c10.fontFamily.startsWith('Arial'), c10.fontWeight, c10.color];
+    out.tsdAlone = [c5.backgroundColor, c5.fontFamily.startsWith('Arial')];
+    out.resSelTint = /gradient/.test(c10.backgroundImage);
+    out.colSelOverSnp = [/gradient/.test(c20.backgroundImage), c20.backgroundColor];
+    out.rowSelTint = /gradient/.test(r3.backgroundImage);
+    out.moved = left().filter((v, i) => Math.abs(v - x0[i]) > 0).length;
+    // Canvas shows the TSD colour and the name colour
+    document.getElementById('modeCanvas').checked = true; onModeChange();
+    await new Promise(r => setTimeout(r, 500));
+    const c = document.getElementById('alignmentCanvas'), m = _canvasState.metrics, k = devicePixelRatio, g = c.getContext('2d');
+    const px = (xx, yy) => Array.from(g.getImageData(Math.round(xx * k), Math.round(yy * k), 1, 1).data).slice(0, 3).join(',');
+    // the most common colour in the cell is its background (a single pixel can hit the glyph)
+    const cellBg = (col, row) => {
+      const d = g.getImageData(Math.round((m.nameW + col * m.charW) * k), Math.round((m.charH + row * _canvasState.rowPitch) * k), Math.round(m.charW * k), Math.round(m.charH * k)).data;
+      const n = {}; for (let i = 0; i < d.length; i += 4) { const key = d[i] + ',' + d[i + 1] + ',' + d[i + 2]; n[key] = (n[key] || 0) + 1; }
+      return Object.entries(n).sort((a, b) => b[1] - a[1])[0][0];
+    };
+    out.canvasTsd = cellBg(5, 2);
+    out.canvasName = px(20, m.charH + 1 * _canvasState.rowPitch + 2);
+    return out;
+  });
+  const ok = r.nameAB === r.nameBA && r.nameBA === r.nameRedraw && /255, 136, 0/.test(r.nameAB) && /inset/.test(r.nameAB)
+    && r.tsdUnderSearch[0] === 'rgb(255, 255, 0)' && r.tsdUnderSearch[1] && r.tsdUnderSearch[2] === '700'
+    && r.tsdAlone[0] === 'rgb(0, 229, 255)' && r.tsdAlone[1]
+    && r.resSelTint && r.colSelOverSnp[0] && r.rowSelTint && r.moved === 0
+    && r.canvasTsd === '0,229,255' && r.canvasName === '255,136,0';
+  return { pass: ok, detail: JSON.stringify(r) };
 });
 
 async function main() {
