@@ -188,3 +188,45 @@ repeat redraw bug, and makes Canvas able to draw them.
    redraw, TSD / residue selection landing on another sequence, TSD colour invisible),
    (ii) move painted-once layers to state-derived drawing (DOM and Canvas), (iii) the
    visibility scheme chosen in 1.
+
+## 8. Decisions (author, 2026-09-30)
+
+- Agreed: 1 = channels for selections and TSD marks + explicit order for the remaining fills;
+  3 = marks follow their residues through edits, column marks shift with inserted columns;
+  4 = order of work (data bugs, then state-derived drawing in DOM and Canvas, then channels).
+- Added by the author: use text properties as channels, by default or when a conflict is
+  possible, and tell the user. Examples given: TSD marks bold AND a distinct font;
+  restriction sites in italics.
+
+Channel plan that follows from it:
+
+| Layer | Primary channel | Kept when its fill is covered |
+|---|---|---|
+| Selections (row, column, residue, edit cell) | outline / inset lines, never fill | always visible |
+| Search hit | fill (search colour) | - (top fill) |
+| Restriction site | fill + *italic* | italic |
+| TSD mark | **bold + second font (sans-serif)**, colour fill optional | bold + font |
+| Repeat highlight | fill tint | overline in the repeat colour |
+| SNP letters | fill + text colour | text colour + bold |
+| Trim preview | ~~strike-through~~ + tint | strike-through |
+| Name cell | Colour Names = fill; SNP groups = coloured stripe | both |
+
+A layer whose colour is covered somewhere says so in the Selections panel. A second font
+changes glyph width, so marked residue boxes are locked to the normal residue width (checked
+by measuring every box).
+
+## 9. Progress
+
+- Phase 1 (data-losing bugs), done in the working tree after v214:
+  - TSD marks are stored per sequence and residue number (`ResidueMarks`, behind the
+    `state.tsdMarks` accessor, same Map-like read API); the row/column view is derived, so
+    marks follow gap inserts, row deletes/moves and undo (copies found again by name).
+  - Repeat highlights: fixed the redraw loss (the row builder applied them before attaching
+    the row); row-specific repeats are anchored to (sequence, residue range); the layer is
+    derived per row (cache keyed by sequence object, not letters: rows with identical letters
+    made a letters-keyed cache paint the wrong sequence) and drawn by the row builder, every
+    in-place repaint and Canvas (which did not draw repeats before).
+  - Residue selection and the Type-tool cell follow their sequence through row
+    deletes/moves/sorts/undo (identity remap at the start of every render). Within a row they
+    stay on their columns (a region, like the column selection).
+  - Check "Marks follow their residues ..." fails on v214.

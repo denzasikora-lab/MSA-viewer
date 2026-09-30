@@ -2334,6 +2334,44 @@ check('Name colours: cleared when a new file loads, restored from a snapshot', a
   return { pass: ok, detail: JSON.stringify({ afterLoad, afterSnap }) };
 });
 
+check('Marks follow their residues: TSD marks, repeats and residue selection through gaps, row delete/move, redraw', async (page) => {
+  // rows 0-5 have identical letters, so a mark kept by row number or by letters would land on another sequence
+  let x = 11; const rnd = () => { x = (x * 16807) % 2147483647; return x; };
+  const base = Array.from({ length: 50 }, () => 'ACGT'[rnd() % 4]);
+  let fa = ''; for (let i = 0; i < 10; i++) { const s = base.slice(); if (i >= 6) s[20] = 'T'; fa += `>seq${i}\n${s.join('')}\n`; }
+  page.on('dialog', d => d.accept());
+  await loadFasta(page, fa);
+  const r = await page.evaluate(() => {
+    const where = (sel) => {
+      const out = [];
+      document.querySelectorAll('#alignmentContainer .seq-line[data-seq-index]:not(.consensus-line) .seq-data > span[data-pos]').forEach(sp => {
+        if (!sp.matches(sel)) return;
+        const row = +sp.closest('.seq-line').dataset.seqIndex, q = state.seqs[row];
+        let n = 0; for (let c = 0; c < +sp.dataset.pos; c++) if (q.seq[c] !== '-') n++;
+        out.push(q.header + ':' + n);
+      });
+      return out.sort().join();
+    };
+    const nucs = () => [...state.selectedNucs].filter(([r]) => r >= 0).map(([r, s]) => state.seqs[r].header + ':' + [...s].sort((a, b) => a - b).join('.')).join();
+    state.tsdMarkStyle = 'color'; state.tsdMarks = new Map([[2, new Set([10, 11])]]); renderAlignment({ deferConservation: true });
+    const info = { segs: [[30, 33]], row: 3, color: '#ff00ff' }; state.repeatHighlights.set('t', info); _paintRepeatHighlight(info, true);
+    state.selectedNucs.set(4, new Set([5, 6])); refreshNucleotideSelectionsImmediate();
+    const before = [where('.tsd-mark'), where('[data-repeat-hl]'), nucs()];
+    const steps = {};
+    renderAlignment(); steps.redraw = [where('.tsd-mark'), where('[data-repeat-hl]'), nucs()];
+    state.selectedColumns = new Set([3]); insertGapColumn(); state.selectedColumns.clear();
+    steps.gapColumn = [where('.tsd-mark'), where('[data-repeat-hl]')];
+    state.seqs.splice(0, 1); renderAlignment(); steps.deleteRow = [where('.tsd-mark'), where('[data-repeat-hl]'), nucs()];
+    state.selectedRows = new Set([3]); moveSelectedToTop(); state.selectedRows.clear(); updateRowSelections();
+    steps.moveRow = [where('.tsd-mark'), where('[data-repeat-hl]'), nucs()];
+    return { before, steps };
+  });
+  const [tsd0, rep0, nuc0] = r.before;
+  const bad = Object.entries(r.steps).filter(([, v]) => v[0] !== tsd0 || v[1] !== rep0 || (v[2] !== undefined && v[2] !== nuc0));
+  const ok = tsd0 === 'seq2:10,seq2:11' && rep0 === 'seq3:30,seq3:31,seq3:32' && nuc0 === 'seq4:5.6' && bad.length === 0;
+  return { pass: ok, detail: JSON.stringify(ok ? r.before : r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

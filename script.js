@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v214';
+const BUILD_TAG = 'v215';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -342,6 +342,228 @@ function _setSpanSearchClass(span, entry) {
     }
 }
 
+// ---- Repeat highlights: derived per row, like search hits ----
+// A row-specific repeat (Repeat Finder on one sequence) is anchored to its sequence and
+// residue numbers the first time it is drawn, so it follows gaps, row moves and deletions.
+// A column repeat (row null, found on the consensus) stays on its columns.
+let _repeatLayerVersion = 0;
+let _repeatColsCache = new Map();   // row -> { seq, version, cols: Map(col -> css colour) }
+
+function bumpRepeatLayer() {
+    _repeatLayerVersion++;
+    _repeatColsCache = new Map();
+}
+
+function _anchorRepeat(info) {
+    if (info.row === null || info.anchor) return;
+    const obj = state.seqs[info.row];
+    if (!obj) return;
+    const ranges = [];
+    let n = 0;
+    const resAt = [];
+    for (let c = 0; c < obj.seq.length; c++) {
+        const ch = obj.seq[c];
+        resAt[c] = (ch === '-' || ch === '.') ? -1 : n++;
+    }
+    info.segs.forEach(([a, z]) => {
+        let lo = -1, hi = -1;
+        for (let c = a; c < z && c < obj.seq.length; c++) {
+            if (resAt[c] < 0) continue;
+            if (lo < 0) lo = resAt[c];
+            hi = resAt[c];
+        }
+        if (lo >= 0) ranges.push([lo, hi + 1]);
+    });
+    info.anchor = { obj, ranges };
+}
+
+// Current row and column ranges of a highlight
+function _repeatView(info) {
+    if (info.row === null) return { row: null, segs: info.segs };
+    _anchorRepeat(info);
+    if (!info.anchor) return { row: info.row, segs: info.segs };
+    const row = _seqObjResolver()(info.anchor.obj);
+    if (row < 0) return { row: -1, segs: [] };
+    const seq = state.seqs[row].seq;
+    const colOf = [];
+    for (let c = 0; c < seq.length; c++) if (seq[c] !== '-' && seq[c] !== '.') colOf.push(c);
+    const segs = info.anchor.ranges.map(([lo, hi]) => [colOf[lo], (colOf[hi - 1] ?? colOf[colOf.length - 1]) + 1])
+        .filter(([a, z]) => Number.isInteger(a) && Number.isInteger(z));
+    info.row = row;                  // keep the table's go-to pointing at the right row
+    return { row, segs };
+}
+
+// Map(col -> colour) of the residues (not gaps) highlighted in one row
+function _repeatColsForRow(row) {
+    const hl = state.repeatHighlights;
+    if (!hl || !hl.size || row < 0) return _EMPTY_HITS;
+    const seq = state.seqs[row]?.seq;
+    if (seq === undefined) return _EMPTY_HITS;
+    const cached = _repeatColsCache.get(row);
+    // Keyed by the sequence object, not its letters: a repeat belongs to one sequence, and
+    // after a row move another sequence with identical letters can sit in this row. The Map
+    // itself is replaced by Selections on/off, undo and snapshots, so it is part of the key.
+    const obj = state.seqs[row];
+    if (cached && cached.obj === obj && cached.seq === seq && cached.version === _repeatLayerVersion && cached.hl === hl && cached.n === hl.size) return cached.cols;
+    const cols = new Map();
+    hl.forEach(info => {
+        const v = _repeatView(info);
+        if (v.row !== null && v.row !== row) return;
+        v.segs.forEach(([a, z]) => {
+            for (let c = a; c < z; c++) {
+                const ch = seq[c];
+                if (ch === undefined || ch === '-' || ch === '.') continue;
+                cols.set(c, info.color);
+            }
+        });
+    });
+    _repeatColsCache.set(row, { obj, seq, version: _repeatLayerVersion, hl, n: hl.size, cols });
+    return cols;
+}
+
+function _setSpanRepeatPaint(span, color) {
+    if (color) {
+        span.style.setProperty('background-color', color + '66', 'important');
+        span.dataset.repeatHl = '1';
+        if (!/repeat region/.test(span.title || '')) span.title = span.title ? span.title + ' | repeat region' : 'repeat region';
+    } else if (span.dataset.repeatHl === '1') {
+        span.style.removeProperty('background-color');
+        delete span.dataset.repeatHl;
+        span.title = (span.title || '').replace(/( \| )?repeat region/g, '');
+    }
+}
+
+// Bring every rendered residue span in line with the repeat layer
+function syncRepeatPaint() {
+    if (!alignmentContainer) return;
+    if (isCanvasMode()) { _canvasState.scheduleDraw?.(); return; }
+    alignmentContainer.querySelectorAll('.seq-line[data-seq-index]:not(.consensus-line)').forEach(line => {
+        const row = parseInt(line.dataset.seqIndex, 10);
+        if (!(row >= 0)) return;
+        const cols = _repeatColsForRow(row);
+        const data = line.querySelector('.seq-data');
+        if (!data || (!cols.size && !data.querySelector('[data-repeat-hl]'))) return;
+        for (const span of data.children) {
+            const p = span.dataset.pos;
+            if (p !== undefined) _setSpanRepeatPaint(span, cols.get(+p));
+        }
+    });
+}
+
+// ---- Marks tied to residues, not to (row, column) ----
+// TSD marks used to be stored as row index -> Set(column), so deleting or moving a row put
+// them on another sequence, and inserting a gap put them on another residue. ResidueMarks
+// stores sequence object -> Set(residue number, counting only non-gap characters) and
+// derives the current row -> Set(column) view from the sequences, so marks follow edits by
+// construction. It keeps the read API the old Map had (get, has, size, forEach, entries,
+// keys, iteration). Undo and redo replace the sequence objects with copies; such a copy is
+// found again by name. Marks whose sequence is gone are kept (an undo can bring it back)
+// but not shown.
+class ResidueMarks {
+    constructor() {
+        this.bySeq = new Map();   // seq object -> Set(residue number)
+        this._view = null;        // { len, entries: [{ row, obj, seq }], map: row -> Set(col) }
+    }
+    // from row -> Set(column) in the current layout. A gap column is kept as "between residue
+    // n-1 and n" (n - 0.5): it has no residue of its own, and it marks the gap run there.
+    static fromRowCols(map) {
+        if (map instanceof ResidueMarks) return map.clone();
+        const m = new ResidueMarks();
+        map?.forEach((cols, row) => {
+            const obj = state.seqs[row];
+            if (!obj || !cols?.size) return;
+            const seq = obj.seq;
+            const res = new Set();
+            let n = 0;
+            const want = new Set(cols);
+            for (let c = 0; c < seq.length; c++) {
+                const ch = seq[c];
+                if (ch === '-' || ch === '.') { if (want.has(c)) res.add(n - 0.5); continue; }
+                if (want.has(c)) res.add(n);
+                n++;
+            }
+            if (res.size) m.bySeq.set(obj, res);
+        });
+        return m;
+    }
+    clone() {
+        const m = new ResidueMarks();
+        this.bySeq.forEach((set, obj) => m.bySeq.set(obj, new Set(set)));
+        return m;
+    }
+    _valid() {
+        const v = this._view;
+        if (!v || v.len !== state.seqs.length) return false;
+        for (const e of v.entries) if (state.seqs[e.row] !== e.obj || e.obj.seq !== e.seq) return false;
+        return true;
+    }
+    _rows() {
+        if (this._valid()) return this._view.map;
+        const find = _seqObjResolver();
+        const map = new Map();
+        const entries = [];
+        const rebound = [];
+        this.bySeq.forEach((res, obj) => {
+            const row = find(obj);
+            if (row < 0) return;
+            const cur = state.seqs[row];
+            if (cur !== obj) rebound.push([obj, cur]);
+            const seq = cur.seq;
+            const cols = new Set();
+            let n = 0;
+            for (let c = 0; c < seq.length; c++) {
+                const ch = seq[c];
+                if (ch === '-' || ch === '.') { if (res.has(n - 0.5)) cols.add(c); continue; }
+                if (res.has(n)) cols.add(c);
+                n++;
+            }
+            if (cols.size) map.set(row, cols);
+            entries.push({ row, obj: cur, seq });
+        });
+        // follow the copies undo/redo made, so the next lookup is by identity again
+        rebound.forEach(([oldObj, cur]) => { const r = this.bySeq.get(oldObj); this.bySeq.delete(oldObj); this.bySeq.set(cur, r); });
+        this._view = { len: state.seqs.length, entries, map };
+        return map;
+    }
+    get(row) { return this._rows().get(row); }
+    has(row) { return this._rows().has(row); }
+    get size() { return this._rows().size; }
+    forEach(cb) { this._rows().forEach(cb); }
+    entries() { return this._rows().entries(); }
+    keys() { return this._rows().keys(); }
+    values() { return this._rows().values(); }
+    [Symbol.iterator]() { return this._rows()[Symbol.iterator](); }
+}
+
+// Row-indexed selection state (residue selection, the Type-tool cell) follows its sequence
+// when rows are deleted, moved, sorted or restored by undo: every such operation ends in a
+// render, which compares the row order with the one it last drew.
+let _lastRenderedRowObjs = null;
+function _remapRowKeyedSelections() {
+    const prev = _lastRenderedRowObjs;
+    _lastRenderedRowObjs = state.seqs.slice();
+    if (!prev || (prev.length === state.seqs.length && prev.every((o, i) => o === state.seqs[i]))) return;
+    const find = _seqObjResolver();
+    const newIndex = oldRow => (prev[oldRow] ? find(prev[oldRow]) : -1);
+    if (state.selectedNucs?.size) {
+        const next = new Map();
+        state.selectedNucs.forEach((set, row) => {
+            if (row < 0) { next.set(row, set); return; }   // consensus row
+            const r = newIndex(row);
+            if (r >= 0) next.set(r, set);
+        });
+        state.selectedNucs = next;
+    }
+    if (state.pendingNucStart && state.pendingNucStart.row >= 0) {
+        const r = newIndex(state.pendingNucStart.row);
+        state.pendingNucStart = r >= 0 ? { ...state.pendingNucStart, row: r } : null;
+    }
+    if (state.editCell) {
+        const r = newIndex(state.editCell.row);
+        state.editCell = r >= 0 ? { ...state.editCell, row: r } : null;
+    }
+}
+
 function _rebuildClusterCharMap() {
     state._clusterCharMap = null;
     if (!state.clusterResults || !state.clusterResults.clusters) return;
@@ -534,7 +756,7 @@ const state = {
     editLiveConservation: false,
     editDrag: null,
     editCell: null,
-    tsdMarks: new Map(),
+    _tsdMarks: null,   // ResidueMarks, through the tsdMarks accessor below
     tsdMarkStyle: 'color',
     tsdMarkColor: '#ffd54f',
     tsdMarkUndo: null,
@@ -556,6 +778,14 @@ const state = {
     groupConsensusCount: 0,
     _statsMatrices: null
 };
+
+// Assigning a plain row -> Set(column) Map (snapshots, undo, the TSD finder) converts it to
+// residue anchors in the current layout; reading gives the current row -> columns view.
+Object.defineProperty(state, 'tsdMarks', {
+    get() { return this._tsdMarks || (this._tsdMarks = new ResidueMarks()); },
+    set(v) { this._tsdMarks = v instanceof ResidueMarks ? v : ResidueMarks.fromRowCols(v || new Map()); },
+    enumerable: false
+});
 
 // -- Reusable file handles for Recent Files, via the File System Access API --
 // A dropped/picked file's real path is never exposed to JS (a deliberate
@@ -4205,6 +4435,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             const consPos = conservationData;
             const tsdRowMarks = state.tsdMarks?.get(i);
             const searchHits = _getSearchHitsForRow(i);
+            const repeatCols = _repeatColsForRow(i);
 
             // Residues (glyph-cached: 1 drawImage per cell vs fillRect+fillText)
             for (let p = firstCol; p <= lastCol; p++) {
@@ -4253,6 +4484,10 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                         continue;
                     }
                 }
+
+                // Repeat tint (DOM: inline background colour + 66 alpha)
+                const repeatColor = repeatCols.get(p);
+                if (repeatColor) bgFill = repeatColor + '66';
 
                 // Search hit override (mirrors CSS .search-hit-* { background-color; color: black })
                 if (searchHits.has(p)) {
@@ -6521,6 +6756,7 @@ function _refreshDiffHighlightInPlace() {
 
 function renderAlignment(options = {}) {
     if (typeof _cancelPendingSpanRepaint === 'function') _cancelPendingSpanRepaint();
+    _remapRowKeyedSelections();
     // Catch-all sync: covers every path that flips a mode radio programmatically
     // (BAM load, snapshot/session restore, the auto-switch heuristic below,
     // etc.) without going through onModeChange, so the top-bar quick switcher
@@ -7975,6 +8211,7 @@ function repaintResidueSpan(span, rowIndex, pos, base, config, conservationData)
     if (hit) span.dataset.searchHit = hit.className;
     else if (span.dataset.searchHit !== undefined) delete span.dataset.searchHit;
     setSpanTsdMarkDisplay(span, rowIndex, pos);
+    if (state.repeatHighlights?.size || span.dataset.repeatHl) _setSpanRepeatPaint(span, _repeatColsForRow(rowIndex).get(pos));
 }
 
 function refreshSequenceRowDom(rowIndex, limitPositions = null, referenceSeq = null) {
@@ -8235,11 +8472,12 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
         }
     }
 
-    // Apply repeat highlights to this sequence line
+    lineDiv.appendChild(dataSpan);
+    // Repeat highlights after attaching: _applyLineHighlights reads the row from the parent
+    // line (applied before, row-specific repeats never matched and vanished on every redraw)
     if (state.repeatHighlights && state.repeatHighlights.size > 0) {
         _applyLineHighlights(dataSpan);
     }
-    lineDiv.appendChild(dataSpan);
     if (state.selectedRows.has(index)) {
         lineDiv.classList.add('selected');
     }
@@ -12528,13 +12766,13 @@ function _captureSelections() {
         // after rows are moved or deleted in between
         rows: _rowsToObjs(state.selectedRows), cols: new Set(state.selectedColumns), nucs: _nucsToObjs(state.selectedNucs),
         searches: (state.searchHistory || []).map(e => ({ ...e })),
-        tsd: state.tsdMarks ? new Map([...state.tsdMarks].map(([r, s]) => [r, new Set(s)])) : new Map(),
+        tsd: state.tsdMarks.clone(),
         repeats: new Map(state.repeatHighlights || []),
         names: new Map(colourState?.mappings || []),
         stash: {
             rows: st.rows ? new Set(st.rows) : null, cols: st.cols ? new Set(st.cols) : null,
             nucs: st.nucs ? new Map([...st.nucs].map(([o, s]) => [o, new Set(s)])) : null,
-            tsd: st.tsd ? new Map(st.tsd) : null, repeats: st.repeats ? new Map(st.repeats) : null,
+            tsd: st.tsd ? ResidueMarks.fromRowCols(st.tsd) : null, repeats: st.repeats ? new Map(st.repeats) : null,
             names: st.names ? new Map(st.names) : null
         }
     };
@@ -12616,7 +12854,7 @@ function setSelectionItemOn(key, on) {
         // Merge both ways, like rows: marks made while the item was off are kept
         const merged = _mergeTsdMaps(on ? st.tsd : state.tsdMarks, on ? state.tsdMarks : st.tsd);
         if (on) { state.tsdMarks = merged; st.tsd = null; }
-        else { st.tsd = merged; state.tsdMarks = new Map(); }
+        else { st.tsd = ResidueMarks.fromRowCols(merged); state.tsdMarks = new Map(); }
         renderAlignment({ deferConservation: true });
     } else if (key === 'repeats') {
         // Map by repeat id; the newer (live) entry wins a clash
@@ -12843,6 +13081,12 @@ function refreshSelectionsPanel() {
     });
 }
 
+// [id, {segs, row, color}] at their current position (the anchor object is not saved)
+function _serializeRepeats(map) {
+    return [...map].map(([id, info]) => { const v = _repeatView(info); return [id, { segs: v.segs, row: v.row, color: info.color }]; })
+        .filter(([, i]) => i.row === null || i.row >= 0);
+}
+
 function _snapshotSelections() {
     const st = state.selectionStash;
     const nucs = m => m ? [...m].map(([r, s]) => [r, [...s].sort((a, b) => a - b)]) : null;
@@ -12850,13 +13094,13 @@ function _snapshotSelections() {
         nucs: nucs(state.selectedNucs),
         tsd: state.tsdMarks?.size ? [...state.tsdMarks].map(([r, s]) => [r, [...s]]) : null,
         tsdStyle: state.tsdMarkStyle, tsdColor: state.tsdMarkColor,
-        repeats: state.repeatHighlights?.size ? [...state.repeatHighlights] : null,
+        repeats: state.repeatHighlights?.size ? _serializeRepeats(state.repeatHighlights) : null,
         stash: {
             rows: st.rows ? [..._objsToRows(st.rows)] : null,
             cols: st.cols ? [...st.cols] : null,
             nucs: st.nucs ? nucs(_objsToNucs(st.nucs)) : null,
             tsd: st.tsd ? [...st.tsd].map(([r, s]) => [r, [...s]]) : null,
-            repeats: st.repeats ? [...st.repeats] : null,
+            repeats: st.repeats ? _serializeRepeats(st.repeats) : null,
             names: st.names ? [...st.names] : null
         }
     };
@@ -12882,7 +13126,7 @@ function _applySnapshotSelections(sel) {
         rows: s.rows ? _rowsToObjs(s.rows.filter(i => Number.isInteger(i) && i < n)) : null,
         cols: s.cols ? new Set(s.cols) : null,
         nucs: s.nucs ? _nucsToObjs(nucMap(s.nucs)) : null,
-        tsd: s.tsd ? setMap(s.tsd) : null,
+        tsd: s.tsd ? ResidueMarks.fromRowCols(setMap(s.tsd)) : null,
         repeats: s.repeats ? new Map(s.repeats) : null,
         names: s.names ? new Map(s.names) : null
     };
@@ -26627,25 +26871,11 @@ function _repeatInfoFromRow(tr) {
     const row = tr.dataset.row === '' || tr.dataset.row == null ? null : parseInt(tr.dataset.row, 10);
     return { segs, row: Number.isInteger(row) ? row : null, color: tr.dataset.color };
 }
-// Paint (or unpaint) one highlight on the spans of its own row, not of every row
+// Kept for the callers that paint one highlight: the layer is derived, so any change is a
+// resync of every drawn row from state.repeatHighlights
 function _paintRepeatHighlight(info, on) {
-    const sel = info.row === null ? '.seq-line:not(.consensus-line):not(.scale-ruler-line) .seq-data > span[data-pos]'
-        : `.seq-line[data-seq-index="${info.row}"] .seq-data > span[data-pos]`;
-    document.querySelectorAll(sel).forEach(span => {
-        const pos = parseInt(span.dataset.pos, 10);
-        if (!info.segs.some(([a, z]) => pos >= a && pos < z)) return;
-        if (on) {
-            const ch = span.textContent;
-            if (ch === '-' || ch === '.') return;
-            span.style.setProperty('background-color', info.color + '66', 'important');
-            span.dataset.repeatHl = '1';
-            if (!/repeat region/.test(span.title || '')) span.title = span.title ? span.title + ' | repeat region' : 'repeat region';
-        } else if (span.dataset.repeatHl === '1') {
-            span.style.removeProperty('background-color');
-            delete span.dataset.repeatHl;
-            span.title = (span.title || '').replace(/( \| )?repeat region/g, '');
-        }
-    });
+    bumpRepeatLayer();
+    syncRepeatPaint();
 }
 function _removeRepeatHighlight(row) {
     const rid = row.dataset.repeatId;
@@ -26653,9 +26883,7 @@ function _removeRepeatHighlight(row) {
     if (hl.has(rid)) {
         const info = hl.get(rid);
         hl.delete(rid);
-        _paintRepeatHighlight(info, false);
-        // another highlight may share those columns in the same row: repaint the survivors
-        hl.forEach(other => _paintRepeatHighlight(other, true));
+        _paintRepeatHighlight(info, false);   // resync: survivors sharing those columns stay
     }
     row.dataset.active = '';
     row.style.background = '';
@@ -26678,35 +26906,22 @@ function _toggleRepeatHighlight(row) {
 }
 
 function _applyLineHighlights(dataSpan) {
-    const hl = state.repeatHighlights;
-    if (!hl || hl.size === 0) return;
     const line = dataSpan.parentElement;
-    if (line?.classList.contains('consensus-line')) return;
-    const rowAttr = line?.dataset?.seqIndex;
-    const row = rowAttr == null ? null : parseInt(rowAttr, 10);
-    const infos = [...hl.values()].map(info => info.segs ? info : { segs: [[info.start, info.end]], row: null, color: info.color })
-        .filter(info => info.row === null || info.row === row);
-    if (!infos.length) return;
-    const spans = dataSpan.children;
-    for (let i = 0; i < spans.length; i++) {
-        const span = spans[i];
-        const pos = parseInt(span.dataset.pos);
-        if (isNaN(pos)) continue;
-        // Skip gap characters - do not colour gaps within repeats
-        const ch = span.textContent;
-        if (ch === '-' || ch === '.') continue;
-        const info = infos.find(inf => inf.segs.some(([a, z]) => pos >= a && pos < z));
-        if (info) {
-            span.style.setProperty('background-color', info.color + '66', 'important');
-            span.dataset.repeatHl = '1';
-            span.title = span.title ? span.title + ' | repeat region' : 'repeat region';
-        }
+    if (!line || line.classList.contains('consensus-line')) return;
+    const row = parseInt(line.dataset.seqIndex, 10);
+    if (!(row >= 0)) return;
+    const cols = _repeatColsForRow(row);
+    if (!cols.size) return;
+    for (const span of dataSpan.children) {
+        const p = span.dataset.pos;
+        if (p !== undefined && cols.has(+p)) _setSpanRepeatPaint(span, cols.get(+p));
     }
 }
 
 function _clearRepeatHighlights() {
     // Fast path: clear all highlight backgrounds directly from DOM
     state.repeatHighlights.clear();
+    bumpRepeatLayer();
     // only spans this finder painted, so other inline colours (e.g. diagnostic marks) survive
     document.querySelectorAll('.seq-data > span[data-repeat-hl="1"]').forEach(span => {
         span.style.removeProperty('background-color');

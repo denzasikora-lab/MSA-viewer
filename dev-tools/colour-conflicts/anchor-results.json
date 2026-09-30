@@ -295,31 +295,15 @@
  "res-sel|delete-row-above": {
   "before": 3,
   "after": 3,
-  "lost": [
-   "seq2:res10",
-   "seq2:res11",
-   "seq2:res12"
-  ],
-  "gained": [
-   "seq3:res10",
-   "seq3:res11",
-   "seq3:res12"
-  ],
+  "lost": [],
+  "gained": [],
   "errors": []
  },
  "res-sel|move-row-to-top": {
   "before": 3,
   "after": 3,
-  "lost": [
-   "seq2:res10",
-   "seq2:res11",
-   "seq2:res12"
-  ],
-  "gained": [
-   "seq1:res10",
-   "seq1:res11",
-   "seq1:res12"
-  ],
+  "lost": [],
+  "gained": [],
   "errors": []
  },
  "res-sel|undo-after-gap": {
@@ -343,60 +327,36 @@
  "tsd|gap-col-left": {
   "before": 2,
   "after": 2,
-  "lost": [
-   "seq2:res12"
-  ],
-  "gained": [
-   "seq2:res10"
-  ],
+  "lost": [],
+  "gained": [],
   "errors": []
  },
  "tsd|gap-all-left(edit)": {
   "before": 2,
   "after": 2,
-  "lost": [
-   "seq2:res12"
-  ],
-  "gained": [
-   "seq2:res10"
-  ],
+  "lost": [],
+  "gained": [],
   "errors": []
  },
  "tsd|gap-one-row(edit)": {
   "before": 2,
   "after": 2,
-  "lost": [
-   "seq2:res12"
-  ],
-  "gained": [
-   "seq2:res10"
-  ],
+  "lost": [],
+  "gained": [],
   "errors": []
  },
  "tsd|delete-row-above": {
   "before": 2,
   "after": 2,
-  "lost": [
-   "seq2:res11",
-   "seq2:res12"
-  ],
-  "gained": [
-   "seq3:res11",
-   "seq3:res12"
-  ],
+  "lost": [],
+  "gained": [],
   "errors": []
  },
  "tsd|move-row-to-top": {
   "before": 2,
   "after": 2,
-  "lost": [
-   "seq2:res11",
-   "seq2:res12"
-  ],
-  "gained": [
-   "seq1:res11",
-   "seq1:res12"
-  ],
+  "lost": [],
+  "gained": [],
   "errors": []
  },
  "tsd|undo-after-gap": {
@@ -408,92 +368,50 @@
  },
  "repeat|redraw": {
   "before": 5,
-  "after": 0,
-  "lost": [
-   "seq2:res10",
-   "seq2:res11",
-   "seq2:res12",
-   "seq2:res13",
-   "seq2:res9"
-  ],
+  "after": 5,
+  "lost": [],
   "gained": [],
   "errors": []
  },
  "repeat|gap-col-left": {
   "before": 5,
-  "after": 0,
-  "lost": [
-   "seq2:res10",
-   "seq2:res11",
-   "seq2:res12",
-   "seq2:res13",
-   "seq2:res9"
-  ],
+  "after": 5,
+  "lost": [],
   "gained": [],
   "errors": []
  },
  "repeat|gap-all-left(edit)": {
   "before": 5,
-  "after": 0,
-  "lost": [
-   "seq2:res10",
-   "seq2:res11",
-   "seq2:res12",
-   "seq2:res13",
-   "seq2:res9"
-  ],
+  "after": 5,
+  "lost": [],
   "gained": [],
   "errors": []
  },
  "repeat|gap-one-row(edit)": {
   "before": 5,
-  "after": 0,
-  "lost": [
-   "seq2:res10",
-   "seq2:res11",
-   "seq2:res12",
-   "seq2:res13",
-   "seq2:res9"
-  ],
+  "after": 5,
+  "lost": [],
   "gained": [],
   "errors": []
  },
  "repeat|delete-row-above": {
   "before": 5,
-  "after": 0,
-  "lost": [
-   "seq2:res10",
-   "seq2:res11",
-   "seq2:res12",
-   "seq2:res13",
-   "seq2:res9"
-  ],
+  "after": 5,
+  "lost": [],
   "gained": [],
   "errors": []
  },
  "repeat|move-row-to-top": {
   "before": 5,
-  "after": 0,
-  "lost": [
-   "seq2:res10",
-   "seq2:res11",
-   "seq2:res12",
-   "seq2:res13",
-   "seq2:res9"
-  ],
+  "after": 5,
+  "lost": [],
   "gained": [],
   "errors": []
  },
  "repeat|undo-after-gap": {
   "before": 5,
-  "after": 0,
-  "lost": [
-   "seq2:res10",
-   "seq2:res11",
-   "seq2:res12",
-   "seq2:res13",
-   "seq2:res9"
-  ],
+  "after": 5,
+  "lost": [],
   "gained": [],
   "errors": []
  },
