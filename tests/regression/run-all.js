@@ -2321,6 +2321,19 @@ check('v212 audit fixes: switched-off selections survive undo and column edits; 
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+check('Name colours: cleared when a new file loads, restored from a snapshot', async (page) => {
+  await loadFasta(page, variedFasta(5, 60, 21));
+  const snap = await page.evaluate(() => {
+    colourState.mappings.set(state.seqs[0].header, '#ff0000'); applyColourToSeqNames(colourState.mappings);
+    return JSON.stringify(_buildSnapshotPayload());
+  });
+  await loadFasta(page, variedFasta(5, 60, 21));
+  const afterLoad = await page.evaluate(() => [colourState.mappings.size, document.querySelectorAll('.seq-name[style*="background"]').length]);
+  const afterSnap = await page.evaluate(async (p) => { _loadSnapshotPayload(JSON.parse(p)); await new Promise(r => setTimeout(r, 1200)); return colourState.mappings.size; }, snap);
+  const ok = afterLoad[0] === 0 && afterLoad[1] === 0 && afterSnap === 1;
+  return { pass: ok, detail: JSON.stringify({ afterLoad, afterSnap }) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

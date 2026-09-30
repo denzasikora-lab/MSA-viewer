@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v213';
+const BUILD_TAG = 'v214';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -9060,7 +9060,10 @@ async function parseAndRender(isFromDrop = false) {
         state.tsdMarks = new Map();
         state.tsdMarkUndo = null;
         if (state.repeatHighlights) state.repeatHighlights.clear();
-        state.colourState = { mappings: new Map(), history: new Map() };
+        // Name colours belong to the previous file (this used to reset state.colourState,
+        // which nothing reads, so colours carried over). Saved presets are kept.
+        colourState.mappings.clear();
+        colourState.history?.clear();
         state.manuallyColoured = new Set();
         state.dragStartCol = null;
         state.dragStartRow = null;
