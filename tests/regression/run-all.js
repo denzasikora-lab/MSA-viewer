@@ -2171,6 +2171,156 @@ check('Canvas: switching a search or selection off in the Selections panel redra
   return { pass: on > 1000 && off === 0, detail: `highlighted pixels ${on} -> ${off}` };
 });
 
+check('v212 audit fixes: mismatch hits, empty/lowercase/invalid regex, counts, legacy snapshots, no-op gaps, per-row cache', async (page) => {
+  await loadFasta(page, '>a\nACGTAAAACCGTTGCA\n>b\nAC-GTAAATCCGTTGC\n>c\nTTTTTTTTTTTTTTTT\n');
+  const out = await page.evaluate(() => {
+    const r = {};
+    const hitCols = row => [...document.querySelectorAll(`.seq-line[data-seq-index="${row}"] .seq-data > span[data-search-hit]`)].map(sp => +sp.dataset.pos);
+    // 1 mismatch search AAAA: row b "ACGTAAATCC.." matches AAAT at degapped 4..7 -> A,A,A paint, T not
+    el('maxMismatches').value = '1'; el('searchRegex').checked = false; el('searchBothStrands').checked = false;
+    el('searchInput').value = 'AAAA'; el('searchButton').click();
+    renderAlignment();                                  // the redraw path, not the Find path
+    r.mm = hitCols(1).join(',');                       // row b columns: A at 5,6,7 (gap at col 2)
+    clearAllSearches(true); el('maxMismatches').value = '0';
+    // empty-matching regex paints nothing, counts nothing
+    el('searchRegex').checked = true; el('searchInput').value = 'q*'; el('searchButton').click();
+    r.empty = [state.searchHistory[0]?.matchCount, document.querySelectorAll('[data-search-hit]').length];
+    clearAllSearches(true);
+    // lowercase u in a regex finds T/U residues
+    el('searchInput').value = 'gu'; el('searchButton').click();
+    r.lowerU = state.searchHistory[0]?.matchCount || 0;
+    clearAllSearches(true);
+    // invalid regex with both strands: no entry, message kept
+    el('searchBothStrands').checked = true; el('searchInput').value = '[AT'; el('searchButton').click();
+    r.invalid = [state.searchHistory.length, (el('statusMessage')?.textContent || '').includes('Invalid regex')];
+    // regex + both strands: forward only, no mangled rev-comp entry
+    el('searchInput').value = 'A[CT]G'; el('searchButton').click();
+    r.regexStrands = state.searchHistory.map(e => e.strand).join(',');
+    clearAllSearches(true);
+    // both strands: a sequence matching on both strands counted once
+    el('searchRegex').checked = false; el('searchInput').value = 'ACG'; el('searchButton').click();
+    r.bothMsg = el('statusMessage')?.textContent || '';
+    clearAllSearches(true);
+    // legacy snapshot entries: mismatches from the view, regex from metacharacters
+    _applySnapshotSearchHistory([{ motif: 'AAAA:fwd', color: '#ff0', label: 'AAAA', strand: 'fwd' },
+                                 { motif: '[AT]CC:fwd', color: '#0ff', label: '[AT]CC', strand: 'fwd' }], '1');
+    r.legacy = state.searchHistory.map(e => `${e.maxMismatches}/${e.useRegex}`).join(' ');
+    clearAllSearches(true);
+    // gap insert inside the trailing filler run is a no-op
+    r.noop = geneDocInsertDashString('MK--', 3).changed === false && geneDocDeleteDashString('MK--', 3).changed === false
+      && geneDocInsertDashString('MKGA', 1).changed === true;
+    // per-row cache: a missing row blocks the in-place patch even when the consensus row pads the size
+    const saved = state.spanCache.get(1); state.spanCache.delete(1);
+    r.cacheGuard = canPatchColumnsInPlace(state.seqs[0].seq.length, state.seqs[0].seq.length) === false;
+    state.spanCache.set(1, saved);
+    return r;
+  });
+  const ok = out.mm === '5,6,7' && out.empty[0] === 0 && out.empty[1] === 0 && out.lowerU >= 1
+    && out.invalid[0] === 0 && out.invalid[1] && out.regexStrands === 'fwd'
+    && /in 2 sequences/.test(out.bothMsg) && out.legacy === '1/false 0/true' && out.noop && out.cacheGuard;
+  return { pass: ok, detail: JSON.stringify(out) };
+});
+
+check('v212 audit fixes: Selections off/on merges TSD marks, repeats and name colours', async (page) => {
+  await loadFasta(page, variedFasta(6, 80, 9));
+  const out = await page.evaluate(() => {
+    const r = {};
+    const names = state.seqs.map(q => q.header);
+    // TSD: mark row 0, off, mark row 1, off again, on -> both rows
+    state.tsdMarks = new Map([[0, new Set([3, 4])]]);
+    setSelectionItemOn('tsd', false);
+    state.tsdMarks = new Map([[1, new Set([7])]]);
+    setSelectionItemOn('tsd', false);
+    setSelectionItemOn('tsd', true);
+    r.tsd = [...state.tsdMarks.keys()].sort().join(',');
+    // Name colours: A,B off; C coloured; on -> A,B,C
+    colourState.mappings.set(names[0], '#f00'); colourState.mappings.set(names[1], '#0f0');
+    setSelectionItemOn('names', false);
+    colourState.mappings.set(names[2], '#00f');
+    setSelectionItemOn('names', true);
+    r.names = colourState.mappings.size;
+    // Repeats: off twice with a new one between, then on -> both
+    state.repeatHighlights = new Map([['r1', { segs: [[2, 6]], row: 0, color: '#abc' }]]);
+    setSelectionItemOn('repeats', false);
+    state.repeatHighlights = new Map([['r2', { segs: [[8, 12]], row: 1, color: '#cba' }]]);
+    setSelectionItemOn('repeats', false);
+    setSelectionItemOn('repeats', true);
+    r.repeats = [...state.repeatHighlights.keys()].sort().join(',');
+    // toggling repeats with no repeat state must not throw
+    state.repeatHighlights = undefined; state.selectionStash.repeats = null;
+    try { setSelectionItemOn('repeats', false); r.noThrow = true; } catch (e) { r.noThrow = e.message; }
+    state.repeatHighlights = new Map();
+    // Undo after a row above the selection was deleted restores the same sequence
+    state.selectedRows = new Set([3]); const want = state.seqs[3].header;
+    clearActiveSelection(true);
+    state.seqs.splice(0, 1); renderAlignment();
+    undoSelectionsRemoval();
+    r.undoRow = [...state.selectedRows].map(i => state.seqs[i].header).join() === want;
+    // A snapshot with no colours/marks, loaded over a session that has them, shows none
+    clearAllSelections();
+    const snap = _buildSnapshotPayload();
+    snap.view.selectedColumns = [2, 99999];
+    colourState.mappings.set(state.seqs[0].header, '#f00');
+    state.tsdMarks = new Map([[1, new Set([4])]]);
+    return new Promise(res => {
+      _loadSnapshotPayload(JSON.parse(JSON.stringify(snap)));
+      setTimeout(() => {
+        r.snapExact = colourState.mappings.size === 0 && state.tsdMarks.size === 0;
+        r.snapCols = [...state.selectedColumns].join();
+        res(r);
+      }, 1200);
+    });
+  });
+  const ok = out.tsd === '0,1' && out.names === 3 && out.repeats === 'r1,r2' && out.noThrow === true && out.undoRow
+    && out.snapExact && out.snapCols === '2';
+  return { pass: ok, detail: JSON.stringify(out) };
+});
+
+check('v212 audit fixes: switched-off selections survive undo and column edits; Esc in a Type cell', async (page) => {
+  await loadFasta(page, variedFasta(6, 40, 13));
+  const r = await page.evaluate(() => {
+    const out = {};
+    const hdr = () => [...state.selectedRows].sort((a, b) => a - b).map(i => state.seqs[i].header).join();
+    // rows 2,3 off; a data undo replaces state.seqs with copies; on again -> same sequences
+    state.selectedRows = new Set([2, 3]); const want = hdr();
+    setSelectionItemOn('rows', false);
+    state.selectedColumns = new Set([0]); deleteSelectedColumns(true);   // pushes undo, copies seqs
+    undoDelete();
+    setSelectionItemOn('rows', true);
+    out.rowsAfterUndo = hdr() === want;
+    // columns 10,11 off; insert a gap column at 5 -> they come back as 11,12; delete 0 -> 10,11
+    state.selectedRows.clear(); state.selectedColumns = new Set([10, 11]);
+    setSelectionItemOn('cols', false);
+    state.selectedColumns = new Set([5]); insertGapColumn();
+    setSelectionItemOn('cols', true);
+    out.colsAfterInsert = [...state.selectedColumns].sort((a, b) => a - b).join();
+    setSelectionItemOn('cols', false);
+    state.selectedColumns = new Set([0]); deleteSelectedColumns(true);
+    setSelectionItemOn('cols', true);
+    out.colsAfterDelete = [...state.selectedColumns].sort((a, b) => a - b).join();
+    return out;
+  });
+  // Esc while typing in a cell leaves the cell and keeps the selection
+  await page.evaluate(() => { state.selectedRows = new Set([1]); updateRowSelections(); });
+  await page.click('#editToggleButton');
+  await page.click('#editResidueButton');
+  await page.click('.seq-line[data-seq-index="4"] .seq-data > span[data-pos="3"]');
+  await page.mouse.move(700, 650); await page.waitForTimeout(300);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(80);
+  r.escCell = await page.evaluate(() => [state.editCell === null, state.selectedRows.size]);
+  // a focused checkbox does not swallow the first Esc
+  await page.evaluate(() => { el('editToggleButton').click(); state.selectedRows = new Set([2]); updateRowSelections();
+    const cb = document.createElement('input'); cb.type = 'checkbox'; cb.id = '__escProbe';
+    cb.style.cssText = 'position:fixed;left:5px;bottom:5px;z-index:99999'; document.body.appendChild(cb); cb.focus(); });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(80);
+  r.escCheckbox = await page.evaluate(() => [document.activeElement?.id === '__escProbe' || document.activeElement === document.body, state.selectedRows.size]);
+  const ok = r.rowsAfterUndo && r.colsAfterInsert === '11,12' && r.colsAfterDelete === '10,11'
+    && r.escCell[0] === true && r.escCell[1] === 1 && r.escCheckbox[1] === 0;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

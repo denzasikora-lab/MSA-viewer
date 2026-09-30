@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v212';
+const BUILD_TAG = 'v213';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -200,7 +200,9 @@ function _searchEntryMotif(entry) {
     let v = entry.searchValue || entry.label || '';
     v = String(v).replace(/\s*\(rev comp\)\s*$/i, '').trim();
     if (!v && entry.motif) v = String(entry.motif).replace(/:(fwd|rev comp|rev)$/i, '').trim();
-    return v.replace(/U/g, 'T');
+    // Rows are searched with U read as T; a regex keeps its case, so convert u too (but not
+    // an escape such as \u0041)
+    return v.replace(/(?<!\\)[Uu]/g, 'T');
 }
 
 // Matches of one search in one degapped, upper-cased, U->T display string.
@@ -215,8 +217,9 @@ function _searchMatchesInDegapped(displayString, entry) {
         try { re = new RegExp(motif, 'gi'); } catch (_) { return null; }
         let m;
         while ((m = re.exec(displayString)) !== null) {
-            matches.push({ idx: m.index, len: m[0].length || 1, matchingPositions: null });
-            if (m[0].length === 0) re.lastIndex++;
+            // An empty match (q*, ^) covers no residue: neither a hit nor a count
+            if (m[0].length === 0) { re.lastIndex++; continue; }
+            matches.push({ idx: m.index, len: m[0].length, matchingPositions: null });
         }
         return matches;
     }
@@ -251,8 +254,9 @@ function _computeSearchHitsForSeq(seq) {
         const partial = !entry.useRegex && (entry.maxMismatches || 0) > 0;
         matches.forEach(m => {
             if (partial && m.matchingPositions?.length) {
-                m.matchingPositions.forEach(off => {
-                    const col = cols[m.idx + off];
+                // findFuzzyMatches gives absolute degapped indices, not offsets into the match
+                m.matchingPositions.forEach(pos => {
+                    const col = cols[pos];
                     if (col !== undefined) hits.set(col, entry);
                 });
             } else {
@@ -4238,6 +4242,9 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                         bgFill = tsdColor;
                         textFill = '#111';
                     } else if (state.tsdMarkStyle === 'bold') {
+                        // A search hit keeps its colour under a bold mark, as in the DOM
+                        const hit = searchHits.get(p);
+                        if (hit) { bgFill = hit.color || '#ffcc00'; textFill = '#000'; }
                         if (bgFill) { ctx.fillStyle = bgFill; ctx.fillRect(x, y, CHAR_W, CHAR_H); }
                         ctx.fillStyle = textFill;
                         ctx.font = 'bold ' + fontStr;
@@ -9049,6 +9056,10 @@ async function parseAndRender(isFromDrop = false) {
         state.searchHistory = [];
         bumpSearchLayer();
         _resetSelectionStash();
+        // Keyed by row index: meaningless for a different file
+        state.tsdMarks = new Map();
+        state.tsdMarkUndo = null;
+        if (state.repeatHighlights) state.repeatHighlights.clear();
         state.colourState = { mappings: new Map(), history: new Map() };
         state.manuallyColoured = new Set();
         state.dragStartCol = null;
@@ -9844,6 +9855,12 @@ function handleMouseUp() {
     state.dragStartCol = null;
     state.dragMode = null;
 }
+// A field that takes typed text; a focused checkbox, radio or button is not "open"
+function _isTextEntry(node) {
+    if (!node || node === document.body) return false;
+    if (node.tagName === 'TEXTAREA' || node.tagName === 'SELECT' || node.isContentEditable) return true;
+    return node.tagName === 'INPUT' && !/^(checkbox|radio|button|submit|reset|color|range|file|image)$/i.test(node.type || '');
+}
 function handleKeyDown(e) {
     if (e.key === 'Escape') {
         // A rename box handles its own Esc (cancel); closing menus here blurred it, and the
@@ -9854,7 +9871,15 @@ function handleKeyDown(e) {
         const somethingOpen = !!document.querySelector('#controls .menu-section.menu-open')
             || EXCLUSIVE_MODAL_IDS.some(id => { const m = el(id); return m && m.style.display && m.style.display !== 'none'; })
             || !!document.querySelector('.context-menu')
-            || (document.activeElement && document.activeElement !== document.body && /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName));
+            || _isTextEntry(document.activeElement);
+        // Typing in a cell (Type tool): Esc leaves the cell, the selection stays
+        if (!somethingOpen && state.editModeActive && state.editTool === 'residue' && state.editCell) {
+            state.editCell = null;
+            updateEditActiveCell();
+            closeAllMenusViaEsc();
+            e.preventDefault();
+            return;
+        }
         closeAllMenusViaEsc();
         closeContextMenu();
         if (!somethingOpen && !state.editDrag) clearActiveSelection();
@@ -10644,6 +10669,8 @@ function deleteSelectedColumns(skipConfirm) {
     if (skipConfirm || confirm(`Delete ${state.selectedColumns.size} column(s)?`)) {
         pushUndo('deleteColumns');
         const colsToDelete = Array.from(state.selectedColumns).sort((a,b) => b - a);
+        const deleted = new Set(colsToDelete);
+        _remapStashedColumns(c => deleted.has(c) ? null : c - colsToDelete.filter(d => d < c).length);
         state.seqs = state.seqs.map(s => {
             let seq = s.seq.split('');
             for (const pos of colsToDelete) {
@@ -11124,9 +11151,10 @@ function _applySnapshotView(view) {
     }
 
     state.selectedColumns.clear();
+    const _snapWidth = state.seqs.reduce((m, q) => Math.max(m, q.seq.length), 0);
     if (Array.isArray(view.selectedColumns)) {
         view.selectedColumns.forEach(col => {
-            if (Number.isInteger(col) && col >= 0) {
+            if (Number.isInteger(col) && col >= 0 && col < _snapWidth) {
                 state.selectedColumns.add(col);
             }
         });
@@ -11168,15 +11196,13 @@ function _loadSnapshotPayload(payload) {
 
     parseAndRender(true).then(() => {
         _applySnapshotView(payload.view || {});
-        if (payload.colourState) {
-            _applySnapshotColourState(payload.colourState);
-        }
+        // A snapshot gives back exactly what was saved: no colours saved means none shown
+        _applySnapshotColourState(payload.colourState || { mappings: [] });
         if (payload.searchHistory) {
-            _applySnapshotSearchHistory(payload.searchHistory);
+            _applySnapshotSearchHistory(payload.searchHistory, payload.view?.maxMismatches);
         }
-        if (payload.selections) {
-            _applySnapshotSelections(payload.selections);
-        }
+        // Older snapshots have no selections: still clear what the previous session showed
+        _applySnapshotSelections(payload.selections || {});
     });
 }
 
@@ -11193,7 +11219,8 @@ function _applySnapshotColourState(cs) {
     }
 }
 
-function _applySnapshotSearchHistory(sh) {
+// legacyMismatches: the snapshot's view.maxMismatches, the only record old snapshots kept
+function _applySnapshotSearchHistory(sh, legacyMismatches) {
     if (!Array.isArray(sh)) return;
     state.searchHistory.forEach(_removeSearchStyle);
     state.searchHistory = [];
@@ -11205,6 +11232,8 @@ function _applySnapshotSearchHistory(sh) {
         // Older snapshots have no searchValue; their motif key is "<motif>:<strand>", with
         // a trailing ":rev" on the reverse-complement key (the label is display text only).
         const legacyValue = rawMotif.replace(/:rev$/i, '');
+        // Old entries had no useRegex: a motif is plain letters, anything else was a regex
+        const legacyIsRegex = !entry.searchValue && /[^A-Za-z]/.test(legacyValue);
         let legacyRegex = null;
         const re = !entry.searchValue && /^restriction:[^:]*:([^:]+):(fwd|rev)/i.exec(motifKey);
         if (re) legacyRegex = restrictionSiteToRegex(re[2] === 'rev' ? reverseComplement(re[1]).replace(/U/g, 'T') : re[1]);
@@ -11216,8 +11245,9 @@ function _applySnapshotSearchHistory(sh) {
             label: entry.label || rawMotif,
             strand,
             searchValue: entry.searchValue || legacyRegex || (/rev comp/i.test(strand) ? reverseComplement(legacyValue) : legacyValue),
-            useRegex: !!entry.useRegex || !!legacyRegex,
-            maxMismatches: Number.isInteger(entry.maxMismatches) ? entry.maxMismatches : 0,
+            useRegex: !!entry.useRegex || !!legacyRegex || legacyIsRegex,
+            maxMismatches: Number.isInteger(entry.maxMismatches) ? entry.maxMismatches
+                : (legacyRegex || legacyIsRegex ? 0 : (parseInt(legacyMismatches, 10) || 0)),
             enabled: entry.enabled !== false,
             matchCount: entry.matchCount || 0,
             sequencesWithMatches: entry.sequencesWithMatches || 0
@@ -12129,10 +12159,20 @@ function searchMotif(options = {}) {
     // Matching is case-insensitive either way (flag i, and sequences are upper-cased).
     const motif = useRegex ? raw.trim() : raw.trim().replace(/\s+/g, '').toUpperCase();
     if (!motif) return;
+    if (useRegex) {
+        try { new RegExp(motif, 'gi'); } catch (e) {
+            showMessage('Invalid regex: ' + e.message, 4000);
+            return null;
+        }
+    }
     const color = options.color || el('searchColor').value;
     const maxMismatches = options.maxMismatches ?? (parseInt(el('maxMismatches').value) || 0);
     const checkboxEl = el('searchBothStrands');
-    const bothStrands = options.bothStrands ?? (checkboxEl && checkboxEl.checked);
+    // A regex is not a sequence: complementing its text letter by letter turns [AT] into
+    // N...N. Restriction sites build their own reverse-complement regex instead.
+    const bothStrandsAsked = options.bothStrands ?? (checkboxEl && checkboxEl.checked);
+    const bothStrands = bothStrandsAsked && !useRegex;
+    const regexSingleStrand = bothStrandsAsked && useRegex;
 
     debugLog('=== SEARCH MOTIF STARTED ===');
     debugLog('Input motif:', motif);
@@ -12218,10 +12258,7 @@ function searchMotif(options = {}) {
                 if (startCol !== undefined) motifAlignmentSites.add(`${startCol}:${m.len}`);
             });
         });
-        if (invalid) {
-            try { new RegExp(searchMotifValue, 'gi'); } catch (e) { showMessage('Invalid regex: ' + e.message, 4000); }
-            return;
-        }
+        if (invalid) return;   // validated above; kept as a guard
 
         const displayMatches = options.countMode === 'alignmentSites' ? motifAlignmentSites.size : motifMatches;
         Object.assign(entry, { matchCount: displayMatches, rawMatchCount: motifMatches, sequencesWithMatches: motifSeqsWithMatches.size });
@@ -12234,12 +12271,15 @@ function searchMotif(options = {}) {
     updateActiveSearchesPanel();
     if (!options.suppressMessage) {
         if (bothStrands) {
+            // a sequence matching on both strands is one sequence
+            const nSeqs = new Set([...fwdSeqs, ...revSeqs]).size;
             showMessage(
-                `Found ${totalMatches} match${totalMatches !== 1 ? 'es' : ''} (fwd:${fwdMatches}, rev comp:${revMatches}) in ${fwdSeqs.size + revSeqs.size} sequence${(fwdSeqs.size + revSeqs.size) !== 1 ? 's' : ''}`,
+                `Found ${totalMatches} match${totalMatches !== 1 ? 'es' : ''} (fwd:${fwdMatches}, rev comp:${revMatches}) in ${nSeqs} sequence${nSeqs !== 1 ? 's' : ''}`,
                 3000
             );
         } else {
-            showMessage(`Found ${totalMatches} match${totalMatches !== 1 ? 'es' : ''} in ${fwdSeqs.size} sequence${fwdSeqs.size !== 1 ? 's' : ''}`, 2000);
+            showMessage(`Found ${totalMatches} match${totalMatches !== 1 ? 'es' : ''} in ${fwdSeqs.size} sequence${fwdSeqs.size !== 1 ? 's' : ''}`
+                + (regexSingleStrand ? ' (regex: forward strand only)' : ''), regexSingleStrand ? 3500 : 2000);
         }
     }
     return { totalMatches, fwdMatches, revMatches, fwdSeqs: fwdSeqs.size, revSeqs: revSeqs.size, results: searchResults };
@@ -12345,15 +12385,20 @@ function _nucCount(map) {
     return n;
 }
 
-function _copyNucMap(map) {
+// "3-7, 12, 40-41" (1-based, as the ruler shows them)
+// row -> Set(columns); `over` adds to a copy of `base`, neither is modified
+function _mergeTsdMaps(base, over) {
     const out = new Map();
-    map?.forEach((set, row) => out.set(row, new Set(set)));
+    [base, over].forEach(m => m?.forEach((set, row) => {
+        const cur = out.get(row) || new Set();
+        set.forEach(p => cur.add(p));
+        out.set(row, cur);
+    }));
     return out;
 }
 
-// "3-7, 12, 40-41" (1-based, as the ruler shows them)
 function _formatColumnRanges(cols, maxParts = 4) {
-    const sorted = [...cols].map(Number).filter(Number.isInteger).sort((a, b) => a - b);
+    const sorted = [...new Set([...cols].map(Number))].filter(Number.isInteger).sort((a, b) => a - b);
     const parts = [];
     for (let i = 0; i < sorted.length;) {
         let j = i;
@@ -12371,9 +12416,27 @@ function _rowNames(rows, max = 3) {
 
 // Stashed rows are sequence objects; these convert to and from current row indices.
 function _rowsToObjs(rows) { return new Set([...rows].map(i => state.seqs[i]).filter(Boolean)); }
+// Undo/redo and column deletion replace state.seqs with copies, so a kept object may no
+// longer be in it. Such an object is found again by name (the first unclaimed row with
+// that header), which is what the user sees as "the same sequence".
+function _seqObjResolver() {
+    const byName = new Map();
+    state.seqs.forEach((q, i) => {
+        if (!byName.has(q.header)) byName.set(q.header, []);
+        byName.get(q.header).push(i);
+    });
+    const taken = new Set();
+    return o => {
+        let i = state.seqs.indexOf(o);
+        if (i < 0 || taken.has(i)) i = (byName.get(o?.header) || []).find(k => !taken.has(k)) ?? -1;
+        if (i >= 0) taken.add(i);
+        return i;
+    };
+}
 function _objsToRows(objs) {
     const out = new Set();
-    objs?.forEach(o => { const i = state.seqs.indexOf(o); if (i >= 0) out.add(i); });
+    const find = _seqObjResolver();
+    objs?.forEach(o => { const i = find(o); if (i >= 0) out.add(i); });
     return out;
 }
 function _nucsToObjs(map) {
@@ -12383,8 +12446,19 @@ function _nucsToObjs(map) {
 }
 function _objsToNucs(map) {
     const out = new Map();
-    map?.forEach((set, o) => { const i = state.seqs.indexOf(o); if (i >= 0) out.set(i, new Set(set)); });
+    const find = _seqObjResolver();
+    map?.forEach((set, o) => { const i = find(o); if (i >= 0) out.set(i, new Set(set)); });
     return out;
+}
+
+// Switched-off columns are column numbers: keep them on the same columns when columns are
+// inserted or deleted. fn(col) -> new column, or null to drop it.
+function _remapStashedColumns(fn) {
+    const st = state.selectionStash;
+    if (!st?.cols?.size) return;
+    const next = new Set();
+    st.cols.forEach(c => { const n = fn(c); if (Number.isInteger(n) && n >= 0) next.add(n); });
+    st.cols = next.size ? next : null;
 }
 
 function collectSelectionItems() {
@@ -12423,20 +12497,22 @@ function collectSelectionItems() {
     });
     const tsdLive = state.tsdMarks?.size || 0, tsdHidden = st.tsd?.size || 0;
     if (tsdLive || tsdHidden) {
+        const n = tsdLive || tsdHidden;
         items.push({ key: 'tsd', kind: 'TSD marks', on: tsdLive > 0, color: state.tsdMarkColor || '#ffd54f',
-            count: tsdLive || tsdHidden, detail: `in ${tsdLive || tsdHidden} sequence${(tsdLive || tsdHidden) === 1 ? '' : 's'}` });
+            count: n, detail: `in ${n} sequence${n === 1 ? '' : 's'}` + (tsdLive && tsdHidden ? ` (+${tsdHidden} off)` : '') });
     }
     const repLive = state.repeatHighlights?.size || 0, repHidden = st.repeats?.size || 0;
     if (repLive || repHidden) {
         const first = (repLive ? state.repeatHighlights : st.repeats).values().next().value;
         items.push({ key: 'repeats', kind: 'Repeat highlights', on: repLive > 0, color: first?.color,
-            count: repLive || repHidden, detail: '' });
+            count: repLive || repHidden, detail: repLive && repHidden ? `(+${repHidden} off)` : '' });
     }
     const namesLive = colourState?.mappings?.size || 0, namesHidden = st.names?.size || 0;
     if (namesLive || namesHidden) {
         const first = (namesLive ? colourState.mappings : st.names).values().next().value;
         items.push({ key: 'names', kind: 'Name colours', on: namesLive > 0, color: first,
-            count: namesLive || namesHidden, detail: `${namesLive || namesHidden} sequence${(namesLive || namesHidden) === 1 ? '' : 's'}` });
+            count: namesLive || namesHidden, detail: `${namesLive || namesHidden} sequence${(namesLive || namesHidden) === 1 ? '' : 's'}`
+                + (namesLive && namesHidden ? ` (+${namesHidden} off)` : '') });
     }
     return items;
 }
@@ -12445,7 +12521,9 @@ function collectSelectionItems() {
 function _captureSelections() {
     const st = state.selectionStash;
     return {
-        rows: new Set(state.selectedRows), cols: new Set(state.selectedColumns), nucs: _copyNucMap(state.selectedNucs),
+        // rows and residues by sequence object, so Undo still means the same sequences
+        // after rows are moved or deleted in between
+        rows: _rowsToObjs(state.selectedRows), cols: new Set(state.selectedColumns), nucs: _nucsToObjs(state.selectedNucs),
         searches: (state.searchHistory || []).map(e => ({ ...e })),
         tsd: state.tsdMarks ? new Map([...state.tsdMarks].map(([r, s]) => [r, new Set(s)])) : new Map(),
         repeats: new Map(state.repeatHighlights || []),
@@ -12460,9 +12538,9 @@ function _captureSelections() {
 }
 
 function _restoreSelections(b) {
-    state.selectedRows = new Set(b.rows);
+    state.selectedRows = _objsToRows(b.rows);
     state.selectedColumns = new Set(b.cols);
-    state.selectedNucs = _copyNucMap(b.nucs);
+    state.selectedNucs = _objsToNucs(b.nucs);
     (state.searchHistory || []).forEach(_removeSearchStyle);
     state.searchHistory = b.searches.map(e => ({ ...e }));
     state.tsdMarks = b.tsd;
@@ -12532,21 +12610,25 @@ function setSelectionItemOn(key, on) {
         }
         _refreshRowColNucDom();
     } else if (key === 'tsd') {
-        if (on) { if (st.tsd) state.tsdMarks = st.tsd; st.tsd = null; }
-        else { st.tsd = state.tsdMarks; state.tsdMarks = new Map(); }
+        // Merge both ways, like rows: marks made while the item was off are kept
+        const merged = _mergeTsdMaps(on ? st.tsd : state.tsdMarks, on ? state.tsdMarks : st.tsd);
+        if (on) { state.tsdMarks = merged; st.tsd = null; }
+        else { st.tsd = merged; state.tsdMarks = new Map(); }
         renderAlignment({ deferConservation: true });
     } else if (key === 'repeats') {
+        // Map by repeat id; the newer (live) entry wins a clash
         if (on) {
-            if (st.repeats) state.repeatHighlights = st.repeats;
+            state.repeatHighlights = new Map([...(st.repeats || []), ...(state.repeatHighlights || [])]);
             st.repeats = null;
             renderAlignment({ deferConservation: true });
         } else {
-            st.repeats = new Map(state.repeatHighlights);
-            _clearRepeatHighlights();
+            st.repeats = new Map([...(st.repeats || []), ...(state.repeatHighlights || [])]);
+            if (state.repeatHighlights) _clearRepeatHighlights();
         }
     } else if (key === 'names') {
-        if (on) { st.names?.forEach((c, n) => colourState.mappings.set(n, c)); st.names = null; }
-        else { st.names = new Map(colourState.mappings); colourState.mappings.clear(); }
+        // By name; a colour given while the item was off wins over the stashed one
+        if (on) { st.names?.forEach((c, n) => { if (!colourState.mappings.has(n)) colourState.mappings.set(n, c); }); st.names = null; }
+        else { st.names = new Map([...(st.names || []), ...colourState.mappings]); colourState.mappings.clear(); }
         applyColourToSeqNames(colourState.mappings);
     }
     scheduleSelectionsPanelRefresh();
@@ -12787,8 +12869,11 @@ function _applySnapshotSelections(sel) {
     };
     const setMap = arr => new Map((arr || []).filter(([r]) => Number.isInteger(r) && r < n).map(([r, ps]) => [r, new Set(ps)]));
     state.selectedNucs = nucMap(sel.nucs);
-    if (sel.tsd) { state.tsdMarks = setMap(sel.tsd); state.tsdMarkStyle = sel.tsdStyle || state.tsdMarkStyle; state.tsdMarkColor = sel.tsdColor || state.tsdMarkColor; }
-    if (sel.repeats) state.repeatHighlights = new Map(sel.repeats);
+    const hadMarks = (state.tsdMarks?.size || 0) + (state.repeatHighlights?.size || 0) > 0;
+    // Replace, not keep: marks from the previous session belong to other rows
+    state.tsdMarks = setMap(sel.tsd);
+    if (sel.tsd) { state.tsdMarkStyle = sel.tsdStyle || state.tsdMarkStyle; state.tsdMarkColor = sel.tsdColor || state.tsdMarkColor; }
+    state.repeatHighlights = new Map(sel.repeats || []);
     const s = sel.stash || {};
     state.selectionStash = {
         rows: s.rows ? _rowsToObjs(s.rows.filter(i => Number.isInteger(i) && i < n)) : null,
@@ -12799,7 +12884,7 @@ function _applySnapshotSelections(sel) {
         names: s.names ? new Map(s.names) : null
     };
     _selectionsUndo = null;
-    if (sel.tsd || sel.repeats) renderAlignment({ deferConservation: true });
+    if (sel.tsd || sel.repeats || hadMarks) renderAlignment({ deferConservation: true });
     else _refreshRowColNucDom();
     scheduleSelectionsPanelRefresh();
 }
@@ -12813,8 +12898,8 @@ function initSelectionsPanel() {
         setAllSelectionsOn(!(items.length && items.every(i => i.on)));
     });
     // Docking back or detaching changes whether an empty panel should still show
-    new MutationObserver(scheduleSelectionsPanelRefresh)
-        .observe(el('selections-controls'), { attributes: true, attributeFilter: ['class'] });
+    const group = el('selections-controls');
+    if (group) new MutationObserver(scheduleSelectionsPanelRefresh).observe(group, { attributes: true, attributeFilter: ['class'] });
     refreshSelectionsPanel();
 }
 
@@ -18776,7 +18861,6 @@ function showContextMenu(e, index) {
     contextMenu.appendChild(deleteItem);
 
     const clearSelItem = document.createElement('div');
-    clearSelItem.textContent = 'Clear selection';
     clearSelItem.textContent = 'Clear selection (Esc)';
     clearSelItem.addEventListener('click', () => {
         clearActiveSelection(true);
@@ -20676,8 +20760,9 @@ function _runStaleRepaint(deadline) {
         _repaintRowCols(row, from, Infinity, ctx);
         _staleRows.delete(row);
     }
+    // Repainted spans lost their residue-selection classes; restore them every slice
+    if (state.selectedNucs.size) scheduleNucSelectionRefresh();
     if (_staleRows.size) _scheduleStaleRepaint();
-    else if (state.selectedNucs.size) scheduleNucSelectionRefresh();
 }
 
 // Scrolling brings stale rows into view: finish those rows before the frame is drawn.
@@ -20686,13 +20771,16 @@ function _repaintStaleRowsOnScreen() {
     const { rows } = _onScreenWindow();
     if (!rows.size) return;
     const ctx = _staleRepaintContext();
+    let any = false;
     rows.forEach(row => {
         const from = _staleRows.get(row);
         if (from === undefined) return;
         _repaintRowCols(row, from, Infinity, ctx);
         _staleRows.delete(row);
+        any = true;
     });
     _staleOrder = _staleOrder.filter(r => _staleRows.has(r));
+    if (any && state.selectedNucs.size) scheduleNucSelectionRefresh();
 }
 
 // Rows with a line on screen, and the columns visible in them (with a margin).
@@ -20732,7 +20820,9 @@ function _measureCharWidth() {
 
 function canPatchColumnsInPlace(newWidth, oldWidth) {
     if (!isSpanRenderMode() || state._needsWindowedDom) return false;
-    if (!state.spanCache || state.spanCache.size < state.seqs.length) return false;
+    if (!state.spanCache) return false;
+    // Every row must be indexed (the consensus row's entry makes a size test pass without it)
+    for (let i = 0; i < state.seqs.length; i++) if (!state.spanCache.get(i)?.size) return false;
     if (state._diffColumns?.size || state._brkBeforePos?.size || state.trimBoundaries || state.softTrimBoundaries) return false;
     if (state._codonData || state._clusterCharMap || state.repeatHighlights?.size || state.blockMask) return false;
     const grow = newWidth - oldWidth;
@@ -21045,7 +21135,9 @@ function geneDocInsertDashString(seq, pos) {
     const trailingFillers = countTrailingGeneDocFillers(chars);
     chars.splice(pos, 0, GENEDOC_FILLER);
     if (trailingFillers > 0) chars.pop();
-    return { seq: chars.join(''), changed: true };
+    const out = chars.join('');
+    // Inside the trailing filler run the splice and pop cancel out: nothing changed
+    return { seq: out, changed: out !== seq };
 }
 
 function geneDocDeleteDashString(seq, pos) {
@@ -21055,7 +21147,8 @@ function geneDocDeleteDashString(seq, pos) {
     }
     chars.splice(pos, 1);
     chars.push(GENEDOC_FILLER);
-    return { seq: chars.join(''), changed: true };
+    const out = chars.join('');
+    return { seq: out, changed: out !== seq };
 }
 
 function geneDocSlideStepString(seq, pos, direction) {
@@ -21319,7 +21412,6 @@ function drawGeneDocDragOverlay(drag) {
     // the drag began; any column whose highlight differs now must be painted over too.
     const searching = state.searchHistory?.length > 0;
     const nowHits = searching ? _getSearchHitsForRow(drag.rowIndex) : _EMPTY_HITS;
-    if (searching && !drag.startHits) drag.startHits = _computeSearchHitsForSeq(before);
     const startHits = drag.startHits || _EMPTY_HITS;
 
     for (const L of overlay.layers) {
@@ -21414,6 +21506,8 @@ function startGeneDocMoveDrag(e, rowIndex, pos, tool, span) {
         lastClientX: e.clientX,
         charWidth,
         originalSeq: state.seqs[rowIndex].seq,
+        // what the DOM row shows now, for the overlay's "unchanged cell" test
+        startHits: state.searchHistory?.length ? _computeSearchHitsForSeq(state.seqs[rowIndex].seq) : new Map(),
         originalAlignmentLength: Math.max(...state.seqs.map(seqObj => seqObj.seq.length)),
         moved: 0,
         visiblePositions: null,
@@ -21867,6 +21961,7 @@ function insertGapColumn(skipSelected = false) {
         if (skipSelected && state.selectedRows.has(i)) return; // Skip selected rows when requested
         s.seq = s.seq.slice(0, pos) + '-' + s.seq.slice(pos);
     });
+    _remapStashedColumns(c => (c >= pos ? c + 1 : c));
     normalizeAlignmentLengths();
     refreshAllGaplessPositions();
     state.selectedColumns.clear();
