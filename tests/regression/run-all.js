@@ -2506,6 +2506,35 @@ ${left}${tsd}${b}AAAAAAAAAA${tsd}${right}
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+check('Highlight diffs / Variable sites only work out of the box and pause each other with a message', async (page) => {
+  // column 3 (0-based) differs in one sequence; every other column is identical
+  await loadFasta(page, '>a\nACGTACGTAC\n>b\nACGAACGTAC\n>c\nACGTACGTAC\n>d\nACGTACGTAC\n');
+  const r = await page.evaluate(async () => {
+    const out = {};
+    const tick = async (id) => { el(id).click(); await new Promise(res => setTimeout(res, 350)); };
+    const msg = () => el('statusMessage')?.textContent || '';
+    out.defaults = [el('varThresholdMode').value, el('varSitesThreshold').value];
+    await tick('highlightDiffs');
+    out.diffCols = [...state._diffColumns].join();          // only the differing column
+    const dim = p => getComputedStyle(document.querySelector(`.seq-line[data-seq-index="0"] span[data-pos="${p}"]`)).opacity;
+    out.opacity = [dim(3), dim(5)];                          // differing column normal, identical dimmed
+    await tick('varSitesOnly');
+    out.afterVar = [el('highlightDiffs').checked, el('varSitesOnly').checked, state._diffsPausedByVarSites === true, /paused/.test(msg())];
+    out.hidden = getComputedStyle(document.querySelector('.seq-line[data-seq-index="0"] span[data-pos="5"]')).display;
+    await tick('varSitesOnly');                              // off again: Highlight diffs comes back
+    out.afterOff = [el('highlightDiffs').checked, el('varSitesOnly').checked, /back on/.test(msg())];
+    await tick('varSitesOnly'); await tick('highlightDiffs'); // ticking diffs while var-sites is on
+    out.afterDiffs = [el('highlightDiffs').checked, el('varSitesOnly').checked, /switched off/.test(msg())];
+    return out;
+  });
+  const ok = r.defaults[0] === 'count' && r.defaults[1] === '1' && r.diffCols === '3'
+    && r.opacity[0] === '1' && parseFloat(r.opacity[1]) < 1
+    && r.afterVar[0] === false && r.afterVar[1] === true && r.afterVar[2] && r.afterVar[3] && r.hidden === 'none'
+    && r.afterOff[0] === true && r.afterOff[1] === false && r.afterOff[2]
+    && r.afterDiffs[0] === true && r.afterDiffs[1] === false && r.afterDiffs[2];
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v217';
+const BUILD_TAG = 'v218';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -6979,6 +6979,20 @@ function _refreshDiffHighlightInPlace() {
     return true;
 }
 
+// A message about a change that is followed by a redraw: the redraw writes its own line into
+// the status area (Consensus: ... cols), which would replace the message a moment later, so the
+// message is shown again when the redraw is done (only if that happens within 3 s).
+let _pendingRenderMessage = null;
+function showMessageAfterRender(text, ms) {
+    showMessage(text, ms);
+    _pendingRenderMessage = { text, ms, at: performance.now() };
+}
+function _flushRenderMessage() {
+    const m = _pendingRenderMessage;
+    _pendingRenderMessage = null;
+    if (m && performance.now() - m.at < 3000) showMessage(m.text, m.ms);
+}
+
 function renderAlignment(options = {}) {
     if (typeof _cancelPendingSpanRepaint === 'function') _cancelPendingSpanRepaint();
     _remapRowKeyedSelections();
@@ -7209,6 +7223,7 @@ function renderAlignment(options = {}) {
         }
         _syncSelectionDomFromState();
         syncCodonModePanel();
+        _flushRenderMessage();
         return;
     }
 
@@ -7355,6 +7370,7 @@ function renderAlignment(options = {}) {
     }
     syncCodonModePanel();
     renderBlockMaskOverlay();
+    _flushRenderMessage();
 }
 
 // ==== 2D block-mask overlay ==============================================
@@ -20400,13 +20416,27 @@ function attachUIListeners() {
             // Highlight-diffs and Variable-sites-only are two presentations of the same
             // conserved-column computation and cannot both apply; keep the checkboxes in
             // step with that so the panel never shows two mutually exclusive states ticked.
-            if (id === 'highlightDiffs' && elRef.checked) {
+            // Say what was switched off, and bring Highlight diffs back when Variable sites only
+            // (which paused it) is turned off again, instead of dropping it silently.
+            if (id === 'highlightDiffs') {
+                state._diffsPausedByVarSites = false;
                 const other = el('varSitesOnly');
-                if (other?.checked) other.checked = false;
+                if (elRef.checked && other?.checked) {
+                    other.checked = false;
+                    showMessageAfterRender('Variable sites only switched off: it cannot be combined with Highlight diffs.', 3500);
+                }
             }
-            if (id === 'varSitesOnly' && elRef.checked) {
+            if (id === 'varSitesOnly') {
                 const other = el('highlightDiffs');
-                if (other?.checked) other.checked = false;
+                if (elRef.checked && other?.checked) {
+                    other.checked = false;
+                    state._diffsPausedByVarSites = true;
+                    showMessageAfterRender('Highlight diffs is paused while Variable sites only is on; it comes back when you turn that off.', 4000);
+                } else if (!elRef.checked && state._diffsPausedByVarSites) {
+                    state._diffsPausedByVarSites = false;
+                    if (other) other.checked = true;
+                    showMessageAfterRender('Highlight diffs is back on.', 2000);
+                }
             }
             if (id === 'highlightDiffs') {
                 document.body.classList.toggle('highlight-diffs', elRef.checked);

@@ -199,12 +199,12 @@
                                 <label style="font-size:10px;white-space:nowrap;flex:0 0 auto;" title="Hide fully-conserved columns entirely, showing only columns that differ"><input type="checkbox" id="varSitesOnly" title="Hide fully-conserved columns entirely, showing only columns that differ"> Variable sites only</label>
                                 <span id="varSitesControls" style="display:none;align-items:center;gap:4px;flex:0 0 auto;">
                                     <select id="varThresholdMode" style="font-size:10px;height:20px;flex:0 0 auto;" title="Whether the number below is a percentage of all sequences, or an absolute sequence count. Percentage rounds up to a whole sequence count (Math.ceil), which on small alignments can jump by more than 1 sequence between adjacent percentages; absolute count has no rounding, so any value from 1 to the full sequence count is reachable exactly - including 1, which shows a column the instant even a single sequence differs.">
-                                        <option value="pct" selected>%</option>
-                                        <option value="count">count</option>
+                                        <option value="pct">%</option>
+                                        <option value="count" selected>count</option>
                                     </select>
-                                    <input type="range" id="varSitesThreshold" min="0" max="100" value="0" step="1" style="width:90px;height:14px;flex:0 0 auto;" title="Minimum amount of sequences that must differ for a column to be shown">
-                                    <input type="number" id="varSitesThresholdInput" min="0" max="100" step="1" value="0" style="width:46px;height:20px;font-size:11px;flex:0 0 auto;" title="Type an exact difference threshold">
-                                    <span style="font-size:9px;white-space:nowrap;display:inline-block;min-width:56px;text-align:left;flex:0 0 auto;" id="varSitesThresholdLabel">≥0% diff</span>
+                                    <input type="range" id="varSitesThreshold" min="0" max="100" value="1" step="1" style="width:90px;height:14px;flex:0 0 auto;" title="Minimum amount of sequences that must differ for a column to be shown">
+                                    <input type="number" id="varSitesThresholdInput" min="0" max="100" step="1" value="1" style="width:46px;height:20px;font-size:11px;flex:0 0 auto;" title="Type an exact difference threshold">
+                                    <span style="font-size:9px;white-space:nowrap;display:inline-block;min-width:56px;text-align:left;flex:0 0 auto;" id="varSitesThresholdLabel">≥1 seqs</span>
                                     <span style="position:relative;display:inline-flex;align-items:center;margin-left:4px;flex:0 0 auto;">
                                         <label id="varSitesBreakpointsLabel" style="font-size:10px;white-space:nowrap;" title="Mark hidden-column boundaries with a vertical ⋮ so collapsed regions stay visible"><input type="checkbox" id="varSitesBreakpoints" checked> Breakpoints</label>
                                         <button type="button" id="brkStyleBtn" title="Customize breakpoint marker appearance (colour, symbol)" style="font-size:9px;line-height:1;padding:1px 3px;margin-left:2px;border:1px solid #bbb;border-radius:2px;background:#f0f0f0;cursor:pointer;">▾</button>
@@ -1297,7 +1297,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=267"></script>
+    <script src="script.js?v=268"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

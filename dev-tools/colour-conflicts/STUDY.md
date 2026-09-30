@@ -263,3 +263,11 @@ by measuring every box).
   covered" count ran on every selection click (now cached until marks or sequences change).
   After: redraw 0.78-0.85 s (v215 0.89), with marks 1.27-1.30 s (v215 1.05-1.28), row click
   26-31 ms (v215 27). Measured by scratch/_claude_cost.js against a v215 worktree.
+
+- Open items closed (v218): Highlight diffs and Variable sites only now pause each other with a
+  message (Variable sites only pauses Highlight diffs and restores it when turned off; messages
+  are re-shown after the redraw, which writes its own status line). The "every column variable"
+  observation was the default threshold 0 = unfiltered (documented): the two options did nothing
+  when ticked. Default is now count >= 1 (a column is variable when at least one sequence
+  differs); 0 still means unfiltered. The 'both cleared, left behind: weight' probe result was a
+  probe artifact (its clear step clicked the checkbox, which toggles).

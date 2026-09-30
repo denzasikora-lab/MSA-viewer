@@ -433,6 +433,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="gs-updates">1.6 Recent Updates</h3>
   <p>Recent updates added or improved the following features:</p>
   <ul>
+    <li><strong>Highlight diffs / Variable sites only</strong> - now do something when ticked (a column is variable when at least one sequence differs; set the threshold to 0 to turn the filter off), and pause each other with a message instead of silently (§5.2).</li>
     <li><strong>TSD flanks</strong> - each TSD pair shows the 3 bases outside each copy in small grey letters, to check that the duplication is complete (§9.9).</li>
     <li><strong>Touchpad scrolling</strong> - horizontal two-finger scrolling no longer jumps back or stalls: the scrollbar under the alignment now only follows the view, and drives it only when you use the bar itself.</li>
     <li><strong>Overlapping marks</strong> - search hits, TSD marks, repeats, group letters, trim and selections no longer hide each other: each keeps a visible property (fill, bold second font, italic, line, tint), in both view types. TSD marks and repeats follow their residues through edits. See §7.6.</li>
@@ -1028,7 +1029,10 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     view entirely, so the differences that were previously separated by long distances
     become directly observable next to each other.
   </p>
-  <p>Two checkboxes control visual filtering of conserved positions:</p>
+  <p>Two checkboxes control visual filtering of conserved positions. They cannot be combined:
+  turning on <strong>Variable sites only</strong> pauses <strong>Highlight diffs</strong> (with a
+  message) and turning it off brings Highlight diffs back; ticking Highlight diffs while Variable
+  sites only is on switches that one off.</p>
   <ul>
     <li>
       <strong>Highlight diffs</strong> - dims fully-conserved columns to 40% opacity.
@@ -1066,7 +1070,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </p>
   <ul>
     <li>
-      <strong>%</strong> (default) — a percentage of all sequences, 0-100 in 1% steps.
+      <strong>%</strong> — a percentage of all sequences, 0-100 in 1% steps.
       <strong>0%</strong> shows every column unfiltered; <strong>≥20%</strong> requires
       at least a fifth of sequences to differ; <strong>≥100%</strong> requires every
       sequence to differ. Percentages work consistently across alignments of any size:
@@ -1074,9 +1078,11 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       alignment it means at least 40.
     </li>
     <li>
-      <strong>count</strong> — an exact absolute number of sequences, 0 up to the total
-      loaded (the slider's range updates automatically). <strong>≥1</strong> shows a
-      column the instant even a single sequence differs, with no rounding at all.
+      <strong>count</strong> (default, at 1) — an exact absolute number of sequences, 0 up to
+      the total loaded (the slider's range updates automatically). <strong>≥1</strong>, the
+      default, shows a column the instant even a single sequence differs, with no rounding at
+      all: fully identical columns are dimmed or hidden, as the two checkboxes promise.
+      <strong>0</strong> turns the filter off (every column counts as variable).
     </li>
   </ul>
   <p>
