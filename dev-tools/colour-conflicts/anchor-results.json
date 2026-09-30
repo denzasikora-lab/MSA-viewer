@@ -1,0 +1,764 @@
+{
+ "search|redraw": {
+  "before": 30,
+  "after": 30,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "search|gap-col-left": {
+  "before": 30,
+  "after": 30,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "search|gap-all-left(edit)": {
+  "before": 30,
+  "after": 30,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "search|gap-one-row(edit)": {
+  "before": 30,
+  "after": 30,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "search|delete-row-above": {
+  "before": 30,
+  "after": 25,
+  "lost": [
+   "seq0:res10",
+   "seq0:res11",
+   "seq0:res12",
+   "seq0:res13",
+   "seq0:res9"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "search|move-row-to-top": {
+  "before": 30,
+  "after": 30,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "search|undo-after-gap": {
+  "before": 30,
+  "after": 30,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "row-sel|redraw": {
+  "before": 1,
+  "after": 1,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "row-sel|gap-col-left": {
+  "before": 1,
+  "after": 1,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "row-sel|gap-all-left(edit)": {
+  "before": 1,
+  "after": 1,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "row-sel|gap-one-row(edit)": {
+  "before": 1,
+  "after": 1,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "row-sel|delete-row-above": {
+  "before": 1,
+  "after": 0,
+  "lost": [
+   "seq2:row"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "row-sel|move-row-to-top": {
+  "before": 1,
+  "after": 0,
+  "lost": [
+   "seq2:row"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "row-sel|undo-after-gap": {
+  "before": 1,
+  "after": 1,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "col-sel|redraw": {
+  "before": 24,
+  "after": 24,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "col-sel|gap-col-left": {
+  "before": 24,
+  "after": 0,
+  "lost": [
+   "seq0:res11",
+   "seq0:res12",
+   "seq10:res11",
+   "seq10:res12",
+   "seq11:res11",
+   "seq11:res12",
+   "seq1:res11",
+   "seq1:res12",
+   "seq2:res11",
+   "seq2:res12",
+   "seq3:res11",
+   "seq3:res12",
+   "seq4:res11",
+   "seq4:res12",
+   "seq5:res11",
+   "seq5:res12",
+   "seq6:res11",
+   "seq6:res12",
+   "seq7:res11",
+   "seq7:res12",
+   "seq8:res11",
+   "seq8:res12",
+   "seq9:res11",
+   "seq9:res12"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "col-sel|gap-all-left(edit)": {
+  "before": 24,
+  "after": 24,
+  "lost": [
+   "seq0:res12",
+   "seq10:res12",
+   "seq11:res12",
+   "seq1:res12",
+   "seq2:res12",
+   "seq3:res12",
+   "seq4:res12",
+   "seq5:res12",
+   "seq6:res12",
+   "seq7:res12",
+   "seq8:res12",
+   "seq9:res12"
+  ],
+  "gained": [
+   "seq0:res10",
+   "seq10:res10",
+   "seq11:res10",
+   "seq1:res10",
+   "seq2:res10",
+   "seq3:res10",
+   "seq4:res10",
+   "seq5:res10",
+   "seq6:res10",
+   "seq7:res10",
+   "seq8:res10",
+   "seq9:res10"
+  ],
+  "errors": []
+ },
+ "col-sel|gap-one-row(edit)": {
+  "before": 24,
+  "after": 24,
+  "lost": [
+   "seq2:res12"
+  ],
+  "gained": [
+   "seq2:res10"
+  ],
+  "errors": []
+ },
+ "col-sel|delete-row-above": {
+  "before": 24,
+  "after": 22,
+  "lost": [
+   "seq0:res11",
+   "seq0:res12"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "col-sel|move-row-to-top": {
+  "before": 24,
+  "after": 24,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "col-sel|undo-after-gap": {
+  "before": 24,
+  "after": 12,
+  "lost": [
+   "seq0:res11",
+   "seq0:res12",
+   "seq10:res11",
+   "seq10:res12",
+   "seq11:res11",
+   "seq11:res12",
+   "seq1:res11",
+   "seq1:res12",
+   "seq2:res11",
+   "seq2:res12",
+   "seq3:res11",
+   "seq3:res12",
+   "seq4:res11",
+   "seq4:res12",
+   "seq5:res11",
+   "seq5:res12",
+   "seq6:res11",
+   "seq6:res12",
+   "seq7:res11",
+   "seq7:res12",
+   "seq8:res11",
+   "seq8:res12",
+   "seq9:res11",
+   "seq9:res12"
+  ],
+  "gained": [
+   "seq0:res4",
+   "seq10:res4",
+   "seq11:res4",
+   "seq1:res4",
+   "seq2:res4",
+   "seq3:res4",
+   "seq4:res4",
+   "seq5:res4",
+   "seq6:res4",
+   "seq7:res4",
+   "seq8:res4",
+   "seq9:res4"
+  ],
+  "errors": []
+ },
+ "res-sel|redraw": {
+  "before": 3,
+  "after": 3,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "res-sel|gap-col-left": {
+  "before": 3,
+  "after": 3,
+  "lost": [
+   "seq2:res12"
+  ],
+  "gained": [
+   "seq2:res9"
+  ],
+  "errors": []
+ },
+ "res-sel|gap-all-left(edit)": {
+  "before": 3,
+  "after": 3,
+  "lost": [
+   "seq2:res12"
+  ],
+  "gained": [
+   "seq2:res9"
+  ],
+  "errors": []
+ },
+ "res-sel|gap-one-row(edit)": {
+  "before": 3,
+  "after": 3,
+  "lost": [
+   "seq2:res12"
+  ],
+  "gained": [
+   "seq2:res9"
+  ],
+  "errors": []
+ },
+ "res-sel|delete-row-above": {
+  "before": 3,
+  "after": 3,
+  "lost": [
+   "seq2:res10",
+   "seq2:res11",
+   "seq2:res12"
+  ],
+  "gained": [
+   "seq3:res10",
+   "seq3:res11",
+   "seq3:res12"
+  ],
+  "errors": []
+ },
+ "res-sel|move-row-to-top": {
+  "before": 3,
+  "after": 3,
+  "lost": [
+   "seq2:res10",
+   "seq2:res11",
+   "seq2:res12"
+  ],
+  "gained": [
+   "seq1:res10",
+   "seq1:res11",
+   "seq1:res12"
+  ],
+  "errors": []
+ },
+ "res-sel|undo-after-gap": {
+  "before": 3,
+  "after": 0,
+  "lost": [
+   "seq2:res10",
+   "seq2:res11",
+   "seq2:res12"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "tsd|redraw": {
+  "before": 2,
+  "after": 2,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "tsd|gap-col-left": {
+  "before": 2,
+  "after": 2,
+  "lost": [
+   "seq2:res12"
+  ],
+  "gained": [
+   "seq2:res10"
+  ],
+  "errors": []
+ },
+ "tsd|gap-all-left(edit)": {
+  "before": 2,
+  "after": 2,
+  "lost": [
+   "seq2:res12"
+  ],
+  "gained": [
+   "seq2:res10"
+  ],
+  "errors": []
+ },
+ "tsd|gap-one-row(edit)": {
+  "before": 2,
+  "after": 2,
+  "lost": [
+   "seq2:res12"
+  ],
+  "gained": [
+   "seq2:res10"
+  ],
+  "errors": []
+ },
+ "tsd|delete-row-above": {
+  "before": 2,
+  "after": 2,
+  "lost": [
+   "seq2:res11",
+   "seq2:res12"
+  ],
+  "gained": [
+   "seq3:res11",
+   "seq3:res12"
+  ],
+  "errors": []
+ },
+ "tsd|move-row-to-top": {
+  "before": 2,
+  "after": 2,
+  "lost": [
+   "seq2:res11",
+   "seq2:res12"
+  ],
+  "gained": [
+   "seq1:res11",
+   "seq1:res12"
+  ],
+  "errors": []
+ },
+ "tsd|undo-after-gap": {
+  "before": 2,
+  "after": 2,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "repeat|redraw": {
+  "before": 5,
+  "after": 0,
+  "lost": [
+   "seq2:res10",
+   "seq2:res11",
+   "seq2:res12",
+   "seq2:res13",
+   "seq2:res9"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "repeat|gap-col-left": {
+  "before": 5,
+  "after": 0,
+  "lost": [
+   "seq2:res10",
+   "seq2:res11",
+   "seq2:res12",
+   "seq2:res13",
+   "seq2:res9"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "repeat|gap-all-left(edit)": {
+  "before": 5,
+  "after": 0,
+  "lost": [
+   "seq2:res10",
+   "seq2:res11",
+   "seq2:res12",
+   "seq2:res13",
+   "seq2:res9"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "repeat|gap-one-row(edit)": {
+  "before": 5,
+  "after": 0,
+  "lost": [
+   "seq2:res10",
+   "seq2:res11",
+   "seq2:res12",
+   "seq2:res13",
+   "seq2:res9"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "repeat|delete-row-above": {
+  "before": 5,
+  "after": 0,
+  "lost": [
+   "seq2:res10",
+   "seq2:res11",
+   "seq2:res12",
+   "seq2:res13",
+   "seq2:res9"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "repeat|move-row-to-top": {
+  "before": 5,
+  "after": 0,
+  "lost": [
+   "seq2:res10",
+   "seq2:res11",
+   "seq2:res12",
+   "seq2:res13",
+   "seq2:res9"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "repeat|undo-after-gap": {
+  "before": 5,
+  "after": 0,
+  "lost": [
+   "seq2:res10",
+   "seq2:res11",
+   "seq2:res12",
+   "seq2:res13",
+   "seq2:res9"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "snp-groups|redraw": {
+  "before": 30,
+  "after": 30,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "snp-groups|gap-col-left": {
+  "before": 30,
+  "after": 12,
+  "lost": [
+   "seq0:res11",
+   "seq0:res21",
+   "seq0:res31",
+   "seq1:res11",
+   "seq1:res21",
+   "seq1:res31",
+   "seq2:res11",
+   "seq2:res21",
+   "seq2:res31",
+   "seq3:res11",
+   "seq3:res21",
+   "seq3:res31",
+   "seq4:res11",
+   "seq4:res21",
+   "seq4:res31",
+   "seq5:res11",
+   "seq5:res21",
+   "seq5:res31"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "snp-groups|gap-all-left(edit)": {
+  "before": 30,
+  "after": 12,
+  "lost": [
+   "seq0:res11",
+   "seq0:res21",
+   "seq0:res31",
+   "seq1:res11",
+   "seq1:res21",
+   "seq1:res31",
+   "seq2:res11",
+   "seq2:res21",
+   "seq2:res31",
+   "seq3:res11",
+   "seq3:res21",
+   "seq3:res31",
+   "seq4:res11",
+   "seq4:res21",
+   "seq4:res31",
+   "seq5:res11",
+   "seq5:res21",
+   "seq5:res31"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "snp-groups|gap-one-row(edit)": {
+  "before": 30,
+  "after": 27,
+  "lost": [
+   "seq2:res11",
+   "seq2:res21",
+   "seq2:res31"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "snp-groups|delete-row-above": {
+  "before": 30,
+  "after": 26,
+  "lost": [
+   "seq0:name",
+   "seq0:res11",
+   "seq0:res21",
+   "seq0:res31"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "snp-groups|move-row-to-top": {
+  "before": 30,
+  "after": 30,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "snp-groups|undo-after-gap": {
+  "before": 30,
+  "after": 30,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "name-colour|redraw": {
+  "before": 1,
+  "after": 1,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "name-colour|gap-col-left": {
+  "before": 1,
+  "after": 1,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "name-colour|gap-all-left(edit)": {
+  "before": 1,
+  "after": 1,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "name-colour|gap-one-row(edit)": {
+  "before": 1,
+  "after": 1,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "name-colour|delete-row-above": {
+  "before": 1,
+  "after": 1,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "name-colour|move-row-to-top": {
+  "before": 1,
+  "after": 1,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "name-colour|undo-after-gap": {
+  "before": 1,
+  "after": 1,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "trim|redraw": {
+  "before": 156,
+  "after": 156,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "trim|gap-col-left": {
+  "before": 156,
+  "after": 156,
+  "lost": [
+   "seq0:res13",
+   "seq10:res13",
+   "seq11:res13",
+   "seq1:res13",
+   "seq2:res13",
+   "seq3:res13",
+   "seq4:res13",
+   "seq5:res13",
+   "seq6:res13",
+   "seq7:res13",
+   "seq8:res13",
+   "seq9:res13"
+  ],
+  "gained": [
+   "seq0:gap-after-3",
+   "seq10:gap-after-3",
+   "seq11:gap-after-3",
+   "seq1:gap-after-3",
+   "seq2:gap-after-3",
+   "seq3:gap-after-3",
+   "seq4:gap-after-3",
+   "seq5:gap-after-3",
+   "seq6:gap-after-3",
+   "seq7:gap-after-3",
+   "seq8:gap-after-3",
+   "seq9:gap-after-3"
+  ],
+  "errors": []
+ },
+ "trim|gap-all-left(edit)": {
+  "before": 156,
+  "after": 156,
+  "lost": [
+   "seq0:res13",
+   "seq10:res13",
+   "seq11:res13",
+   "seq1:res13",
+   "seq2:res13",
+   "seq3:res13",
+   "seq4:res13",
+   "seq5:res13",
+   "seq6:res13",
+   "seq7:res13",
+   "seq8:res13",
+   "seq9:res13"
+  ],
+  "gained": [
+   "seq0:gap-after-3",
+   "seq10:gap-after-3",
+   "seq11:gap-after-3",
+   "seq1:gap-after-3",
+   "seq2:gap-after-3",
+   "seq3:gap-after-3",
+   "seq4:gap-after-3",
+   "seq5:gap-after-3",
+   "seq6:gap-after-3",
+   "seq7:gap-after-3",
+   "seq8:gap-after-3",
+   "seq9:gap-after-3"
+  ],
+  "errors": []
+ },
+ "trim|gap-one-row(edit)": {
+  "before": 156,
+  "after": 156,
+  "lost": [
+   "seq2:res13"
+  ],
+  "gained": [
+   "seq2:gap-after-3"
+  ],
+  "errors": []
+ },
+ "trim|delete-row-above": {
+  "before": 156,
+  "after": 143,
+  "lost": [
+   "seq0:res1",
+   "seq0:res10",
+   "seq0:res11",
+   "seq0:res12",
+   "seq0:res13",
+   "seq0:res2",
+   "seq0:res3",
+   "seq0:res4",
+   "seq0:res5",
+   "seq0:res6",
+   "seq0:res7",
+   "seq0:res8",
+   "seq0:res9"
+  ],
+  "gained": [],
+  "errors": []
+ },
+ "trim|move-row-to-top": {
+  "before": 156,
+  "after": 156,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ },
+ "trim|undo-after-gap": {
+  "before": 156,
+  "after": 156,
+  "lost": [],
+  "gained": [],
+  "errors": []
+ }
+}

@@ -1,0 +1,1448 @@
+[
+ {
+  "a": "row-sel",
+  "b": "col-sel",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "col-sel",
+    "ba": "col-sel"
+   }
+  ]
+ },
+ {
+  "a": "row-sel",
+  "b": "res-sel",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "res-sel",
+    "ba": "res-sel"
+   }
+  ]
+ },
+ {
+  "a": "row-sel",
+  "b": "edit-cell",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "row-sel",
+    "ba": "row-sel"
+   }
+  ]
+ },
+ {
+  "a": "row-sel",
+  "b": "search",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "row-sel",
+    "ba": "row-sel"
+   }
+  ]
+ },
+ {
+  "a": "row-sel",
+  "b": "tsd-colour",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "row-sel",
+  "b": "tsd-bold",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "row-sel",
+  "b": "repeat",
+  "kinds": [
+   "redraw"
+  ],
+  "notes": [
+   "redraw changes bg"
+  ],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "repeat",
+    "ba": "repeat"
+   }
+  ]
+ },
+ {
+  "a": "row-sel",
+  "b": "snp-groups",
+  "kinds": [
+   "hidden:row-sel"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "snp-groups",
+    "ba": "snp-groups"
+   },
+   {
+    "k": "name.backgroundColor",
+    "ab": "snp-groups",
+    "ba": "snp-groups"
+   },
+   {
+    "k": "name.color",
+    "ab": "row-sel",
+    "ba": "row-sel"
+   }
+  ]
+ },
+ {
+  "a": "row-sel",
+  "b": "name-colour",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "name.backgroundColor",
+    "ab": "name-colour",
+    "ba": "name-colour"
+   },
+   {
+    "k": "name.color",
+    "ab": "row-sel",
+    "ba": "row-sel"
+   }
+  ]
+ },
+ {
+  "a": "row-sel",
+  "b": "trim",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "trim",
+    "ba": "trim"
+   }
+  ]
+ },
+ {
+  "a": "row-sel",
+  "b": "soft-trim",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "row-sel",
+  "b": "diffs",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "row-sel",
+  "b": "var-sites",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "row-sel",
+  "b": "codon",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "row-sel",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "row-sel",
+  "b": "scheme-nt",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "scheme-nt",
+    "ba": "scheme-nt"
+   }
+  ]
+ },
+ {
+  "a": "col-sel",
+  "b": "res-sel",
+  "kinds": [
+   "hidden:res-sel"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "col-sel",
+    "ba": "col-sel"
+   }
+  ]
+ },
+ {
+  "a": "col-sel",
+  "b": "edit-cell",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "col-sel",
+    "ba": "col-sel"
+   }
+  ]
+ },
+ {
+  "a": "col-sel",
+  "b": "search",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "col-sel",
+    "ba": "col-sel"
+   }
+  ]
+ },
+ {
+  "a": "col-sel",
+  "b": "tsd-colour",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "col-sel",
+  "b": "tsd-bold",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "col-sel",
+  "b": "repeat",
+  "kinds": [
+   "hidden:col-sel",
+   "redraw"
+  ],
+  "notes": [
+   "redraw changes bg"
+  ],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "repeat",
+    "ba": "repeat"
+   }
+  ]
+ },
+ {
+  "a": "col-sel",
+  "b": "snp-groups",
+  "kinds": [
+   "hidden:col-sel"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "snp-groups",
+    "ba": "snp-groups"
+   }
+  ]
+ },
+ {
+  "a": "col-sel",
+  "b": "name-colour",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "col-sel",
+  "b": "trim",
+  "kinds": [
+   "hidden:col-sel"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "trim",
+    "ba": "trim"
+   }
+  ]
+ },
+ {
+  "a": "col-sel",
+  "b": "soft-trim",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "col-sel",
+  "b": "diffs",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "col-sel",
+  "b": "var-sites",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "col-sel",
+  "b": "codon",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "col-sel",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "col-sel",
+  "b": "scheme-nt",
+  "kinds": [
+   "hidden:col-sel"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "scheme-nt",
+    "ba": "scheme-nt"
+   }
+  ]
+ },
+ {
+  "a": "res-sel",
+  "b": "edit-cell",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "res-sel",
+    "ba": "res-sel"
+   },
+   {
+    "k": "cell.color",
+    "ab": "res-sel",
+    "ba": "res-sel"
+   }
+  ]
+ },
+ {
+  "a": "res-sel",
+  "b": "search",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "res-sel",
+    "ba": "res-sel"
+   }
+  ]
+ },
+ {
+  "a": "res-sel",
+  "b": "tsd-colour",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "res-sel",
+  "b": "tsd-bold",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "res-sel",
+  "b": "repeat",
+  "kinds": [
+   "redraw"
+  ],
+  "notes": [
+   "redraw changes bg"
+  ],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "repeat",
+    "ba": "repeat"
+   }
+  ]
+ },
+ {
+  "a": "res-sel",
+  "b": "snp-groups",
+  "kinds": [
+   "hidden:res-sel"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "snp-groups",
+    "ba": "snp-groups"
+   },
+   {
+    "k": "cell.color",
+    "ab": "snp-groups",
+    "ba": "snp-groups"
+   }
+  ]
+ },
+ {
+  "a": "res-sel",
+  "b": "name-colour",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "res-sel",
+  "b": "trim",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "trim",
+    "ba": "trim"
+   }
+  ]
+ },
+ {
+  "a": "res-sel",
+  "b": "soft-trim",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "res-sel",
+  "b": "diffs",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "res-sel",
+  "b": "var-sites",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "res-sel",
+  "b": "codon",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "res-sel",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "res-sel",
+  "b": "scheme-nt",
+  "kinds": [
+   "hidden:res-sel"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "scheme-nt",
+    "ba": "scheme-nt"
+   },
+   {
+    "k": "cell.color",
+    "ab": "scheme-nt",
+    "ba": "scheme-nt"
+   }
+  ]
+ },
+ {
+  "a": "edit-cell",
+  "b": "search",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "edit-cell",
+    "ba": "edit-cell"
+   }
+  ]
+ },
+ {
+  "a": "edit-cell",
+  "b": "tsd-colour",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "edit-cell",
+  "b": "tsd-bold",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "edit-cell",
+  "b": "repeat",
+  "kinds": [
+   "redraw"
+  ],
+  "notes": [
+   "redraw changes bg"
+  ],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "repeat",
+    "ba": "repeat"
+   }
+  ]
+ },
+ {
+  "a": "edit-cell",
+  "b": "snp-groups",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "snp-groups",
+    "ba": "snp-groups"
+   },
+   {
+    "k": "cell.color",
+    "ab": "snp-groups",
+    "ba": "snp-groups"
+   }
+  ]
+ },
+ {
+  "a": "edit-cell",
+  "b": "name-colour",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "edit-cell",
+  "b": "trim",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "trim",
+    "ba": "trim"
+   }
+  ]
+ },
+ {
+  "a": "edit-cell",
+  "b": "soft-trim",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "edit-cell",
+  "b": "diffs",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "edit-cell",
+  "b": "var-sites",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "edit-cell",
+  "b": "codon",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "edit-cell",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "edit-cell",
+  "b": "scheme-nt",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "scheme-nt",
+    "ba": "scheme-nt"
+   },
+   {
+    "k": "cell.color",
+    "ab": "scheme-nt",
+    "ba": "scheme-nt"
+   }
+  ]
+ },
+ {
+  "a": "search",
+  "b": "tsd-colour",
+  "kinds": [
+   "hidden:tsd-colour"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.fontWeight",
+    "ab": "search",
+    "ba": "search"
+   }
+  ]
+ },
+ {
+  "a": "search",
+  "b": "tsd-bold",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.fontWeight",
+    "ab": "search",
+    "ba": "search"
+   }
+  ]
+ },
+ {
+  "a": "search",
+  "b": "repeat",
+  "kinds": [
+   "redraw"
+  ],
+  "notes": [
+   "redraw changes bg"
+  ],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "repeat",
+    "ba": "repeat"
+   }
+  ]
+ },
+ {
+  "a": "search",
+  "b": "snp-groups",
+  "kinds": [
+   "hidden:search"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "snp-groups",
+    "ba": "snp-groups"
+   },
+   {
+    "k": "cell.fontWeight",
+    "ab": "search",
+    "ba": "search"
+   }
+  ]
+ },
+ {
+  "a": "search",
+  "b": "name-colour",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "search",
+  "b": "trim",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "trim",
+    "ba": "trim"
+   }
+  ]
+ },
+ {
+  "a": "search",
+  "b": "soft-trim",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "search",
+  "b": "diffs",
+  "kinds": [
+   "hidden:diffs"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.fontWeight",
+    "ab": "search",
+    "ba": "search"
+   }
+  ]
+ },
+ {
+  "a": "search",
+  "b": "var-sites",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "search",
+  "b": "codon",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "search",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "search",
+  "b": "scheme-nt",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "scheme-nt",
+    "ba": "scheme-nt"
+   }
+  ]
+ },
+ {
+  "a": "tsd-colour",
+  "b": "tsd-bold",
+  "kinds": [
+   "hidden:tsd-colour",
+   "order",
+   "clear-tsd-bold-breaks-tsd-colour",
+   "clear-tsd-colour-breaks-tsd-bold"
+  ],
+  "notes": [
+   "A,B vs B,A differ in underline",
+   "after clearing tsd-bold: weight differ from tsd-colour alone",
+   "after clearing tsd-colour: weight, underline differ from tsd-bold alone"
+  ],
+  "winners": [
+   {
+    "k": "cell.fontWeight",
+    "ab": "tsd-colour",
+    "ba": "tsd-colour"
+   }
+  ]
+ },
+ {
+  "a": "tsd-colour",
+  "b": "repeat",
+  "kinds": [
+   "order",
+   "clear-tsd-colour-breaks-repeat",
+   "redraw"
+  ],
+  "notes": [
+   "A,B vs B,A differ in bg",
+   "after clearing tsd-colour: bg differ from repeat alone",
+   "redraw changes bg"
+  ],
+  "winners": []
+ },
+ {
+  "a": "tsd-colour",
+  "b": "snp-groups",
+  "kinds": [
+   "hidden:tsd-colour"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.fontWeight",
+    "ab": "tsd-colour",
+    "ba": "tsd-colour"
+   }
+  ]
+ },
+ {
+  "a": "tsd-colour",
+  "b": "name-colour",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "tsd-colour",
+  "b": "trim",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "tsd-colour",
+  "b": "soft-trim",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "tsd-colour",
+  "b": "diffs",
+  "kinds": [
+   "hidden:tsd-colour",
+   "hidden:diffs"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.fontWeight",
+    "ab": "tsd-colour",
+    "ba": "tsd-colour"
+   }
+  ]
+ },
+ {
+  "a": "tsd-colour",
+  "b": "var-sites",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "tsd-colour",
+  "b": "codon",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "tsd-colour",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "tsd-colour",
+  "b": "scheme-nt",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "tsd-bold",
+  "b": "repeat",
+  "kinds": [
+   "order",
+   "clear-tsd-bold-breaks-repeat",
+   "redraw"
+  ],
+  "notes": [
+   "A,B vs B,A differ in bg",
+   "after clearing tsd-bold: bg differ from repeat alone",
+   "redraw changes bg"
+  ],
+  "winners": []
+ },
+ {
+  "a": "tsd-bold",
+  "b": "snp-groups",
+  "kinds": [],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.fontWeight",
+    "ab": "tsd-bold",
+    "ba": "tsd-bold"
+   }
+  ]
+ },
+ {
+  "a": "tsd-bold",
+  "b": "name-colour",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "tsd-bold",
+  "b": "trim",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "tsd-bold",
+  "b": "soft-trim",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "tsd-bold",
+  "b": "diffs",
+  "kinds": [
+   "hidden:diffs"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.fontWeight",
+    "ab": "tsd-bold",
+    "ba": "tsd-bold"
+   }
+  ]
+ },
+ {
+  "a": "tsd-bold",
+  "b": "var-sites",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "tsd-bold",
+  "b": "codon",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "tsd-bold",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "tsd-bold",
+  "b": "scheme-nt",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "repeat",
+  "b": "snp-groups",
+  "kinds": [
+   "order",
+   "clear-snp-groups-breaks-repeat",
+   "clear-repeat-breaks-snp-groups"
+  ],
+  "notes": [
+   "A,B vs B,A differ in bg",
+   "after clearing snp-groups: bg differ from repeat alone",
+   "after clearing repeat: bg differ from snp-groups alone"
+  ],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "snp-groups",
+    "ba": "repeat"
+   }
+  ]
+ },
+ {
+  "a": "repeat",
+  "b": "name-colour",
+  "kinds": [
+   "clear-name-colour-breaks-repeat",
+   "redraw"
+  ],
+  "notes": [
+   "after clearing name-colour: bg differ from repeat alone",
+   "redraw changes bg"
+  ],
+  "winners": []
+ },
+ {
+  "a": "repeat",
+  "b": "trim",
+  "kinds": [
+   "order",
+   "clear-trim-breaks-repeat"
+  ],
+  "notes": [
+   "A,B vs B,A differ in bg",
+   "after clearing trim: bg differ from repeat alone"
+  ],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "trim",
+    "ba": "repeat"
+   }
+  ]
+ },
+ {
+  "a": "repeat",
+  "b": "soft-trim",
+  "kinds": [
+   "order",
+   "clear-soft-trim-breaks-repeat"
+  ],
+  "notes": [
+   "A,B vs B,A differ in bg",
+   "after clearing soft-trim: bg differ from repeat alone"
+  ],
+  "winners": []
+ },
+ {
+  "a": "repeat",
+  "b": "diffs",
+  "kinds": [
+   "clear-diffs-breaks-repeat",
+   "redraw"
+  ],
+  "notes": [
+   "after clearing diffs: bg differ from repeat alone",
+   "redraw changes bg"
+  ],
+  "winners": []
+ },
+ {
+  "a": "repeat",
+  "b": "var-sites",
+  "kinds": [
+   "order",
+   "clear-var-sites-breaks-repeat"
+  ],
+  "notes": [
+   "A,B vs B,A differ in bg",
+   "after clearing var-sites: bg differ from repeat alone"
+  ],
+  "winners": []
+ },
+ {
+  "a": "repeat",
+  "b": "codon",
+  "kinds": [
+   "order",
+   "clear-codon-breaks-repeat"
+  ],
+  "notes": [
+   "A,B vs B,A differ in bg",
+   "after clearing codon: bg differ from repeat alone"
+  ],
+  "winners": []
+ },
+ {
+  "a": "repeat",
+  "b": "block-mask",
+  "kinds": [
+   "clear-block-mask-breaks-repeat",
+   "redraw"
+  ],
+  "notes": [
+   "after clearing block-mask: bg differ from repeat alone",
+   "redraw changes bg"
+  ],
+  "winners": []
+ },
+ {
+  "a": "repeat",
+  "b": "scheme-nt",
+  "kinds": [
+   "order",
+   "clear-scheme-nt-breaks-repeat"
+  ],
+  "notes": [
+   "A,B vs B,A differ in bg",
+   "after clearing scheme-nt: bg differ from repeat alone"
+  ],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "scheme-nt",
+    "ba": "repeat"
+   }
+  ]
+ },
+ {
+  "a": "snp-groups",
+  "b": "name-colour",
+  "kinds": [
+   "order",
+   "clear-name-colour-breaks-snp-groups",
+   "redraw"
+  ],
+  "notes": [
+   "A,B vs B,A differ in name bg",
+   "after clearing name-colour: name bg, name color differ from snp-groups alone",
+   "redraw changes name bg"
+  ],
+  "winners": [
+   {
+    "k": "name.backgroundColor",
+    "ab": "name-colour",
+    "ba": "snp-groups"
+   },
+   {
+    "k": "name.color",
+    "ab": "snp-groups",
+    "ba": "snp-groups"
+   }
+  ]
+ },
+ {
+  "a": "snp-groups",
+  "b": "trim",
+  "kinds": [
+   "hidden:trim"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "snp-groups",
+    "ba": "snp-groups"
+   }
+  ]
+ },
+ {
+  "a": "snp-groups",
+  "b": "soft-trim",
+  "kinds": [
+   "order"
+  ],
+  "notes": [
+   "A,B vs B,A differ in bg, color, weight, name bg"
+  ],
+  "winners": []
+ },
+ {
+  "a": "snp-groups",
+  "b": "diffs",
+  "kinds": [
+   "hidden:diffs"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.fontWeight",
+    "ab": "snp-groups",
+    "ba": "snp-groups"
+   }
+  ]
+ },
+ {
+  "a": "snp-groups",
+  "b": "var-sites",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "snp-groups",
+  "b": "codon",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "snp-groups",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "snp-groups",
+  "b": "scheme-nt",
+  "kinds": [
+   "hidden:scheme-nt"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "snp-groups",
+    "ba": "snp-groups"
+   },
+   {
+    "k": "cell.color",
+    "ab": "snp-groups",
+    "ba": "snp-groups"
+   }
+  ]
+ },
+ {
+  "a": "name-colour",
+  "b": "trim",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "name-colour",
+  "b": "soft-trim",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "name-colour",
+  "b": "diffs",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "name-colour",
+  "b": "var-sites",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "name-colour",
+  "b": "codon",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "name-colour",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "name-colour",
+  "b": "scheme-nt",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "trim",
+  "b": "soft-trim",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "trim",
+  "b": "diffs",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "trim",
+  "b": "var-sites",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "trim",
+  "b": "codon",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "trim",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "trim",
+  "b": "scheme-nt",
+  "kinds": [
+   "hidden:trim"
+  ],
+  "notes": [],
+  "winners": [
+   {
+    "k": "cell.backgroundColor",
+    "ab": "scheme-nt",
+    "ba": "scheme-nt"
+   }
+  ]
+ },
+ {
+  "a": "soft-trim",
+  "b": "diffs",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "soft-trim",
+  "b": "var-sites",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "soft-trim",
+  "b": "codon",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "soft-trim",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "soft-trim",
+  "b": "scheme-nt",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "diffs",
+  "b": "var-sites",
+  "kinds": [
+   "order",
+   "clear-var-sites-breaks-diffs",
+   "residue"
+  ],
+  "notes": [
+   "A,B vs B,A differ in weight",
+   "after clearing var-sites: weight differ from diffs alone",
+   "both cleared, left behind: weight"
+  ],
+  "winners": []
+ },
+ {
+  "a": "diffs",
+  "b": "codon",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "diffs",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "diffs",
+  "b": "scheme-nt",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "var-sites",
+  "b": "codon",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "var-sites",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "var-sites",
+  "b": "scheme-nt",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "codon",
+  "b": "block-mask",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "codon",
+  "b": "scheme-nt",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ },
+ {
+  "a": "block-mask",
+  "b": "scheme-nt",
+  "kinds": [],
+  "notes": [],
+  "winners": []
+ }
+]
