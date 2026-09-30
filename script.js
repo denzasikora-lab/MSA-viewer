@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v216';
+const BUILD_TAG = 'v217';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -22963,6 +22963,24 @@ function _scrollbarDragRatio(trackPx, contentPx) {
     return range / Math.max(1, trackPx - thumbPx);
 }
 
+// The persistent bars mirror the alignment's scroll position. A bar's own scroll event used to
+// be treated as user input even when our code had just set it, so every scroll step was
+// written back into the alignment (scrollLeft = bar.scrollLeft). That write is a programmatic
+// scroll: it cancels the browser's smooth/inertial scrolling and, one frame late, puts the
+// view back where it was (two-finger touchpad scrolling jumped back and stalled). Now the bar
+// drives the view only while the user is using the bar.
+function makeBarInputGuard(bar) {
+    let stamp = -1e9, down = false;
+    const touch = () => { stamp = performance.now(); };
+    ['wheel', 'touchstart', 'touchmove', 'keydown', 'mousedown'].forEach(t => bar.addEventListener(t, touch, { capture: true, passive: true }));
+    bar.addEventListener('pointerdown', () => { down = true; touch(); }, true);
+    const up = () => { down = false; touch(); };
+    bar.addEventListener('pointerup', up, true);
+    bar.addEventListener('pointercancel', up, true);
+    window.addEventListener('mouseup', up, true);
+    return { active: () => down || performance.now() - stamp < 350, touch };
+}
+
 (function setupPersistentScrollbar() {
     const alignment = document.getElementById('alignmentContainer');
     const bar = document.querySelector('.horizontal-scrollbar');
@@ -22970,6 +22988,7 @@ function _scrollbarDragRatio(trackPx, contentPx) {
     if (!alignment || !bar || !thumb) return;
 
     let syncing = false;
+    const barInput = makeBarInputGuard(bar);
     // Canvas mode's content is a single absolutely-positioned <canvas> panned via
     // _canvasState.offsetX (alignment.scrollLeft/scrollWidth are meaningless there),
     // so this bar drives that offset directly instead of the DOM scroll position.
@@ -22990,7 +23009,7 @@ function _scrollbarDragRatio(trackPx, contentPx) {
     }
 
     function onBarScroll() {
-        if (syncing) return;
+        if (syncing || !barInput.active()) return;   // our own mirror write: not user input
         syncing = true;
         if (isCanvasMode()) {
             _canvasState.offsetX = bar.scrollLeft;
@@ -23010,6 +23029,7 @@ function _scrollbarDragRatio(trackPx, contentPx) {
 
     function onAlignmentScroll() {
         if (syncing || isCanvasMode()) return;
+        if (Math.abs(bar.scrollLeft - alignment.scrollLeft) < 0.5) return;
         syncing = true;
         bar.scrollLeft = alignment.scrollLeft;
         syncing = false;
@@ -23019,6 +23039,7 @@ function _scrollbarDragRatio(trackPx, contentPx) {
     // scroll/drag-pan inside the canvas keeps the bar's thumb position in sync.
     _canvasState.onOffsetChange = () => {
         if (syncing || !isCanvasMode()) return;
+        if (Math.abs(bar.scrollLeft - (_canvasState.offsetX || 0)) < 0.5) return;
         syncing = true;
         bar.scrollLeft = _canvasState.offsetX || 0;
         syncing = false;
@@ -23100,6 +23121,7 @@ function _scrollbarDragRatio(trackPx, contentPx) {
 
     const isCanvasMode = () => document.getElementById('modeCanvas')?.checked;
     let syncing = false;
+    const barInput = makeBarInputGuard(bar);
 
     function syncVisibilityAndSize() {
         if (isCanvasMode()) {
@@ -23127,7 +23149,7 @@ function _scrollbarDragRatio(trackPx, contentPx) {
     }
 
     function onBarScroll() {
-        if (syncing) return;
+        if (syncing || !barInput.active()) return;   // our own mirror write: not user input
         syncing = true;
         if (isCanvasMode()) {
             _canvasState.offsetY = bar.scrollTop;
@@ -23145,6 +23167,7 @@ function _scrollbarDragRatio(trackPx, contentPx) {
     _canvasState.onOffsetChange = () => {
         prevOnOffsetChange?.();
         if (syncing || !isCanvasMode()) return;
+        if (Math.abs(bar.scrollTop - (_canvasState.offsetY || 0)) < 0.5) return;
         syncing = true;
         bar.scrollTop = _canvasState.offsetY || 0;
         syncing = false;
@@ -23153,6 +23176,7 @@ function _scrollbarDragRatio(trackPx, contentPx) {
     // DOM mode: keep the bar in sync when the alignment scrolls natively
     function onAlignmentScroll() {
         if (syncing || isCanvasMode()) return;
+        if (Math.abs(bar.scrollTop - alignment.scrollTop) < 0.5) return;
         syncing = true;
         bar.scrollTop = alignment.scrollTop;
         syncing = false;
@@ -26193,6 +26217,19 @@ function _collectUngappedBasesWithColumns(seq, startCol, endCol) {
     return { bases, columns };
 }
 
+// The n bases just outside one TSD copy, in the same sequence with gaps skipped. If the copy
+// could be longer, the neighbours of the two copies would match too: shown next to each TSD
+// so a partial TSD can be told from a full one.
+function _tsdFlanks(seq, cols, n = 3) {
+    const none = { before: '', after: '' };
+    if (!cols || !cols.length) return none;
+    const all = _collectUngappedBasesWithColumns(seq, 0, seq.length - 1);
+    const i0 = all.columns.indexOf(cols[0]);
+    const i1 = all.columns.indexOf(cols[cols.length - 1]);
+    if (i0 < 0 || i1 < 0) return none;
+    return { before: all.bases.slice(Math.max(0, i0 - n), i0).join(''), after: all.bases.slice(i1 + 1, i1 + 1 + n).join('') };
+}
+
 function _sliceCollectedWindow(collected, startIndex, length) {
     return {
         bases: collected.bases.slice(startIndex, startIndex + length),
@@ -26501,6 +26538,8 @@ function _findTSD(seqs, mode, params) {
             downCols: `${downFirst + 1}-${downLast + 1}`,
             upPositions: bestTsd.upCols.slice(),
             downPositions: bestTsd.downCols.slice(),
+            upFlank: _tsdFlanks(seq, bestTsd.upCols),
+            downFlank: _tsdFlanks(seq, bestTsd.downCols),
             boundary: boundaries.label,
             downstreamOffset: downFirst - (boundaries.rightBoundary + 1)
         });
@@ -26681,13 +26720,19 @@ function _renderTsdResultsHTML(el, results, tsdMode, params) {
     let html = `<div class="rf-summary"><span class="rf-big">TSD in ${results.length} of ${tested} copies (${pct}%)</span>` +
         `<span class="rf-chip">length ${lens[0]}–${lens[lens.length - 1]} bp, median ${median}</span>${histo}` +
         `<span class="rf-chip">${exact} identical pair${exact === 1 ? '' : 's'}</span>${bodyChip}</div>` +
-        '<div class="rf-hint">Each row shows the 5′ copy above the 3′ copy; mismatches are red. Click a row to show it in the alignment. Click a column title to sort.</div>' +
+        '<div class="rf-hint">Each row shows the 5′ copy above the 3′ copy; mismatches are red; the small grey letters are the 3 bases on each side of a copy (if they match across the two rows, the TSD may be longer). Click a row to show it in the alignment. Click a column title to sort.</div>' +
         '<table class="rf-table"><colgroup><col style="width:30px"><col><col style="width:27%"><col style="width:48px"><col style="width:62px"><col style="width:92px"></colgroup>' +
         '<thead><tr><th data-sort="order">#</th><th data-sort="name">Sequence</th><th>TSD (5′ / 3′)</th>' +
         '<th data-sort="len" class="rf-num-cell">Length</th><th data-sort="mm" class="rf-num-cell">Mismatch</th><th>Columns</th></tr></thead><tbody></tbody></table>' + missesHtml;
     el.innerHTML = html;
 
-    const pair = (up, down) => {
+    // 3 bases outside each copy, small and grey; padded to 3 so the two rows stay in register
+    const flank = (t, left) => {
+        t = t || '';
+        const pad = ' '.repeat(Math.max(0, 3 - t.length));
+        return `<span class="rf-flank" title="next to the TSD, not part of it">${left ? pad + esc(t) : esc(t) + pad}</span>`;
+    };
+    const pair = (up, down, upF, downF) => {
         let a = '', c = '';
         for (let k = 0; k < Math.max(up.length, down.length); k++) {
             const x = up[k] || '', y = down[k] || '';
@@ -26695,7 +26740,8 @@ function _renderTsdResultsHTML(el, results, tsdMode, params) {
             a += mm ? `<span class="rf-mm">${esc(x)}</span>` : esc(x);
             c += mm ? `<span class="rf-mm">${esc(y)}</span>` : esc(y);
         }
-        return `<div class="rf-pair"><span class="rf-tag">5′</span>${a}<br><span class="rf-tag">3′</span>${c}</div>`;
+        return `<div class="rf-pair"><span class="rf-tag">5′</span>${flank(upF?.before, true)}${a}${flank(upF?.after, false)}<br>` +
+            `<span class="rf-tag">3′</span>${flank(downF?.before, true)}${c}${flank(downF?.after, false)}</div>`;
     };
     const rows = results.map((r, i) => ({ r, i }));
     const tbody = el.querySelector('tbody');
@@ -26707,7 +26753,7 @@ function _renderTsdResultsHTML(el, results, tsdMode, params) {
             `<tr data-row="${r.seqIndex}" data-col="${r.upPositions?.[0] ?? 0}">` +
             `<td class="rf-num-cell">${i + 1}</td>` +
             `<td class="rf-name" title="${esc(r.seqName)}">${esc(r.seqName)}</td>` +
-            `<td>${pair(r.upTSD, r.downTSD)}</td>` +
+            `<td>${pair(r.upTSD, r.downTSD, r.upFlank, r.downFlank)}</td>` +
             `<td class="rf-num-cell">${r.tsdLen}</td>` +
             `<td class="rf-num-cell" title="${r.divergence}%">${r.mismatches}/${r.tsdLen}</td>` +
             `<td class="rf-cols">${esc(r.upCols)}<br>${esc(r.downCols)}</td></tr>`).join('');

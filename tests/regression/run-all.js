@@ -683,6 +683,8 @@ check('Horizontal scrollbar follows zoom (no overshoot / snap-back at 50%)', asy
   await page.waitForTimeout(800);
   const r = await page.evaluate(async () => {
     const h = document.querySelector('.horizontal-scrollbar'), c = document.getElementById('alignmentContainer');
+    // a user drives the bar with a wheel, press or touch; a bare scrollLeft write is our own mirror
+    h.dispatchEvent(new WheelEvent('wheel', { deltaX: 1, bubbles: true }));
     h.scrollLeft = h.scrollWidth; h.dispatchEvent(new Event('scroll'));
     await new Promise(res => setTimeout(res, 500));
     return { barMax: h.scrollWidth - h.clientWidth, contMax: c.scrollWidth - c.clientWidth, bar: Math.round(h.scrollLeft), cont: Math.round(c.scrollLeft) };
@@ -2430,6 +2432,77 @@ check('Overlapping marks all stay visible, in any order, in DOM and Canvas (conf
     && r.tsdAlone[0] === 'rgb(0, 229, 255)' && r.tsdAlone[1]
     && r.resSelTint && r.colSelOverSnp[0] && r.rowSelTint && r.moved === 0
     && r.canvasTsd === '0,229,255' && r.canvasName === '255,136,0';
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+check('Touchpad-style horizontal scroll: no writes back into the alignment, the swipe completes', async (page) => {
+  // A compositor-driven gesture (like a two-finger swipe) over a wide alignment in Full view at 50%.
+  // The persistent bar used to echo every scroll step back (scrollLeft = bar.scrollLeft), which
+  // cancelled the browser's scrolling: the swipe stopped at 40-60% of its distance.
+  await loadFasta(page, makeFasta(120, 2000));
+  await setMode(page, 'full');
+  await page.evaluate(() => setZoom(50));
+  await page.waitForTimeout(500);
+  await page.evaluate(() => {
+    const c = el('alignmentContainer'); window.__writes = 0;
+    const d = Object.getOwnPropertyDescriptor(Element.prototype, 'scrollLeft');
+    Object.defineProperty(c, 'scrollLeft', { get() { return d.get.call(this); }, set(v) { window.__writes++; d.set.call(this, v); } });
+    // main-thread load, as while new rows are laid out
+    const spin = () => { const t = performance.now(); while (performance.now() - t < 25); requestAnimationFrame(spin); }; requestAnimationFrame(spin);
+  });
+  const b = await (await page.$('#alignmentContainer')).boundingBox();
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Input.synthesizeScrollGesture', { x: Math.round(b.x + b.width / 2), y: Math.round(b.y + 200), xDistance: -1200, yDistance: 0, speed: 1500, gestureSourceType: 'mouse' });
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(() => ({ left: Math.round(el('alignmentContainer').scrollLeft), writes: window.__writes, bar: Math.round(document.querySelector('.horizontal-scrollbar').scrollLeft) }));
+  const ok = r.writes === 0 && r.left >= 1150 && Math.abs(r.bar - r.left) <= 2;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+check('TSD results show 3 flanking bases on each side of both copies, in small grey', async (page) => {
+  let seed = 5; const rnd = () => Math.floor((seed = (seed * 1103515245 + 12345) % 2147483648) / 65536);
+  const rb = (n) => Array.from({ length: n }, () => 'ACGT'[rnd() % 4]).join('');
+  const body = rb(100);
+  let fa = `>consensus\n${'-'.repeat(31)}${body}AAAAAAAAAA${'-'.repeat(31)}\n`;
+  for (let i = 0; i < 20; i++) {
+    const tsd = rb(6);
+    const b = body.split('').map(c => (rnd() % 20 === 0 ? 'ACGT'[rnd() % 4] : c)).join('');   // a varying body, as in the Repeat Finder check
+    // copy3 has a gap inside its 5' flank, copy4 a copy truncated so the 3' flank is short
+    let left = rb(25); if (i === 3) left = left.slice(0, 22) + '-' + left.slice(22);
+    let right = rb(25); if (i === 4) right = right.slice(0, 2) + '-'.repeat(23);
+    fa += `>copy${i}
+${left}${tsd}${b}AAAAAAAAAA${tsd}${right}
+`;
+  }
+  await page.setInputFiles('#fileInput', { name: 'tsdflank.fa', mimeType: 'text/plain', buffer: Buffer.from(fa) });
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => openRepeatFinder(0));
+  await page.click('label:has(input[name="repeatMode"][value="tsd"])');
+  await page.click('#repeatRunBtn');
+  await page.waitForTimeout(1500);
+  const r = await page.evaluate(() => {
+    const out = { rows: 0, bad: [], grey: null, short: null };
+    const trs = [...document.querySelectorAll('#repeatResults tbody tr')];
+    out.rows = trs.length;
+    _lastTsdResults.forEach(res => {
+      // independent flank computation: residues (gaps skipped) just before/after each copy
+      const seq = state.seqs[res.seqIndex].seq;
+      const nongap = c => { let n = 0; for (let i = 0; i < c; i++) if (seq[i] !== '-' && seq[i] !== '.') n++; return n; };
+      const ung = seq.replace(/[-.]/g, '');
+      const exp = pos => { const a = nongap(pos[0]), z = nongap(pos[pos.length - 1]) + 1; return [ung.slice(Math.max(0, a - 3), a), ung.slice(z, z + 3)]; };
+      const [ub, ua] = exp(res.upPositions), [db, da] = exp(res.downPositions);
+      const tr = trs.find(t => t.children[1].textContent === res.seqName);
+      const shown = [...tr.querySelectorAll('.rf-flank')].map(s => s.textContent.replace(/\u00a0/g, ''));
+      if (shown.join('|') !== [ub, ua, db, da].join('|')) out.bad.push([res.seqName, shown.join('|'), [ub, ua, db, da].join('|')]);
+    });
+    const f = document.querySelector('#repeatResults .rf-flank');
+    const cs = getComputedStyle(f), main = getComputedStyle(document.querySelector('#repeatResults .rf-pair'));
+    out.grey = { color: cs.color, small: parseFloat(cs.fontSize) < parseFloat(main.fontSize) };
+    out.fourPerRow = trs.every(t => t.querySelectorAll('.rf-flank').length === 4);
+    out.mmStillCounted = document.querySelectorAll('#repeatResults .rf-mm').length;
+    return out;
+  });
+  const ok = r.rows >= 15 && r.bad.length === 0 && r.fourPerRow && r.grey.small && r.grey.color !== 'rgb(0, 0, 0)' && r.mmStillCounted === 0;
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
