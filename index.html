@@ -372,6 +372,12 @@
                                     <button id="clusterClearKmerButton" title="Remove name and letter colours from k-mer or SNP grouping. Does not change row order. 2D rectangles stay until you Clear them in 2D analysis.">Clear</button>
                                 </div>
                                 <div class="cluster-actions">
+                                    <label style="font-size: 10px; white-space: nowrap;" title="How sequences are compared. Aligned columns: the differences between the alignment columns two sequences both have (best for an alignment; does not depend on k). k-mer: shared words of length k, alignment-free.">Distance:
+                                        <select id="guideTreeMetric" style="font-size: 11px;">
+                                            <option value="pdist" selected>aligned columns</option>
+                                            <option value="jaccard">k-mer</option>
+                                        </select>
+                                    </label>
                                     <label style="font-size: 10px; white-space: nowrap;" title="Oligonucleotide length for the similarity tree (3–12). Default 6, same as Reorder by similarity.">k:
                                         <input type="number" id="guideTreeK" min="3" max="12" value="6" step="1" style="width: 40px; font-size: 11px;" title="k-mer length, 3–12. Default 6. The same setting as k next to Reorder in the Alignment menu.">
                                     </label>
@@ -1299,11 +1305,12 @@ B: -</pre>
     <div id="recentDropdown" style="display:none;position:fixed;top:140px;right:20px;width:360px;max-height:400px;overflow-y:auto;background:white;border:1px solid #ccc;border-radius:6px;box-shadow:0 4px 16px rgba(0,0,0,0.2);z-index:10003;font-family:-apple-system,BlinkMacSystemFont,sans-serif;"></div>
 
     <script src="cluster.js?v=171"></script>
+    <script src="kmer-tree.js?v=1"></script>
     <script src="bam-parser.js?v=166"></script>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=272"></script>
+    <script src="script.js?v=273"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

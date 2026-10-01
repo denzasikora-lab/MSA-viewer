@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v222';
+const BUILD_TAG = 'v223';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -13871,7 +13871,19 @@ function _guideTreeK() {
 // Groups: Auto (checked) or a number. Typing a number unticks Auto; ticking Auto clears the
 // number. (It used to be one number box with a blank meaning auto, and once a number was in it
 // the spinner could not get back to blank.)
+// k only matters for the k-mer distance: grey it out when the aligned-columns distance is chosen
+function _syncGuideTreeMetricUI() {
+    const sel = el('guideTreeMetric'), k = el('guideTreeK');
+    if (!sel || !k) return;
+    const aligned = sel.value === 'pdist';
+    k.disabled = aligned;
+    k.title = aligned ? 'Not used by the aligned-columns distance (switch Distance to k-mer to use it). Also sets k for Reorder by similarity.'
+        : 'k-mer length, 3-12. Default 6. The same setting as k next to Reorder in the Alignment menu.';
+}
+
 function _initGuideTreeAuto() {
+    el('guideTreeMetric')?.addEventListener('change', _syncGuideTreeMetricUI);
+    _syncGuideTreeMetricUI();
     const auto = el('guideTreeAuto'), num = el('guideTreeGroups');
     if (!auto || !num || auto._wired) return;
     auto._wired = true;
@@ -14273,14 +14285,25 @@ async function clusterByGuideTree() {
     // Groups: Auto (the tree chooses) or a number; Min size: groups with fewer sequences are left
     // unassigned and do not count toward that number
     const autoGroups = el('guideTreeAuto')?.checked !== false;
-    const parsed = parseInt(el('guideTreeGroups')?.value, 10);
-    const groupsArg = (autoGroups || Number.isNaN(parsed)) ? 'auto' : parsed;
+    // Number(), not parseInt: parseInt reads "1e1" as 1. A value outside 1..n is clamped, and said so.
+    const rawGroups = el('guideTreeGroups')?.value;
+    const typed = rawGroups === '' || rawGroups == null ? NaN : Number(rawGroups);
+    let groupsArg = (autoGroups || !Number.isFinite(typed)) ? 'auto' : Math.round(typed);
+    const clampNote = [];
+    if (groupsArg !== 'auto') {
+        const lo = 1, hi = state.seqs.length;
+        if (groupsArg < lo || groupsArg > hi) { clampNote.push(`Groups ${groupsArg} is outside 1-${hi}; using ${Math.max(lo, Math.min(hi, groupsArg))}.`); groupsArg = Math.max(lo, Math.min(hi, groupsArg)); }
+    }
     const minSize = Math.max(1, parseInt(el('guideTreeMinSize')?.value, 10) || 1);
     const k = _guideTreeK();
+    // Distance: the alignment columns (default; no k) or k-mer counts. The alignment distance needs
+    // an alignment: with rows of different lengths the k-mer distance is used.
+    const wantAligned = (el('guideTreeMetric')?.value || 'pdist') === 'pdist';
+    const metric = wantAligned && KmerTree.isAligned(getSeqsForClustering()) ? 'pdist' : 'jaccard';
     return runWithProgress('Grouping by k-mer tree...', () => {
         const seqs = getSeqsForClustering();
         const t0 = performance.now();
-        const cut = cutGuideTree(seqs, groupsArg, k, minSize);
+        const cut = cutGuideTree(seqs, groupsArg, k, minSize, metric);
         const ms = performance.now() - t0;
 
         const clusters = cut.groups.map((members, idx) => ({
@@ -14300,14 +14323,21 @@ async function clusterByGuideTree() {
             unassigned,
             summary: { nClusters: clusters.length, nAssigned, nUnassigned: unassigned.length, nTotal: state.seqs.length }
         }, 'kmers', k + '-mer groups');
-        if (!cut.auto && !cut.reached) {
-            showMessage(`Only ${clusters.length} group${clusters.length === 1 ? '' : 's'} of at least ${minSize} sequences exist (asked for ${cut.target}); lower Min size or Groups.`, 6000);
-        }
+        const warn = clampNote.slice();
+        if (!cut.auto && !cut.reached) warn.push(`Only ${clusters.length} group${clusters.length === 1 ? '' : 's'} of at least ${minSize} sequences exist (asked for ${cut.target}); lower Min size or Groups.`);
+        if (cut.warnings.includes('k-too-long')) warn.push(`k=${k} is too long for these sequences: most pairs share no ${k}-mers, so the tree is unreliable. Use a smaller k or the aligned-columns distance.`);
+        if (cut.warnings.includes('one-giant-group')) warn.push('Almost everything fell into one group: the sequences may be too similar to split, or k is too short to tell them apart.');
+        if (wantAligned && metric !== 'pdist') warn.push('The rows differ in length, so the k-mer distance was used.');
+        if (warn.length) showMessage(warn.join(' '), 8000);
         state._geMeta = {
             nGroups: clusters.length,
             nSeqs: state.seqs.length,
             nUnassigned: unassigned.length,
             minSize,
+            metric: cut.metric,
+            plateau: cut.plateau,
+            alternatives: cut.alternatives,
+            warnings: cut.warnings,
             ms: Math.round(ms),
             k: cut.k || k,
             cut: cut.cutHeight,
@@ -15509,9 +15539,16 @@ function _geSummaryHtml() {
     let sub = '';
     if (m.source === 'kmers') {
         const cut = (m.cut != null && Number.isFinite(Number(m.cut))) ? Number(m.cut).toFixed(3) : '';
-        sub = 'k-mer tree · ' + (m.auto ? 'auto split' : ('split into ' + m.target))
-            + ' · k=<span class="ge-var">' + (m.k || 6) + '</span>'
+        const aligned = m.metric === 'pdist';
+        sub = (aligned ? 'aligned columns' : ('k-mer tree · k=<span class="ge-var">' + (m.k || 6) + '</span>'))
+            + ' · ' + (m.auto ? 'auto' : 'asked for ' + m.target) + ' (' + (m.nGroups || 0) + ' group' + (m.nGroups === 1 ? '' : 's') + ' of at least ' + (m.minSize || 1) + ')'
             + (cut ? (' · cut <span class="ge-var">' + cut + '</span>') : '');
+        if (m.plateau && m.plateau.share != null) {
+            sub += ' · stable over <span class="ge-var">' + Math.round(m.plateau.share * 100) + '%</span> of the tree height';
+        }
+        if (m.alternatives && m.alternatives.length) {
+            sub += '<br>also stable: ' + m.alternatives.map(a => '<span class="ge-var">' + a.groups + '</span> groups (' + Math.round(a.share * 100) + '%)').join(', ');
+        }
     } else if (m.sourceLabel) {
         sub = _geEsc(m.sourceLabel);
     }
@@ -15836,98 +15873,9 @@ function _adjustDirection(fasta) {
 // Shared by _reorderByGuideTree and clusterByGuideTree, so the order a user sees and the
 // grouping they get always come from the same tree.
 // seqs: [{ header, seq }]  ->  { order: leafIndices, merges: [{ i, j, d }] }
-function _kmerGuideTree(seqs, k) {
-    const n = seqs.length;
-    const K = (Number.isFinite(k) && k >= 3 && k <= 12) ? (k | 0) : 6;
-    const merges = [];
-
-    // Build k-mer frequency vectors for each sequence
-    const kmerVecs = [];
-    for (const s of seqs) {
-        // U counts as T: RNA used to lose every U here, leaving little or no k-mer profile
-        const clean = s.seq.toUpperCase().replace(/U/g, 'T').replace(/[^ACGT]/g, '');
-        const counts = new Map();
-        for (let i = 0; i <= clean.length - K; i++) {
-            const kmer = clean.substring(i, i + K);
-            counts.set(kmer, (counts.get(kmer) || 0) + 1);
-        }
-        kmerVecs.push(counts);
-    }
-
-    // Compute pairwise distances using shared k-mer fraction (1 - jaccard-like)
-    const dist = Array.from({ length: n }, () => new Float32Array(n));
-    for (let i = 0; i < n; i++) {
-        for (let j = i + 1; j < n; j++) {
-            const a = kmerVecs[i], b = kmerVecs[j];
-            let shared = 0, total = 0;
-            const allKmers = new Set([...a.keys(), ...b.keys()]);
-            for (const km of allKmers) {
-                const ca = a.get(km) || 0, cb = b.get(km) || 0;
-                shared += Math.min(ca, cb);
-                total += Math.max(ca, cb);
-            }
-            const d = total > 0 ? 1 - shared / total : 1;
-            dist[i][j] = d;
-            dist[j][i] = d;
-        }
-    }
-
-    // UPGMA guide tree construction -> extract leaf order
-    // Represent clusters as arrays of leaf indices; merge closest pair
-    const clusters = seqs.map((_, i) => [i]);
-    const clusterDist = dist.map(row => new Float32Array(row)); // copy
-    const active = new Uint8Array(n).fill(1);
-
-    for (let step = 0; step < n - 1; step++) {
-        // Find closest pair of active clusters
-        let minD = Infinity, ci = -1, cj = -1;
-        for (let i = 0; i < n; i++) {
-            if (!active[i]) continue;
-            for (let j = i + 1; j < n; j++) {
-                if (!active[j]) continue;
-                if (clusterDist[i][j] < minD) {
-                    minD = clusterDist[i][j];
-                    ci = i; cj = j;
-                }
-            }
-        }
-        if (ci < 0) break;
-
-        // Optimal leaf ordering at junction: try all 4 orientations of the two
-        // clusters and pick the one where the junction elements are closest.
-        // A=[...aL, aR] B=[...bL, bR] -> try (A+B), (A+B'), (A'+B), (A'+B')
-        // where A' = reversed A, B' = reversed B
-        const cA = clusters[ci], cB = clusters[cj];
-        const aFirst = cA[0], aLast = cA[cA.length - 1];
-        const bFirst = cB[0], bLast = cB[cB.length - 1];
-        // Junction distances for each orientation:
-        const opts = [
-            { d: dist[aLast][bFirst],  revA: false, revB: false }, // A + B
-            { d: dist[aLast][bLast],   revA: false, revB: true  }, // A + B'
-            { d: dist[aFirst][bFirst], revA: true,  revB: false }, // A' + B
-            { d: dist[aFirst][bLast],  revA: true,  revB: true  }, // A' + B'
-        ];
-        opts.sort((a, b) => a.d - b.d);
-        const best = opts[0];
-        const orderedA = best.revA ? [...cA].reverse() : cA;
-        const orderedB = best.revB ? [...cB].reverse() : cB;
-        clusters[ci] = orderedA.concat(orderedB);
-        active[cj] = 0;
-        merges.push({ i: ci, j: cj, d: minD });
-
-        // Update distances (average linkage / UPGMA)
-        const sizeI = orderedA.length, sizeJ = orderedB.length;
-        for (let k = 0; k < n; k++) {
-            if (!active[k] || k === ci) continue;
-            const newD = (clusterDist[ci][k] * sizeI + clusterDist[cj][k] * sizeJ) / (sizeI + sizeJ);
-            clusterDist[ci][k] = newD;
-            clusterDist[k][ci] = newD;
-        }
-    }
-
-    // Find the last active cluster - its leaf order is the guide tree order
-    const finalCluster = clusters.find((_, i) => active[i]) || clusters[0];
-    return { order: finalCluster, merges, k: K };
+function _kmerGuideTree(seqs, k, opts) {
+    const t = KmerTree.guideTree(seqs, k, opts);
+    return { order: t.order, merges: t.merges, k: t.k, dist: t.dist, metric: t.metric, n: t.n };
 }
 
 function _reorderByGuideTree(fasta) {
@@ -15953,75 +15901,16 @@ function _reorderByGuideTree(fasta) {
     return { fasta: reordered, order: orderedHeaders };
 }
 
-// Cut the guide tree into groups. UPGMA performs n-1 merges, so applying the first
-// (n - groups) of them leaves exactly `groups` clusters - no threshold to guess at, and
-// the cut height is reported so the separation can be judged.
-function cutGuideTree(seqs, groups, k, minSize = 1) {
-    const n = seqs.length;
-    const tree = _kmerGuideTree(seqs, k);
-    const merges = tree.merges;
-    minSize = Math.max(1, Math.min(minSize | 0 || 1, n));
-    let auto = false;
-    let target;
-    if (groups == null || groups === 'auto') {
-        auto = true;
-        target = (typeof SINEClusterer !== 'undefined' && SINEClusterer.suggestGroupCount)
-            ? SINEClusterer.suggestGroupCount(merges.map(m => m.d), n)
-            : Math.min(4, Math.max(2, n - 1));
-    } else {
-        target = Math.max(1, Math.min(groups, n));
-    }
-    const parent = Array.from({ length: n }, (_, i) => i);
-    const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
-    const size = new Array(n).fill(1);
-
-    // A number of groups means groups that have at least minSize sequences: smaller ones (a lone
-    // sequence, a pair...) are left unassigned and do not count. Apply the UPGMA merges one at a
-    // time, counting the qualifying groups after each; that count moves by at most one per merge,
-    // so every value up to its maximum is reached. The cut is the coarsest one with exactly
-    // `target` qualifying groups (or the one with the most, if the tree cannot give that many).
-    let qualifying = minSize <= 1 ? n : 0;
-    let bestM = 0, bestCount = qualifying;       // m = number of merges applied
-    let chosenM = qualifying === target ? 0 : -1;
-    const counts = [qualifying];
-    for (let m = 0; m < merges.length; m++) {
-        const { i, j } = merges[m];
-        const ri = find(i), rj = find(j);
-        if (ri !== rj) {
-            const before = (size[ri] >= minSize ? 1 : 0) + (size[rj] >= minSize ? 1 : 0);
-            parent[rj] = ri; size[ri] += size[rj];
-            qualifying += (size[ri] >= minSize ? 1 : 0) - before;
-        }
-        counts.push(qualifying);
-        if (qualifying === target) chosenM = m + 1;                       // keep the coarsest
-        if (qualifying > bestCount) { bestCount = qualifying; bestM = m + 1; }
-    }
-    // Auto keeps its old meaning (the tree's own cut: n - target merges); the small groups it leaves
-    // are then set aside as unassigned
-    const toApply = auto ? Math.max(0, Math.min(n - target, merges.length)) : (chosenM >= 0 ? chosenM : bestM);
-
-    // rebuild the partition at the chosen cut
-    for (let x = 0; x < n; x++) parent[x] = x;
-    let cutHeight = 0;
-    for (let m = 0; m < toApply; m++) {
-        const { i, j, d } = merges[m];
-        const ri = find(i), rj = find(j);
-        if (ri !== rj) parent[rj] = ri;
-        cutHeight = Math.max(cutHeight, d);
-    }
-    const nextHeight = merges[toApply] ? merges[toApply].d : null;
-
-    const byRoot = new Map();
-    for (let i = 0; i < n; i++) {
-        const r = find(i);
-        if (!byRoot.has(r)) byRoot.set(r, []);
-        byRoot.get(r).push(i);
-    }
-    const all = [...byRoot.values()].sort((a, b) => b.length - a.length);
-    const groupsOut = all.filter(g => g.length >= minSize);
-    const unassigned = all.filter(g => g.length < minSize).flat().sort((a, b) => a - b);
-    return { groups: groupsOut, unassigned, cutHeight, nextHeight, auto, target, minSize, k: tree.k,
-             reached: groupsOut.length === target || auto };
+// Cut the guide tree into groups (kmer-tree.js). groups: 'auto' or a number of groups wanted, each with
+// at least minSize sequences; sequences in smaller groups are returned as `unassigned`. metric: 'pdist'
+// (alignment columns, independent of k) or 'jaccard' (k-mer counts).
+function cutGuideTree(seqs, groups, k, minSize = 1, metric = 'jaccard') {
+    const tree = _kmerGuideTree(seqs, k, { metric });
+    const cut = KmerTree.cutTree(tree, groups, minSize);
+    return Object.assign(cut, {
+        cutHeight: cut.cutHeight, nextHeight: cut.plateau ? cut.plateau.to : null,
+        k: tree.k, metric: tree.metric
+    });
 }
 
 function _treeIsBase(char) {

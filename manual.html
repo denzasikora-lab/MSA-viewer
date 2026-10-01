@@ -433,6 +433,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="gs-updates">1.6 Recent Updates</h3>
   <p>Recent updates added or improved the following features:</p>
   <ul>
+    <li><strong>k-mer groups fixed</strong> - the number of groups no longer jumps with k: Auto picks the most stable count instead of the root jump, a number of groups means groups of at least <em>Min size</em> (lone sequences are set aside), and a new <em>Distance: aligned columns</em> option does not depend on k at all. Grouping is also about 200 times faster (330 sequences: 20 s to 0.1 s). See §4.2.</li>
     <li><strong>Highlight diffs / Variable sites only</strong> - now do something when ticked (a column is variable when at least one sequence differs; set the threshold to 0 to turn the filter off), and pause each other with a message instead of silently (§5.2).</li>
     <li><strong>TSD flanks</strong> - each TSD pair shows the 3 bases outside each copy in small grey letters, to check that the duplication is complete (§9.9).</li>
     <li><strong>Touchpad scrolling</strong> - horizontal two-finger scrolling no longer jumps back or stalls: the scrollbar under the alignment now only follows the view, and drives it only when you use the bar itself.</li>
@@ -771,8 +772,9 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </p>
   <table>
     <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
-    <tr><td>k</td><td>6</td><td>Oligonucleotide length for the similarity tree (3–12)</td></tr>
-    <tr><td>Groups</td><td>auto</td><td>The <em>auto</em> box (ticked) lets the tree choose how many groups. Type a number, or untick auto, to ask for that many groups; tick auto again to go back</td></tr>
+    <tr><td>Distance</td><td>aligned columns</td><td><em>Aligned columns</em> compares two sequences by the differences in the alignment columns where both have a base. It uses the alignment, does not depend on k, and is not thrown off by sequences that cover different parts of the alignment (chunks, truncated copies). <em>k-mer</em> compares shared words of length k without the alignment (the same tree as Reorder by similarity)</td></tr>
+    <tr><td>k</td><td>6</td><td>Oligonucleotide length for the k-mer distance (3–12); greyed out for aligned columns. A very short k cannot tell sequences apart and a very long k leaves diverged sequences with no words in common: the explorer says so</td></tr>
+    <tr><td>Groups</td><td>auto</td><td>The <em>auto</em> box (ticked) lets the tree choose how many groups: the number that stays the same over the widest range of the tree (not the largest single jump). The explorer shows how stable it is and which other counts are also stable. Type a number, or untick auto, to ask for that many groups; tick auto again to go back</td></tr>
     <tr><td>Min size</td><td>2</td><td>Find the requested number of groups that each have <em>at least</em> this many sequences. Smaller groups (a lone sequence, a pair...) are not counted: their sequences are listed as unassigned. If the tree has fewer such groups than asked for, you are told how many exist</td></tr>
   </table>
   <p>

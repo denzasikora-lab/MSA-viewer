@@ -2759,6 +2759,42 @@ check('k-mer groups: Auto can be restored; Groups counts only groups of at least
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+check('k-mer groups: Distance selector (aligned columns / k-mer), k greyed out, Groups number read exactly', async (page) => {
+  let x = 3; const rnd = () => { x = (x * 16807) % 2147483647; return x; };
+  const rb = n => Array.from({ length: n }, () => 'ACGT'[rnd() % 4]).join('');
+  const mut = (s, pct) => s.split('').map(c => (rnd() % 100 < pct ? 'ACGT'[rnd() % 4] : c)).join('');
+  const root = rb(300), bases = [root, mut(root, 25), mut(root, 25)];
+  let fa = ''; for (let k = 0; k < 6; k++) for (let g = 0; g < 3; g++) fa += `>g${g}_${k}\n${mut(bases[g], 3)}\n`;
+  fa += `>lone\n${rb(150)}\n`;                       // a different length: not an alignment
+  await loadFasta(page, fa);
+  const r = await page.evaluate(async () => {
+    const wait = ms => new Promise(res => setTimeout(res, ms));
+    const out = {};
+    const sel = el('guideTreeMetric'), k = el('guideTreeK');
+    out.defaults = [sel.value, k.disabled];
+    await clusterByGuideTree(); await wait(300);
+    out.metric = state._geMeta.metric;   // rows are padded to one length on load, so this is an alignment
+    sel.value = 'jaccard'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+    out.kEnabled = !k.disabled;
+    sel.value = 'pdist'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+    out.kDisabledAgain = k.disabled;
+    // 1e1 is ten, not one; a value outside 1..n is clamped and said so
+    const auto = el('guideTreeAuto'), num = el('guideTreeGroups');
+    auto.checked = false; auto.dispatchEvent(new Event('change', { bubbles: true }));
+    num.value = '1e1'; num.dispatchEvent(new Event('input', { bubbles: true }));
+    el('guideTreeMinSize').value = '1';
+    await clusterByGuideTree(); await wait(300);
+    out.exp = state._geMeta.nGroups + state._geMeta.nUnassigned >= 1 && state._geMeta.nGroups === 10;
+    num.value = '500'; num.dispatchEvent(new Event('input', { bubbles: true }));
+    await clusterByGuideTree(); await wait(300);
+    out.clamped = [state._geMeta.nGroups, /outside 1-/.test(el('statusMessage').textContent)];
+    return out;
+  });
+  const ok = r.defaults[0] === 'pdist' && r.defaults[1] === true && r.metric === 'pdist'
+    && r.kEnabled && r.kDisabledAgain && r.exp && r.clamped[0] === 19 && r.clamped[1];
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
