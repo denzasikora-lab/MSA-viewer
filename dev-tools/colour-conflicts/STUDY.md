@@ -271,3 +271,19 @@ by measuring every box).
   when ticked. Default is now count >= 1 (a column is variable when at least one sequence
   differs); 0 still means unfiltered. The 'both cleared, left behind: weight' probe result was a
   probe artifact (its clear step clicked the checkbox, which toggles).
+
+## 10. Closed in v219
+
+- Column-keyed state follows column edits (`applyColumnEdit`): column selection, stash, trim and
+  soft-trim boundaries, SNP-group features, column-wide repeats, residue selection / pending
+  click / edit cell. Hooked into Insert gap column, GeneDoc gap tools (All -> everything, Seq /
+  Other -> residue selections of the edited rows), Delete columns, Remove gap columns, hard
+  trim. Undo/Redo and trim-undo restore the column state saved on the entry. Clearing a soft
+  trim (or hard-trimming under one) no longer shifts SNP letters by the window offset.
+- TSD and repeat results are tied to (sequence, residues): go-to, Mark in alignment, lowercase
+  undo and the repeat table follow rows/columns edited after the search.
+- Final matrix on this code: 11 of 136 pairs, all by design (marks over the colour scheme, bold
+  overlapping Highlight diffs, TSD colour vs TSD bold being one setting, SNP groups vs soft trim,
+  Highlight diffs vs Variable sites now with a message).
+- Not done: 2D block mask does not follow column edits; marks through reverse-complement of rows
+  not probed; Copy table has no flank columns.

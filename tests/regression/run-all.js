@@ -2355,7 +2355,10 @@ check('Marks follow their residues: TSD marks, repeats and residue selection thr
       });
       return out.sort().join();
     };
-    const nucs = () => [...state.selectedNucs].filter(([r]) => r >= 0).map(([r, s]) => state.seqs[r].header + ':' + [...s].sort((a, b) => a - b).join('.')).join();
+    // residue numbers (non-gap characters before the column), not columns: the selection follows
+    // its residues when a column is inserted
+    const resNo = (r, c) => { let n = 0; for (let i = 0; i < c; i++) if (state.seqs[r].seq[i] !== '-') n++; return n; };
+    const nucs = () => [...state.selectedNucs].filter(([r]) => r >= 0).map(([r, s]) => state.seqs[r].header + ':' + [...s].map(c => resNo(r, c)).sort((a, b) => a - b).join('.')).join();
     state.tsdMarkStyle = 'color'; state.tsdMarks = new Map([[2, new Set([10, 11])]]); renderAlignment({ deferConservation: true });
     const info = { segs: [[30, 33]], row: 3, color: '#ff00ff' }; state.repeatHighlights.set('t', info); _paintRepeatHighlight(info, true);
     state.selectedNucs.set(4, new Set([5, 6])); refreshNucleotideSelectionsImmediate();
@@ -2532,6 +2535,127 @@ check('Highlight diffs / Variable sites only work out of the box and pause each 
     && r.afterVar[0] === false && r.afterVar[1] === true && r.afterVar[2] && r.afterVar[3] && r.hidden === 'none'
     && r.afterOff[0] === true && r.afterOff[1] === false && r.afterOff[2]
     && r.afterDiffs[0] === true && r.afterDiffs[1] === false && r.afterDiffs[2];
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+check('TSD and repeat results stay tied to their sequences and residues after row and column edits', async (page) => {
+  let seed = 5; const rnd = () => Math.floor((seed = (seed * 1103515245 + 12345) % 2147483648) / 65536);
+  const rb = (n) => Array.from({ length: n }, () => 'ACGT'[rnd() % 4]).join('');
+  const body = rb(100);
+  let fa = `>consensus\n${'-'.repeat(31)}${body}AAAAAAAAAA${'-'.repeat(31)}\n`;
+  for (let i = 0; i < 20; i++) {
+    const tsd = rb(6);
+    const b = body.split('').map(c => (rnd() % 20 === 0 ? 'ACGT'[rnd() % 4] : c)).join('');
+    fa += `>copy${i}\n${rb(25)}${tsd}${b}AAAAAAAAAA${tsd}${rb(25)}\n`;
+  }
+  fa += `>tandem\n${rb(31)}${'ACGTTGCA'.repeat(4)}${body.slice(32)}AAAAAAAAAA${rb(31)}\n`;
+  page.on('dialog', d => d.accept());
+  await page.setInputFiles('#fileInput', { name: 'anch.fa', mimeType: 'text/plain', buffer: Buffer.from(fa) });
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => openRepeatFinder(0));
+  await page.click('label:has(input[name="repeatMode"][value="tsd"])');
+  await page.click('#repeatRunBtn');
+  await page.waitForTimeout(1500);
+  const nRes = await page.evaluate(() => _lastTsdResults.length);
+  // edits after the search: a row above them is deleted, a column is inserted near the start
+  await page.evaluate(() => { deleteSequence(1); state.selectedColumns = new Set([5]); insertGapColumn(); state.selectedColumns.clear(); });
+  await page.waitForTimeout(400);
+  const r = await page.evaluate(async () => {
+    const out = {};
+    const letters = (row, cols) => cols.map(c => state.seqs[row].seq[c]).join('');
+    // 1. Mark in alignment: the marked residues of every sequence are its two TSD copies
+    document.getElementById('tsdMarkStyle').value = 'color'; applyTsdMarking();
+    await new Promise(res => setTimeout(res, 300));
+    const bad = [];
+    _lastTsdResults.forEach(res => {
+      const row = state.seqs.indexOf(res.obj);
+      if (row < 0) return;                                   // that sequence was deleted
+      const cols = [...(state.tsdMarks.get(row) || [])].sort((a, b) => a - b);
+      const got = letters(row, cols).toUpperCase().replace(/-/g, '');
+      if (got !== (res.upTSD + res.downTSD).toUpperCase().replace(/-/g, '')) bad.push([res.seqName, got, res.upTSD + res.downTSD]);
+    });
+    out.markedBad = bad.slice(0, 3);
+    out.markedSeqs = state.tsdMarks.size;
+    // 2. clicking a table row flashes that sequence's name (row numbers shifted by the delete)
+    const tr = document.querySelectorAll('#repeatResults tbody tr')[5];
+    const want = _lastTsdResults[+tr.dataset.ri].seqName;
+    tr.click();
+    await new Promise(res => setTimeout(res, 300));
+    out.flashed = document.querySelector('.seq-name.rf-flash')?.textContent.trim().replace('…', '');
+    out.wantName = want;
+    // 3. lowercase marking, another row deleted, undo: exactly the marked letters are upper again
+    state.tsdMarks = new Map(); state.tsdMarkUndo = null;
+    document.getElementById('tsdMarkStyle').value = 'lowercase'; applyTsdMarking();
+    const lowers = () => state.seqs.reduce((n, q) => n + (q.seq.match(/[a-z]/g) || []).length, 0);
+    out.lowerAfterMark = lowers();
+    deleteSequence(2);
+    undoTsdMarking();
+    out.lowerAfterUndo = lowers();
+    return out;
+  });
+  // 4. repeats: tandem repeat of the last row, searched, then edits, then highlighted
+  await page.click('label:has(input[name="repeatMode"][value="tandem"])');
+  await page.click('label:has(input[name="repeatScope"][value="all"])');
+  await page.fill('#repeatMinLen', '8');
+  await page.click('#repeatRunBtn');
+  await page.waitForTimeout(1500);
+  await page.evaluate(() => { deleteSequence(1); state.selectedColumns = new Set([8]); insertGapColumn(); state.selectedColumns.clear(); });
+  await page.waitForTimeout(400);
+  const rep = await page.evaluate(async () => {
+    const rows = [...document.querySelectorAll('#repeatResults tbody tr')];
+    const tr = rows.find(x => /tandem/.test(x.children[1]?.textContent || '')) || rows[0];
+    tr.click();
+    await new Promise(res => setTimeout(res, 400));
+    const spans = [...document.querySelectorAll('.seq-data > span[data-repeat-hl="1"]')];
+    const names = [...new Set(spans.map(s => state.seqs[+s.closest('.seq-line').dataset.seqIndex].header))];
+    const txt = spans.map(s => s.textContent).join('');
+    return { names, n: spans.length, unit: /^(ACGTTGCA)+$/.test(txt) || txt.includes('ACGTTGCAACGTTGCA') };
+  });
+  const ok = nRes >= 15 && r.markedBad.length === 0 && r.markedSeqs >= 15 && r.flashed && r.flashed === r.wantName.replace('…', '').slice(0, r.flashed.length)
+    && r.lowerAfterMark > 0 && r.lowerAfterUndo === 0
+    && rep.names.length === 1 && rep.names[0] === 'tandem' && rep.n >= 32 && rep.unit;
+  return { pass: ok, detail: JSON.stringify({ nRes, r, rep }) };
+});
+
+check('Column marks follow inserted and deleted columns, and Undo/Redo put them back', async (page) => {
+  let x = 7; const rnd = () => { x = (x * 16807) % 2147483647; return x; };
+  const base = Array.from({ length: 60 }, () => 'ACGT'[rnd() % 4]);
+  let fa = ''; for (let i = 0; i < 12; i++) { const s = base.slice(); [10, 20, 30].forEach(c => { s[c] = i < 6 ? 'G' : 'C'; }); fa += `>seq${i}\n${s.join('')}\n`; }
+  await loadFasta(page, fa);
+  const r = await page.evaluate(async () => {
+    const wait = ms => new Promise(res => setTimeout(res, ms));
+    const snp = () => [...document.querySelectorAll('.seq-line[data-seq-index="0"] .seq-data > span.diagnostic-mutation')].map(s => +s.dataset.pos).sort((a, b) => a - b).join();
+    const sel = () => [...state.selectedColumns].sort((a, b) => a - b).join();
+    const rep = () => JSON.stringify(state.repeatHighlights.get('c')?.segs);
+    await clusterSequences(); await wait(200);
+    state.selectedColumns = new Set([20, 25]); updateColumnSelections();
+    state.trimBoundaries = { leftTrimEnd: 4, rightTrimStart: 55 };
+    state.repeatHighlights.set('c', { segs: [[40, 50]], row: null, color: '#f0f' });
+    renderAlignment(); await wait(200);
+    const out = { start: [snp(), sel(), JSON.stringify(state.trimBoundaries), rep()] };
+    el('editToggleButton').click();
+    handleGeneDocGapToolClick(0, 3, 'insertGapAll'); await wait(300); flushPendingSpanRepaint();
+    out.afterInsert = [snp(), sel(), JSON.stringify(state.trimBoundaries), rep()];
+    undoDelete(); await wait(300);
+    out.afterUndo = [snp(), sel(), JSON.stringify(state.trimBoundaries), rep()];
+    redoAction(); await wait(300);
+    out.afterRedo = [snp(), sel(), JSON.stringify(state.trimBoundaries), rep()];
+    undoDelete(); await wait(300);
+    // delete the gap column again via Delete Columns on a selection, then undo
+    state.selectedColumns = new Set([3, 25]); deleteSelectedColumns(true); await wait(300);
+    out.afterDelete = [snp(), sel(), JSON.stringify(state.trimBoundaries), rep()];
+    undoDelete(); await wait(300);
+    out.afterUndoDelete = [snp(), sel(), JSON.stringify(state.trimBoundaries), rep()];
+    return out;
+  });
+  const start = ['10,20,30', '20,25', '{"leftTrimEnd":4,"rightTrimStart":55}', '[[40,50]]'];
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  // insert at column 3: columns >= 3 move right by one
+  const wantIns = ['11,21,31', '21,26', '{"leftTrimEnd":5,"rightTrimStart":56}', '[[41,51]]'];
+  // delete columns 3 and 25: 10->9, 20->19, 30->28 ; selection {3,25} removed (cleared)
+  const ok = same(r.start, start) && same(r.afterInsert, wantIns) && same(r.afterUndo, start) && same(r.afterRedo, wantIns)
+    && r.afterDelete[0] === '9,19,28' && r.afterDelete[2] === '{"leftTrimEnd":3,"rightTrimStart":53}' && r.afterDelete[3] === '[[38,48]]'
+    && r.afterUndoDelete[0] === start[0] && r.afterUndoDelete[2] === start[2] && r.afterUndoDelete[3] === start[3] && r.afterUndoDelete[1] === '3,25';   // undo restores the selection made before the delete
   return { pass: ok, detail: JSON.stringify(r) };
 });
 

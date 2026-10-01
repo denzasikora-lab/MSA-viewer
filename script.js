@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v218';
+const BUILD_TAG = 'v219';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -689,6 +689,156 @@ function syncRepeatPaint() {
     syncResidueOverlays();
 }
 
+// ---- Column edits: everything keyed by a column number follows the columns ----
+// Inserting or deleting columns used to leave the column selection, trim boundaries, SNP-group
+// letters and column-wide repeats on their old column numbers, i.e. on other residues.
+// applyColumnEdit({ type: 'insert', at, n } | { type: 'delete', cols }, rows, newWidth) maps all
+// of them, and saves their previous state on the undo entry so Undo (and Redo) put them back.
+function _columnEditMap(op) {
+    const n = op.n || 1, at = op.at;
+    const del = op.type === 'delete' ? [...new Set(op.cols)].filter(Number.isInteger).sort((a, b) => a - b) : null;
+    const delSet = del ? new Set(del) : null;
+    const countBelow = c => { let lo = 0, hi = del.length; while (lo < hi) { const m = (lo + hi) >> 1; if (del[m] < c) lo = m + 1; else hi = m; } return lo; };
+    const W = Number.isInteger(op.newWidth) ? op.newWidth : Infinity;
+    const f = op.type === 'insert' ? {
+        col: c => (c >= at ? c + n : c),       // where a column goes
+        firstGE: c => (c >= at ? c + n : c),   // a range start / a boundary "first column from c on"
+        lastLE: c => (c >= at ? c + n : c)     // "last column up to c"
+    } : {
+        col: c => (delSet.has(c) ? null : c - countBelow(c)),
+        firstGE: c => c - countBelow(c),
+        lastLE: c => c - countBelow(c + 1)
+    };
+    const base = f.col;
+    f.col = c => { const r = base(c); return r !== null && r < W ? r : null; };
+    return f;
+}
+
+function _mapColSet(set, f) {
+    const out = new Set();
+    set.forEach(c => { const r = f.col(Number(c)); if (r !== null && r >= 0) out.add(r); });
+    return out;
+}
+
+const _FEATURE_LISTS = ['perfectFeatures', 'cloudyFeatures', 'imperfectFeatures'];
+
+function _snapshotColumnState() {
+    const b = x => (x ? { ...x } : null);
+    const clusters = state.clusterResults?.clusters || null;
+    return {
+        trim: b(state.trimBoundaries), soft: b(state.softTrimBoundaries),
+        clusters,
+        feats: clusters ? clusters.map(c => _FEATURE_LISTS.map(k => (c[k] || []).map(ft => ft.pos))) : null,
+        reps: [...(state.repeatHighlights || [])].filter(([, i]) => i.row === null).map(([id, i]) => [id, i.segs.map(x => x.slice())])
+    };
+}
+
+function _restoreColumnState(snap) {
+    if (!snap) return;
+    state.trimBoundaries = snap.trim ? { ...snap.trim } : null;
+    state.softTrimBoundaries = snap.soft ? { ...snap.soft } : null;
+    if (snap.feats && state.clusterResults?.clusters === snap.clusters) {
+        snap.clusters.forEach((c, ci) => _FEATURE_LISTS.forEach((k, ki) => {
+            const pos = snap.feats[ci][ki];
+            if (c[k] && c[k].length === pos.length) c[k].forEach((ft, i) => { ft.pos = pos[i]; });
+        }));
+        _rebuildClusterCharMap();
+    }
+    snap.reps.forEach(([id, segs]) => {
+        const info = state.repeatHighlights?.get(id);
+        if (info && info.row === null) info.segs = segs.map(x => x.slice());
+    });
+    bumpRepeatLayer();
+    // a restored boundary also decides the feature offset: keep the letters on their columns
+    if (state.clusterResults) _rebuildClusterCharMap();
+    updateColumnSelections();
+}
+
+// rows: 'all' (or omitted), or an array of row indices that were edited. Column-wide state
+// (selection, trim, SNP letters, column repeats) follows only when every row was edited;
+// residue selections follow in the rows that were.
+function applyColumnEdit(op, rows) {
+    const f = _columnEditMap(op);
+    const all = rows === undefined || rows === 'all';
+    const rowSet = all ? null : new Set(rows);
+    const inRows = r => all || rowSet.has(r);
+
+    // what Undo must put back, stored on the undo entry this edit just pushed
+    if (all && state.deletedHistory.length) {
+        const entry = state.deletedHistory[state.deletedHistory.length - 1];
+        if (entry && !entry.colStateBefore) entry.colStateBefore = _snapshotColumnState();
+    }
+
+    // per row: residue selection, its pending first click, the Type-tool cell
+    if (state.selectedNucs?.size) {
+        const next = new Map();
+        state.selectedNucs.forEach((set, row) => {
+            if (row >= 0 && !inRows(row)) { next.set(row, set); return; }
+            const m = _mapColSet(set, f);
+            if (m.size) next.set(row, m);
+        });
+        state.selectedNucs = next;
+    }
+    if (state.pendingNucStart && inRows(state.pendingNucStart.row)) {
+        const c = f.col(state.pendingNucStart.pos);
+        state.pendingNucStart = c === null ? null : { ...state.pendingNucStart, pos: c };
+    }
+    if (state.editCell && inRows(state.editCell.row)) {
+        const c = f.col(state.editCell.pos);
+        state.editCell = c === null ? null : { ...state.editCell, pos: c };
+    }
+    if (!all) return;
+
+    state.selectedColumns = _mapColSet(state.selectedColumns, f);
+    if (state.selectionStash?.cols?.size) {
+        const m = _mapColSet(state.selectionStash.cols, f);
+        state.selectionStash.cols = m.size ? m : null;
+    }
+
+    // trim boundaries are columns too (last trimmed on the left, first trimmed on the right)
+    const oldOffset = _clusterAlignmentColumnOffset();
+    const bounds = b => b && {
+        ...b,
+        leftTrimEnd: b.leftTrimEnd >= 0 ? Math.max(-1, f.lastLE(b.leftTrimEnd)) : b.leftTrimEnd,
+        rightTrimStart: Number.isFinite(b.rightTrimStart) ? f.firstGE(b.rightTrimStart) : b.rightTrimStart
+    };
+    state.trimBoundaries = bounds(state.trimBoundaries);
+    state.softTrimBoundaries = bounds(state.softTrimBoundaries);
+    const newOffset = _clusterAlignmentColumnOffset();
+
+    // SNP-group features: pos is 1-based inside the soft-trimmed window (column = pos - 1 + offset)
+    if (state.clusterResults?.clusters) {
+        state.clusterResults.clusters.forEach(c => _FEATURE_LISTS.forEach(k => {
+            if (!c[k]) return;
+            c[k] = c[k].filter(ft => {
+                const col = f.col(ft.pos - 1 + oldOffset);
+                if (col === null) return false;
+                ft.pos = col + 1 - newOffset;
+                return true;
+            });
+        }));
+        _rebuildClusterCharMap();
+    }
+
+    // repeats found on the consensus cover columns, not a sequence
+    let touched = false;
+    (state.repeatHighlights || new Map()).forEach(info => {
+        if (info.row !== null) return;
+        info.segs = info.segs.map(([a, z]) => [f.firstGE(a), f.lastLE(z - 1) + 1]).filter(([a, z]) => z > a);
+        touched = true;
+    });
+    if (touched) bumpRepeatLayer();
+    _updateSplitHint?.();
+}
+
+// Feature positions are relative to the soft-trim window; when that window is dropped they
+// must become absolute columns, or every letter moves by the window's offset.
+function _clusterFeaturesToAbsolute() {
+    const off = _clusterAlignmentColumnOffset();
+    if (!off || !state.clusterResults?.clusters) return;
+    state.clusterResults.clusters.forEach(c => _FEATURE_LISTS.forEach(k => (c[k] || []).forEach(ft => { ft.pos += off; })));
+}
+
 // ---- Marks tied to residues, not to (row, column) ----
 // TSD marks used to be stored as row index -> Set(column), so deleting or moving a row put
 // them on another sequence, and inserting a gap put them on another residue. ResidueMarks
@@ -810,6 +960,7 @@ function _rebuildClusterCharMap() {
     const colors = (typeof SINEClusterer !== 'undefined' && SINEClusterer.getClusterColors)
         ? SINEClusterer.getClusterColors() : ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00'];
     const map = Object.create(null);
+    const liveSeq = new Map(state.seqs.map(q => [q.header, q.seq]));
     state.clusterResults.clusters.forEach((cluster, clusterIdx) => {
         if (cluster.paintOff) return;
         const color = cluster.color || colors[clusterIdx % colors.length];
@@ -821,11 +972,12 @@ function _rebuildClusterCharMap() {
             (feats || []).forEach(feature => {
                 const pos0 = feature.pos - 1 + colOffset;
                 if (!map[pos0]) map[pos0] = [];
-                // How many sequences of the other groups share this letter (tooltip)
+                // How many sequences of the other groups share this letter (tooltip), read from the
+                // live alignment (the clusters' own copies are from clustering time)
                 let leak = 0, others = 0;
                 state.clusterResults.clusters.forEach((other, oi) => {
                     if (oi === clusterIdx) return;
-                    (other.sequences || []).forEach(sq => { others++; if (sq.seq && sq.seq[pos0] === feature.char) leak++; });
+                    (other.sequences || []).forEach(sq => { others++; if (liveSeq.get(sq.id)?.[pos0] === feature.char) leak++; });
                 });
                 map[pos0].push({
                     color, char: feature.char, headers, isPerfect, isCloudy, clusterName: name,
@@ -10803,14 +10955,17 @@ function undoDelete(quiet) {
     }
     // Save current state to redo stack before restoring; it keeps the undone action's
     // name, so the Redo list says what redo will bring back (was 'redo-snapshot').
-    state.redoHistory.push({
+    const redoEntry = {
         type: last.type,
         label: last.label,
         seqs: JSON.parse(JSON.stringify(state.seqs)),
         selectedRows: new Set(state.selectedRows),
         selectedColumns: new Set(state.selectedColumns)
-    });
+    };
+    if (last.colStateBefore) redoEntry.colStateAfter = _snapshotColumnState();
+    state.redoHistory.push(redoEntry);
     state.seqs = last.seqs;
+    if (last.colStateBefore) _restoreColumnState(last.colStateBefore);
     state.selectedRows = last.selectedRows || new Set();
     state.selectedColumns = last.selectedColumns || new Set();
     state.selectedNucs.clear();
@@ -10836,14 +10991,17 @@ function redoAction(quiet) {
         return;
     }
     // Save current state to undo stack before redo, under the redone action's name
-    state.deletedHistory.push({
+    const undoEntry = {
         type: next.type,
         label: next.label,
         seqs: JSON.parse(JSON.stringify(state.seqs)),
         selectedRows: new Set(state.selectedRows),
         selectedColumns: new Set(state.selectedColumns)
-    });
+    };
+    if (next.colStateAfter) undoEntry.colStateBefore = _snapshotColumnState();
+    state.deletedHistory.push(undoEntry);
     state.seqs = next.seqs;
+    if (next.colStateAfter) _restoreColumnState(next.colStateAfter);
     state.selectedRows = next.selectedRows || new Set();
     state.selectedColumns = next.selectedColumns || new Set();
     state.selectedNucs.clear();
@@ -11109,8 +11267,7 @@ function deleteSelectedColumns(skipConfirm) {
     if (skipConfirm || confirm(`Delete ${state.selectedColumns.size} column(s)?`)) {
         pushUndo('deleteColumns');
         const colsToDelete = Array.from(state.selectedColumns).sort((a,b) => b - a);
-        const deleted = new Set(colsToDelete);
-        _remapStashedColumns(c => deleted.has(c) ? null : c - colsToDelete.filter(d => d < c).length);
+        applyColumnEdit({ type: 'delete', cols: colsToDelete });
         state.seqs = state.seqs.map(s => {
             let seq = s.seq.split('');
             for (const pos of colsToDelete) {
@@ -12894,15 +13051,6 @@ function _objsToNucs(map) {
     return out;
 }
 
-// Switched-off columns are column numbers: keep them on the same columns when columns are
-// inserted or deleted. fn(col) -> new column, or null to drop it.
-function _remapStashedColumns(fn) {
-    const st = state.selectionStash;
-    if (!st?.cols?.size) return;
-    const next = new Set();
-    st.cols.forEach(c => { const n = fn(c); if (Number.isInteger(n) && n >= 0) next.add(n); });
-    st.cols = next.size ? next : null;
-}
 
 function collectSelectionItems() {
     const st = state.selectionStash;
@@ -13627,6 +13775,14 @@ function executeTrimming() {
     }
 
     // Hard trim: actually delete columns
+    state.trimBackupColState = _snapshotColumnState();
+    {
+        const dead = [];
+        for (let c = 0; c <= leftTrimEnd; c++) dead.push(c);
+        for (let c = rightTrimStart; c < alnLen; c++) dead.push(c);
+        applyColumnEdit({ type: 'delete', cols: dead }, 'all');
+    }
+    _clusterFeaturesToAbsolute();
     state.softTrimBoundaries = null;
     state.trimBackup = state.seqs.map(seq => ({
         header: seq.header,
@@ -13652,7 +13808,9 @@ function executeTrimming() {
 }
 
 function clearSoftTrimming() {
+    _clusterFeaturesToAbsolute();
     state.softTrimBoundaries = null;
+    if (state.clusterResults) _rebuildClusterCharMap();
     const clearBtn = document.getElementById('clearSoftTrimButton');
     if (clearBtn) clearBtn.style.display = 'none';
     showMessage('Soft trim boundaries removed.', 2000);
@@ -13667,6 +13825,7 @@ function undoTrimming() {
 
     state.seqs = state.trimBackup.map(seq => ({...seq}));
     state.trimBackup = null;
+    if (state.trimBackupColState) { _restoreColumnState(state.trimBackupColState); state.trimBackupColState = null; }
     state.softTrimBoundaries = null;
     _clearTrimPreview();
 
@@ -22010,6 +22169,8 @@ function handleGeneDocGapToolClick(rowIndex, pos, tool) {
         return;
     }
     const label = deleting ? 'gap deleted' : 'gap inserted';
+    applyColumnEdit({ type: deleting ? 'delete' : 'insert', at: pos, cols: [pos], newWidth: Math.max(...state.seqs.map(q => q.seq.length)) },
+        targets.length === state.seqs.length ? 'all' : targets);
     finalizeGeneDocEdit(`${targets.length} sequence(s): ${label}.`, 1600, pos, oldWidth);
 }
 
@@ -22168,6 +22329,7 @@ function removeGapColumns() {
     }
     pushUndo('removeGaps');
     normalizeAlignmentLengths();
+    applyColumnEdit({ type: 'delete', cols: colsToRemove });
     state.seqs.forEach(s => {
         let seqArr = s.seq.split('');
         colsToRemove.sort((a, b) => b - a).forEach(pos => seqArr.splice(pos, 1));
@@ -22188,11 +22350,13 @@ function insertGapColumn(skipSelected = false) {
     const pos = Math.min(...state.selectedColumns);
     pushUndo('insertGap');
     normalizeAlignmentLengths();
+    const edited = [];
     state.seqs.forEach((s, i) => {
         if (skipSelected && state.selectedRows.has(i)) return; // Skip selected rows when requested
         s.seq = s.seq.slice(0, pos) + '-' + s.seq.slice(pos);
+        edited.push(i);
     });
-    _remapStashedColumns(c => (c >= pos ? c + 1 : c));
+    applyColumnEdit({ type: 'insert', at: pos }, edited.length === state.seqs.length ? 'all' : edited);
     normalizeAlignmentLengths();
     refreshAllGaplessPositions();
     state.selectedColumns.clear();
@@ -22212,6 +22376,7 @@ function insertSingleGap(rowIndex, pos) {
         return;
     }
     s.seq = result.seq;
+    applyColumnEdit({ type: 'insert', at: pos, newWidth: Math.max(...state.seqs.map(q => q.seq.length)) }, [rowIndex]);
     finalizeGeneDocEdit('Single GeneDoc gap inserted.', 1800, pos, oldWidth);
 }
 
@@ -22231,6 +22396,7 @@ function removeSingleGap(rowIndex, pos) {
         return;
     }
     s.seq = result.seq;
+    applyColumnEdit({ type: 'delete', cols: [pos] }, [rowIndex]);
     finalizeGeneDocEdit('Single GeneDoc gap removed.', 1800, pos, oldWidth);
 }
 
@@ -25935,23 +26101,22 @@ function openTsdFinder() {
 }
 
 function cloneTsdMarks(markMap = state.tsdMarks) {
-    const cloned = new Map();
-    markMap?.forEach((posSet, rowIndex) => cloned.set(rowIndex, new Set(posSet)));
-    return cloned;
+    return markMap instanceof ResidueMarks ? markMap.clone() : ResidueMarks.fromRowCols(markMap);
 }
 
+// ResidueMarks of the results' TSD residues, on the sequences as they are now
 function rowsForTsdResults(results) {
-    const rowMap = new Map();
+    const marks = new ResidueMarks();
+    const find = _seqObjResolver();
     results.forEach(result => {
-        if (!Number.isInteger(result.seqIndex) || !state.seqs[result.seqIndex]) return;
-        const positions = new Set([...(result.upPositions || []), ...(result.downPositions || [])]
-            .filter(position => Number.isInteger(position) && position >= 0));
-        if (!positions.size) return;
-        const existing = rowMap.get(result.seqIndex) || new Set();
-        positions.forEach(position => existing.add(position));
-        rowMap.set(result.seqIndex, existing);
+        const row = result.obj ? find(result.obj) : -1;
+        const obj = state.seqs[row];
+        if (!obj) return;
+        const res = marks.bySeq.get(obj) || new Set();
+        [...(result.upRes || []), ...(result.downRes || [])].forEach(n => { if (Number.isInteger(n) && n >= 0) res.add(n); });
+        if (res.size) marks.bySeq.set(obj, res);
     });
-    return rowMap;
+    return marks;
 }
 
 function applyTsdMarking() {
@@ -25968,23 +26133,32 @@ function applyTsdMarking() {
 
     const style = document.getElementById('tsdMarkStyle')?.value || 'color';
     const color = document.getElementById('tsdMarkColor')?.value || '#ffd54f';
-    const backupRows = [];
+    let lowered = null;
     const previousMarks = cloneTsdMarks();
     const previousStyle = state.tsdMarkStyle;
     const previousColor = state.tsdMarkColor;
 
     if (style === 'lowercase') {
         pushUndo('tsd-mark-lowercase');
+        // the residues whose letter this lowercases, kept as residue anchors for the undo
+        lowered = new ResidueMarks();
         state.seqs = state.seqs.map((seqObj, rowIndex) => {
             const markPositions = rowMarks.get(rowIndex);
-            if (!markPositions?.size && !markPositions?.length) return seqObj;
+            if (!markPositions?.size) return seqObj;
             const chars = seqObj.seq.split('');
-            markPositions.forEach(position => {
-                if (chars[position] && /[A-Z]/.test(chars[position])) chars[position] = chars[position].toLowerCase();
-            });
+            const done = new Set();
+            let n = 0;
+            for (let c = 0; c < chars.length; c++) {
+                const ch = chars[c];
+                if (ch === '-' || ch === '.') continue;
+                if (markPositions.has(c) && /[A-Z]/.test(ch)) { chars[c] = ch.toLowerCase(); done.add(n); }
+                n++;
+            }
+            if (!done.size) return seqObj;
             const nextSeq = chars.join('');
-            if (nextSeq !== seqObj.seq) backupRows.push({ rowIndex, seq: seqObj.seq });
-            return { ...seqObj, seq: nextSeq, gaplessPositions: calculateGaplessPositions(nextSeq) };
+            const next = { ...seqObj, seq: nextSeq, gaplessPositions: calculateGaplessPositions(nextSeq) };
+            lowered.bySeq.set(next, done);
+            return next;
         });
         state.tsdMarks = new Map();
         state.tsdMarkStyle = style;
@@ -25994,9 +26168,9 @@ function applyTsdMarking() {
         state.tsdMarkColor = color;
     }
 
-    state.tsdMarkUndo = { style, previousMarks, previousStyle, previousColor, rows: backupRows };
+    state.tsdMarkUndo = { style, previousMarks, previousStyle, previousColor, lowered };
     renderAlignment({ deferConservation: true });
-    showMessage(`Marked TSDs in ${rowMarks.size} sequence(s).`, 1800);
+    showMessage(`Marked TSDs in ${rowMarks.bySeq.size} sequence(s).`, 1800);
 }
 
 function undoTsdMarking() {
@@ -26012,14 +26186,16 @@ function undoTsdMarking() {
         return;
     }
 
-    if (backup.style === 'lowercase') {
-        backup.rows.forEach(rowBackup => {
-            if (!state.seqs[rowBackup.rowIndex]) return;
-            state.seqs[rowBackup.rowIndex] = {
-                ...state.seqs[rowBackup.rowIndex],
-                seq: rowBackup.seq,
-                gaplessPositions: calculateGaplessPositions(rowBackup.seq)
-            };
+    if (backup.style === 'lowercase' && backup.lowered) {
+        // upper-case exactly the residues that marking lowercased, wherever they are now (a
+        // restored copy of the old string would undo edits made since, and was keyed by row)
+        backup.lowered.forEach((cols, row) => {
+            const obj = state.seqs[row];
+            if (!obj) return;
+            const chars = obj.seq.split('');
+            cols.forEach(c => { if (/[a-z]/.test(chars[c] || '')) chars[c] = chars[c].toUpperCase(); });
+            const next = chars.join('');
+            state.seqs[row] = { ...obj, seq: next, gaplessPositions: calculateGaplessPositions(next) };
         });
     }
     state.tsdMarks = backup.previousMarks || new Map();
@@ -26245,6 +26421,28 @@ function _collectUngappedBasesWithColumns(seq, startCol, endCol) {
         columns.push(column);
     }
     return { bases, columns };
+}
+
+// Residue number (non-gap characters before it) of each column of a sequence; -1 at a gap.
+// Same numbering as ResidueMarks, so results can be tied to residues rather than columns.
+function _residueNumbers(seq) {
+    const out = new Array(seq.length);
+    let n = 0;
+    for (let c = 0; c < seq.length; c++) out[c] = (seq[c] === '-' || seq[c] === '.') ? -1 : n++;
+    return out;
+}
+
+// Current alignment column of residue n of a row, or null
+function _columnOfResidue(row, n) {
+    const seq = state.seqs[row]?.seq;
+    if (seq === undefined || !(n >= 0)) return null;
+    let k = 0;
+    for (let c = 0; c < seq.length; c++) {
+        if (seq[c] === '-' || seq[c] === '.') continue;
+        if (k === n) return c;
+        k++;
+    }
+    return null;
 }
 
 // The n bases just outside one TSD copy, in the same sequence with gaps skipped. If the copy
@@ -26543,12 +26741,12 @@ function _findTSD(seqs, mode, params) {
 
         if (upstreamWindow.bases.length < minTsdLen || downstreamWindow.bases.length < minTsdLen) {
             const side = upstreamWindow.bases.length < minTsdLen ? '5′' : '3′';
-            misses.push({ seqIndex, seqName: seqs[seqIndex].header, reason: `no ${side} flank bases next to the SINE body (copy truncated or flank all gaps)` });
+            misses.push({ seqIndex, obj: seqs[seqIndex], seqName: seqs[seqIndex].header, reason: `no ${side} flank bases next to the SINE body (copy truncated or flank all gaps)` });
             continue;
         }
         const bestTsd = _findBestTsdInFlanks(upstreamWindow, downstreamWindow, boundaries.rightBoundary, minTsdLen, maxTsdLen, maxDiv);
         if (!bestTsd) {
-            misses.push({ seqIndex, seqName: seqs[seqIndex].header, reason: `no pair of ${minTsdLen}–${maxTsdLen} bp with ≤${Math.round(maxDiv * 100)}% mismatch near the SINE ends` });
+            misses.push({ seqIndex, obj: seqs[seqIndex], seqName: seqs[seqIndex].header, reason: `no pair of ${minTsdLen}–${maxTsdLen} bp with ≤${Math.round(maxDiv * 100)}% mismatch near the SINE ends` });
             continue;
         }
 
@@ -26556,9 +26754,15 @@ function _findTSD(seqs, mode, params) {
         const upLast = bestTsd.upCols[bestTsd.upCols.length - 1] ?? boundaries.upEnd;
         const downFirst = bestTsd.downCols[0] ?? boundaries.downStart;
         const downLast = bestTsd.downCols[bestTsd.downCols.length - 1] ?? boundaries.downEnd;
+        // Tied to the sequence and its residues, not to a row and columns: the results table stays
+        // correct after rows are moved or deleted and after columns are inserted
+        const resNum = _residueNumbers(seq);
         results.push({
             seqName: seqs[seqIndex].header,
             seqIndex,
+            obj: seqs[seqIndex],
+            upRes: bestTsd.upCols.map(c => resNum[c]).filter(n => n >= 0),
+            downRes: bestTsd.downCols.map(c => resNum[c]).filter(n => n >= 0),
             tsdLen: bestTsd.length,
             upTSD: bestTsd.upSeq,
             downTSD: bestTsd.downSeq,
@@ -26631,6 +26835,7 @@ function runRepeatAnalysis() {
                 const seqResults = _findRepeats(t.seq, minLen, maxDiv, mode);
                 const mapped = seqResults.map(r => {
                     r.seqIndex = t.index;
+                    r.obj = state.seqs[t.index];
                     r.seqName = t.name;
                     if (mode === 'tandem') {
                         const sG = r.start;
@@ -26723,7 +26928,7 @@ function _renderTsdResultsHTML(el, results, tsdMode, params) {
     const bodyChip = (b && Number.isInteger(b.leftBoundary) && Number.isInteger(b.rightBoundary) && tsdMode !== 'manual')
         ? `<span class="rf-chip" title="${esc(b.label || '')}">SINE body: columns ${b.leftBoundary + 1}–${b.rightBoundary + 1}</span>` : '';
     const missesHtml = misses.length ? `<details class="rf-misses"><summary>${misses.length} cop${misses.length === 1 ? 'y' : 'ies'} without a TSD</summary><ul>` +
-        misses.map(m => `<li><a href="#" data-row="${m.seqIndex}" class="rf-goto">${esc(m.seqName)}</a>: ${esc(m.reason)}</li>`).join('') + '</ul></details>' : '';
+        misses.map((m, mi) => `<li><a href="#" data-mi="${mi}" class="rf-goto">${esc(m.seqName)}</a>: ${esc(m.reason)}</li>`).join('') + '</ul></details>' : '';
 
     if (!results.length) {
         let hint = 'Try a wider search window, a higher mismatch limit, or another way of finding the SINE body.';
@@ -26780,7 +26985,7 @@ function _renderTsdResultsHTML(el, results, tsdMode, params) {
             len: (a, z) => a.r.tsdLen - z.r.tsdLen, mm: (a, z) => a.r.mismatches - z.r.mismatches }[key];
         rows.sort((a, z) => dir * cmp(a, z) || a.i - z.i);
         tbody.innerHTML = rows.map(({ r, i }) =>
-            `<tr data-row="${r.seqIndex}" data-col="${r.upPositions?.[0] ?? 0}">` +
+            `<tr data-ri="${i}">` +
             `<td class="rf-num-cell">${i + 1}</td>` +
             `<td class="rf-name" title="${esc(r.seqName)}">${esc(r.seqName)}</td>` +
             `<td>${pair(r.upTSD, r.downTSD, r.upFlank, r.downFlank)}</td>` +
@@ -26796,11 +27001,14 @@ function _renderTsdResultsHTML(el, results, tsdMode, params) {
         draw(sortKey, sortDir);
     }));
     tbody.addEventListener('click', (ev) => {
-        const tr = ev.target.closest('tr[data-row]');
+        const tr = ev.target.closest('tr[data-ri]');
         if (!tr) return;
         tbody.querySelectorAll('tr.rf-active').forEach(x => x.classList.remove('rf-active'));
         tr.classList.add('rf-active');
-        _showRowInAlignment(parseInt(tr.dataset.row, 10), parseInt(tr.dataset.col, 10));
+        // where that sequence and TSD are now (rows and columns may have changed since the search)
+        const r = results[parseInt(tr.dataset.ri, 10)];
+        const row = r?.obj ? _seqObjResolver()(r.obj) : -1;
+        if (row >= 0) _showRowInAlignment(row, _columnOfResidue(row, r.upRes?.[0]));
     });
     _wireTsdGoto(el);
 }
@@ -26827,7 +27035,9 @@ function _showRowInAlignment(row, col) {
 function _wireTsdGoto(el) {
     el.querySelectorAll('a.rf-goto').forEach(a => a.addEventListener('click', (ev) => {
         ev.preventDefault();
-        _showRowInAlignment(parseInt(a.dataset.row, 10), null);
+        const m = _lastTsdResults?.misses?.[parseInt(a.dataset.mi, 10)];
+        const row = m?.obj ? _seqObjResolver()(m.obj) : -1;
+        if (row >= 0) _showRowInAlignment(row, null);
     }));
 }
 function _copyTsdTable() {
@@ -26873,6 +27083,11 @@ function _renderRepeatResultsHTML(el, results, mode, seqName, seqLength) {
             cells = `<td class="rf-num-cell">${r.posA + 1}–${endA}</td><td class="rf-num-cell">${r.posB + 1}–${endB}</td><td class="rf-num-cell">${r.length}</td>` +
                 `<td class="rf-num-cell">${r.divergence}%</td><td class="rf-name rf-pair" title="${esc(r.seqA)}">${esc(r.seqA)}</td>`;
         }
+        // anchor to the sequence and residues now, while the columns are still the ones searched
+        if (!r._info && Number.isInteger(r.seqIndex) && state.seqs[r.seqIndex]) {
+            r._info = { segs: segs.split(';').map(x => x.split('-').map(Number)), row: r.seqIndex, color: null };
+            _anchorRepeat(r._info);
+        }
         html += `<tr data-repeat-id="${rid}" data-row="${r.seqIndex ?? ''}" data-segs="${segs}" data-color="${color}" data-active="${active ? '1' : ''}"` +
             `${active ? ` style="background:${color}55"` : ''} onclick="_toggleRepeatHighlight(this)">` +
             `<td><span class="rf-swatch" style="background:${color}"></span></td>` +
@@ -26885,6 +27100,13 @@ function _renderRepeatResultsHTML(el, results, mode, seqName, seqLength) {
 
 // Direct-DOM highlight removal (fast, no full renderAlignment)
 function _repeatInfoFromRow(tr) {
+    // the anchored result (sequence + residue ranges) if the search made one: the row and
+    // columns in the table are from when it ran
+    const ri = parseInt(String(tr.dataset.repeatId || '').split('-').pop(), 10);
+    const res = _lastRepeatResults?.[ri];
+    if (res?._info?.anchor && String(tr.dataset.repeatId).startsWith((_lastRepeatView?.mode || '') + '-')) {
+        return { segs: res._info.segs.map(x => x.slice()), row: res._info.row, color: tr.dataset.color, anchor: res._info.anchor };
+    }
     const segs = (tr.dataset.segs || `${tr.dataset.start}-${tr.dataset.end}`).split(';')
         .map(x => x.split('-').map(Number)).filter(a => a.length === 2 && a.every(Number.isFinite));
     const row = tr.dataset.row === '' || tr.dataset.row == null ? null : parseInt(tr.dataset.row, 10);
@@ -26918,7 +27140,7 @@ function _toggleRepeatHighlight(row) {
     const info = _repeatInfoFromRow(row);
     hl.set(rid, info);
     _paintRepeatHighlight(info, true);
-    if (info.row !== null) _showRowInAlignment(info.row, info.segs[0]?.[0]);
+    if (info.row !== null) { const v = _repeatView(info); if (v.row >= 0) _showRowInAlignment(v.row, v.segs[0]?.[0]); }
     else requestAnimationFrame(() => _scrollToColumn(info.segs[0]?.[0] ?? 0));
     row.dataset.active = '1';
     row.style.background = info.color + '55';

@@ -1,0 +1,3256 @@
+{
+ "row": 2,
+ "col": 10,
+ "layers": {
+  "row-sel": "Row selection",
+  "search": "Search hit",
+  "tsd-colour": "TSD mark (colour)",
+  "repeat": "Repeat highlight",
+  "snp-groups": "SNP groups (names + letters)",
+  "trim": "Trim preview"
+ },
+ "single": {
+  "row-sel": {
+   "on": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "redraw": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "off": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errors": []
+  },
+  "search": {
+   "on": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "redraw": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "off": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errors": []
+  },
+  "tsd-colour": {
+   "on": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "redraw": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "off": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errors": []
+  },
+  "repeat": {
+   "on": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "redraw": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "off": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errors": []
+  },
+  "snp-groups": {
+   "on": {
+    "cell": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(255, 255, 255)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 255, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "redraw": {
+    "cell": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(255, 255, 255)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 255, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "off": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errors": []
+  },
+  "trim": {
+   "on": {
+    "cell": {
+     "backgroundColor": "rgba(255, 107, 107, 0.28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "redraw": {
+    "cell": {
+     "backgroundColor": "rgba(255, 107, 107, 0.28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "off": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errors": []
+  }
+ },
+ "pairs": {
+  "row-sel|search": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "row-sel|tsd-colour": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "row-sel|repeat": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "row-sel|snp-groups": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(255, 255, 255)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 255, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(255, 255, 255)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 255, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(255, 255, 255)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 255, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(255, 255, 255)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 255, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "row-sel|trim": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgba(255, 107, 107, 0.28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgba(255, 107, 107, 0.28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgba(255, 107, 107, 0.28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(144, 238, 144)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "linear-gradient(rgba(40, 167, 69, 0.3), rgba(40, 167, 69, 0.3))"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgba(255, 107, 107, 0.28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "search|tsd-colour": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "search|repeat": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "overline",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 0, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "overline",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 0, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "overline",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 0, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "search|snp-groups": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(228, 26, 28)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(228, 26, 28)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(228, 26, 28)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(228, 26, 28)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(228, 26, 28)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(228, 26, 28)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(255, 255, 255)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 255, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "search|trim": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgb(255, 255, 0)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgba(255, 107, 107, 0.28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "tsd-colour|repeat": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "overline",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 0, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "overline",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 0, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "overline",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 0, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "tsd-colour|snp-groups": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(228, 26, 28)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(228, 26, 28)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(228, 26, 28)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(228, 26, 28)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(228, 26, 28)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(228, 26, 28)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(255, 255, 255)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 255, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "tsd-colour|trim": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgb(0, 229, 255)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "Arial, Helvetica, \"Liberation Sans\", sans-serif",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgba(255, 107, 107, 0.28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "repeat|snp-groups": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(228, 26, 28)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(228, 26, 28)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(228, 26, 28)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(228, 26, 28)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(228, 26, 28)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(228, 26, 28)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(255, 255, 255)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 255, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "repeat|trim": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgba(255, 0, 255, 0.4)",
+     "color": "rgb(17, 17, 17)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(17, 17, 17)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgba(255, 107, 107, 0.28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  },
+  "snp-groups|trim": {
+   "ab": {
+    "cell": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(255, 255, 255)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 255, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abRedraw": {
+    "cell": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(255, 255, 255)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 255, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearB": {
+    "cell": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(255, 255, 255)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 255, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "abClearBoth": {
+    "cell": {
+     "backgroundColor": "rgb(204, 204, 204)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "none",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsAB": [],
+   "ba": {
+    "cell": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(255, 255, 255)",
+     "fontWeight": "700",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(255, 255, 255)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(228, 26, 28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "baClearA": {
+    "cell": {
+     "backgroundColor": "rgba(255, 107, 107, 0.28)",
+     "color": "rgb(0, 0, 0)",
+     "fontWeight": "400",
+     "opacity": "1",
+     "display": "inline-block",
+     "textDecorationLine": "line-through",
+     "outlineStyle": "none",
+     "boxShadow": "none",
+     "backgroundImage": "none, none, none, none",
+     "fontFamily": "\"Courier New\", monospace",
+     "fontStyle": "normal",
+     "textDecorationColor": "rgb(0, 0, 0)",
+     "text": "G"
+    },
+    "name": {
+     "backgroundColor": "rgb(255, 255, 255)",
+     "color": "rgb(51, 51, 51)",
+     "fontWeight": "700",
+     "boxShadow": "none",
+     "backgroundImage": "none"
+    },
+    "row": {
+     "backgroundColor": "rgba(0, 0, 0, 0)",
+     "outlineStyle": "none"
+    },
+    "overlay": 0
+   },
+   "errorsBA": []
+  }
+ },
+ "canvas": {},
+ "base": {
+  "cell": {
+   "backgroundColor": "rgb(204, 204, 204)",
+   "color": "rgb(0, 0, 0)",
+   "fontWeight": "400",
+   "opacity": "1",
+   "display": "inline-block",
+   "textDecorationLine": "none",
+   "outlineStyle": "none",
+   "boxShadow": "none",
+   "backgroundImage": "none, none, none, none",
+   "fontFamily": "\"Courier New\", monospace",
+   "fontStyle": "normal",
+   "textDecorationColor": "rgb(0, 0, 0)",
+   "text": "G"
+  },
+  "name": {
+   "backgroundColor": "rgb(255, 255, 255)",
+   "color": "rgb(51, 51, 51)",
+   "fontWeight": "700",
+   "boxShadow": "none",
+   "backgroundImage": "none"
+  },
+  "row": {
+   "backgroundColor": "rgba(0, 0, 0, 0)",
+   "outlineStyle": "none"
+  },
+  "overlay": 0
+ }
+}

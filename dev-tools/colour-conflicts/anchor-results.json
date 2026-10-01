@@ -149,34 +149,8 @@
  "col-sel|gap-all-left(edit)": {
   "before": 24,
   "after": 24,
-  "lost": [
-   "seq0:res12",
-   "seq10:res12",
-   "seq11:res12",
-   "seq1:res12",
-   "seq2:res12",
-   "seq3:res12",
-   "seq4:res12",
-   "seq5:res12",
-   "seq6:res12",
-   "seq7:res12",
-   "seq8:res12",
-   "seq9:res12"
-  ],
-  "gained": [
-   "seq0:res10",
-   "seq10:res10",
-   "seq11:res10",
-   "seq1:res10",
-   "seq2:res10",
-   "seq3:res10",
-   "seq4:res10",
-   "seq5:res10",
-   "seq6:res10",
-   "seq7:res10",
-   "seq8:res10",
-   "seq9:res10"
-  ],
+  "lost": [],
+  "gained": [],
   "errors": []
  },
  "col-sel|gap-one-row(edit)": {
@@ -262,34 +236,22 @@
  "res-sel|gap-col-left": {
   "before": 3,
   "after": 3,
-  "lost": [
-   "seq2:res12"
-  ],
-  "gained": [
-   "seq2:res9"
-  ],
+  "lost": [],
+  "gained": [],
   "errors": []
  },
  "res-sel|gap-all-left(edit)": {
   "before": 3,
   "after": 3,
-  "lost": [
-   "seq2:res12"
-  ],
-  "gained": [
-   "seq2:res9"
-  ],
+  "lost": [],
+  "gained": [],
   "errors": []
  },
  "res-sel|gap-one-row(edit)": {
   "before": 3,
   "after": 3,
-  "lost": [
-   "seq2:res12"
-  ],
-  "gained": [
-   "seq2:res9"
-  ],
+  "lost": [],
+  "gained": [],
   "errors": []
  },
  "res-sel|delete-row-above": {
@@ -424,53 +386,15 @@
  },
  "snp-groups|gap-col-left": {
   "before": 30,
-  "after": 12,
-  "lost": [
-   "seq0:res11",
-   "seq0:res21",
-   "seq0:res31",
-   "seq1:res11",
-   "seq1:res21",
-   "seq1:res31",
-   "seq2:res11",
-   "seq2:res21",
-   "seq2:res31",
-   "seq3:res11",
-   "seq3:res21",
-   "seq3:res31",
-   "seq4:res11",
-   "seq4:res21",
-   "seq4:res31",
-   "seq5:res11",
-   "seq5:res21",
-   "seq5:res31"
-  ],
+  "after": 30,
+  "lost": [],
   "gained": [],
   "errors": []
  },
  "snp-groups|gap-all-left(edit)": {
   "before": 30,
-  "after": 12,
-  "lost": [
-   "seq0:res11",
-   "seq0:res21",
-   "seq0:res31",
-   "seq1:res11",
-   "seq1:res21",
-   "seq1:res31",
-   "seq2:res11",
-   "seq2:res21",
-   "seq2:res31",
-   "seq3:res11",
-   "seq3:res21",
-   "seq3:res31",
-   "seq4:res11",
-   "seq4:res21",
-   "seq4:res31",
-   "seq5:res11",
-   "seq5:res21",
-   "seq5:res31"
-  ],
+  "after": 30,
+  "lost": [],
   "gained": [],
   "errors": []
  },
@@ -569,21 +493,8 @@
  },
  "trim|gap-col-left": {
   "before": 156,
-  "after": 156,
-  "lost": [
-   "seq0:res13",
-   "seq10:res13",
-   "seq11:res13",
-   "seq1:res13",
-   "seq2:res13",
-   "seq3:res13",
-   "seq4:res13",
-   "seq5:res13",
-   "seq6:res13",
-   "seq7:res13",
-   "seq8:res13",
-   "seq9:res13"
-  ],
+  "after": 168,
+  "lost": [],
   "gained": [
    "seq0:gap-after-3",
    "seq10:gap-after-3",
@@ -602,21 +513,8 @@
  },
  "trim|gap-all-left(edit)": {
   "before": 156,
-  "after": 156,
-  "lost": [
-   "seq0:res13",
-   "seq10:res13",
-   "seq11:res13",
-   "seq1:res13",
-   "seq2:res13",
-   "seq3:res13",
-   "seq4:res13",
-   "seq5:res13",
-   "seq6:res13",
-   "seq7:res13",
-   "seq8:res13",
-   "seq9:res13"
-  ],
+  "after": 168,
+  "lost": [],
   "gained": [
    "seq0:gap-after-3",
    "seq10:gap-after-3",

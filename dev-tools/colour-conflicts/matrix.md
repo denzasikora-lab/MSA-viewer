@@ -6,86 +6,60 @@ Target: residue at row 2, column 10 (0-based), its name cell and its row. DOM mo
 
 | Layer | Changes (DOM) | Survives redraw | Clear restores | Canvas shows it | Page errors |
 |---|---|---|---|---|---|
-| Row selection | bg, name bg, name color | yes | yes | yes |  |
-| Column selection | bg | yes | yes | yes |  |
-| Residue selection | bg, color | yes | yes | yes |  |
-| Edit cell (Type tool) | bg, color, outline | yes | yes | yes |  |
+| Row selection | backgroundImage, name bg, name color, name backgroundImage | yes | yes | yes |  |
+| Column selection | backgroundImage | yes | yes | yes |  |
+| Residue selection | shadow, backgroundImage | yes | yes | yes |  |
+| Edit cell (Type tool) | outline, backgroundImage | yes | yes | yes |  |
 | Search hit | bg, weight | yes | yes | yes |  |
-| TSD mark (colour) | weight | yes | yes | yes |  |
-| TSD mark (bold) | weight, underline | yes | yes | yes |  |
-| Repeat highlight | bg | **NO** (bg) | yes | NO |  |
-| SNP groups (names + letters) | bg, color, weight, name bg, name color | yes | yes | NO |  |
-| Name colour | name bg, name color | yes | yes | NO |  |
-| Trim preview | bg | yes | yes | NO |  |
+| TSD mark (colour) | bg, color, weight, fontFamily, textDecorationColor | yes | yes | yes |  |
+| TSD mark (bold) | weight, underline, fontFamily | yes | yes | yes |  |
+| Repeat highlight | bg, color, textDecorationColor | yes | yes | yes |  |
+| SNP groups (names + letters) | bg, color, weight, textDecorationColor, name bg, name color | yes | yes | yes |  |
+| Name colour | name bg, name color | yes | yes | yes |  |
+| Trim preview | bg, underline | yes | yes | yes |  |
 | Soft trim | (nothing at target) | yes | yes | NO |  |
 | Highlight diffs | weight | yes | yes | NO |  |
-| Variable sites only | (nothing at target) | yes | yes | NO |  |
+| Variable sites only | (nothing at target) | yes | yes | yes |  |
 | Codon analysis | (nothing at target) | yes | yes | NO |  |
 | 2D block mask | overlay | yes | yes | NO |  |
-| Colours: Nucleotide | bg, color | yes | yes | yes |  |
+| Colours: Nucleotide | bg, color, textDecorationColor | yes | yes | yes |  |
 
-## Pairs with a conflict (37 of 136)
+## Pairs with a conflict (11 of 136)
 
 Kinds: **hidden:X** X cannot be seen at all when both are on; **order** the result depends on which ran last; **clear-X-breaks-Y** removing X does not give back Y's own look; **redraw** a redraw changes the look; **residue** removing both leaves something behind.
 
 | A | B | Kinds | Shared channels: winner (A,B order / B,A order) | Details |
 |---|---|---|---|---|
-| Row selection | Repeat highlight | redraw | bg: repeat | redraw changes bg |
-| Row selection | SNP groups (names + letters) | hidden:row-sel | bg: snp-groups; name bg: snp-groups; name color: row-sel |  |
-| Column selection | Residue selection | hidden:res-sel | bg: col-sel |  |
-| Column selection | Repeat highlight | hidden:col-sel, redraw | bg: repeat | redraw changes bg |
-| Column selection | SNP groups (names + letters) | hidden:col-sel | bg: snp-groups |  |
-| Column selection | Trim preview | hidden:col-sel | bg: trim |  |
-| Column selection | Colours: Nucleotide | hidden:col-sel | bg: scheme-nt |  |
-| Residue selection | Repeat highlight | redraw | bg: repeat | redraw changes bg |
-| Residue selection | SNP groups (names + letters) | hidden:res-sel | bg: snp-groups; color: snp-groups |  |
-| Residue selection | Colours: Nucleotide | hidden:res-sel | bg: scheme-nt; color: scheme-nt |  |
-| Edit cell (Type tool) | Repeat highlight | redraw | bg: repeat | redraw changes bg |
-| Search hit | TSD mark (colour) | hidden:tsd-colour | weight: search |  |
-| Search hit | Repeat highlight | redraw | bg: repeat | redraw changes bg |
-| Search hit | SNP groups (names + letters) | hidden:search | bg: snp-groups; weight: search |  |
 | Search hit | Highlight diffs | hidden:diffs | weight: search |  |
-| TSD mark (colour) | TSD mark (bold) | hidden:tsd-colour, order, clear-tsd-bold-breaks-tsd-colour, clear-tsd-colour-breaks-tsd-bold | weight: tsd-colour | A,B vs B,A differ in underline. after clearing tsd-bold: weight differ from tsd-colour alone. after clearing tsd-colour: weight, underline differ from tsd-bold alone |
-| TSD mark (colour) | Repeat highlight | order, clear-tsd-colour-breaks-repeat, redraw |  | A,B vs B,A differ in bg. after clearing tsd-colour: bg differ from repeat alone. redraw changes bg |
-| TSD mark (colour) | SNP groups (names + letters) | hidden:tsd-colour | weight: tsd-colour |  |
-| TSD mark (colour) | Highlight diffs | hidden:tsd-colour, hidden:diffs | weight: tsd-colour |  |
-| TSD mark (bold) | Repeat highlight | order, clear-tsd-bold-breaks-repeat, redraw |  | A,B vs B,A differ in bg. after clearing tsd-bold: bg differ from repeat alone. redraw changes bg |
+| Search hit | Colours: Nucleotide | hidden:scheme-nt | bg: search |  |
+| TSD mark (colour) | TSD mark (bold) | order, clear-tsd-bold-breaks-tsd-colour, clear-tsd-colour-breaks-tsd-bold | weight: tsd-colour; fontFamily: tsd-colour | A,B vs B,A differ in bg, color, underline, textDecorationColor. after clearing tsd-bold: bg, color, weight, fontFamily, textDecorationColor differ from tsd-colour alone. after clearing tsd-colour: weight, underline, fontFamily differ from tsd-bold alone |
+| TSD mark (colour) | Highlight diffs | hidden:diffs | weight: tsd-colour |  |
+| TSD mark (colour) | Colours: Nucleotide | hidden:scheme-nt | bg: tsd-colour; color: tsd-colour; textDecorationColor: tsd-colour |  |
 | TSD mark (bold) | Highlight diffs | hidden:diffs | weight: tsd-bold |  |
-| Repeat highlight | SNP groups (names + letters) | order, clear-snp-groups-breaks-repeat, clear-repeat-breaks-snp-groups | bg: snp-groups / repeat | A,B vs B,A differ in bg. after clearing snp-groups: bg differ from repeat alone. after clearing repeat: bg differ from snp-groups alone |
-| Repeat highlight | Name colour | clear-name-colour-breaks-repeat, redraw |  | after clearing name-colour: bg differ from repeat alone. redraw changes bg |
-| Repeat highlight | Trim preview | order, clear-trim-breaks-repeat | bg: trim / repeat | A,B vs B,A differ in bg. after clearing trim: bg differ from repeat alone |
-| Repeat highlight | Soft trim | order, clear-soft-trim-breaks-repeat |  | A,B vs B,A differ in bg. after clearing soft-trim: bg differ from repeat alone |
-| Repeat highlight | Highlight diffs | clear-diffs-breaks-repeat, redraw |  | after clearing diffs: bg differ from repeat alone. redraw changes bg |
-| Repeat highlight | Variable sites only | order, clear-var-sites-breaks-repeat |  | A,B vs B,A differ in bg. after clearing var-sites: bg differ from repeat alone |
-| Repeat highlight | Codon analysis | order, clear-codon-breaks-repeat |  | A,B vs B,A differ in bg. after clearing codon: bg differ from repeat alone |
-| Repeat highlight | 2D block mask | clear-block-mask-breaks-repeat, redraw |  | after clearing block-mask: bg differ from repeat alone. redraw changes bg |
-| Repeat highlight | Colours: Nucleotide | order, clear-scheme-nt-breaks-repeat | bg: scheme-nt / repeat | A,B vs B,A differ in bg. after clearing scheme-nt: bg differ from repeat alone |
-| SNP groups (names + letters) | Name colour | order, clear-name-colour-breaks-snp-groups, redraw | name bg: name-colour / snp-groups; name color: snp-groups | A,B vs B,A differ in name bg. after clearing name-colour: name bg, name color differ from snp-groups alone. redraw changes name bg |
-| SNP groups (names + letters) | Trim preview | hidden:trim | bg: snp-groups |  |
-| SNP groups (names + letters) | Soft trim | order |  | A,B vs B,A differ in bg, color, weight, name bg |
+| Repeat highlight | Colours: Nucleotide | hidden:scheme-nt | bg: repeat; color: repeat; textDecorationColor: repeat |  |
+| SNP groups (names + letters) | Soft trim | order |  | A,B vs B,A differ in bg, color, weight, textDecorationColor, name bg |
 | SNP groups (names + letters) | Highlight diffs | hidden:diffs | weight: snp-groups |  |
-| SNP groups (names + letters) | Colours: Nucleotide | hidden:scheme-nt | bg: snp-groups; color: snp-groups |  |
-| Trim preview | Colours: Nucleotide | hidden:trim | bg: scheme-nt |  |
-| Highlight diffs | Variable sites only | order, clear-var-sites-breaks-diffs, residue |  | A,B vs B,A differ in weight. after clearing var-sites: weight differ from diffs alone. both cleared, left behind: weight |
+| SNP groups (names + letters) | Colours: Nucleotide | hidden:scheme-nt | bg: snp-groups; color: snp-groups; textDecorationColor: snp-groups |  |
+| Highlight diffs | Variable sites only | order |  | A,B vs B,A differ in weight |
 
 ## Conflict count per layer
 
 | Layer | hidden by others | hides others | order | clear breaks | redraw |
 |---|---|---|---|---|---|
-| Row selection | SNP groups (names + letters) |  | 0 | 0 | 1 |
-| Column selection | Repeat highlight, SNP groups (names + letters), Trim preview, Colours: Nucleotide | Residue selection | 0 | 0 | 1 |
-| Residue selection | Column selection, SNP groups (names + letters), Colours: Nucleotide |  | 0 | 0 | 1 |
-| Edit cell (Type tool) |  |  | 0 | 0 | 1 |
-| Search hit | SNP groups (names + letters) | TSD mark (colour), Highlight diffs | 0 | 0 | 1 |
-| TSD mark (colour) | Search hit, TSD mark (bold), SNP groups (names + letters), Highlight diffs | Highlight diffs | 2 | 2 | 1 |
-| TSD mark (bold) |  | TSD mark (colour), Highlight diffs | 2 | 2 | 1 |
-| Repeat highlight |  | Column selection | 8 | 11 | 10 |
-| SNP groups (names + letters) |  | Row selection, Column selection, Residue selection, Search hit, TSD mark (colour), Trim preview, Highlight diffs, Colours: Nucleotide | 3 | 2 | 1 |
-| Name colour |  |  | 1 | 2 | 2 |
-| Trim preview | SNP groups (names + letters), Colours: Nucleotide | Column selection | 1 | 1 | 0 |
-| Soft trim |  |  | 2 | 1 | 0 |
-| Highlight diffs | Search hit, TSD mark (colour), TSD mark (bold), SNP groups (names + letters) | TSD mark (colour) | 1 | 2 | 1 |
-| Variable sites only |  |  | 2 | 2 | 0 |
-| Codon analysis |  |  | 1 | 1 | 0 |
-| 2D block mask |  |  | 0 | 1 | 1 |
-| Colours: Nucleotide | SNP groups (names + letters) | Column selection, Residue selection, Trim preview | 1 | 1 | 0 |
+| Row selection |  |  | 0 | 0 | 0 |
+| Column selection |  |  | 0 | 0 | 0 |
+| Residue selection |  |  | 0 | 0 | 0 |
+| Edit cell (Type tool) |  |  | 0 | 0 | 0 |
+| Search hit |  | Highlight diffs, Colours: Nucleotide | 0 | 0 | 0 |
+| TSD mark (colour) |  | Highlight diffs, Colours: Nucleotide | 1 | 1 | 0 |
+| TSD mark (bold) |  | Highlight diffs | 1 | 1 | 0 |
+| Repeat highlight |  | Colours: Nucleotide | 0 | 0 | 0 |
+| SNP groups (names + letters) |  | Highlight diffs, Colours: Nucleotide | 1 | 0 | 0 |
+| Name colour |  |  | 0 | 0 | 0 |
+| Trim preview |  |  | 0 | 0 | 0 |
+| Soft trim |  |  | 1 | 0 | 0 |
+| Highlight diffs | Search hit, TSD mark (colour), TSD mark (bold), SNP groups (names + letters) |  | 1 | 0 | 0 |
+| Variable sites only |  |  | 1 | 0 | 0 |
+| Codon analysis |  |  | 0 | 0 | 0 |
+| 2D block mask |  |  | 0 | 0 | 0 |
+| Colours: Nucleotide | Search hit, TSD mark (colour), Repeat highlight, SNP groups (names + letters) |  | 0 | 0 | 0 |
