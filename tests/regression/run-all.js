@@ -2409,8 +2409,8 @@ check('Overlapping marks all stay visible, in any order, in DOM and Canvas (conf
     renderAlignment();
     await new Promise(r => setTimeout(r, 100));
     const c10 = cs(2, 10), c5 = cs(2, 5), c20 = cs(2, 20), r3 = cs(3, 10);
-    out.tsdUnderSearch = [c10.backgroundColor, c10.fontFamily.startsWith('Arial'), c10.fontWeight, c10.color];
-    out.tsdAlone = [c5.backgroundColor, c5.fontFamily.startsWith('Arial')];
+    out.tsdUnderSearch = [c10.backgroundColor, /ViewAlign Sans|Arial/.test(c10.fontFamily), c10.fontWeight, c10.color];
+    out.tsdAlone = [c5.backgroundColor, /ViewAlign Sans|Arial/.test(c5.fontFamily)];
     out.resSelTint = /gradient/.test(c10.backgroundImage);
     out.colSelOverSnp = [/gradient/.test(c20.backgroundImage), c20.backgroundColor];
     out.rowSelTint = /gradient/.test(r3.backgroundImage);
@@ -2677,6 +2677,25 @@ check('2D blocks are cancelled, with a message, when an edit changes the columns
     return out;
   });
   const ok = r.rowLocal.every(Boolean) && r.allRows.every(Boolean);
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+check('TSD marks: the letter sits on the same baseline as unmarked letters (no clipped descenders)', async (page) => {
+  await loadFasta(page, '>a\n' + 'g'.repeat(20) + '\n>b\n' + 'g'.repeat(20) + '\n');
+  const r = await page.evaluate(async () => {
+    document.getElementById('modeSingle').checked = true; onModeChange(); setZoom(150);
+    state.tsdMarkStyle = 'color'; state.tsdMarks = new Map([[0, new Set([5, 6])]]); renderAlignment();
+    await document.fonts.ready; await new Promise(res => setTimeout(res, 300));
+    // baseline = bottom of a zero-height inline-block placed on the baseline inside the cell
+    const baseline = (row, p) => {
+      const sp = document.querySelector(`.seq-line[data-seq-index="${row}"] span[data-pos="${p}"]`);
+      const probe = document.createElement('i'); probe.style.cssText = 'display:inline-block;width:0;height:0;vertical-align:baseline';
+      sp.appendChild(probe); const y = probe.getBoundingClientRect().bottom - sp.getBoundingClientRect().top; probe.remove(); return y;
+    };
+    const tsd = document.querySelector('.seq-line[data-seq-index="0"] span[data-pos="5"]');
+    return { plain: baseline(1, 5), tsd: baseline(0, 5), font: getComputedStyle(tsd).fontFamily.slice(0, 20), h: [tsd.getBoundingClientRect().height, document.querySelector('.seq-line[data-seq-index="1"] span[data-pos="5"]').getBoundingClientRect().height] };
+  });
+  const ok = Math.abs(r.plain - r.tsd) <= 0.6 && r.h[0] === r.h[1] && /ViewAlign Sans/.test(r.font);
   return { pass: ok, detail: JSON.stringify(r) };
 });
 

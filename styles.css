@@ -3988,3 +3988,25 @@ table.stats-mx.heat td:hover { outline: 2px solid #111; outline-offset: -2px; }
     font-size: 10px;
     white-space: normal;
 }
+
+/* Second font for TSD marks: Arial drawn with Courier New's vertical metrics, so the letter sits on
+   the same baseline in the same box (plain Arial sits ~1.5 px lower, which made the mark look too
+   high and cut the descender of a lowercase g). */
+@font-face {
+    font-family: 'ViewAlign Sans';
+    src: local('Arial'), local('ArialMT'), local('Liberation Sans'), local('Helvetica');
+    font-weight: 400;
+    ascent-override: 83.25%;
+    descent-override: 30%;
+    line-gap-override: 0%;
+    size-adjust: 90%;
+}
+@font-face {
+    font-family: 'ViewAlign Sans';
+    src: local('Arial Bold'), local('Arial-BoldMT'), local('Liberation Sans Bold'), local('Helvetica Bold');
+    font-weight: 700;
+    ascent-override: 83.25%;
+    descent-override: 30%;
+    line-gap-override: 0%;
+    size-adjust: 90%;
+}

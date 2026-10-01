@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v220';
+const BUILD_TAG = 'v221';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -335,7 +335,7 @@ function _setSpanSearchClass(span, entry) {
 //   SNP letter -> text in the group colour, bold.
 // Selections are not fills: they are tints drawn over whatever is there (CSS background-image
 // in the DOM, translucent rectangles in Canvas).
-const _OVERLAY_SANS = "Arial, Helvetica, 'Liberation Sans', sans-serif";
+const _OVERLAY_SANS = "'ViewAlign Sans', Arial, Helvetica, 'Liberation Sans', sans-serif";   // metrics: see styles.css
 
 function _overlayRowCtx(row) {
     const q = state.seqs[row];
