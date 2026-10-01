@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v221';
+const BUILD_TAG = 'v222';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -974,7 +974,7 @@ function _rebuildClusterCharMap() {
     const map = Object.create(null);
     const liveSeq = new Map(state.seqs.map(q => [q.header, q.seq]));
     state.clusterResults.clusters.forEach((cluster, clusterIdx) => {
-        if (cluster.paintOff) return;
+        if (cluster.paintOff || state.clusterPaintSuspended) return;
         const color = cluster.color || colors[clusterIdx % colors.length];
         const headers = new Set((cluster.sequences || []).map(s => s.id));
         const firstId = cluster.sequences && cluster.sequences[0] && cluster.sequences[0].id;
@@ -13868,6 +13868,21 @@ function _guideTreeK() {
 // One k-mer length for the similarity tree, shown in two places: Clustering > Group by k-mer
 // (guideTreeK) and next to Reorder in the Alignment menu (mafftReorderK). Reorder always used
 // guideTreeK, but the Alignment menu showed no k and said "6-mer".
+// Groups: Auto (checked) or a number. Typing a number unticks Auto; ticking Auto clears the
+// number. (It used to be one number box with a blank meaning auto, and once a number was in it
+// the spinner could not get back to blank.)
+function _initGuideTreeAuto() {
+    const auto = el('guideTreeAuto'), num = el('guideTreeGroups');
+    if (!auto || !num || auto._wired) return;
+    auto._wired = true;
+    auto.addEventListener('change', () => {
+        if (auto.checked) num.value = '';
+        else if (!num.value) num.value = '4';
+    });
+    num.addEventListener('input', () => { auto.checked = num.value === '' || Number.isNaN(parseInt(num.value, 10)); });
+    num.addEventListener('focus', () => { if (auto.checked && !num.value) { /* typing or the spinner will untick Auto */ } });
+}
+
 function _initGuideTreeKSync() {
     const a = el('guideTreeK'), b = el('mafftReorderK');
     if (!a || !b || b._synced) return;
@@ -13920,6 +13935,7 @@ function _updateInstrumentStatus() {
 }
 
 function clearTypePaint() {
+    state.clusterPaintSuspended = false;
     state.clusterResults = null;
     state.clusterMap = null;
     state._clusterCharMap = null;
@@ -13978,6 +13994,7 @@ function _commitTypeResults(clusterResults, source, sourceLabel) {
         if (!c._typeName) c._typeName = 'Group ' + (idx + 1);
     });
     state.clusterUnassignedPaintOff = false;
+    state.clusterPaintSuspended = false;   // new groups are shown
     state._geNote = null;
     state._geMeta = {
         nGroups: (clusterResults.clusters || []).length,
@@ -14003,18 +14020,19 @@ function _geSyncMapFromResults() {
         ? SINEClusterer.getClusterColors() : ['#e41a1c', '#377eb8', '#4daf4a', '#984ea3', '#ff7f00'];
     state.clusterMap = {};
     state.clusterTypeRows = [];
+    const off = !!state.clusterPaintSuspended;   // "Hide colours" in the Group explorer: kept, not shown
     (clusterResults.clusters || []).forEach((c, idx) => {
         const color = c.color || colors[idx % colors.length];
         c.color = color;
         const name = c._typeName || ('Group ' + (idx + 1));
         c._typeName = name;
         (c.sequences || []).forEach(seq => {
-            state.clusterMap[seq.id] = { cluster: idx, color, name, paintOff: !!c.paintOff };
+            state.clusterMap[seq.id] = { cluster: idx, color, name, paintOff: !!c.paintOff || off };
         });
         state.clusterTypeRows.push({ name, headers: (c.sequences || []).map(s => s.id) });
     });
     const unColor = state.clusterUnassignedColor || '#cccccc';
-    const unPaint = !!state.clusterUnassignedPaintOff;
+    const unPaint = !!state.clusterUnassignedPaintOff || off;
     (clusterResults.unassigned || []).forEach(seq => {
         state.clusterMap[seq.id] = { cluster: -1, color: unColor, name: 'Unassigned', paintOff: unPaint };
     });
@@ -14252,14 +14270,17 @@ async function clusterByGuideTree() {
         showMessage('Need at least 3 sequences to group.', 3000);
         return;
     }
-    const raw = el('guideTreeGroups')?.value;
-    const parsed = parseInt(raw, 10);
-    const groupsArg = (raw === '' || raw == null || Number.isNaN(parsed)) ? 'auto' : parsed;
+    // Groups: Auto (the tree chooses) or a number; Min size: groups with fewer sequences are left
+    // unassigned and do not count toward that number
+    const autoGroups = el('guideTreeAuto')?.checked !== false;
+    const parsed = parseInt(el('guideTreeGroups')?.value, 10);
+    const groupsArg = (autoGroups || Number.isNaN(parsed)) ? 'auto' : parsed;
+    const minSize = Math.max(1, parseInt(el('guideTreeMinSize')?.value, 10) || 1);
     const k = _guideTreeK();
     return runWithProgress('Grouping by k-mer tree...', () => {
         const seqs = getSeqsForClustering();
         const t0 = performance.now();
-        const cut = cutGuideTree(seqs, groupsArg, k);
+        const cut = cutGuideTree(seqs, groupsArg, k, minSize);
         const ms = performance.now() - t0;
 
         const clusters = cut.groups.map((members, idx) => ({
@@ -14272,15 +14293,21 @@ async function clusterByGuideTree() {
         }));
         const clusterer = new SINEClusterer(seqs);
         clusterer.attachCharacterization(clusters);
+        const unassigned = cut.unassigned.map(i => ({ id: seqs[i].id, index: i, seq: seqs[i].seq }));
+        const nAssigned = state.seqs.length - unassigned.length;
         _commitTypeResults({
             clusters,
-            unassigned: [],
-            summary: { nClusters: clusters.length, nAssigned: state.seqs.length, nUnassigned: 0, nTotal: state.seqs.length }
+            unassigned,
+            summary: { nClusters: clusters.length, nAssigned, nUnassigned: unassigned.length, nTotal: state.seqs.length }
         }, 'kmers', k + '-mer groups');
+        if (!cut.auto && !cut.reached) {
+            showMessage(`Only ${clusters.length} group${clusters.length === 1 ? '' : 's'} of at least ${minSize} sequences exist (asked for ${cut.target}); lower Min size or Groups.`, 6000);
+        }
         state._geMeta = {
             nGroups: clusters.length,
             nSeqs: state.seqs.length,
-            nUnassigned: 0,
+            nUnassigned: unassigned.length,
+            minSize,
             ms: Math.round(ms),
             k: cut.k || k,
             cut: cut.cutHeight,
@@ -14980,6 +15007,41 @@ function _geMoveGroup(fromIdx, toIdx) {
     _updateSplitHint();
 }
 
+// Move group members next to each other. which: 'all' (every group in list order, unassigned
+// last) or { kind, idx } for one group, which is gathered at the place of its first member.
+function _geGatherGroups(which) {
+    const results = state.clusterResults;
+    if (!results || !state.seqs.length) return;
+    pushUndo('order');
+    if (which === 'all') {
+        _geReorderSeqsFromGroups();
+    } else {
+        const ids = new Set(_geMemberIds(which.kind, which.idx));
+        const members = state.seqs.filter(q => ids.has(q.header));
+        if (members.length < 2) return;
+        const out = [];
+        let placed = false;
+        state.seqs.forEach(q => {
+            if (!ids.has(q.header)) { out.push(q); return; }
+            if (!placed) { out.push(...members); placed = true; }
+        });
+        state.seqs = out;
+    }
+    state.selectedRows.clear();
+    _geSyncMapFromResults();
+    renderGroupExplorer();
+    renderAlignment();
+    if (state._biclusterRaw) reapplyBiclusterPaintMode();
+    else _updateInstrumentStatus();
+    showMessage(which === 'all' ? 'Group members gathered (Undo to restore the order).' : 'Group members gathered.', 2200);
+}
+
+// Switch every group colour off and on again without losing the groups
+function _geToggleAllColours() {
+    state.clusterPaintSuspended = !state.clusterPaintSuspended;
+    _geRepaint();
+}
+
 function _geRepaint() {
     _geSyncMapFromResults();
     renderGroupExplorer();
@@ -15256,6 +15318,8 @@ function _geBindExplorer() {
     const closeBtn = el('clusteringModalClose');
     if (dockBtn) dockBtn.addEventListener('click', (e) => { e.stopPropagation(); _geToggleDock(); });
     if (clearBtn) clearBtn.addEventListener('click', (e) => { e.stopPropagation(); _geClearAll(); });
+    el('geColoursBtn')?.addEventListener('click', (e) => { e.stopPropagation(); _geToggleAllColours(); });
+    el('geGatherAllBtn')?.addEventListener('click', (e) => { e.stopPropagation(); _geGatherGroups('all'); });
     if (closeBtn) closeBtn.addEventListener('click', (e) => { e.stopPropagation(); _geCloseExplorer(); });
     const content = el('clusteringContent');
     const search = el('geSearch');
@@ -15331,6 +15395,7 @@ function _geBindExplorer() {
             _geRepaint();
             return;
         }
+        if (act === 'gather') { _geGatherGroups({ kind, idx }); return; }
         if (act === 'up') { _geMoveGroup(idx, idx - 1); return; }
         if (act === 'down') { _geMoveGroup(idx, idx + 1); return; }
         if (act === 'seq') { _geToggleSeq(btn.getAttribute('data-id')); return; }
@@ -15398,6 +15463,7 @@ function _geCardHtml(opts) {
             <input type="color" class="ge-color" data-ge="color" value="${_geEsc(colorVal)}" title="Group colour">
             <button type="button" class="ge-paint" data-ge="paint" title="${paintOff ? 'Show this group colour on the alignment' : 'Hide this group colour'}">${paintOff ? 'Off' : 'On'}</button>
             <span class="ge-title" title="Click to expand or collapse">${_geEsc(name)} <span class="ge-meta">${n} seq${n === 1 ? '' : 's'}${extraMeta ? ' · ' + extraMeta : ''}</span></span>
+            <button type="button" class="ge-gather" data-ge="gather" title="Move this group's members next to each other in the alignment">&#8645;</button>
             ${canMove ? `<span class="ge-move"><button type="button" data-ge="up" title="Move group up">&#9650;</button><button type="button" data-ge="down" title="Move group down">&#9660;</button></span>` : ''}
         </div>
         ${open ? `<div class="ge-card-body">
@@ -15416,6 +15482,11 @@ function _geCardHtml(opts) {
 
 function _geSummaryHtml() {
     const results = state.clusterResults;
+    const cb = el('geColoursBtn');
+    if (cb) {
+        cb.textContent = state.clusterPaintSuspended ? 'Show colours' : 'Hide colours';
+        cb.classList.toggle('ge-on', !!state.clusterPaintSuspended);
+    }
     if (!results) return 'No groups yet.';
     const m = state._geMeta || {};
     const nC = (results.clusters || []).length;
@@ -15885,10 +15956,11 @@ function _reorderByGuideTree(fasta) {
 // Cut the guide tree into groups. UPGMA performs n-1 merges, so applying the first
 // (n - groups) of them leaves exactly `groups` clusters - no threshold to guess at, and
 // the cut height is reported so the separation can be judged.
-function cutGuideTree(seqs, groups, k) {
+function cutGuideTree(seqs, groups, k, minSize = 1) {
     const n = seqs.length;
     const tree = _kmerGuideTree(seqs, k);
     const merges = tree.merges;
+    minSize = Math.max(1, Math.min(minSize | 0 || 1, n));
     let auto = false;
     let target;
     if (groups == null || groups === 'auto') {
@@ -15901,8 +15973,35 @@ function cutGuideTree(seqs, groups, k) {
     }
     const parent = Array.from({ length: n }, (_, i) => i);
     const find = (x) => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
+    const size = new Array(n).fill(1);
 
-    const toApply = Math.max(0, Math.min(n - target, merges.length));
+    // A number of groups means groups that have at least minSize sequences: smaller ones (a lone
+    // sequence, a pair...) are left unassigned and do not count. Apply the UPGMA merges one at a
+    // time, counting the qualifying groups after each; that count moves by at most one per merge,
+    // so every value up to its maximum is reached. The cut is the coarsest one with exactly
+    // `target` qualifying groups (or the one with the most, if the tree cannot give that many).
+    let qualifying = minSize <= 1 ? n : 0;
+    let bestM = 0, bestCount = qualifying;       // m = number of merges applied
+    let chosenM = qualifying === target ? 0 : -1;
+    const counts = [qualifying];
+    for (let m = 0; m < merges.length; m++) {
+        const { i, j } = merges[m];
+        const ri = find(i), rj = find(j);
+        if (ri !== rj) {
+            const before = (size[ri] >= minSize ? 1 : 0) + (size[rj] >= minSize ? 1 : 0);
+            parent[rj] = ri; size[ri] += size[rj];
+            qualifying += (size[ri] >= minSize ? 1 : 0) - before;
+        }
+        counts.push(qualifying);
+        if (qualifying === target) chosenM = m + 1;                       // keep the coarsest
+        if (qualifying > bestCount) { bestCount = qualifying; bestM = m + 1; }
+    }
+    // Auto keeps its old meaning (the tree's own cut: n - target merges); the small groups it leaves
+    // are then set aside as unassigned
+    const toApply = auto ? Math.max(0, Math.min(n - target, merges.length)) : (chosenM >= 0 ? chosenM : bestM);
+
+    // rebuild the partition at the chosen cut
+    for (let x = 0; x < n; x++) parent[x] = x;
     let cutHeight = 0;
     for (let m = 0; m < toApply; m++) {
         const { i, j, d } = merges[m];
@@ -15918,8 +16017,11 @@ function cutGuideTree(seqs, groups, k) {
         if (!byRoot.has(r)) byRoot.set(r, []);
         byRoot.get(r).push(i);
     }
-    const groupsOut = [...byRoot.values()].sort((a, b) => b.length - a.length);
-    return { groups: groupsOut, cutHeight, nextHeight, auto, target, k: tree.k };
+    const all = [...byRoot.values()].sort((a, b) => b.length - a.length);
+    const groupsOut = all.filter(g => g.length >= minSize);
+    const unassigned = all.filter(g => g.length < minSize).flat().sort((a, b) => a - b);
+    return { groups: groupsOut, unassigned, cutHeight, nextHeight, auto, target, minSize, k: tree.k,
+             reached: groupsOut.length === target || auto };
 }
 
 function _treeIsBase(char) {
@@ -20383,6 +20485,7 @@ function attachUIListeners() {
     state.uiListenersAttached = true;
     _initNumSliderPop();
     _initGuideTreeKSync();
+    _initGuideTreeAuto();
     el('clusterWithinTypes')?.addEventListener('change', _updateSplitHint);
     _updateSplitHint();
     // Set up slider/input pairs manually to avoid function reference issues

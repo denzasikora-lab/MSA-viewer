@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=157">
+    <link rel="stylesheet" href="styles.css?v=158">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -375,8 +375,12 @@
                                     <label style="font-size: 10px; white-space: nowrap;" title="Oligonucleotide length for the similarity tree (3–12). Default 6, same as Reorder by similarity.">k:
                                         <input type="number" id="guideTreeK" min="3" max="12" value="6" step="1" style="width: 40px; font-size: 11px;" title="k-mer length, 3–12. Default 6. The same setting as k next to Reorder in the Alignment menu.">
                                     </label>
-                                    <label style="font-size: 10px; white-space: nowrap;" title="Leave empty to let the tree choose how many groups. Type a number only to force a coarser or finer split.">Groups:
-                                        <input type="number" id="guideTreeGroups" min="2" max="50" step="1" placeholder="auto" style="width: 52px; font-size: 11px;" title="Empty = automatic.">
+                                    <label style="font-size: 10px; white-space: nowrap;" title="Groups to find. Auto lets the tree choose the number; untick it (or type a number) to ask for a specific number of groups.">Groups:
+                                        <input type="checkbox" id="guideTreeAuto" checked style="margin: 0 2px 0 0;" title="Auto: the tree chooses the number of groups"><span title="Auto: the tree chooses the number of groups">auto</span>
+                                        <input type="number" id="guideTreeGroups" min="2" max="50" step="1" placeholder="auto" style="width: 46px; font-size: 11px;" title="Number of groups to find (each with at least Min size sequences). Typing here unticks Auto.">
+                                    </label>
+                                    <label style="font-size: 10px; white-space: nowrap;" title="Smallest group worth counting. Groups with fewer sequences (a lone sequence, a pair...) are left unassigned and do not count toward the number of groups.">Min size:
+                                        <input type="number" id="guideTreeMinSize" min="1" max="50" step="1" value="2" style="width: 40px; font-size: 11px;" title="Groups with fewer sequences are left unassigned and do not count toward Groups. 1 keeps every sequence in some group.">
                                     </label>
                                 </div>
                             </div>
@@ -977,6 +981,8 @@
                 <div id="geSuggest" class="ge-suggest" hidden></div>
             </div>
             <span id="geSearchHit" class="ge-search-hit"></span>
+            <button type="button" id="geColoursBtn" class="ge-text-btn" title="Switch all group colours off for now, and on again. The groups are kept.">Hide colours</button>
+            <button type="button" id="geGatherAllBtn" class="ge-text-btn" title="Move the members of every group next to each other (groups in list order, unassigned last). Undo restores the order.">Gather all</button>
         </div>
         <div id="geSummary" class="ge-summary"></div>
         <div id="clusteringContent" class="ge-body">
@@ -1297,7 +1303,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=271"></script>
+    <script src="script.js?v=272"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

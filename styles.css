@@ -4010,3 +4010,17 @@ table.stats-mx.heat td:hover { outline: 2px solid #111; outline-offset: -2px; }
     line-gap-override: 0%;
     size-adjust: 90%;
 }
+
+.ge-gather {
+    margin-left: auto;
+    background: none;
+    border: 1px solid #c9d1da;
+    border-radius: 3px;
+    color: #4a5a6a;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    padding: 1px 5px;
+}
+.ge-gather:hover { background: #eef3f8; color: #1a5aa0; }
+.ge-text-btn.ge-on { background: #fff3cd; border-color: #e0b84a; color: #7a5b00; }

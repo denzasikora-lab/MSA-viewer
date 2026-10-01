@@ -2699,6 +2699,66 @@ check('TSD marks: the letter sits on the same baseline as unmarked letters (no c
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+check('k-mer groups: Auto can be restored; Groups counts only groups of at least Min size; Hide colours / Gather in the explorer', async (page) => {
+  // three groups of 5 (each from its own random base, 3% noise) and two unrelated lone sequences
+  let x = 3; const rnd = () => { x = (x * 16807) % 2147483647; return x; };
+  const rb = n => Array.from({ length: n }, () => 'ACGT'[rnd() % 4]).join('');
+  // related groups (25% apart) and two unrelated outliers, which are much farther from everything
+  const root = rb(300);
+  const mut = (s, pct) => s.split('').map(c => (rnd() % 100 < pct ? 'ACGT'[rnd() % 4] : c)).join('');
+  const bases = [root, mut(root, 25), mut(root, 25)];
+  let fa = '', ord = [];
+  // interleave the groups in the file so that gathering has something to do
+  for (let k = 0; k < 5; k++) for (let g = 0; g < 3; g++) {
+    const s = bases[g].split('').map(c => (rnd() % 100 < 3 ? 'ACGT'[rnd() % 4] : c)).join('');
+    fa += `>g${g}_${k}\n${s}\n`;
+  }
+  fa += `>lone1\n${rb(300)}\n>lone2\n${rb(300)}\n`;
+  await loadFasta(page, fa);
+  const r = await page.evaluate(async () => {
+    const wait = ms => new Promise(res => setTimeout(res, ms));
+    const out = {};
+    // 1. Auto <-> number
+    const auto = el('guideTreeAuto'), num = el('guideTreeGroups');
+    out.start = [auto.checked, num.value];
+    num.value = '3'; num.dispatchEvent(new Event('input', { bubbles: true }));
+    out.afterType = auto.checked;                       // typing a number unticks Auto
+    auto.checked = true; auto.dispatchEvent(new Event('change', { bubbles: true }));
+    out.afterAuto = [auto.checked, num.value];          // ticking Auto clears the number
+    // 2. Groups = 3 with Min size 2: three groups of 5, the two lone sequences unassigned
+    auto.checked = false; auto.dispatchEvent(new Event('change', { bubbles: true })); num.value = '3'; num.dispatchEvent(new Event('input', { bubbles: true }));
+    el('guideTreeMinSize').value = '2';
+    await clusterByGuideTree(); await wait(400);
+    const sz = () => state.clusterResults.clusters.map(c => c.sequences.length).join();
+    out.min2 = [sz(), state.clusterResults.unassigned.map(u => u.id).sort().join()];
+    // Min size 1 counts a lone sequence as a group, so 3 groups can include it
+    el('guideTreeMinSize').value = '1';
+    await clusterByGuideTree(); await wait(400);
+    out.min1 = [state.clusterResults.clusters.length, state.clusterResults.unassigned.length];
+    // 3. Explorer: gather all, per-group gather, Hide colours
+    el('guideTreeMinSize').value = '2'; await clusterByGuideTree(); await wait(400);
+    const headers = () => state.seqs.map(q => q.header);
+    out.before = headers().slice(0, 6).join();
+    _geGatherGroups('all'); await wait(300);
+    const h = headers();
+    const adjacent = ['g0', 'g1', 'g2'].every(g => { const idx = h.map((n, i) => n.startsWith(g + '_') ? i : -1).filter(i => i >= 0); return idx[idx.length - 1] - idx[0] === 4; });
+    out.gatheredAll = adjacent;
+    const nameBg = () => getComputedStyle(document.querySelector('.seq-line[data-seq-index="0"] .seq-name')).backgroundColor;
+    out.coloured = nameBg() !== 'rgb(255, 255, 255)';
+    el('geColoursBtn').click(); await wait(300);
+    out.hidden = [nameBg() === 'rgb(255, 255, 255)', document.querySelectorAll('.diagnostic-mutation').length === 0, el('geColoursBtn').textContent, state.clusterResults.clusters.length];
+    el('geColoursBtn').click(); await wait(300);
+    out.shown = [nameBg() !== 'rgb(255, 255, 255)', el('geColoursBtn').textContent];
+    undoDelete(); await wait(200);
+    out.undone = headers().slice(0, 6).join() === out.before;
+    return out;
+  });
+  const ok = r.start[0] === true && r.start[1] === '' && r.afterType === false && r.afterAuto[0] === true && r.afterAuto[1] === ''
+    && r.min2[0] === '5,5,5' && r.min2[1] === 'lone1,lone2' && r.min1[0] === 3 && r.min1[1] === 0
+    && r.gatheredAll && r.coloured && r.hidden[0] && r.hidden[2] === 'Show colours' && r.hidden[3] === 3 && r.shown[0] && r.shown[1] === 'Hide colours' && r.undone;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

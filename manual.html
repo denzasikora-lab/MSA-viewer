@@ -764,14 +764,16 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="cl-kmer">4.2 k-mer groups</h3>
   <p>
     <strong>Group by k-mer</strong> cuts the same oligonucleotide-similarity tree
-    used by Alignment → Reorder by similarity. Every sequence is assigned to a
-    group. It does not look for diagnostic SNP columns and it does not reorder
+    used by Alignment → Reorder by similarity. Sequences that fall in a group
+    smaller than <em>Min size</em> are left unassigned (set Min size to 1 to give
+    every sequence a group). It does not look for diagnostic SNP columns and it does not reorder
     the alignment. Names and distinctive bases are coloured.
   </p>
   <table>
     <tr><th>Parameter</th><th>Default</th><th>Meaning</th></tr>
     <tr><td>k</td><td>6</td><td>Oligonucleotide length for the similarity tree (3–12)</td></tr>
-    <tr><td>Groups</td><td>auto</td><td>Leave empty to let the tree choose how many groups. Type a number only to force a coarser or finer split</td></tr>
+    <tr><td>Groups</td><td>auto</td><td>The <em>auto</em> box (ticked) lets the tree choose how many groups. Type a number, or untick auto, to ask for that many groups; tick auto again to go back</td></tr>
+    <tr><td>Min size</td><td>2</td><td>Find the requested number of groups that each have <em>at least</em> this many sequences. Smaller groups (a lone sequence, a pair...) are not counted: their sequences are listed as unassigned. If the tree has fewer such groups than asked for, you are told how many exist</td></tr>
   </table>
   <p>
     Use this when you want a first split by overall resemblance (the four K
@@ -946,7 +948,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li>Expand a group for copy buttons: names, FASTA, ungapped FASTA, ungapped consensus</li>
     <li>Click a sequence name to select it in the alignment; click again to unselect. <em>Select</em> toggles the whole group</li>
     <li>Find supports substring or <em>.*</em> regex, shows all hits, and offers nearest-name suggestions as you type</li>
-    <li><em>On/Off</em> uncolours that group only. The colour picker changes the group colour</li>
+    <li><em>On/Off</em> uncolours that group only. The colour picker changes the group colour. <strong>Hide colours</strong> (toolbar) switches every group colour off for now and <strong>Show colours</strong> brings them back; the groups are kept</li>
+    <li><strong>&#8645;</strong> on a group, or <strong>Gather all</strong> in the toolbar, moves the members next to each other in the alignment (one group, at the place of its first member; all groups in list order with unassigned last). Undo restores the order</li>
     <li>Arrows or drag reorder groups in the list and move their sequences together in the alignment</li>
     <li>Characters lists exclusive bases (only this group) and shared bases (common here, also found elsewhere); click a position to jump there</li>
     <li>Hovering a group highlights member sequences in the alignment</li>
