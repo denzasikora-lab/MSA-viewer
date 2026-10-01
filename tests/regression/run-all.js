@@ -2795,6 +2795,36 @@ check('k-mer groups: Distance selector (aligned columns / k-mer), k greyed out, 
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+check('Group explorer: gather and move group never lose rows when sequence names repeat', async (page) => {
+  let x = 3; const rnd = () => { x = (x * 16807) % 2147483647; return x; };
+  const rb = n => Array.from({ length: n }, () => 'ACGT'[rnd() % 4]).join('');
+  const mut = (s, p) => s.split('').map(c => (rnd() % 100 < p ? 'ACGT'[rnd() % 4] : c)).join('');
+  const b = [rb(200), rb(200), rb(200)];
+  let fa = ''; for (let k = 0; k < 5; k++) for (let g = 0; g < 3; g++) fa += `>name${g}\n${mut(b[g], 2)}\n`;   // 3 names, each used 5 times
+  await loadFasta(page, fa);
+  const r = await page.evaluate(async () => {
+    const wait = ms => new Promise(res => setTimeout(res, ms));
+    const sig = () => state.seqs.map(q => q.seq).sort().join('|');
+    const before = sig(), n = state.seqs.length;
+    el('guideTreeMinSize').value = '2'; await clusterByGuideTree(); await wait(300);
+    const out = { groups: state.clusterResults.clusters.length };
+    // every group's rows are contiguous after Gather all, and no row is lost
+    _geGatherGroups('all'); await wait(300);
+    const pos = state.clusterResults.clusters.map(c => c.sequences.map(m => state.seqs.indexOf(m.obj)).sort((a, b) => a - b));
+    out.contiguous = pos.every(p => p.every(v => v >= 0) && p[p.length - 1] - p[0] === p.length - 1);
+    out.allKept = state.seqs.length === n && sig() === before;
+    _geGatherGroups({ kind: 'group', idx: 1 }); await wait(300);
+    out.oneKept = state.seqs.length === n && sig() === before;
+    _geMoveGroup(0, 1); await wait(300);
+    out.moveKept = state.seqs.length === n && sig() === before;
+    undoDelete(); await wait(200);
+    out.undoKept = state.seqs.length === n && sig() === before;
+    return out;
+  });
+  const ok = r.groups === 3 && r.contiguous && r.allKept && r.oneKept && r.moveKept && r.undoKept;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];

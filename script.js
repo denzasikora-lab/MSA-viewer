@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v223';
+const BUILD_TAG = 'v224';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -14312,11 +14312,11 @@ async function clusterByGuideTree() {
             perfectFeatures: [],
             cloudyFeatures: [],
             motifRuns: [],
-            sequences: members.map(i => ({ id: seqs[i].id, index: i, seq: seqs[i].seq }))
+            sequences: members.map(i => ({ id: seqs[i].id, index: i, seq: seqs[i].seq, obj: state.seqs[i] }))
         }));
         const clusterer = new SINEClusterer(seqs);
         clusterer.attachCharacterization(clusters);
-        const unassigned = cut.unassigned.map(i => ({ id: seqs[i].id, index: i, seq: seqs[i].seq }));
+        const unassigned = cut.unassigned.map(i => ({ id: seqs[i].id, index: i, seq: seqs[i].seq, obj: state.seqs[i] }));
         const nAssigned = state.seqs.length - unassigned.length;
         _commitTypeResults({
             clusters,
@@ -14984,30 +14984,38 @@ function _geGroupConsensusFasta(kind, idx) {
     return '>' + name + '\n' + degapResidues(cons);
 }
 
+// Claims, for each group member, the row it stands for: the row object the grouping recorded when it
+// is still in the alignment, else the first unclaimed row with that name. Rows with the same name are
+// therefore never merged or dropped (the lookup used to be by name alone, which kept one row per name).
+function _geRowClaimer() {
+    const present = new Set(state.seqs);
+    const byName = new Map();
+    state.seqs.forEach(q => { if (!byName.has(q.header)) byName.set(q.header, []); byName.get(q.header).push(q); });
+    const claimed = new Set();
+    return (m) => {
+        let row = (m.obj && present.has(m.obj) && !claimed.has(m.obj)) ? m.obj : null;
+        if (!row) for (const o of (byName.get(m.id) || [])) if (!claimed.has(o)) { row = o; break; }
+        if (row) { claimed.add(row); m.obj = row; }
+        return row;
+    };
+}
+
 function _geReorderSeqsFromGroups() {
     const results = state.clusterResults;
     if (!results || !state.seqs) return;
-    const byHeader = new Map();
-    state.seqs.forEach((s, i) => {
-        if (!byHeader.has(s.header)) byHeader.set(s.header, { s, i });
-    });
-    const seen = new Set();
+    const claim = _geRowClaimer();
+    const rowIndex = new Map(state.seqs.map((q, i) => [q, i]));
     const ordered = [];
-    const take = (id) => {
-        if (seen.has(id)) return;
-        const rec = byHeader.get(id);
-        if (!rec) return;
-        ordered.push(rec.s);
-        seen.add(id);
+    const takeAll = (list) => {
+        const rows = (list || []).map(m => claim(m)).filter(Boolean);
+        rows.sort((a, b) => rowIndex.get(a) - rowIndex.get(b));       // keep the current order inside a group
+        rows.forEach(r => ordered.push(r));
     };
-    (results.clusters || []).forEach(c => {
-        const members = (c.sequences || []).map(cs => cs.id).filter(id => byHeader.has(id));
-        members.sort((a, b) => byHeader.get(a).i - byHeader.get(b).i);
-        members.forEach(take);
-    });
-    (results.unassigned || []).forEach(u => take(u.id));
-    state.seqs.forEach(s => { if (!seen.has(s.header)) ordered.push(s); });
-    state.seqs = ordered;
+    (results.clusters || []).forEach(c => takeAll(c.sequences));
+    takeAll(results.unassigned);
+    const seen = new Set(ordered);
+    state.seqs.forEach(q => { if (!seen.has(q)) ordered.push(q); });   // anything not in a group stays, in its order
+    if (ordered.length === state.seqs.length) state.seqs = ordered;     // never lose or duplicate a row
 }
 
 function _geMoveGroup(fromIdx, toIdx) {
@@ -15042,18 +15050,25 @@ function _geMoveGroup(fromIdx, toIdx) {
 function _geGatherGroups(which) {
     const results = state.clusterResults;
     if (!results || !state.seqs.length) return;
+    let members = null;
+    if (which !== 'all') {
+        const list = which.kind === 'unassigned' ? results.unassigned : (results.clusters && results.clusters[which.idx] ? results.clusters[which.idx].sequences : []);
+        const claim = _geRowClaimer();
+        const rows = (list || []).map(m => claim(m)).filter(Boolean);
+        const set = new Set(rows);
+        members = state.seqs.filter(q => set.has(q));                    // current order
+        if (members.length < 2) { showMessage('Nothing to gather: the group has fewer than 2 sequences.', 2000); return; }
+    }
     pushUndo('order');
     if (which === 'all') {
         _geReorderSeqsFromGroups();
     } else {
-        const ids = new Set(_geMemberIds(which.kind, which.idx));
-        const members = state.seqs.filter(q => ids.has(q.header));
-        if (members.length < 2) return;
+        const set = new Set(members);
         const out = [];
         let placed = false;
         state.seqs.forEach(q => {
-            if (!ids.has(q.header)) { out.push(q); return; }
-            if (!placed) { out.push(...members); placed = true; }
+            if (!set.has(q)) { out.push(q); return; }
+            if (!placed) { members.forEach(m => out.push(m)); placed = true; }
         });
         state.seqs = out;
     }

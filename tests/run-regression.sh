@@ -7,6 +7,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 node tests/kmer/equiv-old.js
 node tests/kmer/recovery.test.js
+node tests/kmer/properties.test.js
+node tests/kmer/cut-reference-check.js
 node tests/realign-region/run.js
 node tests/clustering/svk_subset.test.js
 node tests/clustering/guided_small.test.js

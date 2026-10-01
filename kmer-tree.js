@@ -24,6 +24,7 @@
     // Sorted k-mer codes with their counts, over the sequence with everything but A/C/G/T/U removed
     // (so a k-mer can span a removed gap, exactly as the original string-based code did).
     function profile(seq, k) {
+        k = normK(k);          // an out-of-range k would make the 2-bit shifts wrap
         const mask = (1 << (2 * k)) - 1;      // k <= 12 -> 24 bits
         const codes = [];
         let h = 0, len = 0;
