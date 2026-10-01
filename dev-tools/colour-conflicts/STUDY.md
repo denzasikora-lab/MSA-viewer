@@ -285,5 +285,5 @@ by measuring every box).
 - Final matrix on this code: 11 of 136 pairs, all by design (marks over the colour scheme, bold
   overlapping Highlight diffs, TSD colour vs TSD bold being one setting, SNP groups vs soft trim,
   Highlight diffs vs Variable sites now with a message).
-- Not done: 2D block mask does not follow column edits; marks through reverse-complement of rows
+- 2D blocks are cancelled (with a message to run Show 2D again) when an edit changes the columns or edits rows in a block (v220). Not done: marks through reverse-complement of rows
   not probed; Copy table has no flank columns.

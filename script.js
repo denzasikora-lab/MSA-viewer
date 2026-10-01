@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v219';
+const BUILD_TAG = 'v220';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -762,6 +762,18 @@ function applyColumnEdit(op, rows) {
     const all = rows === undefined || rows === 'all';
     const rowSet = all ? null : new Set(rows);
     const inRows = r => all || rowSet.has(r);
+
+    // 2D blocks are rectangles of rows x columns found for the alignment as it was; an edit that
+    // changes the columns (or the residues of rows in a block) makes them wrong, so they are
+    // cancelled and the user is asked to run Show 2D again
+    if (state.blockMask || state._biclusterRaw) {
+        const heads = state.blockMask?.row_headers || [];
+        if (all || [...rowSet].some(r => heads.includes(state.seqs[r]?.header))) {
+            clearBlockMask();
+            // after the edit's own message ("gap inserted") and its redraw, which would replace this one
+            setTimeout(() => showMessage('2D blocks cleared: the columns changed. Run Show 2D again to recalculate.', 4500), 400);
+        }
+    }
 
     // what Undo must put back, stored on the undo entry this edit just pushed
     if (all && state.deletedHistory.length) {

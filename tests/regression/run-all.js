@@ -2659,6 +2659,27 @@ check('Column marks follow inserted and deleted columns, and Undo/Redo put them 
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+check('2D blocks are cancelled, with a message, when an edit changes the columns', async (page) => {
+  await loadFasta(page, '>a\nACGTACGTACGT\n>b\nACGTACGTACGT\n>c\nACGAACGTACGT\n');
+  const r = await page.evaluate(async () => {
+    const wait = ms => new Promise(res => setTimeout(res, ms));
+    const mk = () => { state.blockMask = { blocks: [{ col_start: 4, col_end: 8, row_start: 0, row_end: 1 }], row_headers: ['a', 'b', 'c'] }; state._biclusterRaw = { x: 1 }; };
+    const out = {};
+    el('editToggleButton').click();
+    mk();
+    handleGeneDocGapToolClick(2, 6, 'insertGapSeq');         // only row c is edited, c is in the mask rows
+    await wait(300);
+    out.rowLocal = [state.blockMask === null, state._biclusterRaw === null];
+    mk();
+    handleGeneDocGapToolClick(0, 3, 'insertGapAll');         // every row: columns change
+    await wait(900);
+    out.allRows = [state.blockMask === null, state._biclusterRaw === null, /2D blocks cleared/.test(el('statusMessage').textContent)];
+    return out;
+  });
+  const ok = r.rowLocal.every(Boolean) && r.allRows.every(Boolean);
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const results = [];
