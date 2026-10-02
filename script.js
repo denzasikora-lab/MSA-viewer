@@ -14304,7 +14304,7 @@ async function clusterByGuideTree() {
     return runWithProgress('Grouping by k-mer tree...', () => {
         const seqs = getSeqsForClustering();
         const t0 = performance.now();
-        const cut = cutGuideTree(seqs, groupsArg, k, minSize, metric, !!el('guideTreeStrand')?.checked);
+        const cut = cutGuideTree(seqs, groupsArg, k, minSize, metric, !!el('guideTreeStrand')?.checked, el('guideTreeLinkage')?.value === 'single' ? 'single' : 'average');
         const ms = performance.now() - t0;
 
         const clusters = cut.groups.map((members, idx) => ({
@@ -15541,7 +15541,10 @@ function _geSummaryHtml() {
     if (nC === 0) {
         const p = (typeof getClusteringParameters === 'function') ? getClusteringParameters() : null;
         let sub = 'No group met the current settings.';
-        if (p) {
+        if (m.source === 'kmers') {
+            const ms = m.minSize || Math.max(1, parseInt(el('guideTreeMinSize')?.value, 10) || 1);
+            sub = 'No group had at least <span class="ge-var">' + ms + '</span> sequences. Lower Min size, or change the distance or k.';
+        } else if (p) {
             sub += ' Min Size <span class="ge-var">' + p.minSize
                 + '</span> · Min Features <span class="ge-var">' + p.minPerfect
                 + '</span> · Quality <span class="ge-var">' + p.qualitySmall + '/' + p.qualityMedium + '/' + p.qualityLarge + '</span>%';
@@ -15920,8 +15923,8 @@ function _reorderByGuideTree(fasta) {
 // Cut the guide tree into groups (kmer-tree.js). groups: 'auto' or a number of groups wanted, each with
 // at least minSize sequences; sequences in smaller groups are returned as `unassigned`. metric: 'pdist'
 // (alignment columns, independent of k) or 'jaccard' (k-mer counts).
-function cutGuideTree(seqs, groups, k, minSize = 1, metric = 'jaccard', canonical = false) {
-    const tree = _kmerGuideTree(seqs, k, { metric, canonical });
+function cutGuideTree(seqs, groups, k, minSize = 1, metric = 'jaccard', canonical = false, linkage = 'average') {
+    const tree = _kmerGuideTree(seqs, k, { metric, canonical, linkage });
     const cut = KmerTree.cutTree(tree, groups, minSize);
     return Object.assign(cut, {
         cutHeight: cut.cutHeight, nextHeight: cut.plateau ? cut.plateau.to : null,

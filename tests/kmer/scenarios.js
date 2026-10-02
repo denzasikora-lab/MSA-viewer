@@ -73,7 +73,7 @@ for (const mod of valid) {
       const r = mod.generate(seed), n = r.seqs.length, minSize = Number.isInteger(r.minSize) ? r.minSize : 3;
       const c = new Map(); r.labels.forEach(l => c.set(l, (c.get(l) || 0) + 1));
       const truth = r.labels.map((l, i) => c.get(l) >= minSize ? 'g' + l : 'n' + i), G = [...c.values()].filter(v => v >= minSize).length;
-      const t = KT.guideTree(r.seqs, k, { metric, canonical: !!process.env.CANON });
+      const t = KT.guideTree(r.seqs, k, { metric, canonical: !!process.env.CANON, linkage: process.env.LINK });
       const lab = cut => { const out = new Array(n); cut.groups.forEach((gr, gi) => gr.forEach(i => { out[i] = 'g' + gi; })); cut.unassigned.forEach(i => { out[i] = 'u' + i; }); return out; };
       a += ari(truth, lab(KT.cutTree(t, 'auto', minSize))); g += ari(truth, lab(KT.cutTree(t, Math.max(1, G), minSize))); cnt++;
     }

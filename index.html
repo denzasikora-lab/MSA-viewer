@@ -381,6 +381,12 @@
                                     <label style="font-size: 10px; white-space: nowrap;" title="Oligonucleotide length for the similarity tree (3–12). Default 6, same as Reorder by similarity.">k:
                                         <input type="number" id="guideTreeK" min="3" max="12" value="6" step="1" style="width: 40px; font-size: 11px;" title="k-mer length, 3–12. Default 6. The same setting as k next to Reorder in the Alignment menu.">
                                     </label>
+                                    <label style="font-size: 10px; white-space: nowrap;" title="How groups grow. Average: a sequence joins a group when it is close to the group on average (compact groups; the default). Chain: it joins when it is close to ANY member, so fragments or chunks that cover different parts of one element are linked through the ones between them (best for chunk consensi on aligned columns; can join groups through a single close pair).">Linkage:
+                                        <select id="guideTreeLinkage" style="font-size: 11px;">
+                                            <option value="average" selected>average</option>
+                                            <option value="single">chain</option>
+                                        </select>
+                                    </label>
                                     <label style="font-size: 10px; white-space: nowrap;" title="k-mer distance only: count a word and its reverse complement as the same, so a sequence and its reverse-complemented copy group together. Leave off for same-strand data (very short k can then blur real differences).">
                                         <input type="checkbox" id="guideTreeStrand" style="margin: 0 2px 0 0;">ignore strand
                                     </label>

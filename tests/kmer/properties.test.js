@@ -61,4 +61,22 @@ scen.forEach((sim, si) => {
     prop(`${n} identical sequences, min ${min}: one group of ${n}`, c.groups.length === 1 && c.groups[0].length === n);
   }
 }
+// chain (single) linkage: heights match a naive single-linkage reference and never decrease
+{
+  const naive = (D, n) => { let cl = Array.from({ length: n }, (_, i) => [i]); const hs = [];
+    while (cl.length > 1) { let b = Infinity, bi = 0, bj = 1;
+      for (let i = 0; i < cl.length; i++) for (let j = i + 1; j < cl.length; j++) { let m = Infinity; cl[i].forEach(x => cl[j].forEach(y => { if (D[x][y] < m) m = D[x][y]; })); if (m < b) { b = m; bi = i; bj = j; } }
+      hs.push(b); cl[bi] = cl[bi].concat(cl[bj]); cl.splice(bj, 1); }
+    return hs; };
+  let okH = true, okMono = true, okPerm = true;
+  for (let seed = 1; seed <= 6; seed++) {
+    const sim = simulate({ groups: 4, perGroup: 6, between: 0.2, within: 0.04, truncate: 0.6, length: 300 }, seed), n = sim.seqs.length;
+    const t = KT.guideTree(sim.seqs, 6, { metric: 'pdist', linkage: 'single' }), ref = naive(t.dist, n);
+    t.merges.forEach((m, i) => { if (Math.abs(m.d - ref[i]) > 1e-6) okH = false; if (i && m.d < t.merges[i - 1].d - 1e-9) okMono = false; });
+    if (new Set(t.order).size !== n) okPerm = false;
+  }
+  prop('chain linkage: merge heights equal a naive single-linkage reference', okH);
+  prop('chain linkage: heights never decrease', okMono);
+  prop('chain linkage: leaf order is a permutation', okPerm);
+}
 process.exit(failed ? 1 : 0);

@@ -80,7 +80,7 @@
     // UPGMA (average linkage) with the original tie-breaking: the closest pair is the first one found
     // scanning i then j in index order with a strict "<". A cached nearest neighbour per row keeps
     // that rule while making the search O(n) per merge instead of O(n^2).
-    function upgma(dist, n) {
+    function upgma(dist, n, single) {
         const clusters = Array.from({ length: n }, (_, i) => [i]);
         const cd = dist.map(row => new Float32Array(row));
         const active = new Uint8Array(n).fill(1);
@@ -127,7 +127,7 @@
             const sizeI = orderedA.length, sizeJ = orderedB.length;
             for (let k = 0; k < n; k++) {
                 if (!active[k] || k === ci) continue;
-                const newD = (cd[ci][k] * sizeI + cd[cj][k] * sizeJ) / (sizeI + sizeJ);
+                const newD = single ? Math.min(cd[ci][k], cd[cj][k]) : (cd[ci][k] * sizeI + cd[cj][k] * sizeJ) / (sizeI + sizeJ);   // single: nearest member (chains through overlaps)
                 cd[ci][k] = newD;
                 cd[k][ci] = newD;
             }
@@ -175,8 +175,8 @@
         let metric = (opts && opts.metric) || 'jaccard';
         if (metric === 'pdist' && !isAligned(seqs)) metric = 'jaccard';        // needs an alignment
         const dist = metric === 'pdist' ? pDistanceMatrix(seqs) : distanceMatrix(profiles(seqs, K, !!(opts && opts.canonical)));
-        const t = upgma(dist, n);
-        return { order: t.order, merges: t.merges, k: K, dist, metric, n };
+        const t = upgma(dist, n, !!(opts && opts.linkage === 'single'));
+        return { order: t.order, merges: t.merges, k: K, dist, metric, n, linkage: opts && opts.linkage === 'single' ? 'single' : 'average' };
     }
 
     // ---- cutting the tree -----------------------------------------------------------------------
