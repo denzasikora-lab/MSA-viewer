@@ -51,4 +51,14 @@ scen.forEach((sim, si) => {
     prop(`s${si} min ${min}: partition covers every sequence once, groups >= min`, dup === 0 && seen.size === sim.seqs.length && c.groups.every(g => g.length >= min));
   }
 });
+// degenerate inputs found by the GLM audit: one sequence must not throw; identical sequences are ONE group
+{
+  const S = 'ACGTTGCAAGCTTAGGCTAACGTTAGCTAGCTAAGCTTGACG', mk = n => [...Array(n).keys()].map(i => ({ id: 'r' + i, seq: S }));
+  let ok1 = true; try { const c = KT.cutTree(KT.guideTree(mk(1), 6, { metric: 'jaccard' }), 'auto', 1); ok1 = c.groups.length === 1; } catch (e) { ok1 = false; }
+  prop('one sequence: cutTree does not throw, gives one group', ok1);
+  for (const [n, min] of [[2, 1], [3, 1], [5, 2], [12, 3]]) {
+    const c = KT.cutTree(KT.guideTree(mk(n), 6, { metric: 'jaccard' }), 'auto', min);
+    prop(`${n} identical sequences, min ${min}: one group of ${n}`, c.groups.length === 1 && c.groups[0].length === n);
+  }
+}
 process.exit(failed ? 1 : 0);

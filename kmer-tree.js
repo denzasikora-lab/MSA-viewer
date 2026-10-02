@@ -216,6 +216,7 @@
     }
     function runBounds(merges, run) {
         const lo = run.a === 0 ? 0 : merges[run.a - 1].d;
+        if (!merges.length) return { lo: 0, hi: 0, span: 0 };          // one sequence: no merges
         const hi = run.b >= merges.length ? merges[merges.length - 1].d : merges[run.b].d;
         return { lo, hi, span: Math.max(0, hi - lo) };
     }
@@ -236,7 +237,9 @@
 
         let target = auto ? null : Math.max(1, Math.min(groups | 0, n));
         let pick = null, reached = true;
-        const pool = auto ? runs.filter(r => r.v >= 2) : runs.filter(r => r.v === target);
+        // every merge at height 0: the sequences are identical, which is one group, not n of one
+        const identical = auto && merges.length > 0 && merges[merges.length - 1].d <= 1e-12;
+        const pool = identical ? [runs[runs.length - 1]] : auto ? runs.filter(r => r.v >= 2) : runs.filter(r => r.v === target);
         pool.forEach(r => { const s = runBounds(merges, r).span; if (!pick || s > pick.s) pick = { r, s }; });
         if (!pick) {
             // auto without any count >= 2, or a number that never occurs: take the cut with the most groups

@@ -14991,7 +14991,7 @@ function _geGroupConsensusFasta(kind, idx) {
 function _geRowClaimer() {
     const present = new Set(state.seqs);
     const byName = new Map();
-    state.seqs.forEach(q => { if (!byName.has(q.header)) byName.set(q.header, []); byName.get(q.header).push(q); });
+    state.seqs.forEach(q => { const key = q.header || q.name || 'unnamed'; if (!byName.has(key)) byName.set(key, []); byName.get(key).push(q); });   // same id rule as getSeqsForClustering
     const claimed = new Set();
     return (m) => {
         let row = (m.obj && present.has(m.obj) && !claimed.has(m.obj)) ? m.obj : null;
