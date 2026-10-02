@@ -13877,6 +13877,7 @@ function _syncGuideTreeMetricUI() {
     if (!sel || !k) return;
     const aligned = sel.value === 'pdist';
     k.disabled = aligned;
+    const st = el('guideTreeStrand'); if (st) st.disabled = aligned;
     k.title = aligned ? 'Not used by the aligned-columns distance (switch Distance to k-mer to use it). Also sets k for Reorder by similarity.'
         : 'k-mer length, 3-12. Default 6. The same setting as k next to Reorder in the Alignment menu.';
 }
@@ -14303,7 +14304,7 @@ async function clusterByGuideTree() {
     return runWithProgress('Grouping by k-mer tree...', () => {
         const seqs = getSeqsForClustering();
         const t0 = performance.now();
-        const cut = cutGuideTree(seqs, groupsArg, k, minSize, metric);
+        const cut = cutGuideTree(seqs, groupsArg, k, minSize, metric, !!el('guideTreeStrand')?.checked);
         const ms = performance.now() - t0;
 
         const clusters = cut.groups.map((members, idx) => ({
@@ -15919,8 +15920,8 @@ function _reorderByGuideTree(fasta) {
 // Cut the guide tree into groups (kmer-tree.js). groups: 'auto' or a number of groups wanted, each with
 // at least minSize sequences; sequences in smaller groups are returned as `unassigned`. metric: 'pdist'
 // (alignment columns, independent of k) or 'jaccard' (k-mer counts).
-function cutGuideTree(seqs, groups, k, minSize = 1, metric = 'jaccard') {
-    const tree = _kmerGuideTree(seqs, k, { metric });
+function cutGuideTree(seqs, groups, k, minSize = 1, metric = 'jaccard', canonical = false) {
+    const tree = _kmerGuideTree(seqs, k, { metric, canonical });
     const cut = KmerTree.cutTree(tree, groups, minSize);
     return Object.assign(cut, {
         cutHeight: cut.cutHeight, nextHeight: cut.plateau ? cut.plateau.to : null,

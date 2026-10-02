@@ -23,17 +23,19 @@
 
     // Sorted k-mer codes with their counts, over the sequence with everything but A/C/G/T/U removed
     // (so a k-mer can span a removed gap, exactly as the original string-based code did).
-    function profile(seq, k) {
+    function profile(seq, k, canonical) {
         k = normK(k);          // an out-of-range k would make the 2-bit shifts wrap
         const mask = (1 << (2 * k)) - 1;      // k <= 12 -> 24 bits
         const codes = [];
-        let h = 0, len = 0;
+        let h = 0, r = 0, len = 0;
+        const shift = 2 * (k - 1);
         for (let i = 0; i < seq.length; i++) {
             const c = seq.charCodeAt(i);
             const v = c < 128 ? CODE[c] : -1;
             if (v < 0) continue;
             h = ((h << 2) | v) & mask;
-            if (++len >= k) codes.push(h);
+            if (canonical) r = (r >>> 2) | ((3 - v) << shift);   // reverse complement of the same window (A,C,G,T = 0..3)
+            if (++len >= k) codes.push(canonical && r < h ? r : h);
         }
         codes.sort((a, b) => a - b);
         const kmers = [], counts = [];
@@ -46,9 +48,9 @@
         return { kmers: Int32Array.from(kmers), counts: Int32Array.from(counts), total: codes.length };
     }
 
-    function profiles(seqs, k) {
+    function profiles(seqs, k, canonical) {
         k = normK(k);
-        return seqs.map(s => profile(s.seq, k));
+        return seqs.map(s => profile(s.seq, k, canonical));
     }
 
     // Weighted Jaccard distance on k-mer counts: 1 - sum(min) / sum(max). Stored as Float32, as the
@@ -172,7 +174,7 @@
         const n = seqs.length;
         let metric = (opts && opts.metric) || 'jaccard';
         if (metric === 'pdist' && !isAligned(seqs)) metric = 'jaccard';        // needs an alignment
-        const dist = metric === 'pdist' ? pDistanceMatrix(seqs) : distanceMatrix(profiles(seqs, K));
+        const dist = metric === 'pdist' ? pDistanceMatrix(seqs) : distanceMatrix(profiles(seqs, K, !!(opts && opts.canonical)));
         const t = upgma(dist, n);
         return { order: t.order, merges: t.merges, k: K, dist, metric, n };
     }
