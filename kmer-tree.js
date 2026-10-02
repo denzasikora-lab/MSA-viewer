@@ -201,7 +201,7 @@
     function partition(merges, n, m, minSize) {
         const parent = Array.from({ length: n }, (_, i) => i), size = new Array(n).fill(1);
         const find = x => { while (parent[x] !== x) { parent[x] = parent[parent[x]]; x = parent[x]; } return x; };
-        for (let i = 0; i < m; i++) { const ra = find(merges[i].i), rb = find(merges[i].j); if (ra !== rb) { parent[rb] = ra; size[ra] += size[rb]; } }
+        for (let i = 0, M = Math.min(m, merges.length); i < M; i++) { const ra = find(merges[i].i), rb = find(merges[i].j); if (ra !== rb) { parent[rb] = ra; size[ra] += size[rb]; } }
         const byRoot = new Map();
         for (let i = 0; i < n; i++) { const r = find(i); if (!byRoot.has(r)) byRoot.set(r, []); byRoot.get(r).push(i); }
         const all = [...byRoot.values()].sort((a, b) => b.length - a.length || a[0] - b[0]);
