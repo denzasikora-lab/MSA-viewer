@@ -24,13 +24,13 @@ const BASES = 'ACGT';
 const ALTS = { A: 'CGT', C: 'AGT', G: 'ACT', T: 'ACG' };
 
 function mutate(from, rate, R) {
-  const out = from.slice();
+  const out = from.split('');
   for (let i = 0; i < out.length; i++) {
     const c = out[i];
     if (c === '-') continue; // keep gaps intact (alignment coordinates are fixed)
     if (R() < rate) out[i] = ALTS[c][Math.floor(R() * 3)];
   }
-  return out;
+  return out.join('');
 }
 
 module.exports = {
@@ -97,7 +97,7 @@ module.exports = {
       seqs: order.map(i => seqs[i]),
       labels: order.map(i => labels[i]),
       minSize: MIN_SIZE,
-      notes: `30 groups of 3-4 members (${sizes.join(',')}); alignment length \u${LEN.toString(16)}; ` +
+      notes: `30 groups of 3-4 members (${sizes.join(',')}); alignment length ${LEN}; ` +
         'between-group substitutions from one shared ancestor per group, within-group from that group ancestor. ' +
         'No singleton ' +
         'groups are present, so every sequence belongs to a real group (labels are exact). ' +

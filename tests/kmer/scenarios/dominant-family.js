@@ -29,7 +29,7 @@ const TV = { A: ['C', 'T'], G: ['C', 'T'], C: ['A', 'G'], T: ['A', 'G'] };
 function mutate(seq, rate, R) {
   const p = 0.75 * (1 - Math.exp(-4 / 3 * rate));
   const out = seq.slice();
-  for (let i = 0; i < OUT.length; i++) {
+  for (let i = 0; i < out.length; i++) {
     const c = out[i]; if (c === '-') continue;
     if (R() < p) {
       const alts = R() < 0.6 ? [BTS[c]] : TV[c];

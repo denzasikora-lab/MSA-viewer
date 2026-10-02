@@ -37,7 +37,7 @@ module.exports = {
     function mutate(arr, p) {
       const out = arr.slice();
       for (let i = 0; i < out.length; i++) {
-        if (R() < p) out[i] = OTHER[out[i]][Math.floor(R() * 3)];
+        if (OTHER[out[i]] && R() < p) out[i] = OTHER[out[i]][Math.floor(R() * 3)];
       }
       return out;
     }
