@@ -154,7 +154,7 @@
     // copies). A pair that shares too few columns is given the saturated value 1. Needs equal-length rows.
     function pDistanceMatrix(seqs, minOverlap) {
         const n = seqs.length, L = Math.max(0, ...seqs.map(s => s.seq.length));
-        const need = minOverlap || Math.min(30, Math.max(5, Math.ceil(L * 0.1)));
+        const need = minOverlap || Math.min(L, Math.min(30, Math.max(5, Math.ceil(L * 0.1))));
         const M = seqs.map(s => { const a = new Int8Array(L).fill(-1); for (let i = 0; i < s.seq.length; i++) { const c = s.seq.charCodeAt(i); a[i] = c < 128 ? CODE[c] : -1; } return a; });
         const dist = Array.from({ length: n }, () => new Float32Array(n));
         for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
