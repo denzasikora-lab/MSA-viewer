@@ -7,7 +7,9 @@
 //   sizes         'equal' | 'geometric' | 'dominant' | array of sizes   (default 'equal')
 //   perGroup      mean sequences per group for 'equal' (default 12)
 //   length        alignment columns of the founding sequence (default 600)
-//   between       divergence between group consensuses, substitutions per site (default 0.15)
+//   between       divergence of each group consensus from the founder (star), substitutions per site (default 0.15);
+//                 two consensuses are therefore up to about twice this far apart. In 'nested' it is a scale for the
+//                 branch lengths (depths vary), not the sibling distance
 //   within        divergence of a member from its group consensus (default 0.02)
 //   structure     'star' (every group equally far from the root) | 'nested' (random binary tree of groups)
 //   indel         probability per site of starting an indel event (default 0)   [aligned: gaps]
@@ -17,7 +19,7 @@
 //   rna           use U instead of T
 //   lowercase     lower-case a random fraction of positions
 //   dupFraction   fraction of members that are exact copies of an earlier member
-//   transition    ts/tv bias: probability that a substitution is a transition (default 0.5 = none)
+//   transition    ts/tv bias: probability that a substitution is a transition (default 0.5 = a 1:1 ts:tv ratio; transition 1 caps the pairwise difference below the Jukes-Cantor value)
 // Divergences are expected substitutions per site (Jukes-Cantor scale); the realised value varies.
 
 function rng(seed) { let x = (seed >>> 0) % 2147483647 || 1; return () => (x = (x * 48271) % 2147483647) / 2147483647; }
