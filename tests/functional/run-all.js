@@ -457,6 +457,110 @@ check('Codon-aware realign: 1 nt deletion becomes a single frameshift gap, frame
     return { pass: true, detail: `C = ${r.seqs[iC]}; ref ${r.stats.ref}, ${Math.round(r.stats.ms)} ms` };
 });
 
+
+const CODON_TOY = [
+    '>A', 'ATGGCTGAAAAGCTGGATACCGTTGGAATGCCAGGTCTGAAACGTTAA',
+    '>B', 'ATGGCTGAAAAGCTGGATACCGTTGGAATGCCAGGTCTGAAACGTTAA',
+    '>C', 'ATGGCTGAGAAGCTGGATACCGTTGAATGCCAGGTCTGAAACGTTAA',
+    '>D', 'ATGGCTGAAAAACTGGATACCGTTGGCATGCCAGGTCTAAAACGTTAA', ''
+].join('\n');
+async function _setCodonMode(page) {
+    await page.evaluate(() => {
+        const sel = document.getElementById('mafftSeqType');
+        sel.value = 'codon';
+        sel.dispatchEvent(new Event('change'));
+    });
+}
+
+check('Codon-aware: Realign Block is refused (out of frame) and the alignment is unchanged', async (page) => {
+    await loadFasta(page, CODON_TOY);
+    await _setCodonMode(page);
+    const before = await page.evaluate(() => state.seqs.map(s => s.seq).join('|'));
+    const msg = await page.evaluate(async () => {
+        state.selectedColumns.clear();
+        for (let c = 4; c < 20; c++) state.selectedColumns.add(c);
+        await realignSelectedBlock();
+        return document.getElementById('statusMessage').textContent;
+    });
+    const after = await page.evaluate(() => state.seqs.map(s => s.seq).join('|'));
+    if (!/whole coding sequences/.test(msg)) return { pass: false, detail: `expected refusal message, got "${msg}"` };
+    if (before !== after) return { pass: false, detail: 'alignment changed' };
+    return { pass: true, detail: msg };
+});
+
+check('Codon-aware: protein input is refused with a clear message, alignment unchanged', async (page) => {
+    await loadFasta(page, '>p1\nMKVLAAGIVGLLLAQPAMAEEKWW\n>p2\nMKVLAAGIVALLLAQPAMAEEKWW\n');
+    await _setCodonMode(page);
+    const before = await page.evaluate(() => state.seqs.map(s => s.seq).join('|'));
+    const msg = await page.evaluate(async () => { await realignAll(); return document.getElementById('statusMessage').textContent; });
+    const after = await page.evaluate(() => state.seqs.map(s => s.seq).join('|'));
+    if (!/nucleotide/.test(msg) || /MAFFT/.test(msg)) return { pass: false, detail: `expected a codon-aligner refusal, got "${msg}"` };
+    if (before !== after) return { pass: false, detail: 'alignment changed' };
+    return { pass: true, detail: msg };
+});
+
+check('Codon-aware: unknown reference name is reported, lowercase kept, no ! in the result', async (page) => {
+    await loadFasta(page, CODON_TOY.replace('>C\nATGGCTGAGAAG', '>C\natggctgagaag'));
+    await _setCodonMode(page);
+    const r = await page.evaluate(async () => {
+        document.getElementById('codonRef').value = 'nope';
+        await realignAll();
+        document.getElementById('codonRef').value = '';
+        return { msg: document.getElementById('statusMessage').textContent, seqs: state.seqs.map(s => s.seq), bangs: state.seqs.some(s => s.seq.includes('!')) };
+    });
+    if (!/"nope" not found/.test(r.msg)) return { pass: false, detail: `expected not-found warning, got "${r.msg}"` };
+    if (r.bangs) return { pass: false, detail: "'!' written into the viewer" };
+    const c = r.seqs.find(s => /^atggctgagaag/.test(s));
+    if (!c) return { pass: false, detail: 'lowercase prefix of C lost: ' + r.seqs.join(' ') };
+    return { pass: true, detail: r.msg };
+});
+
+
+check('Codon-aware: Realign Selected and Adjust direction (reverse-complemented CDS) keep every residue and the frame', async (page) => {
+    const rc = s => s.split('').reverse().map(c => ({ A: 'T', C: 'G', G: 'C', T: 'A' }[c] || c)).join('');
+    const C = 'ATGGCTGAGAAGCTGGATACCGTTGAATGCCAGGTCTGAAACGTTAA';
+    await loadFasta(page, CODON_TOY.replace('>C\n' + C, '>C\n' + rc(C)));
+    await _setCodonMode(page);
+    const r = await page.evaluate(async () => {
+        document.getElementById('mafftAdjustDir').checked = true;
+        await realignAll();
+        document.getElementById('mafftAdjustDir').checked = false;
+        const afterAll = state.seqs.map(s => ({ h: s.header, s: s.seq }));
+        const msgAll = document.getElementById('statusMessage').textContent;
+        state.selectedRows.clear(); state.selectedRows.add(0); state.selectedRows.add(2); state.selectedRows.add(3);
+        realignSelected();
+        await new Promise(res => setTimeout(res, 1500));
+        return { afterAll, msgAll, afterSel: state.seqs.map(s => ({ h: s.header, s: s.seq })), msgSel: document.getElementById('statusMessage').textContent };
+    });
+    const c = r.afterAll.find(x => x.h === 'C');
+    if (!c || c.s.replace(/-/g, '') !== C) return { pass: false, detail: `C not flipped back to the coding strand: ${c && c.s}` };
+    if ((c.s.match(/-/g) || []).length !== 1) return { pass: false, detail: `C should carry exactly one frameshift gap: ${c.s}` };
+    const lens = new Set(r.afterSel.map(x => x.s.length));
+    if (lens.size !== 1) return { pass: false, detail: 'unequal lengths after Realign Selected' };
+    const orig = { A: 'ATGGCTGAAAAGCTGGATACCGTTGGAATGCCAGGTCTGAAACGTTAA', B: 'ATGGCTGAAAAGCTGGATACCGTTGGAATGCCAGGTCTGAAACGTTAA', C, D: 'ATGGCTGAAAAACTGGATACCGTTGGCATGCCAGGTCTAAAACGTTAA' };
+    for (const x of r.afterSel) if (x.s.replace(/-/g, '') !== orig[x.h]) return { pass: false, detail: `${x.h} residues changed by Realign Selected` };
+    return { pass: true, detail: `${r.msgAll} | ${r.msgSel}` };
+});
+
+check('Codon-aware: Add & Align places a new CDS with a deletion as one frameshift', async (page) => {
+    await loadFasta(page, CODON_TOY);
+    await _setCodonMode(page);
+    const NEW = 'ATGGCTGAAAAGCTGGATACCTTGGAATGCCAGGTCTGAAACGTTAA'; // 1 nt deleted at 21
+    const r = await page.evaluate(async (NEW) => {
+        document.getElementById('addSeqInput').value = '>E\n' + NEW + '\n';
+        addSequencesAndAlign();
+        for (let t = 0; t < 40 && !state.seqs.some(s => s.header === 'E'); t++) await new Promise(res => setTimeout(res, 100));
+        await new Promise(res => setTimeout(res, 300));
+        return { seqs: state.seqs.map(s => ({ h: s.header, s: s.seq })), msg: document.getElementById('statusMessage').textContent };
+    }, NEW);
+    const e = r.seqs.find(x => x.h === 'E');
+    if (!e) return { pass: false, detail: 'E not added: ' + r.msg };
+    if (e.s.replace(/-/g, '') !== NEW) return { pass: false, detail: 'E residues changed' };
+    if (new Set(r.seqs.map(x => x.s.length)).size !== 1 || r.seqs[0].s.length % 3 !== 0) return { pass: false, detail: 'lengths unequal / not codon columns' };
+    if ((e.s.match(/-/g) || []).length !== 1) return { pass: false, detail: `E should have exactly one frameshift gap: ${e.s}` };
+    return { pass: true, detail: `E = ${e.s}; ${r.msg}` };
+});
+
 async function main() {
     const { server, baseUrl } = await start();
     const results = [];

@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v227';
+const BUILD_TAG = 'v228';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -2154,7 +2154,15 @@ if (!fastaInput || !alignmentContainer || !statusMessage) {
     }
 }
 // UTILITY FUNCTIONS
+// A note from an aligner (e.g. the codon aligner's frameshift summary) that should ride along with the caller's
+// own completion message instead of being overwritten by it. Consumed by the next showMessage call.
+let _pendingAlignNote = null;
 function showMessage(msg, duration = 2000) {
+    if (_pendingAlignNote) {
+        msg = msg + ' ' + _pendingAlignNote;
+        _pendingAlignNote = null;
+        if (duration > 0) duration = Math.max(duration, 6000);
+    }
     statusMessage.textContent = msg;
     statusMessage.style.display = 'block';
     if (duration > 0) setTimeout(() => { statusMessage.style.display = 'none'; }, duration);
@@ -17726,14 +17734,25 @@ function _runMafftInWorker(fasta, extraArgs) {
 }
 
 // ── Built-in codon aligner (codon-align.js, MACSE-like) ────────────────────
-function _codonAlignOpts() {
+function _codonAlignOpts(fasta) {
     const num = (id, dflt) => { const v = parseFloat(el(id)?.value); return isNaN(v) ? dflt : v; };
-    const refName = (el('codonRef')?.value || '').trim();
+    const typed = (el('codonRef')?.value || '').trim();
+    let ref = typed;
+    if (!ref) {
+        // Default reference: the first row as displayed among the sequences being aligned (not whatever comes
+        // first in the FASTA, which Reorder by similarity / Add at top can change).
+        const names = new Set(parseMafftOutput(fasta).map(r => r.name));
+        const first = state.seqs.find(s => names.has(s.fullHeader || s.header) || names.has(s.header));
+        ref = first ? (first.fullHeader || first.header) : 0;
+    }
     return {
         frameshift: -Math.abs(num('codonFs', 40)),
         stop: -Math.abs(num('codonStop', 50)),
-        ref: refName || 0,
-        frameRestored: !el('codonBang')?.checked
+        ref,
+        refTyped: typed,
+        // Missing nucleotides of a frameshifted codon are written as '-': the viewer treats only '-' and '.' as
+        // gaps, so MACSE's '!' would be counted as a residue (positions, case remapping, export, protein detection).
+        frameRestored: true
     };
 }
 
@@ -17770,7 +17789,7 @@ function _runCodonAlignInWorker(fasta, opts) {
 
 async function _codonAlignWithUi(fasta, label) {
     const stats = _mafftFastaStats(fasta);
-    const opts = _codonAlignOpts();
+    const opts = _codonAlignOpts(fasta);
     let cancelled = false;
     try {
         const result = await runWithProgress(
@@ -17791,13 +17810,28 @@ async function _codonAlignWithUi(fasta, label) {
         if (st && st.frameshifts) {
             const fsTot = st.frameshifts.reduce((a, x) => a + x.n, 0);
             const stTot = (st.internalStops || []).reduce((a, x) => a + x.n, 0);
+            const refShort = String(st.ref).split(/\s+/)[0];
             console.log(`Codon alignment: reference ${st.ref}, ${st.columns} codon columns, ${fsTot} frameshifted codons, ${stTot} internal stops, ${Math.round(st.ms)} ms`, st);
-            if (fsTot || stTot) showMessage(`Codon alignment (ref ${st.ref}): ${fsTot} frameshifted codon${fsTot === 1 ? '' : 's'}, ${stTot} internal stop${stTot === 1 ? '' : 's'}. Details in the console.`, 5000);
+            const msgs = [];
+            if (opts.refTyped && st.refFound === false) msgs.push(`Reference "${opts.refTyped}" not found; used ${refShort}.`);
+            if (fsTot || stTot) msgs.push(`Codon alignment (ref ${refShort}): ${fsTot} frameshifted codon${fsTot === 1 ? '' : 's'}, ${stTot} internal stop${stTot === 1 ? '' : 's'}. Details in the console.`);
+            if (msgs.length) {
+                // The caller shows its own success message right after we return: append to it. If it shows none,
+                // show the note on its own.
+                _pendingAlignNote = msgs.join(' ');
+                setTimeout(() => {
+                    if (_pendingAlignNote) { const n = _pendingAlignNote; _pendingAlignNote = null; showMessage(n, 6000); }
+                }, 1500);
+            }
         }
         return result;
     } catch (err) {
         if (cancelled || String(err?.message || '').includes('cancelled')) return null;
-        throw err;
+        // Report here (callers would label it as a MAFFT error) and return null, which callers treat as "no result".
+        const msg = String(err?.message || err).replace(/^codon-align:\s*/, '');
+        showMessage('Codon alignment: ' + msg, 8000);
+        console.error('Codon alignment error:', err);
+        return null;
     }
 }
 
@@ -17848,6 +17882,12 @@ async function realignSelectedBlock(opts) {
     }
 
     const extra = getMafftExtraArgs();
+    if (extra.seqType === 'codon' && !extra.reorderOnly) {
+        // A column span cuts each row at a different codon position, so a codon-aware realignment of the block
+        // would be out of frame. Whole sequences only.
+        showMessage("Codon-aware alignment works on whole coding sequences: use Realign All or Realign Selected, or switch Sequence type to Nucleotide to realign a block.", 6000);
+        return;
+    }
     const extraArgs = extra.args.slice();
     if (extra.seqType !== '2' && extra.seqType !== 'codon') extraArgs.push('-E', extra.seqType);
 
@@ -17948,7 +17988,7 @@ async function realignAll() {
 
     // Pre-alignment: adjust direction if requested
     let flippedNames = new Set();
-    if (adjustDir && seqType === '2') {
+    if (adjustDir && (seqType === '2' || seqType === 'codon')) {
         const adj = _adjustDirection(fasta);
         fasta = adj.fasta;
         flippedNames = adj.flipped;
@@ -18085,7 +18125,7 @@ function realignSelected() {
     if (seqType !== '2' && seqType !== 'codon') extraArgs.push('-E', seqType);
 
     // Pre-alignment: adjust direction if requested
-    if (adjustDir && seqType === '2') {
+    if (adjustDir && (seqType === '2' || seqType === 'codon')) {
         const adj = _adjustDirection(fasta);
         fasta = adj.fasta;
         if (adj.flipped.size > 0) {
@@ -18461,7 +18501,7 @@ function addSequencesAndAlign() {
 
     // Pre-alignment: adjust direction on new sequences if requested
     let adjustedNewText = newText;
-    if (adjustDir && seqType === '2') {
+    if (adjustDir && (seqType === '2' || seqType === 'codon')) {
         // Use first existing sequence as reference orientation
         const refFasta = `>${state.seqs[0].header}\n${state.seqs[0].seq.replace(/[-.]/g, '')}\n${newText}`;
         const adj = _adjustDirection(refFasta);

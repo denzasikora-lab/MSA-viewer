@@ -41,6 +41,67 @@ function assert(cond, msg) { if (!cond) { fail++; console.log('  FAIL:', msg); }
     assert(r.aa[2].seq.includes('!') && !r.aa[2].seq.slice(0, -1).includes('*'), 'toy: C translation shows ! and no internal stop');
 }
 
+
+// 1b. edge cases found in the v227 review (2026-10-04); every one of these was a real bug or a guarded failure mode
+{
+    const A = 'ATGGCTGAAAAGCTGGATACCGTTGGAATGCCAGGTCTGAAACGTTAA';
+    const del1 = A.slice(0, 25) + A.slice(26);
+    const fsOf = (r, name) => r.stats.frameshifts.find(x => x.name === name).n;
+    const stOf = (r, name) => r.stats.internalStops.find(x => x.name === name).n;
+    const residuesKept = (r, recs) => r.nt.every((x, i) => x.seq.replace(/[-!]/g, '') === recs[i].seq.replace(/[-.!\s]/g, ''));
+    const equalLen = r => r.nt.every(x => x.seq.length === r.nt[0].seq.length) && r.nt[0].seq.length % 3 === 0;
+    const al = (recs, o) => { const r = CodonAlign.alignMultiple(recs, o || {}); assert(equalLen(r), 'edge: unequal length / not mod 3'); assert(residuesKept(r, recs), 'edge: residues changed'); return r; };
+    let recs, r;
+
+    recs = [{ name: 'A', seq: A }, { name: 'B', seq: del1 }];
+    r = al(recs);
+    assert(fsOf(r, 'A') === 0 && fsOf(r, 'B') === 1, 'edge: two sequences, deletion in B -> one frameshift in B');
+
+    recs = [{ name: 'B', seq: del1 }, { name: 'A', seq: A }];
+    r = al(recs);
+    assert(fsOf(r, 'A') + fsOf(r, 'B') === 1, 'edge: two sequences, deletion in reference -> exactly one frameshift in total');
+    assert(stOf(r, 'A') + stOf(r, 'B') === 0, 'edge: two sequences, deletion in reference -> no internal stops');
+
+    // stop codon inside the reference: was re-framed with 2 frameshifts in every sequence (start-of-reference vote)
+    recs = [{ name: 'A', seq: A.slice(0, 12) + 'TAA' + A.slice(15) }, { name: 'B', seq: A }, { name: 'C', seq: A }];
+    r = al(recs);
+    assert(fsOf(r, 'A') + fsOf(r, 'B') + fsOf(r, 'C') === 0, 'edge: internal stop in reference must not cause frameshifts');
+    assert(stOf(r, 'A') === 1 && stOf(r, 'B') === 0, 'edge: internal stop counted in the reference only');
+
+    let threw = '';
+    try { CodonAlign.alignMultiple([{ name: 'p1', seq: 'MKVLAAGIVGLLLAQPAMA' }, { name: 'p2', seq: 'MKVLAAGIVALLLAQPAMA' }]); } catch (e) { threw = e.message; }
+    assert(/nucleotide/.test(threw), 'edge: protein input must be refused, got: ' + threw);
+
+    recs = [{ name: 'A', seq: A.replace(/T/g, 'U') }, { name: 'B', seq: del1.replace(/T/g, 'U') }];
+    r = al(recs);
+    assert(r.aa[0].seq === 'MAEKLDTVGMPGLKR*', 'edge: RNA must translate (U read as T), got ' + r.aa[0].seq);
+    assert(fsOf(r, 'B') === 1, 'edge: RNA deletion found');
+
+    recs = [{ name: 'A', seq: A.toLowerCase() }, { name: 'B', seq: del1.slice(0, 20) + del1.slice(20).toLowerCase() }];
+    r = al(recs); // residuesKept checks exact case
+
+    recs = [{ name: 'A', seq: A }, { name: 'E', seq: '' }, { name: 'B', seq: A }];
+    r = al(recs);
+    recs = [{ name: 'E', seq: '' }, { name: 'A', seq: A }];
+    r = al(recs);
+
+    recs = [{ name: 'A', seq: A + 'GC' }, { name: 'B', seq: A }];
+    r = al(recs);
+    assert(stOf(r, 'A') === 0 && stOf(r, 'B') === 0, 'edge: final stop followed by a partial codon is not internal');
+
+    recs = [{ name: 'a', seq: A }, { name: 'b', seq: A }, { name: 'c', seq: A }];
+    r = al(recs);
+    assert(r.nt.every(x => !x.seq.includes('-') && !x.seq.includes('!')), 'edge: identical sequences need no gaps');
+
+    r = al([{ name: 'A', seq: A }, { name: 'B', seq: del1 }], { ref: 'nope' });
+    assert(r.stats.refFound === false && r.stats.ref === 'A', 'edge: unknown reference name reported, first sequence used');
+
+    threw = '';
+    try { CodonAlign.alignMultiple([{ name: 'L', seq: A.repeat(40) }, { name: 'S', seq: A.repeat(4) }], { maxCells: 5000 }); } catch (e) { threw = e.message; }
+    assert(/working memory/.test(threw), 'edge: memory guard must refuse with a clear message, got: ' + threw);
+    console.log('edge cases: done');
+}
+
 // 2. fixtures vs MACSE
 const dir = path.join(__dirname, 'fixtures');
 const ids = fs.readdirSync(dir).filter(f => f.endsWith('.in.fna')).map(f => f.replace('.in.fna', '')).sort();

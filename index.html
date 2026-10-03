@@ -676,7 +676,6 @@
                                     <label title="Penalty for a frameshifted codon (1 or 2 nucleotides instead of 3), in BLOSUM62 units (gap open 10, gap extension 1)."><span class="al-inline">frameshift</span> <input type="number" id="codonFs" value="40" min="0" max="300" step="1" style="width:4em"></label>
                                     <label title="Penalty for an internal stop codon. Kept below two frameshifts so that a single stop is not explained away by a pair of frameshifts."><span class="al-inline">stop</span> <input type="number" id="codonStop" value="50" min="0" max="300" step="1" style="width:4em"></label>
                                     <label title="Name of the sequence whose reading frame defines the codon columns (empty = first sequence). Pick a clean, complete coding sequence."><span class="al-inline">reference</span> <input type="text" id="codonRef" placeholder="first sequence" style="width:9em"></label>
-                                    <label title="Write '!' for the missing nucleotides of a frameshifted codon (MACSE convention). Unchecked: write '-' so the result is a plain nucleotide alignment and Codon analysis can mark the frameshifts."><input type="checkbox" id="codonBang"> ! marks</label>
                                 </div>
                                 <label for="mafftGapOpen">Gap open</label>
                                 <span class="al-pair">
@@ -1327,7 +1326,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=276"></script>
+    <script src="script.js?v=277"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

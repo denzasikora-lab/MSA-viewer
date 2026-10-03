@@ -9,8 +9,14 @@
  * every internal stop codon pays a penalty.
  *
  * Differences from MACSE, for speed: pairwise dynamic programming (Gotoh, three states) inside a band, and a
- * centre-star multiple alignment around one frame-defining reference sequence (default: the first). Frameshifts
- * are therefore always attributed to the non-reference sequences; choose a clean sequence as reference.
+ * centre-star multiple alignment around one frame-defining reference sequence (default: the first). The reference is
+ * in frame at its first nucleotide; a first pass with a free reference frame moves a reference frameshift into the
+ * reference only when at least half of the other sequences (and at least two of them, if there are two or more)
+ * support it. Otherwise frameshifts are attributed to the non-reference sequences, so choose a clean reference.
+ *
+ * Input: nucleotide CDS (DNA or RNA, any case, IUPAC codes); gaps in the input are ignored. The output keeps the
+ * input letters (case, U). Protein-like input (>2% non-nucleotide characters overall or >10% in one sequence) is
+ * refused, and so is any pair needing more than opts.maxCells DP cells (3 bytes each).
  *
  * Written from the published algorithm description; no MACSE source code was used.
  *
@@ -18,12 +24,13 @@
  *   CodonAlign.alignPairwise(a, b, opts)    -> { columns: [[ka, kb], ...], score }
  *   CodonAlign.alignMultiple(records, opts) -> { nt: [{name, seq}], aa: [{name, seq}], stats }
  *   CodonAlign.toFasta(records), CodonAlign.parseFasta(text)
- * opts: { ref (index or name, default 0), gapOpen (-10), gapExtend (-1), frameshift (-40), terminalFrameshift (-10),
- *         stop (-50, deliberately below two frameshifts), ntBonus (0.5 per identical nucleotide), band (null =
- *         automatic: |n-m| + max(bandMin, bandFrac*len), widened on failure), frameRestored (false: keep '!' as
- *         MACSE does; true: write '-' instead so the alignment is plain nucleotide) }
- * Scores were tuned against MACSE v2.07 on 24 four-species hamster BUSCO genes (tests/codon-align): 98.9-99.1%
- * of MACSE's homologous nucleotide pairs are reproduced.
+ * opts: { ref (index or name, default 0; stats.refFound is false for a name that was not found), gapOpen (-10),
+ *         gapExtend (-1), frameshift (-40), terminalFrameshift (-10), stop (-50, deliberately below two frameshifts),
+ *         ntBonus (0.5 per identical nucleotide), band (null = automatic: |n-m| + max(bandMin, bandFrac*len), widened
+ *         on failure), maxCells (1e8), frameRestored (false: keep '!' as MACSE does; true: write '-' instead so the
+ *         alignment is plain nucleotide) }
+ * Scores were tuned against MACSE v2.07 on 24 four-species hamster BUSCO genes (tests/codon-align); on all 2,636
+ * genes of that set 98.9% of MACSE's homologous nucleotide pairs are reproduced (median 99.7%).
  */
 (function (root, factory) {
     const api = factory();
@@ -65,7 +72,7 @@
     for (let i = 0; i < AA_ORDER.length; i++) AA_IDX[AA_ORDER[i]] = i;
 
     function translateCodon(c) {
-        const u = c.toUpperCase();
+        const u = c.toUpperCase().replace(/U/g, 'T');
         if (u.indexOf('!') >= 0) return '!';
         if (u === '---') return '-';
         return CODE[u] || 'X';
@@ -73,7 +80,7 @@
 
     const DEFAULTS = {
         ref: 0, gapOpen: -10, gapExtend: -1, frameshift: -40, terminalFrameshift: -10, stop: -50, ntBonus: 0.5,
-        band: null, bandMin: 60, bandFrac: 0.06, fullLimit: 1500000, frameRestored: false, lockRefFrame: true
+        band: null, bandMin: 60, bandFrac: 0.06, fullLimit: 1500000, maxCells: 100000000, frameRestored: false, lockRefFrame: true
     };
 
     // Moves: [ka, kb] = nucleotides consumed from a and b. 0 = gap, 3 = codon, 1/2 = frameshifted codon.
@@ -236,7 +243,7 @@
 
     function alignPairwise(a, b, opts) {
         const o = Object.assign({}, DEFAULTS, opts || {});
-        a = a.toUpperCase(); b = b.toUpperCase();
+        a = scoringForm(a); b = scoringForm(b);
         const n = a.length, m = b.length, mx = Math.max(n, m, 1);
         let w = o.band;
         if (w == null) {
@@ -245,6 +252,13 @@
         }
         w = Math.max(3, Math.min(w, mx));
         for (;;) { // widen the band until the alignment fits (a long indel can leave the diagonal)
+            const W = w >= Math.max(n, m) ? m + 1 : 2 * w + 1;
+            const cells = (n + 1) * W;
+            if (cells > o.maxCells) {
+                throw new Error('codon-align: ' + n.toLocaleString() + ' vs ' + m.toLocaleString() + ' nt needs about ' +
+                    Math.round(cells * 3 / 1048576).toLocaleString() + ' MB of working memory (limit ' + Math.round(o.maxCells * 3 / 1048576) +
+                    ' MB). Codon alignment expects homologous coding sequences of similar length; trim very long or very different sequences first.');
+            }
             const r = alignPairwiseOnce(a, b, o, w);
             if (r) return r;
             if (w >= mx) throw new Error('codon-align: no alignment found');
@@ -253,6 +267,7 @@
     }
 
     // ---- render a frameshifted codon: k real nucleotides padded with '!' where it best matches the partner --
+    // nts keeps the caller's letters (case, U); partner is in scoring form (upper case, T)
     function padCodon(nts, partner) {
         const k = nts.length;
         if (k === 3) return nts;
@@ -261,41 +276,71 @@
         if (!partner || partner.indexOf('-') >= 0 || partner.indexOf('!') >= 0) return options[0];
         let best = options[0], bestN = -1;
         for (const op of options) {
+            const opU = scoringForm(op);
             let s = 0;
-            for (let t = 0; t < 3; t++) if (op[t] !== '!' && op[t] === partner[t]) s++;
+            for (let t = 0; t < 3; t++) if (opU[t] !== '!' && opU[t] === partner[t]) s++;
             if (s > bestN) { bestN = s; best = op; }
         }
         return best;
     }
 
+    // Upper case, U -> T: the form used for scoring and translation. The output keeps the input letters.
+    function scoringForm(s) {
+        return s.toUpperCase().replace(/U/g, 'T');
+    }
+
+    const NT_OK = /[ACGTUNRYKMSWBDHVacgtunrykmswbdhv]/;
+    function checkNucleotide(recs) {
+        let bad = 0, tot = 0, worst = null, worstFrac = 0;
+        for (const r of recs) {
+            let b = 0;
+            for (const ch of r.orig) if (!NT_OK.test(ch)) b++;
+            bad += b; tot += r.orig.length;
+            const f = r.orig.length ? b / r.orig.length : 0;
+            if (f > worstFrac) { worstFrac = f; worst = r.name; }
+        }
+        if (tot > 0 && (bad / tot > 0.02 || worstFrac > 0.1)) {
+            throw new Error('codon-align: the input does not look like nucleotide coding sequences (' + (100 * bad / tot).toFixed(1) +
+                '% non-nucleotide characters; worst: "' + String(worst).split(/\s+/)[0] + '" ' + (100 * worstFrac).toFixed(0) +
+                '%). Codon alignment needs CDS in nucleotides.');
+        }
+    }
+
     // ---- centre-star multiple alignment ------------------------------------------------------------------------
     function alignMultiple(records, opts) {
         const o = Object.assign({}, DEFAULTS, opts || {});
-        const recs = records.map(r => ({ name: r.name, seq: String(r.seq).replace(/[-.!\s]/g, '') }));
+        const recs = records.map(r => {
+            const orig = String(r.seq).replace(/[-.!\s]/g, '');
+            return { name: r.name, orig, seq: scoringForm(orig) };
+        });
         if (recs.length === 0) return { nt: [], aa: [], stats: {} };
-        let refIdx = 0;
+        checkNucleotide(recs);
+        let refIdx = 0, refFound = true;
         if (typeof o.ref === 'number') refIdx = Math.max(0, Math.min(recs.length - 1, o.ref));
         else if (typeof o.ref === 'string' && o.ref) {
             const f = recs.findIndex(r => r.name === o.ref || r.name.split(/\s+/)[0] === o.ref);
-            if (f >= 0) refIdx = f;
+            if (f >= 0) refIdx = f; else refFound = false;
         }
         const now = () => (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
         const t0 = now();
-        const ref0 = recs[refIdx].seq.toUpperCase();
+        const ref0 = recs[refIdx].seq, ref0Orig = recs[refIdx].orig;
         // Pass 1 (reference frame free): find frameshifts that belong to the reference itself. A reference-side
-        // frameshift supported by at least half of the other sequences is fixed into the reference as '!' padding,
-        // so that pass 2 can keep the reference frame locked (needed for the centre-star merge) and the whole
-        // alignment can change frame where every sequence does (a gene-model error shared by all of them).
+        // frameshift supported by at least half of the other sequences (at least two when there are two or more)
+        // is fixed into the reference as '!' padding, so that pass 2 can keep the reference frame locked (needed for
+        // the centre-star merge) while the whole alignment can still change frame where every sequence does (a
+        // gene-model error shared by all of them). With two sequences this gives the optimal pairwise alignment.
+        // The reference is in frame at its first nucleotide by definition: a shift at nucleotide 0 (re-reading the
+        // whole reference in another frame) and partial codons at the very end never vote.
         const k = recs.length - 1;
-        const need = Math.max(k >= 2 ? 2 : 1, Math.ceil(k / 2));
+        const need = k === 1 ? 1 : Math.max(2, Math.ceil(k / 2));
         const votes = new Map(); // ref nt index -> {count, ka}
-        if (k > 0) {
+        if (k >= 1) {
             for (let s = 0; s < recs.length; s++) {
                 if (s === refIdx) continue;
-                const { columns } = alignPairwise(ref0, recs[s].seq.toUpperCase(), Object.assign({}, o, { lockRefFrame: false }));
+                const { columns } = alignPairwise(ref0, recs[s].seq, Object.assign({}, o, { lockRefFrame: false }));
                 let i = 0;
                 for (const [ka] of columns) {
-                    if ((ka === 1 || ka === 2) && i + ka < ref0.length) { // terminal partial codons are handled in pass 2
+                    if ((ka === 1 || ka === 2) && i > 0 && i + ka < ref0.length) { // start and terminal partial codons do not vote
                         const v = votes.get(i) || { count: 0, ka: {} };
                         v.count++; v.ka[ka] = (v.ka[ka] || 0) + 1; votes.set(i, v);
                     }
@@ -303,17 +348,21 @@
                 }
             }
         }
-        let ref = '';
+        let ref = '', refOut = '';
         {
             let i = 0;
             while (i < ref0.length) {
                 const v = votes.get(i);
                 if (v && v.count >= need) {
                     const ka = (v.ka[1] || 0) >= (v.ka[2] || 0) ? 1 : 2;
-                    ref += padCodon(ref0.substr(i, ka), null); i += ka;
-                } else { ref += ref0.substr(i, 3); i += 3; }
+                    ref += padCodon(ref0.substr(i, ka), null); refOut += padCodon(ref0Orig.substr(i, ka), null); i += ka;
+                } else { ref += ref0.substr(i, 3); refOut += ref0Orig.substr(i, 3); i += 3; }
             }
-            if (ref.length % 3) ref = ref.slice(0, ref.length - ref.length % 3) + padCodon(ref.slice(ref.length - ref.length % 3), null);
+            const rem = ref.length % 3;
+            if (rem) {
+                ref = ref.slice(0, ref.length - rem) + padCodon(ref.slice(ref.length - rem), null);
+                refOut = refOut.slice(0, refOut.length - rem) + padCodon(refOut.slice(refOut.length - rem), null);
+            }
         }
         const nCod = ref.length / 3;
         // per non-reference sequence: refCol[r] (codon string aligned to ref codon r), ins[r] (codon strings inserted before ref codon r)
@@ -321,14 +370,14 @@
         const pairScores = [];
         for (let s = 0; s < recs.length; s++) {
             if (s === refIdx) { per.push(null); continue; }
-            const seq = recs[s].seq.toUpperCase();
+            const seq = recs[s].seq, orig = recs[s].orig;
             const { columns, score } = alignPairwise(ref, seq, Object.assign({}, o, { lockRefFrame: true }));
             pairScores.push(score);
             const refCol = new Array(nCod).fill('---');
             const ins = []; for (let r = 0; r <= nCod; r++) ins.push([]);
             let i = 0, j = 0, r = 0;
             for (const [ka, kb] of columns) {
-                const bnts = seq.substr(j, kb);
+                const bnts = orig.substr(j, kb);
                 if (ka > 0) { // reference codon r (ka < 3 only for a terminal partial codon)
                     const rc = ref.substr(i, ka);
                     refCol[r] = padCodon(bnts, rc.length === 3 ? rc : null);
@@ -352,7 +401,7 @@
                 }
             }
             if (r < nCod) {
-                const rc = ref.substr(3 * r, 3);
+                const rc = refOut.substr(3 * r, 3);
                 for (let s = 0; s < recs.length; s++) {
                     if (s === refIdx) out[s].push(rc);
                     else out[s].push(per[s].refCol[r]);
@@ -361,10 +410,12 @@
         }
         const nt = recs.map((rec, s) => ({ name: rec.name, seq: out[s].join('') }));
         const aa = nt.map(x => ({ name: x.name, seq: (x.seq.match(/.{1,3}/g) || []).map(translateCodon).join('') }));
+        // a stop is internal unless only gaps / frameshift padding follow it
+        const internalStopCount = s => { const t = s.replace(/[-!]+$/, ''); return ((t.endsWith('*') ? t.slice(0, -1) : t).match(/\*/g) || []).length; };
         const stats = {
-            ref: recs[refIdx].name, columns: out[0].length,
+            ref: recs[refIdx].name, refFound, columns: out[0].length,
             frameshifts: nt.map(x => ({ name: x.name, n: (x.seq.match(/.{3}/g) || []).filter(c => c.indexOf('!') >= 0).length })),
-            internalStops: aa.map(x => ({ name: x.name, n: (x.seq.slice(0, -1).match(/\*/g) || []).length })),
+            internalStops: aa.map(x => ({ name: x.name, n: internalStopCount(x.seq) })),
             pairScores, ms: now() - t0
         };
         if (o.frameRestored) for (const x of nt) x.seq = x.seq.replace(/!/g, '-');

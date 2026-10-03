@@ -629,29 +629,39 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     Setting <strong>Sequence type</strong> to <strong>Coding sequence (codon, frameshift-aware)</strong> replaces MAFFT
     with a built-in aligner for protein-coding nucleotide sequences, modelled on MACSE (Ranwez et al. 2011, 2018) and
     written for this viewer in plain JavaScript (<code>codon-align.js</code>, run in a worker). It applies to
-    <strong>Realign All</strong>, <strong>Realign Selected</strong>, <strong>Realign Block</strong> and <strong>Add &amp; Align</strong>.
-    Sequences must be in frame at their first nucleotide (CDS from the start codon, or from a codon boundary).
+    <strong>Realign All</strong>, <strong>Realign Selected</strong> and <strong>Add &amp; Align</strong>, and honours
+    <strong>Adjust direction</strong> (reverse-complemented coding sequences are flipped first). Sequences must be
+    nucleotide CDS (DNA or RNA, upper or lower case, IUPAC codes allowed) in frame at their first nucleotide; protein
+    input is refused with a message. <strong>Realign Block</strong> is refused in this mode: a column span cuts each row
+    at a different codon position, so a block cannot be codon-aligned on its own (switch Sequence type to Nucleotide to
+    realign a block).
   </p>
   <p>
     The alignment is built from codon columns. In every column a sequence contributes a whole codon, a gap
-    (<code>---</code>) or a <em>frameshifted codon</em>: one or two real nucleotides whose missing bases are written
-    as <code>!</code> (MACSE's convention) or, by default, as <code>-</code> so that the result is a plain nucleotide
-    alignment and <a href="#di-codons">Codon analysis</a> marks the frameshifts and stop codons. Codon pairs are scored with
-    BLOSUM62 plus a small nucleotide-identity bonus; gaps are affine (open 10, extension 1); every frameshifted codon costs
-    40 and every internal stop codon 50, so that a single stop is kept in frame rather than being explained away by two
-    frameshifts. One <strong>reference</strong> sequence (the first, or the name typed in the Codon alignment settings)
-    defines the reading frame of the columns; the other sequences are aligned to it pairwise (banded Gotoh dynamic
-    programming) and merged centre-star fashion. A first pass with a free reference frame finds frameshifts that belong to
-    the reference itself (a gene-model error shared by all sequences): a reference frameshift supported by at least half of
-    the other sequences is fixed into the reference before the final pass. Pick a complete, clean coding sequence as reference.
+    (<code>---</code>) or a <em>frameshifted codon</em>: one or two real nucleotides, with the missing bases written as
+    <code>-</code>, so the result is a plain nucleotide alignment and <a href="#di-codons">Codon analysis</a> marks the
+    frameshifts and stop codons. (MACSE writes the missing bases as <code>!</code>; the viewer treats only <code>-</code>
+    and <code>.</code> as gaps, so <code>!</code> is not used here.) Codon pairs are scored with BLOSUM62 plus a small
+    nucleotide-identity bonus; gaps are affine (open 10, extension 1); every frameshifted codon costs 40 and every internal
+    stop codon 50, so that a single stop is kept in frame rather than being explained away by two frameshifts.
   </p>
   <p>
-    Compared with MACSE v2.07 on 24 four-species mammalian BUSCO genes (1-3.6 kb), the aligner reproduces 99% of MACSE's
-    homologous nucleotide pairs and takes about half a second per gene instead of minutes. Differences are concentrated in
-    poorly conserved regions and in the attribution of compensating frameshifts; MACSE aligns all sequences as profiles and
-    lets every sequence shift frame, which the centre-star design does not. The status message after alignment reports the
-    number of frameshifted codons and internal stops (details in the browser console). Written from the published method
-    description; no MACSE code is used.
+    One <strong>reference</strong> sequence defines the reading frame of the columns: the name typed in the Codon
+    alignment settings, or else the first row (as displayed) among the sequences being aligned. The other sequences are
+    aligned to it pairwise (banded Gotoh dynamic programming) and merged centre-star fashion. A first pass with a free
+    reference frame finds frameshifts that belong to the reference itself: a reference frameshift supported by at least half
+    of the other sequences (at least two when there are three or more sequences) is fixed into the reference before the final
+    pass. The reference is taken to be in frame at its first nucleotide. Pick a complete, clean coding sequence as reference.
+    After alignment the status line reports the reference used, the number of frameshifted codons and internal stops (details
+    in the browser console), and warns if a typed reference name was not found.
+  </p>
+  <p>
+    Compared with MACSE v2.07 on 2,636 four-species mammalian BUSCO genes, the aligner reproduces 98.9% of MACSE's
+    homologous nucleotide pairs (median 99.7%) and takes a median 0.7 s per gene on one core instead of minutes.
+    Differences are concentrated in poorly conserved regions and in the attribution of compensating frameshifts; MACSE aligns
+    all sequences as profiles and lets every sequence shift frame, which the centre-star design does not. Pairs that would
+    need more than about 300 MB of working memory (very long sequences of very different length) are refused with a message;
+    trim them first. Written from the published method description; no MACSE code is used.
   </p>
   <h3 id="al-addseq">3.3 Adding Sequences</h3>
   <p>
@@ -2124,7 +2134,7 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
     </tr>
     <tr>
       <td><strong>MACSE</strong></td>
-      <td>Codon-aware visualization with frameshift detection, synonymous/non-synonymous annotation; the built-in frameshift-aware codon aligner (section 3.2.2) follows MACSE's alignment model (frameshift and stop-codon costs, '!' notation)</td>
+      <td>Codon-aware visualization with frameshift detection, synonymous/non-synonymous annotation; the built-in frameshift-aware codon aligner (section 3.2.2) follows MACSE's alignment model (codon columns, frameshift and stop-codon costs)</td>
       <td>Ranwez V et al. (2011) <em>PLoS ONE</em> 6:e22594; Ranwez V et al. (2018) <em>Mol Biol Evol</em> 35:2582-2584</td>
     </tr>
     <tr>
