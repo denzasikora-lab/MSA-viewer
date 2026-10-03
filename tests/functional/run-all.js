@@ -421,6 +421,42 @@ check('Dot plot: self-comparison produces points along the main diagonal', async
     return { pass: true, detail: `${result.rows}x${result.cols} self-comparison, ${result.diagonalMatchCount} diagonal matches, canvas ${result.canvasWidth}x${result.canvasHeight}` };
 });
 
+check('Codon-aware realign: 1 nt deletion becomes a single frameshift gap, frame kept', async (page) => {
+    // Four coding sequences; C has one nucleotide deleted (GG -> G at nt 24-25).
+    const fasta = [
+        '>A', 'ATGGCTGAAAAGCTGGATACCGTTGGAATGCCAGGTCTGAAACGTTAA',
+        '>B', 'ATGGCTGAAAAGCTGGATACCGTTGGAATGCCAGGTCTGAAACGTTAA',
+        '>C', 'ATGGCTGAGAAGCTGGATACCGTTGAATGCCAGGTCTGAAACGTTAA',
+        '>D', 'ATGGCTGAAAAACTGGATACCGTTGGCATGCCAGGTCTAAAACGTTAA', ''
+    ].join('\n');
+    await loadFasta(page, fasta);
+    await page.evaluate(() => {
+        const sel = document.getElementById('mafftSeqType');
+        sel.value = 'codon';
+        sel.dispatchEvent(new Event('change'));
+    });
+    const optsShown = await page.evaluate(() => document.getElementById('codonAlignOpts').style.display !== 'none');
+    if (!optsShown) return { pass: false, detail: 'codon settings not shown after choosing Coding sequence' };
+    await page.evaluate(async () => { await realignAll(); });
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(() => ({
+        n: state.seqs.length,
+        lens: state.seqs.map(s => s.seq.length),
+        seqs: state.seqs.map(s => s.seq),
+        names: state.seqs.map(s => s.header),
+        stats: window._lastCodonAlignStats || null
+    }));
+    if (r.n !== 4) return { pass: false, detail: `expected 4 sequences, got ${r.n}` };
+    if (new Set(r.lens).size !== 1 || r.lens[0] % 3 !== 0) return { pass: false, detail: `lengths ${r.lens.join(',')} not equal / not a multiple of 3` };
+    const gaps = r.seqs.map(s => (s.match(/-/g) || []).length);
+    const iC = r.names.indexOf('C');
+    if (iC < 0) return { pass: false, detail: 'sequence C missing after realign' };
+    if (gaps[iC] !== 1 || gaps.reduce((a, b) => a + b, 0) !== 1) return { pass: false, detail: `expected exactly one gap, in C; got gaps ${gaps.join(',')} (${r.seqs[iC]})` };
+    if (r.seqs[iC].replace(/-/g, '') !== 'ATGGCTGAGAAGCTGGATACCGTTGAATGCCAGGTCTGAAACGTTAA') return { pass: false, detail: 'C residues changed' };
+    if (!r.stats || !r.stats.frameshifts || r.stats.frameshifts.find(x => x.name === 'C').n !== 1) return { pass: false, detail: `stats: ${JSON.stringify(r.stats)}` };
+    return { pass: true, detail: `C = ${r.seqs[iC]}; ref ${r.stats.ref}, ${Math.round(r.stats.ms)} ms` };
+});
+
 async function main() {
     const { server, baseUrl } = await start();
     const results = [];

@@ -189,6 +189,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       <a href="#al-real-time">3.1 Real-Time Alignment</a>
       <a href="#al-advanced">3.2 Advanced MAFFT Options</a>
       <a href="#al-realign-block">3.2.1 Realign Block</a>
+      <a href="#al-codon-align">3.2.2 Codon-aware alignment of coding sequences</a>
       <a href="#al-addseq">3.3 Adding Sequences</a>
       <a href="#al-blast">3.4 BLAST Search</a>
       <a href="#al-blast-db">3.5 BLAST DB Management</a>
@@ -623,6 +624,35 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <li>This is not clustering's local-only paint: when you accept the order prompt, Realign Block <em>does</em> write a new row order.</li>
   </ul>
 
+  <h3 id="al-codon-align">3.2.2 Codon-aware alignment of coding sequences</h3>
+  <p>
+    Setting <strong>Sequence type</strong> to <strong>Coding sequence (codon, frameshift-aware)</strong> replaces MAFFT
+    with a built-in aligner for protein-coding nucleotide sequences, modelled on MACSE (Ranwez et al. 2011, 2018) and
+    written for this viewer in plain JavaScript (<code>codon-align.js</code>, run in a worker). It applies to
+    <strong>Realign All</strong>, <strong>Realign Selected</strong>, <strong>Realign Block</strong> and <strong>Add &amp; Align</strong>.
+    Sequences must be in frame at their first nucleotide (CDS from the start codon, or from a codon boundary).
+  </p>
+  <p>
+    The alignment is built from codon columns. In every column a sequence contributes a whole codon, a gap
+    (<code>---</code>) or a <em>frameshifted codon</em>: one or two real nucleotides whose missing bases are written
+    as <code>!</code> (MACSE's convention) or, by default, as <code>-</code> so that the result is a plain nucleotide
+    alignment and <a href="#di-codons">Codon analysis</a> marks the frameshifts and stop codons. Codon pairs are scored with
+    BLOSUM62 plus a small nucleotide-identity bonus; gaps are affine (open 10, extension 1); every frameshifted codon costs
+    40 and every internal stop codon 50, so that a single stop is kept in frame rather than being explained away by two
+    frameshifts. One <strong>reference</strong> sequence (the first, or the name typed in the Codon alignment settings)
+    defines the reading frame of the columns; the other sequences are aligned to it pairwise (banded Gotoh dynamic
+    programming) and merged centre-star fashion. A first pass with a free reference frame finds frameshifts that belong to
+    the reference itself (a gene-model error shared by all sequences): a reference frameshift supported by at least half of
+    the other sequences is fixed into the reference before the final pass. Pick a complete, clean coding sequence as reference.
+  </p>
+  <p>
+    Compared with MACSE v2.07 on 24 four-species mammalian BUSCO genes (1-3.6 kb), the aligner reproduces 99% of MACSE's
+    homologous nucleotide pairs and takes about half a second per gene instead of minutes. Differences are concentrated in
+    poorly conserved regions and in the attribution of compensating frameshifts; MACSE aligns all sequences as profiles and
+    lets every sequence shift frame, which the centre-star design does not. The status message after alignment reports the
+    number of frameshifted codons and internal stops (details in the browser console). Written from the published method
+    description; no MACSE code is used.
+  </p>
   <h3 id="al-addseq">3.3 Adding Sequences</h3>
   <p>
     Click <strong>+ Add Seq</strong> to open the "Add Sequences" modal. Paste one or more
@@ -2094,8 +2124,8 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
     </tr>
     <tr>
       <td><strong>MACSE</strong></td>
-      <td>Codon-aware visualization with frameshift detection, synonymous/non-synonymous annotation</td>
-      <td>Ranwez V et al. (2011) <em>PLoS ONE</em> 6:e22594</td>
+      <td>Codon-aware visualization with frameshift detection, synonymous/non-synonymous annotation; the built-in frameshift-aware codon aligner (section 3.2.2) follows MACSE's alignment model (frameshift and stop-codon costs, '!' notation)</td>
+      <td>Ranwez V et al. (2011) <em>PLoS ONE</em> 6:e22594; Ranwez V et al. (2018) <em>Mol Biol Evol</em> 35:2582-2584</td>
     </tr>
     <tr>
       <td><strong>Clustal</strong></td>

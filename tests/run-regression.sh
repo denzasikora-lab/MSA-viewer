@@ -10,6 +10,7 @@ node tests/kmer/recovery.test.js
 node tests/kmer/properties.test.js
 node tests/kmer/cut-reference-check.js
 node tests/realign-region/run.js
+node tests/codon-align/run.js
 node tests/clustering/svk_subset.test.js
 node tests/clustering/guided_small.test.js
 node tests/clustering/multi_dataset.test.js

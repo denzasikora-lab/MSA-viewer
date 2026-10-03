@@ -669,7 +669,15 @@
                                     <option value="2" selected>Nucleotide</option>
                                     <option value="1">Protein (BLOSUM62)</option>
                                     <option value="0">Protein (JTT 200PAM)</option>
+                                    <option value="codon" title="Frameshift-aware codon alignment of coding sequences (MACSE-like, built in): codons scored by BLOSUM62, 1-2 nt indels marked as frameshifts, stop codons penalised. Columns follow the reading frame of one reference sequence.">Coding sequence (codon, frameshift-aware)</option>
                                 </select>
+                                <span class="al-head" id="codonAlignHead" style="display:none" title="Settings of the built-in codon aligner (used when Sequence type is Coding sequence)">Codon alignment</span>
+                                <div class="al-checks" id="codonAlignOpts" style="display:none">
+                                    <label title="Penalty for a frameshifted codon (1 or 2 nucleotides instead of 3), in BLOSUM62 units (gap open 10, gap extension 1)."><span class="al-inline">frameshift</span> <input type="number" id="codonFs" value="40" min="0" max="300" step="1" style="width:4em"></label>
+                                    <label title="Penalty for an internal stop codon. Kept below two frameshifts so that a single stop is not explained away by a pair of frameshifts."><span class="al-inline">stop</span> <input type="number" id="codonStop" value="50" min="0" max="300" step="1" style="width:4em"></label>
+                                    <label title="Name of the sequence whose reading frame defines the codon columns (empty = first sequence). Pick a clean, complete coding sequence."><span class="al-inline">reference</span> <input type="text" id="codonRef" placeholder="first sequence" style="width:9em"></label>
+                                    <label title="Write '!' for the missing nucleotides of a frameshifted codon (MACSE convention). Unchecked: write '-' so the result is a plain nucleotide alignment and Codon analysis can mark the frameshifts."><input type="checkbox" id="codonBang"> ! marks</label>
+                                </div>
                                 <label for="mafftGapOpen">Gap open</label>
                                 <span class="al-pair">
                                     <input type="number" id="mafftGapOpen" value="1.53" min="0" max="10" step="0.1" title="Gap opening penalty (default: 1.53)">

@@ -15756,6 +15756,19 @@ function _initMafftAskPrefs() {
             }
         });
     }
+    // Codon-aligner settings are shown only when Sequence type is "Coding sequence"
+    const seqTypeSel = el('mafftSeqType');
+    const toggleCodonOpts = () => {
+        const on = seqTypeSel && seqTypeSel.value === 'codon';
+        for (const id of ['codonAlignHead', 'codonAlignOpts']) {
+            const node = el(id);
+            if (node) node.style.display = on ? '' : 'none';
+        }
+    };
+    if (seqTypeSel) {
+        seqTypeSel.addEventListener('change', toggleCodonOpts);
+        toggleCodonOpts();
+    }
 }
 
 /**
@@ -17712,7 +17725,84 @@ function _runMafftInWorker(fasta, extraArgs) {
     });
 }
 
+// ── Built-in codon aligner (codon-align.js, MACSE-like) ────────────────────
+function _codonAlignOpts() {
+    const num = (id, dflt) => { const v = parseFloat(el(id)?.value); return isNaN(v) ? dflt : v; };
+    const refName = (el('codonRef')?.value || '').trim();
+    return {
+        frameshift: -Math.abs(num('codonFs', 40)),
+        stop: -Math.abs(num('codonStop', 50)),
+        ref: refName || 0,
+        frameRestored: !el('codonBang')?.checked
+    };
+}
+
+function _isCodonAlignMode() {
+    return el('mafftSeqType')?.value === 'codon';
+}
+
+function _runCodonAlignInWorker(fasta, opts) {
+    return new Promise((resolve, reject) => {
+        _cancelActiveMafftWorker();
+        const id = Date.now();
+        const worker = new Worker(`codon-align-worker.js?v=${BUILD_TAG.replace(/^v/, '')}`);
+        _activeMafftWorker = worker;
+        _activeMafftReject = reject;
+        worker.onmessage = (ev) => {
+            if (ev.data?.id !== id) return;
+            _activeMafftWorker = null;
+            _activeMafftReject = null;
+            worker.terminate();
+            if (ev.data.ok) {
+                window._lastCodonAlignStats = ev.data.stats || null;
+                resolve(ev.data.result);
+            } else reject(new Error(ev.data.error || 'Codon alignment failed'));
+        };
+        worker.onerror = (err) => {
+            _activeMafftWorker = null;
+            _activeMafftReject = null;
+            worker.terminate();
+            reject(err);
+        };
+        worker.postMessage({ id, type: 'align', fasta, opts });
+    });
+}
+
+async function _codonAlignWithUi(fasta, label) {
+    const stats = _mafftFastaStats(fasta);
+    const opts = _codonAlignOpts();
+    let cancelled = false;
+    try {
+        const result = await runWithProgress(
+            label || 'Aligning coding sequences (codon-aware)...',
+            async (updateBusy) => {
+                updateBusy(`${stats.seqCount} seqs, ${stats.totalResidues.toLocaleString()} nt, longest ${stats.maxLen.toLocaleString()}`);
+                await yieldToPaint();
+                return _runCodonAlignInWorker(fasta, opts);
+            },
+            '',
+            () => { cancelled = true; _cancelActiveMafftWorker(); }
+        );
+        if (cancelled) {
+            showMessage('Codon alignment cancelled.', 2500);
+            return null;
+        }
+        const st = window._lastCodonAlignStats;
+        if (st && st.frameshifts) {
+            const fsTot = st.frameshifts.reduce((a, x) => a + x.n, 0);
+            const stTot = (st.internalStops || []).reduce((a, x) => a + x.n, 0);
+            console.log(`Codon alignment: reference ${st.ref}, ${st.columns} codon columns, ${fsTot} frameshifted codons, ${stTot} internal stops, ${Math.round(st.ms)} ms`, st);
+            if (fsTot || stTot) showMessage(`Codon alignment (ref ${st.ref}): ${fsTot} frameshifted codon${fsTot === 1 ? '' : 's'}, ${stTot} internal stop${stTot === 1 ? '' : 's'}. Details in the console.`, 5000);
+        }
+        return result;
+    } catch (err) {
+        if (cancelled || String(err?.message || '').includes('cancelled')) return null;
+        throw err;
+    }
+}
+
 async function _mafftAlignWithUi(fasta, extraArgs, label) {
+    if (_isCodonAlignMode()) return _codonAlignWithUi(fasta, label && label.replace(/MAFFT/g, 'codon aligner'));
     const stats = _mafftFastaStats(fasta);
     const confirmed = _confirmMafftJob(stats, extraArgs);
     if (!confirmed.ok) return null;
@@ -17759,7 +17849,7 @@ async function realignSelectedBlock(opts) {
 
     const extra = getMafftExtraArgs();
     const extraArgs = extra.args.slice();
-    if (extra.seqType !== '2') extraArgs.push('-E', extra.seqType);
+    if (extra.seqType !== '2' && extra.seqType !== 'codon') extraArgs.push('-E', extra.seqType);
 
     let applyAdjustFull = opts.applyAdjustFull;
     let applyReorder = opts.applyReorder;
@@ -17854,7 +17944,7 @@ async function realignAll() {
     }
 
     const { args: extraArgs, seqType, adjustDir, reorder, reorderOnly } = getMafftExtraArgs();
-    if (seqType !== '2') extraArgs.push('-E', seqType);
+    if (seqType !== '2' && seqType !== 'codon') extraArgs.push('-E', seqType);
 
     // Pre-alignment: adjust direction if requested
     let flippedNames = new Set();
@@ -17992,7 +18082,7 @@ function realignSelected() {
     }
 
     const { args: extraArgs, seqType, adjustDir } = getMafftExtraArgs();
-    if (seqType !== '2') extraArgs.push('-E', seqType);
+    if (seqType !== '2' && seqType !== 'codon') extraArgs.push('-E', seqType);
 
     // Pre-alignment: adjust direction if requested
     if (adjustDir && seqType === '2') {
@@ -18147,7 +18237,7 @@ async function addSequencesJustAdd() {
         try {
             const { args: extraArgs, seqType } = getMafftExtraArgs();
             const consensusArgs = [...extraArgs];
-            if (seqType !== '2') consensusArgs.push('-E', seqType);
+            if (seqType !== '2' && seqType !== 'codon') consensusArgs.push('-E', seqType);
 
             let workingSeqs = state.seqs.map(seqObj => ({ ...seqObj }));
             const alignedNewSeqs = [];
@@ -18367,7 +18457,7 @@ function addSequencesAndAlign() {
 
     const { args: extraArgs, seqType, adjustDir, reorder } = getMafftExtraArgs();
     const atTop = !!document.getElementById('addSeqAtTop')?.checked;
-    if (seqType !== '2') extraArgs.push('-E', seqType);
+    if (seqType !== '2' && seqType !== 'codon') extraArgs.push('-E', seqType);
 
     // Pre-alignment: adjust direction on new sequences if requested
     let adjustedNewText = newText;
@@ -24491,7 +24581,7 @@ async function realignSequenceAgainstConsensus(index) {
     try {
         const { args: extraArgs, seqType } = getMafftExtraArgs();
         const consensusArgs = [...extraArgs];
-        if (seqType !== '2') consensusArgs.push('-E', seqType);
+        if (seqType !== '2' && seqType !== 'codon') consensusArgs.push('-E', seqType);
 
         showMessage('Re-aligning sequence against consensus...', 0);
         const alignedProfile = await alignSequenceToConsensusProfile(state.seqs[index].seq, gappedCons, consensusArgs);
