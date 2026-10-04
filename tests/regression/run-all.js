@@ -1516,8 +1516,11 @@ check('Scrollbars: dragging the thumb moves the view with the mouse, never back'
     const r = await page.evaluate((sel) => { const b = document.querySelector(sel); if (getComputedStyle(b).display === 'none') return null; const q = b.getBoundingClientRect(); return [q.x, q.y, q.width, q.height, b.clientWidth, b.scrollWidth, b.clientHeight, b.scrollHeight]; }, sel);
     if (!r) return { shown: false };
     const read = () => page.evaluate(([sel, axis]) => document.querySelector(sel)[axis === 'y' ? 'scrollTop' : 'scrollLeft'], [sel, axis]);
-    // start at the beginning of the track (a mode switch keeps the previous position)
-    await page.evaluate(([sel, axis]) => { const b = document.querySelector(sel); b[axis === 'y' ? 'scrollTop' : 'scrollLeft'] = 0; b.dispatchEvent(new Event('scroll')); }, [sel, axis]);
+    // start at the beginning of the track (a mode switch keeps the previous position): the
+    // view and the bar, as a user who scrolled to the top would have them. Resetting the bar
+    // alone leaves the view where it was (its guard ignores a synthetic scroll), and any later
+    // DOM change re-syncs the bar from the view - e.g. the v230 row buffer still filling in.
+    await page.evaluate(([sel, axis]) => { const k = axis === 'y' ? 'scrollTop' : 'scrollLeft'; const a = document.getElementById('alignmentContainer'); a[k] = 0; if (typeof _canvasState !== 'undefined') { if (axis === 'y') _canvasState.offsetY = 0; else _canvasState.offsetX = 0; _canvasState.scheduleDraw?.(); } const b = document.querySelector(sel); b[k] = 0; b.dispatchEvent(new Event('scroll')); }, [sel, axis]);
     await page.waitForTimeout(500);
     const [x, y, w, h] = r;
     const x0 = axis === 'y' ? x + w / 2 : x + 12, y0 = axis === 'y' ? y + 12 : y + h / 2;
