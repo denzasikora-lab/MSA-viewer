@@ -625,6 +625,69 @@ check('Codon-aware (MACSE engine): a cancelled run frees its worker and the next
     return { pass: true, detail: `cancel freed the worker; rerun identical to MACSE in ${Math.round(r.stats.ms)} ms` };
 });
 
+check('Annotation track: BED features map through gaps, stack in lanes, draw in DOM and Canvas, hide on toggle', async (page) => {
+    // chr1 has gaps at columns 3 and 4 (0-based), so its ungapped base 3 is column 5
+    const fasta = '>chr1 first\nACG--TACGTACGTACGTAC\n>other\nACGTTTACGTACGTACGTAC\n>third\nACGTTTACGTACGTACGTAC\n';
+    await loadFasta(page, fasta);
+    const bed = [
+        'track name="toy genes"',
+        'chr1\t0\t3\tgeneA\t0\t+\t0\t3\t255,0,0\t1\t3\t0\tfirst three bases',   // columns 0-2
+        'chr1\t3\t8\tgeneB\t0\t-',                                              // bases 3-7 -> columns 5-9
+        'chr1\t6\t10\tgeneC\t0\t+',                                             // overlaps geneB -> lane 1
+        '*\t12\t15\tcols',                                                      // alignment columns 12-14
+        'nosuch\t0\t5\tlost',                                                   // skipped
+        'bad line',
+    ].join('\n');
+    const r = await page.evaluate((bed) => {
+        setAnnotation(bed, 'toy.bed');
+        const L = state._annotLayout;
+        const feats = L.feats.map(d => ({ name: d.f.name, cs: d.cs, ce: d.ce, lane: d.lane, color: d.color, chrom: d.seqIndex }));
+        const track = document.querySelector('.annot-track-line');
+        const boxes = [...document.querySelectorAll('.annot-feat')].map(fe => ({ fi: +fe.dataset.fi, cls: fe.className, label: fe.textContent }));
+        const first = document.querySelector('.block-block')?.firstElementChild?.className;
+        return { lanes: L.lanes, label: L.label, feats, trackH: track?.style.height, boxes, first, status: document.getElementById('annotStatus').textContent, report: { unmatched: [...state._annotReport.unmatched], skipped: state.annot.skippedLines } };
+    }, bed);
+    const byName = Object.fromEntries(r.feats.map(f => [f.name, f]));
+    if (!byName.geneA || byName.geneA.cs !== 0 || byName.geneA.ce !== 2) return { pass: false, detail: `geneA columns: ${JSON.stringify(byName.geneA)}` };
+    if (!byName.geneB || byName.geneB.cs !== 5 || byName.geneB.ce !== 9) return { pass: false, detail: `geneB should map through the gap to columns 5-9: ${JSON.stringify(byName.geneB)}` };
+    if (!byName.geneC || byName.geneC.cs !== 8 || byName.geneC.ce !== 11 || byName.geneC.lane !== 1) return { pass: false, detail: `geneC should be on lane 1 at columns 8-11: ${JSON.stringify(byName.geneC)}` };
+    if (!byName.cols || byName.cols.cs !== 12 || byName.cols.ce !== 14 || byName.cols.chrom !== 'cols') return { pass: false, detail: `* chrom: ${JSON.stringify(byName.cols)}` };
+    if (byName.lost) return { pass: false, detail: 'feature on an unknown sequence was placed' };
+    if (r.lanes !== 2 || r.trackH !== '2em') return { pass: false, detail: `lanes ${r.lanes}, track height ${r.trackH}` };
+    if (byName.geneA.color !== '#ff0000') return { pass: false, detail: `itemRgb not used: ${byName.geneA.color}` };
+    if (r.label !== 'toy genes') return { pass: false, detail: `track name: ${r.label}` };
+    if (r.first !== 'annot-track-line') return { pass: false, detail: `track is not the first line of the block: ${r.first}` };
+    if (r.boxes.length !== 4) return { pass: false, detail: `expected 4 boxes, got ${r.boxes.length}` };
+    const bBox = r.boxes.find(b => b.fi === r.feats.indexOf(byName.geneB));
+    if (!bBox || !/\bminus\b/.test(bBox.cls)) return { pass: false, detail: `geneB (- strand) box class: ${bBox && bBox.cls}` };
+    if (r.report.unmatched.length !== 1 || r.report.unmatched[0][0] !== 'nosuch' || r.report.skipped !== 1) return { pass: false, detail: `report: ${JSON.stringify(r.report)}` };
+    if (!/4 placed/.test(r.status) || !/1 on "nosuch"/.test(r.status)) return { pass: false, detail: `status: ${r.status}` };
+    // Hover: tooltip with the description; click: the columns are selected
+    await page.hover('.annot-feat[data-fi="0"]');
+    await page.waitForTimeout(150);
+    const tip = await page.evaluate(() => document.querySelector('.tooltip')?.innerHTML || '');
+    if (!/geneA/.test(tip) || !/first three bases/.test(tip) || !/chr1: 1(&ndash;|–)3/.test(tip)) return { pass: false, detail: `tooltip: ${tip}` };
+    await page.click('.annot-feat[data-fi="0"]');
+    await page.waitForTimeout(150);
+    const sel = await page.evaluate(() => Array.from(state.selectedColumns).sort((a, b) => a - b));
+    if (sel.join(',') !== '0,1,2') return { pass: false, detail: `selected columns after click: ${sel}` };
+    // Canvas: the track height is in the metrics and shifts the rows down
+    await setMode(page, 'canvas');
+    const c = await page.evaluate(() => ({ trackH: _canvasState.metrics.trackH, charH: _canvasState.metrics.charH, headerH: _canvasState.metrics.headerH }));
+    if (c.trackH !== 2 * c.charH || c.headerH !== 3 * c.charH) return { pass: false, detail: `canvas metrics: ${JSON.stringify(c)}` };
+    await setMode(page, 'full');
+    // Hide, then clear
+    await page.evaluate(() => { const cb = document.getElementById('showAnnotation'); cb.checked = false; cb.dispatchEvent(new Event('change')); });
+    await page.waitForTimeout(200);
+    const hidden = await page.evaluate(() => ({ tracks: document.querySelectorAll('.annot-track-line').length, layout: !!state._annotLayout, status: document.getElementById('annotStatus').textContent }));
+    if (hidden.tracks !== 0 || hidden.layout || !/Hidden/.test(hidden.status)) return { pass: false, detail: `after hiding: ${JSON.stringify(hidden)}` };
+    await page.evaluate(() => { const cb = document.getElementById('showAnnotation'); cb.checked = true; cb.dispatchEvent(new Event('change')); clearAnnotation(); });
+    await page.waitForTimeout(200);
+    const cleared = await page.evaluate(() => ({ tracks: document.querySelectorAll('.annot-track-line').length, annot: !!state.annot }));
+    if (cleared.tracks !== 0 || cleared.annot) return { pass: false, detail: `after clear: ${JSON.stringify(cleared)}` };
+    return { pass: true, detail: `4 features, 2 lanes, geneB -> columns 6-10 through the gap, tooltip + click + canvas + hide + clear` };
+});
+
 async function main() {
     const { server, baseUrl } = await start();
     const results = [];

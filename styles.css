@@ -2993,6 +2993,73 @@ span.column-highlighted::after {
     box-shadow: inset 0 0 0 1px rgba(140, 100, 0, 0.9) !important;
 }
 
+/* Annotation track (BED): one line above the ruler of every block; each lane is 1em.
+   Features are absolutely positioned boxes (ch units, or px in a column-windowed block);
+   the name cell is the same sticky .seq-name as the rows'. */
+.annot-track-line {
+    display: flex;
+    align-items: flex-start;
+    position: relative;
+    min-width: max-content;
+    white-space: nowrap;
+    line-height: 1.0;
+    padding-bottom: 3px;
+    user-select: none;
+}
+.annot-track-line .seq-name {
+    font-weight: normal;
+    color: #777;
+    height: 100%;
+}
+.annot-track-label {
+    display: inline-block;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font: 0.7em/1.4 Arial, Helvetica, sans-serif;
+    vertical-align: top;
+}
+.annot-track-data {
+    position: relative;
+    height: 100%;
+    overflow: visible !important;
+    display: inline-block;
+}
+.annot-track-inner {
+    position: relative;
+    height: 100%;
+}
+.annot-feat {
+    position: absolute;
+    height: calc(1em - 2px);
+    margin-top: 1px;
+    box-sizing: border-box;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    padding: 0 4px;
+    min-width: 2px;
+    /* clip-path, not overflow:hidden: an overflow box would be the scroll container the
+       sticky label sticks to, and the label must stick to the alignment's scrollport */
+    clip-path: inset(0 round 2px);
+}
+.annot-feat.plus  { clip-path: polygon(0 0, calc(100% - 0.45em) 0, 100% 50%, calc(100% - 0.45em) 100%, 0 100%); padding-right: 0.55em; }
+.annot-feat.minus { clip-path: polygon(0.45em 0, 100% 0, 100% 100%, 0.45em 100%, 0 50%); padding-left: 0.55em; }
+.annot-feat.narrow { padding: 0; clip-path: none; }
+.annot-feat:hover { box-shadow: inset 0 0 0 2px rgba(0, 0, 0, 0.35); }
+/* The label stays at the visible left edge while its box is partly scrolled off
+   (--annot-label-left: the name column's width, set by the renderer) */
+.annot-feat-label {
+    position: sticky;
+    left: var(--annot-label-left, 0px);
+    font: 0.68em/1 Arial, Helvetica, sans-serif;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    pointer-events: none;
+}
+.tooltip.annot-tip { white-space: normal; max-width: 360px; line-height: 1.35; }
+
 /* Scale ruler styling */
 .scale-ruler-line {
     margin-bottom: 2px;

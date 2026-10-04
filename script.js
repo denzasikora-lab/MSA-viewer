@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v232';
+const BUILD_TAG = 'v233';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -3173,6 +3173,11 @@ function _patchBlockColumnWindow(blockDiv, blockIndex, start, end, fallbackS, fa
         else ruler.textContent = generateScale(rulerLen, 10, newS);
         _applyColumnWindowStyle(ruler, blockLen, newS - start, charWidthPx);
     }
+    const track = blockDiv.querySelector(':scope > .annot-track-line > .seq-data');
+    if (track && state._annotLayout) {
+        _fillAnnotTrackData(track, newS, newE, charWidthPx);
+        _applyColumnWindowStyle(track, blockLen, newS - start, charWidthPx);
+    }
     if (p.shouldRenderConsensus) {
         state.spanCache?.delete(CONSENSUS_ROW_INDEX);
         blockDiv.querySelectorAll(':scope > .consensus-line').forEach(line => {
@@ -3215,6 +3220,7 @@ function _buildBlockElement(start, end, len, nameLen, stickyNames, standard, amb
     }
     scaleDiv.appendChild(scaleNameDiv);
     scaleDiv.appendChild(scaleDataDiv);
+    // The annotation track is added by _insertAnnotTracks once the rows exist
     blockDiv.appendChild(scaleDiv);
     const isLastBlock = (start + (end - start) >= len) || end >= len;
 
@@ -3313,6 +3319,8 @@ function _measureUnifiedHeaderHeight(sampleBlockEl) {
         const topConsensus = sampleBlockEl.querySelector('.consensus-line');
         let h = 0;
         if (ruler) h += ruler.getBoundingClientRect().height;
+        const track = sampleBlockEl.querySelector(':scope > .annot-track-line');
+        if (track) h += track.getBoundingClientRect().height;
         if (topConsensus) {
             const r = topConsensus.getBoundingClientRect();
             // Only count it if it's actually positioned above the first data
@@ -3371,6 +3379,15 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     if (needsColWindow) _applyColumnWindowStyle(scaleDataDiv, blockLen, colStart - start, charWidthPx);
     scaleDiv.appendChild(scaleNameDiv);
     scaleDiv.appendChild(scaleDataDiv);
+    if (state._annotLayout) {
+        // Annotation track above the ruler, windowed like it (px positions
+        // agree with the rows' px padding; ch when the block is not windowed)
+        const track = _buildAnnotTrackLine(colStart, colEnd, needsColWindow ? charWidthPx : null);
+        if (track) {
+            if (needsColWindow) _applyColumnWindowStyle(track.querySelector('.seq-data'), blockLen, colStart - start, charWidthPx);
+            blockDiv.appendChild(track);
+        }
+    }
     blockDiv.appendChild(scaleDiv);
 
     if (shouldRenderConsensus && consensusPosition === 'top') {
@@ -4787,14 +4804,14 @@ function _canvasHitTest(clientX, clientY) {
     const x = clientX - rect.left;
     const y = clientY - rect.top;
     const NAME_W = m.nameW;
-    const SCALE_H = m.charH; // one ruler row, same height as a data row
+    const HEADER_H = m.headerH || m.charH; // ruler row plus the annotation track, when shown
     const CHAR_W = m.charW;
     const CHAR_H = m.charH;
     const rowPitch = _canvasState.rowPitch || CHAR_H;
     // Subtract the name column and scale ruler offsets, then add back the pan
     // offset so the result is in content (not viewport) coordinates.
     const col = Math.floor((x - NAME_W + _canvasState.offsetX) / CHAR_W);
-    const row = Math.floor((y - SCALE_H + _canvasState.offsetY) / rowPitch);
+    const row = Math.floor((y - HEADER_H +_canvasState.offsetY) / rowPitch);
     if (col < 0 || row < 0) return null;
     const nSeqs = _canvasState.seqsLen || (state.seqs ? state.seqs.length : 0);
     const len = state.seqs && state.seqs.length > 0
@@ -4814,7 +4831,8 @@ function _canvasHitTestRuler(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
     const x = clientX - rect.left;
     const y = clientY - rect.top;
-    if (y < 0 || y >= m.charH) return null;  // not in ruler row
+    const trackH = m.trackH || 0;             // annotation track above the ruler
+    if (y < trackH || y >= trackH + m.charH) return null;  // not in ruler row
     if (x < m.nameW) return null;             // name column corner
     const col = Math.floor((x - m.nameW + _canvasState.offsetX) / m.charW);
     const len = state.seqs && state.seqs.length > 0
@@ -4835,8 +4853,8 @@ function _canvasHitTestName(clientX, clientY) {
     const x = clientX - rect.left;
     const y = clientY - rect.top;
     if (x < 0 || x >= m.nameW) return null;   // not in name column
-    if (y < m.charH) return null;               // ruler corner
-    const row = Math.floor((y - m.charH + _canvasState.offsetY) / (_canvasState.rowPitch || m.charH));
+    if (y < (m.headerH || m.charH)) return null; // ruler / annotation corner
+    const row = Math.floor((y - (m.headerH || m.charH) + _canvasState.offsetY) / (_canvasState.rowPitch || m.charH));
     const nSeqs = _canvasState.seqsLen || (state.seqs ? state.seqs.length : 0);
     if (row < 0 || row >= nSeqs) return null;
     return { row };
@@ -4851,7 +4869,7 @@ function _canvasRowFromClientY(clientY) {
     if (!m || !m.nameW) return -1;
     const rect = canvas.getBoundingClientRect();
     const y = clientY - rect.top;
-    const row = Math.floor((y - m.charH + _canvasState.offsetY) / (_canvasState.rowPitch || m.charH));
+    const row = Math.floor((y - (m.headerH || m.charH) + _canvasState.offsetY) / (_canvasState.rowPitch || m.charH));
     const nSeqs = _canvasState.seqsLen || (state.seqs ? state.seqs.length : 0);
     if (row < 0 || row >= nSeqs) return -1;
     return row;
@@ -4948,6 +4966,11 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     const aaRowH = hasCodon ? CHAR_H : 0;
     const rowPitch = CHAR_H + aaRowCount * aaRowH;
     _canvasState.rowPitch = rowPitch;
+    // Annotation track above the ruler: its height shifts the ruler and every
+    // row down, and the hit tests read it from the metrics.
+    const TRACK_H = _annotTrackHeightPx(CHAR_H);
+    m.trackH = TRACK_H;
+    m.headerH = CHAR_H + TRACK_H;
     // Glyph cache: pre-rendered (char, bg-color, fg-color) -> off-screen canvas
     // Turns fillRect()+fillText() into a single drawImage() per cell after warm-up
     const _glyphCache = new Map();
@@ -4977,11 +5000,12 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     const nSeqs = state.seqs.length;
     _canvasState.seqsLen = nSeqs;
     const SCALE_H = CHAR_H; // one row at top, matching Full/Block .scale-ruler-line
+    const HEADER_H = TRACK_H + SCALE_H; // annotation track (if any) + ruler: where the rows start
     let _lastOffX = -1, _lastOffY = -1, _dirty = false;
     function _markDirty() { _dirty = true; }
 
     const totalContentW = NAME_W + len * CHAR_W + 4;
-    const totalContentH = SCALE_H + nSeqs * rowPitch + 4;
+    const totalContentH = HEADER_H +nSeqs * rowPitch + 4;
     // Exposed so the persistent horizontal/vertical scrollbars (real DOM
     // elements, since Canvas mode's own content isn't natively scrollable)
     // can size their thumbs and mirror pan position.
@@ -5047,8 +5071,8 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         const oy = _canvasState.offsetY;
         const firstCol = Math.max(0, Math.floor((ox - NAME_W) / CHAR_W));
         const lastCol = Math.min(len - 1, Math.ceil((ox - NAME_W + w) / CHAR_W));
-        const firstRow = Math.max(0, Math.floor((oy - SCALE_H) / rowPitch));
-        const lastRow = Math.min(nSeqs - 1, Math.floor((oy - SCALE_H + h - 1) / rowPitch));
+        const firstRow = Math.max(0, Math.floor((oy - HEADER_H) / rowPitch));
+        const lastRow = Math.min(nSeqs - 1, Math.floor((oy - HEADER_H +h - 1) / rowPitch));
 
         ctx.clearRect(0, 0, w, h);
         ctx.font = fontStr;
@@ -5062,7 +5086,11 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
 
         // Position scale (10, *, 20, * ...) - only the visible column window, same
         // generateScale() as Full/Block mode; cost is O(visible cols), not alignment length.
-        const scaleY = -oy;
+        if (TRACK_H > 0 && firstCol <= lastCol) {
+            _canvasDrawAnnotTrack(ctx, { ox, oy, w, NAME_W, CHAR_W, CHAR_H, TRACK_H, firstCol, lastCol, stickyNames, fontSizePx });
+            ctx.font = fontStr;
+        }
+        const scaleY = TRACK_H - oy;
         if (scaleY + SCALE_H > 0 && scaleY < h && firstCol <= lastCol) {
             const visCols = lastCol - firstCol + 1;
             const scaleText = generateScale(visCols, _canvasScaleInterval(CHAR_W), firstCol);
@@ -5083,7 +5111,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         }
 
         for (let i = firstRow; i <= lastRow; i++) {
-            const y = SCALE_H + i * rowPitch - oy;
+            const y = HEADER_H +i * rowPitch - oy;
             const seq = state.seqs[i].seq;
             const consPos = conservationData;
             const ovCtx = _overlayRowCtx(i);
@@ -5257,8 +5285,8 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             state.selectedColumns.forEach(pos => {
                 const x = NAME_W + pos * CHAR_W - ox;
                 if (x + CHAR_W < 0 || x > w) return;
-                const dataTop = Math.max(0, SCALE_H - oy);
-                const dataBottom = Math.min(h, SCALE_H + nSeqs * CHAR_H - oy);
+                const dataTop = Math.max(0, HEADER_H - oy);
+                const dataBottom = Math.min(h, HEADER_H +nSeqs * CHAR_H - oy);
                 ctx.fillRect(x, dataTop, CHAR_W, dataBottom - dataTop);
             });
         }
@@ -5267,7 +5295,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         if (state.selectedRows.size > 0) {
             ctx.fillStyle = 'rgba(40, 167, 69, 0.30)';
             state.selectedRows.forEach(rowIdx => {
-                const y = SCALE_H + rowIdx * rowPitch - oy;
+                const y = HEADER_H +rowIdx * rowPitch - oy;
                 if (y + rowPitch < 0 || y > h) return;
                 ctx.fillRect(0, y, w, rowPitch);
             });
@@ -5280,7 +5308,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             ctx.lineWidth = 1;
             state.selectedNucs.forEach((posSet, rowIdx) => {
                 if (rowIdx < 0 || !posSet || posSet.size === 0) return;
-                const y = SCALE_H + rowIdx * rowPitch - oy;
+                const y = HEADER_H +rowIdx * rowPitch - oy;
                 if (y + CHAR_H < 0 || y > h) return;
                 posSet.forEach(pos => {
                     const x = NAME_W + pos * CHAR_W - ox;
@@ -5294,7 +5322,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         if (state.pendingNucStart) {
             const pr = state.pendingNucStart.row, pp = state.pendingNucStart.pos;
             if (pr >= 0) {
-                const y = SCALE_H + pr * rowPitch - oy;
+                const y = HEADER_H +pr * rowPitch - oy;
                 const x = NAME_W + pp * CHAR_W - ox;
                 if (x + CHAR_W >= 0 && x <= w && y + CHAR_H >= 0 && y <= h) {
                     ctx.strokeStyle = '#1976D2';
@@ -5310,7 +5338,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         if (state.editModeActive && state.editTool === 'residue' && state.editCell) {
             const er = state.editCell.row, ep = state.editCell.pos;
             if (er >= 0 && er < nSeqs && ep >= 0) {
-                const y = SCALE_H + er * rowPitch - oy;
+                const y = HEADER_H +er * rowPitch - oy;
                 const x = NAME_W + ep * CHAR_W - ox;
                 if (x + CHAR_W >= 0 && x <= w && y + CHAR_H >= 0 && y <= h) {
                     ctx.strokeStyle = '#e74c3c';
@@ -5344,6 +5372,16 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     let dragging = false, dragStartX, dragStartY, dragOx, dragOy;
     canvas.addEventListener('mousedown', (e) => {
         if (e.button !== 0) return;
+
+        // Annotation track: a click selects the feature's columns (Shift adds)
+        if (!isCtrlModifier(e) && !isAltModifier(e)) {
+            const annotHit = _canvasHitTestAnnot(e.clientX, e.clientY);
+            if (annotHit) {
+                _annotSelectFeature(annotHit.d.id, e.shiftKey);
+                e.preventDefault();
+                return;
+            }
+        }
 
         // GeneDoc edit mode: handle edit tool clicks (mirrors handleGeneDocEditMouseDown)
         if (state.editModeActive && !isCtrlModifier(e) && !isAltModifier(e)) {
@@ -5514,6 +5552,21 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             return;
         }
 
+        // Annotation track: the feature under the pointer, once per feature
+        const annotHit = _canvasHitTestAnnot(e.clientX, e.clientY);
+        if (annotHit) {
+            if (_lastTooltipCell && _lastTooltipCell.annot === annotHit.d.id) return;
+            _lastTooltipCell = { row: -1, col: -1, annot: annotHit.d.id };
+            const target = _getCanvasTooltipTarget();
+            target.style.left = e.clientX + 'px';
+            target.style.top = (e.clientY + 10) + 'px';
+            showTooltipAt(_annotTooltipHtml(annotHit.d), target, { html: true, className: 'annot-tip' });
+            canvas.style.cursor = 'pointer';
+            return;
+        }
+        if (_lastTooltipCell && _lastTooltipCell.annot != null) { _lastTooltipCell = null; hideTooltip(); }
+        if (canvas.style.cursor === 'pointer') canvas.style.cursor = 'default';
+
         if (_canvasHoverCell) {
             const { row, col } = _canvasHoverCell;
             // Only update tooltip when the cell changes (like DOM mouseover
@@ -5530,7 +5583,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                     const rect = canvas.getBoundingClientRect();
                     const target = _getCanvasTooltipTarget();
                     target.style.left = (rect.left + m.nameW + col * m.charW - _canvasState.offsetX + m.charW / 2) + 'px';
-                    target.style.top = (rect.top + m.charH + row * (_canvasState.rowPitch || m.charH) - _canvasState.offsetY) + 'px';
+                    target.style.top = (rect.top + (m.headerH || m.charH) + row *(_canvasState.rowPitch || m.charH) - _canvasState.offsetY) + 'px';
                     showTooltipAt(tipText, target);
                     return;
                 }
@@ -5548,7 +5601,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
                     const rect = canvas.getBoundingClientRect();
                     const target = _getCanvasTooltipTarget();
                     target.style.left = (rect.left + m.nameW + col * m.charW - _canvasState.offsetX + m.charW / 2) + 'px';
-                    target.style.top = (rect.top + m.charH + row * m.charH - _canvasState.offsetY) + 'px';
+                    target.style.top = (rect.top + (m.headerH || m.charH) + row *m.charH - _canvasState.offsetY) + 'px';
                     showTooltipAt(`${seqObj.header}: ${gaplessPos}`, target);
                     return;
                 }
@@ -6062,6 +6115,447 @@ function toggleAllSections() {
 function recalculateCollapsibleHeights() {
     // No longer needed - hover handles display via CSS
     // Do nothing - let CSS handle everything
+}
+
+// ── Annotation track (BED) ─────────────────────────────────────────────────
+// One compact track above the ruler of every block (and above the Canvas
+// ruler) showing BED features: the genes of a mitogenome, exons, repeats.
+// BED coordinates are 0-based, half-open, on the sequence named in column 1;
+// the track maps them through that row's gaps to alignment columns on every
+// render, so gap edits keep the features in place. A chrom of "*", ".",
+// "alignment" or "columns" means alignment columns directly. Columns 4-9
+// (name, score, strand, thickStart, thickEnd, itemRgb) are used when present;
+// a 13th column is a free-text description shown in the tooltip. Overlapping
+// features go to further lanes (at most ANNOT_MAX_LANES). Hovering a feature
+// shows its coordinates; clicking it selects its columns (Shift adds).
+const ANNOT_MAX_LANES = 6;
+const ANNOT_PALETTE = ['#5c6bc0', '#26a69a', '#ef5350', '#8d6e63', '#ab47bc', '#ffa726', '#42a5f5', '#9ccc65'];
+const ANNOT_ALIGNMENT_CHROMS = new Set(['*', '.', 'alignment', 'columns', 'msa']);
+
+function parseBedText(text) {
+    const features = [];
+    let trackName = '';
+    let skipped = 0;
+    for (const raw of String(text || '').split(/\r?\n/)) {
+        const line = raw.trim();
+        if (!line || line.startsWith('#') || line.startsWith('browser')) continue;
+        if (/^track(\s|$)/.test(line)) {
+            const m = /name=(?:"([^"]*)"|(\S+))/.exec(line);
+            if (m) trackName = m[1] != null ? m[1] : m[2];
+            continue;
+        }
+        const f = line.includes('\t') ? line.split('\t') : line.split(/\s+/);
+        const start = parseInt(f[1], 10), end = parseInt(f[2], 10);
+        if (f.length < 3 || !Number.isFinite(start) || !Number.isFinite(end) || end <= start || start < 0) { skipped++; continue; }
+        let color = null;
+        const rgb = (f[8] || '').trim();
+        if (/^\d+,\d+,\d+$/.test(rgb)) {
+            color = '#' + rgb.split(',').map(v => Math.max(0, Math.min(255, +v)).toString(16).padStart(2, '0')).join('');
+        } else if (/^#[0-9a-f]{6}$/i.test(rgb)) {
+            color = rgb;
+        }
+        const strand = f[5] === '+' || f[5] === '-' ? f[5] : '';
+        const score = f[4] != null && f[4] !== '' && f[4] !== '.' ? Number(f[4]) : null;
+        features.push({
+            chrom: f[0].trim(), start, end,
+            name: (f[3] || '').trim() || `${f[0].trim()}:${start + 1}-${end}`,
+            score: Number.isFinite(score) ? score : null,
+            strand, color,
+            desc: f.length > 12 ? f.slice(12).join(' ').trim() : ''
+        });
+    }
+    return { trackName, features, skipped };
+}
+
+// A colour for a feature without itemRgb: mitochondrial gene classes get fixed
+// colours, anything else a stable colour from its name.
+function _annotGuessColor(name) {
+    const n = name.toLowerCase();
+    if (/^(trn|trna)/.test(n)) return '#7cb342';
+    if (/rrna|^rrn|^(12s|16s|18s|28s|5\.8s|5s)\b/.test(n)) return '#fb8c00';
+    if (/d-loop|control|^cr$/.test(n)) return '#9e9e9e';
+    if (/^(nd|nad)\d/.test(n)) return '#1e88e5';
+    if (/^(cox|co)\d/.test(n)) return '#0097a7';
+    if (/^atp/.test(n)) return '#7e57c2';
+    if (/^(cytb|cob)/.test(n)) return '#3949ab';
+    let h = 0;
+    for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) >>> 0;
+    return ANNOT_PALETTE[h % ANNOT_PALETTE.length];
+}
+
+function _annotTextColor(hex) {
+    const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+    if (!m) return '#fff';
+    const [r, g, b] = [m[1], m[2], m[3]].map(x => parseInt(x, 16));
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 165 ? '#1a1a1a' : '#fff';
+}
+
+// chrom -> 'cols' (alignment columns), a sequence index, or -1. Exact name
+// first (display name, first word of the header, whole header), then the
+// first row whose name contains the chrom (version suffix ignored), so
+// "NC_069019.1" finds "Sbet_NC_069019_DK_BMNT".
+function _annotResolveChrom(chrom) {
+    const c = String(chrom || '').trim();
+    if (ANNOT_ALIGNMENT_CHROMS.has(c.toLowerCase())) return 'cols';
+    const seqs = state.seqs || [];
+    const firstTok = s => String(s.fullHeader || s.header || '').split(/\s+/)[0];
+    let i = seqs.findIndex(s => s.header === c);
+    if (i < 0) i = seqs.findIndex(s => firstTok(s) === c);
+    if (i < 0) i = seqs.findIndex(s => s.fullHeader === c);
+    if (i < 0) {
+        const lc = c.toLowerCase().replace(/\.\d+$/, '');
+        if (lc) i = seqs.findIndex(s => String(s.header || '').toLowerCase().includes(lc) || String(s.fullHeader || '').toLowerCase().includes(lc));
+    }
+    return i;
+}
+
+function _annotTrackVisible() {
+    return !!(state.annot && state.annot.features.length && el('showAnnotation')?.checked !== false);
+}
+
+// Places the loaded features on alignment columns and lanes for this render.
+// state._annotLayout is null when there is nothing to draw (no annotation,
+// hidden, no feature on a known sequence, or Variable sites only in a span
+// view, where the columns on screen are not the alignment's columns).
+function _prepareAnnotLayout(len) {
+    state._annotLayout = null;
+    state._annotReport = null;
+    const a = state.annot;
+    if (!a || !a.features.length || !state.seqs?.length) return;
+    const chromIdx = new Map();
+    const maps = new Map();
+    const unmatched = new Map();
+    let outside = 0;
+    const feats = [];
+    for (const f of a.features) {
+        if (!chromIdx.has(f.chrom)) chromIdx.set(f.chrom, _annotResolveChrom(f.chrom));
+        const si = chromIdx.get(f.chrom);
+        let cs, ce;
+        if (si === 'cols') {
+            cs = f.start; ce = Math.min(len, f.end) - 1;
+        } else if (si < 0) {
+            unmatched.set(f.chrom, (unmatched.get(f.chrom) || 0) + 1);
+            continue;
+        } else {
+            let map = maps.get(si);
+            if (!map) {
+                const seq = state.seqs[si].seq;
+                const cols = [];
+                for (let p = 0; p < seq.length; p++) { const ch = seq[p]; if (ch !== '-' && ch !== '.') cols.push(p); }
+                map = Int32Array.from(cols);
+                maps.set(si, map);
+            }
+            if (f.start >= map.length) { outside++; continue; }
+            cs = map[f.start];
+            ce = map[Math.min(f.end, map.length) - 1];
+        }
+        if (!(cs >= 0) || !(ce >= cs) || cs >= len) { outside++; continue; }
+        feats.push({ f, cs, ce: Math.min(ce, len - 1), seqIndex: si, color: f.color || _annotGuessColor(f.name), lane: 0 });
+    }
+    feats.sort((x, y) => x.cs - y.cs || y.ce - x.ce);
+    const laneEnd = [];
+    for (const d of feats) {
+        let lane = laneEnd.findIndex(e => e < d.cs);
+        if (lane < 0) {
+            if (laneEnd.length < ANNOT_MAX_LANES) { lane = laneEnd.length; laneEnd.push(-1); }
+            else lane = ANNOT_MAX_LANES - 1;
+        }
+        d.lane = lane;
+        laneEnd[lane] = Math.max(laneEnd[lane], d.ce);
+    }
+    feats.forEach((d, i) => { d.fg = _annotTextColor(d.color); d.id = i; });
+    const chroms = [...new Set(feats.map(d => d.seqIndex === 'cols' ? 'alignment columns' : state.seqs[d.seqIndex]?.header))];
+    state._annotReport = { placed: feats.length, lanes: Math.max(1, laneEnd.length), unmatched, outside, chroms };
+    const hiddenByVarSites = !!state._varSiteHiddenRanges && isSpanRenderMode();
+    if (feats.length && _annotTrackVisible() && !hiddenByVarSites) {
+        state._annotLayout = { feats, lanes: Math.max(1, laneEnd.length), label: a.trackName || a.sourceName || 'annotation' };
+    }
+    updateAnnotPanel();
+}
+
+function _annotFeatsInRange(colStart, colEnd) {
+    const L = state._annotLayout;
+    if (!L) return [];
+    return L.feats.filter(d => d.ce >= colStart && d.cs <= colEnd);
+}
+
+// Fills a track's .seq-data with the features overlapping colStart..colEnd
+// (inclusive). cw: the measured column width in px for a column-windowed
+// block (positions must agree with the rows' px padding), or null to use ch.
+function _fillAnnotTrackData(data, colStart, colEnd, cw) {
+    const n = colEnd - colStart + 1;
+    const u = v => cw ? (v * cw) + 'px' : v + 'ch';
+    const parts = [`<div class="annot-track-inner" style="width:${u(n)}">`];
+    for (const d of _annotFeatsInRange(colStart, colEnd)) {
+        const s = Math.max(d.cs, colStart), e = Math.min(d.ce, colEnd);
+        const w = e - s + 1;
+        const clipL = d.cs < colStart, clipR = d.ce > colEnd;   // cut by the window: no arrow head on that side
+        const arrow = d.f.strand === '+' && !clipR ? ' plus' : d.f.strand === '-' && !clipL ? ' minus' : '';
+        const label = w >= d.f.name.length * 0.75 + 2 ? `<span class="annot-feat-label">${_escapeHtml(d.f.name)}</span>` : '';
+        parts.push(`<div class="annot-feat${arrow}${w < 3 ? ' narrow' : ''}" data-fi="${d.id}" style="left:${u(s - colStart)};width:${u(w)};top:${d.lane}em;background:${d.color};color:${d.fg}">${label}</div>`);
+    }
+    parts.push('</div>');
+    data.innerHTML = parts.join('');
+}
+
+// Where a feature label sticks while its box is partly scrolled off: just right of the
+// name column. Measured from a rendered name cell, once per name width and font size.
+let _annotLabelLeftKey = null;
+function _syncAnnotLabelLeft() {
+    const key = effectiveNameLength() + ':' + (alignmentContainer.style.fontSize || '');
+    if (key === _annotLabelLeftKey) return;
+    const nm = alignmentContainer.querySelector('.seq-line[data-seq-index] > .seq-name');
+    if (!nm) return;   // first block of a windowed render: measured on the next one
+    const left = nm.getBoundingClientRect().right - alignmentContainer.getBoundingClientRect().left + 4;
+    alignmentContainer.style.setProperty('--annot-label-left', Math.max(0, left).toFixed(1) + 'px');
+    _annotLabelLeftKey = key;
+}
+
+function _buildAnnotTrackLine(colStart, colEnd, cw) {
+    const L = state._annotLayout;
+    if (!L) return null;
+    _syncAnnotLabelLeft();
+    const line = document.createElement('div');
+    line.className = 'annot-track-line';
+    line.style.height = L.lanes + 'em';
+    const name = document.createElement('div');
+    name.className = `seq-name annot-track-name ${el('stickyNames')?.checked === false ? 'static' : ''}`;
+    const maxChars = Math.max(6, Math.floor(effectiveNameLength() * 1.3));
+    name.innerHTML = `<span class="annot-track-label">${_escapeHtml(_truncName(L.label, maxChars))}</span>`;
+    name.title = `${L.label}: ${L.feats.length} feature${L.feats.length === 1 ? '' : 's'}`;
+    line.appendChild(name);
+    const data = document.createElement('div');
+    data.className = 'seq-data annot-track-data';
+    _fillAnnotTrackData(data, colStart, colEnd, cw);
+    line.appendChild(data);
+    line.addEventListener('mouseover', e => {
+        const fe = e.target.closest('.annot-feat');
+        const d = fe && state._annotLayout?.feats[+fe.dataset.fi];
+        if (d) showTooltipAt(_annotTooltipHtml(d), fe, { html: true, className: 'annot-tip' });
+    });
+    line.addEventListener('mouseout', e => { if (e.target.closest('.annot-feat')) hideTooltip(); });
+    line.addEventListener('click', e => {
+        const fe = e.target.closest('.annot-feat');
+        if (!fe) return;
+        e.stopPropagation();
+        _annotSelectFeature(+fe.dataset.fi, e.shiftKey || isCtrlModifier(e));
+    });
+    return line;
+}
+
+// Non-windowed Full/Block render: the tracks go in after the rows exist, so
+// the boxes can use the measured width of a residue span. ch units were
+// measured 0.011 px per column off the spans: 180 px over a 16 kb row.
+function _insertAnnotTracks(container) {
+    if (!state._annotLayout) return;
+    let cw = null;
+    container.querySelectorAll(':scope > .block-block').forEach(block => {
+        const ruler = block.querySelector(':scope > .scale-ruler-line > .seq-data[data-scale]');
+        if (!ruler) return;
+        const [n, start] = ruler.dataset.scale.split(':').map(Number);
+        if (cw == null) {
+            const span = block.querySelector('.seq-line[data-seq-index] .seq-data span[data-pos]');
+            cw = span ? span.getBoundingClientRect().width : 0;
+        }
+        const track = _buildAnnotTrackLine(start, start + n - 1, cw || null);
+        if (track) block.insertBefore(track, block.firstChild);
+    });
+}
+
+function _annotTooltipHtml(d) {
+    const f = d.f;
+    const fmt = n => n.toLocaleString();
+    const where = d.seqIndex === 'cols' ? 'alignment columns' : _escapeHtml(state.seqs[d.seqIndex]?.header || f.chrom);
+    let h = `<b>${_escapeHtml(f.name)}</b>`;
+    if (f.desc) h += `<br>${_escapeHtml(f.desc)}`;
+    h += `<br>${where}: ${fmt(f.start + 1)}&ndash;${fmt(f.end)}${f.strand ? ' (' + f.strand + ')' : ''}, ${fmt(f.end - f.start)} bp`;
+    if (d.seqIndex !== 'cols') h += `<br>columns ${fmt(d.cs + 1)}&ndash;${fmt(d.ce + 1)}`;
+    if (f.score != null) h += `<br>score ${f.score}`;
+    return h;
+}
+
+function _annotSelectFeature(fi, additive) {
+    const d = state._annotLayout?.feats[fi];
+    if (!d) return;
+    if (!additive) state.selectedColumns.clear();
+    for (let p = d.cs; p <= d.ce; p++) state.selectedColumns.add(p);
+    state.lastSelectedColumn = d.ce;
+    hideTooltip();
+    updateColumnSelections();
+    if (isCanvasMode()) _canvasState.scheduleDraw?.();
+    showMessage(`${d.f.name}: columns ${(d.cs + 1).toLocaleString()}-${(d.ce + 1).toLocaleString()} selected`, 2500);
+}
+
+// Canvas mode: the track is drawn above the ruler; TRACK_H is its height.
+function _annotTrackHeightPx(charH) {
+    const L = state._annotLayout;
+    return L ? L.lanes * charH : 0;
+}
+
+function _canvasDrawAnnotTrack(ctx, o) {
+    const L = state._annotLayout;
+    const { ox, oy, w, NAME_W, CHAR_W, CHAR_H, TRACK_H, firstCol, lastCol, stickyNames, fontSizePx } = o;
+    if (!L || TRACK_H <= 0) return;
+    const y0 = -oy;
+    if (y0 + TRACK_H <= 0) return;
+    ctx.save();
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, y0, w, TRACK_H);
+    const labelFont = Math.max(8, Math.round(fontSizePx * 0.72)) + 'px Arial, Helvetica, sans-serif';
+    const dataLeft = stickyNames ? NAME_W : Math.max(0, NAME_W - ox);
+    for (const d of _annotFeatsInRange(firstCol, lastCol)) {
+        const x0 = NAME_W + d.cs * CHAR_W - ox, x1 = NAME_W + (d.ce + 1) * CHAR_W - ox;
+        const y = y0 + d.lane * CHAR_H + 1, hh = CHAR_H - 2;
+        const ah = Math.min(6, (x1 - x0) / 2);
+        ctx.fillStyle = d.color;
+        ctx.beginPath();
+        if (d.f.strand === '+') {
+            ctx.moveTo(x0, y); ctx.lineTo(x1 - ah, y); ctx.lineTo(x1, y + hh / 2); ctx.lineTo(x1 - ah, y + hh); ctx.lineTo(x0, y + hh);
+        } else if (d.f.strand === '-') {
+            ctx.moveTo(x0 + ah, y); ctx.lineTo(x1, y); ctx.lineTo(x1, y + hh); ctx.lineTo(x0 + ah, y + hh); ctx.lineTo(x0, y + hh / 2);
+        } else {
+            ctx.rect(x0, y, x1 - x0, hh);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.font = labelFont;
+        const tw = ctx.measureText(d.f.name).width;
+        if (tw + 8 + ah <= x1 - x0) {
+            // The label stays on screen while its box is partly scrolled off to the left
+            const lx = Math.min(Math.max(x0, dataLeft) + 4, x1 - ah - 4 - tw);
+            ctx.fillStyle = d.fg;
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'left';
+            ctx.fillText(d.f.name, lx, y + hh / 2);
+        }
+    }
+    // Name cell: the track label, over whatever scrolled under it (as the rows do)
+    const nameX0 = stickyNames ? 0 : -ox;
+    if (stickyNames || ox < NAME_W) {
+        ctx.beginPath();
+        ctx.rect(0, y0, NAME_W, TRACK_H);
+        ctx.clip();
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(nameX0, y0, NAME_W, TRACK_H);
+        ctx.fillStyle = '#777';
+        ctx.font = labelFont;
+        ctx.textBaseline = 'middle';
+        ctx.textAlign = 'left';
+        ctx.fillText(_truncName(L.label, Math.max(6, Math.floor(NAME_W / (fontSizePx * 0.42)))), nameX0 + 4, y0 + CHAR_H / 2);
+    }
+    ctx.restore();
+    ctx.textBaseline = 'top';
+    ctx.textAlign = 'start';
+}
+
+// The feature under a Canvas-mode pointer position, or null.
+function _canvasHitTestAnnot(clientX, clientY) {
+    const L = state._annotLayout;
+    const canvas = _canvasState.canvas;
+    const m = _canvasState.metrics;
+    if (!L || !canvas || !m || !m.trackH) return null;
+    const rect = canvas.getBoundingClientRect();
+    const x = clientX - rect.left;
+    const y = clientY - rect.top + _canvasState.offsetY;
+    if (y < 0 || y >= m.trackH || x < m.nameW) return null;
+    const col = Math.floor((x - m.nameW + _canvasState.offsetX) / m.charW);
+    const lane = Math.floor(y / m.charH);
+    const d = L.feats.find(q => q.lane === lane && q.cs <= col && q.ce >= col);
+    return d ? { d, col, lane } : null;
+}
+
+// Loading, clearing, the Settings panel
+function setAnnotation(text, sourceName) {
+    const parsed = parseBedText(text);
+    if (!parsed.features.length) {
+        showMessage(`No BED features found in ${sourceName}`, 4000);
+        return false;
+    }
+    state.annot = { text: String(text), sourceName, trackName: parsed.trackName, features: parsed.features, skippedLines: parsed.skipped };
+    if (state.seqs?.length) renderAlignment(); else updateAnnotPanel();
+    showMessage(`Annotation: ${parsed.features.length} feature${parsed.features.length === 1 ? '' : 's'} from ${sourceName}`, 3000);
+    return true;
+}
+
+function clearAnnotation() {
+    if (!state.annot) return;
+    state.annot = null;
+    state._annotLayout = null;
+    state._annotReport = null;
+    if (state.seqs?.length) renderAlignment();
+    updateAnnotPanel();
+}
+
+function loadAnnotationFromUrl(u) {
+    const url = String(u || '').trim();
+    if (!url) return Promise.resolve(false);
+    showMessage('Loading annotation...', 0);
+    return fetch(url)
+        .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+        .then(t => setAnnotation(t, url.split('/').pop() || url))
+        .catch(err => {
+            console.warn('[annot] load failed:', err);
+            showMessage(`Failed to load annotation: ${err.message}`, 5000);
+            return false;
+        });
+}
+
+function updateAnnotPanel() {
+    const st = el('annotStatus');
+    if (!st) return;
+    const a = state.annot;
+    const clearBtn = el('annotClearButton');
+    if (clearBtn) clearBtn.disabled = !a;
+    if (!a) {
+        st.textContent = 'No annotation loaded. BED columns: sequence name (as in the alignment, or * for alignment columns), start, end, name, score, strand, ., ., itemRgb; a 13th column is shown in the tooltip.';
+        return;
+    }
+    const plural = (n, w) => `${n.toLocaleString()} ${w}${n === 1 ? '' : 's'}`;
+    let s = `${a.trackName || a.sourceName}: ${plural(a.features.length, 'feature')}`;
+    const r = state._annotReport;
+    if (r) {
+        if (r.placed) s += `, ${r.placed === a.features.length ? 'all' : r.placed.toLocaleString()} placed on ${r.chroms.join(', ')} (${plural(r.lanes, 'lane')})`;
+        if (r.unmatched.size) s += `. Skipped: ` + [...r.unmatched].map(([c, n]) => `${n} on "${c}" (no such sequence)`).join(', ');
+        if (r.outside) s += `. ${r.outside} outside the sequence`;
+    }
+    if (el('showAnnotation')?.checked === false) s += '. Hidden';
+    else if (r && r.placed && !state._annotLayout && state._varSiteHiddenRanges) s += '. Not shown with Variable sites only';
+    if (a.skippedLines) s += `. ${plural(a.skippedLines, 'malformed line')} ignored`;
+    st.textContent = s;
+}
+
+function initAnnotationPanel() {
+    const cb = el('showAnnotation');
+    if (cb && !cb._annotBound) {
+        cb._annotBound = true;
+        cb.addEventListener('change', () => {
+            if (state.annot && state.seqs?.length) renderAlignment();
+            updateAnnotPanel();
+        });
+    }
+    const fileBtn = el('annotFileButton'), fileIn = el('annotFileInput');
+    if (fileBtn && fileIn && !fileBtn._annotBound) {
+        fileBtn._annotBound = true;
+        fileBtn.addEventListener('click', () => { fileIn.value = ''; fileIn.click(); });
+        fileIn.addEventListener('change', () => {
+            const f = fileIn.files && fileIn.files[0];
+            if (f) f.text().then(t => setAnnotation(t, f.name));
+        });
+    }
+    const urlBtn = el('annotUrlButton'), urlIn = el('annotUrlInput');
+    if (urlBtn && urlIn && !urlBtn._annotBound) {
+        urlBtn._annotBound = true;
+        urlBtn.addEventListener('click', () => loadAnnotationFromUrl(urlIn.value));
+        urlIn.addEventListener('keydown', e => {
+            if (e.key === 'Enter') { e.preventDefault(); loadAnnotationFromUrl(urlIn.value); }
+        });
+    }
+    const clr = el('annotClearButton');
+    if (clr && !clr._annotBound) {
+        clr._annotBound = true;
+        clr.addEventListener('click', clearAnnotation);
+    }
+    updateAnnotPanel();
 }
 
 function generateScale(maxLength, interval = 10, startPos = 0) {
@@ -7585,6 +8079,7 @@ function renderAlignment(options = {}) {
     // (which returns early) so Canvas mode has access to _diffColumns,
     // _brkBeforePos and _brkInfo for breakpoint marker rendering.
     _computeVarSites(len);
+    _prepareAnnotLayout(len);
 
     // -- Canvas fast path (UGENE-style: first paint costs only the visible region) --
     // Canvas shows no consensus row, so consensus is skipped entirely here.
@@ -7700,6 +8195,7 @@ function renderAlignment(options = {}) {
             const blockDiv = _buildBlockElement(start, end, len, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, shouldRenderConsensus, consensusPosition, consensus, options);
             alignmentContainer.appendChild(blockDiv);
         }
+        _insertAnnotTracks(alignmentContainer);
     }
     setTimeout(() => {
         toggleStickyNames();
@@ -11931,7 +12427,8 @@ function _buildSnapshotPayload() {
             searchValue: h.searchValue, useRegex: !!h.useRegex, maxMismatches: h.maxMismatches || 0,
             enabled: h.enabled !== false, matchCount: h.matchCount || 0, sequencesWithMatches: h.sequencesWithMatches || 0
         })) : null,
-        selections: _snapshotSelections()
+        selections: _snapshotSelections(),
+        annotation: state.annot ? { text: state.annot.text, sourceName: state.annot.sourceName, shown: el('showAnnotation')?.checked !== false } : null
     };
 }
 
@@ -12082,6 +12579,14 @@ function _loadSnapshotPayload(payload) {
         }
         // Older snapshots have no selections: still clear what the previous session showed
         _applySnapshotSelections(payload.selections || {});
+        // The annotation track is part of what was saved (none saved: none shown)
+        if (payload.annotation && typeof payload.annotation.text === 'string') {
+            const cb = el('showAnnotation');
+            if (cb) cb.checked = payload.annotation.shown !== false;
+            setAnnotation(payload.annotation.text, payload.annotation.sourceName || 'snapshot');
+        } else {
+            clearAnnotation();
+        }
     });
 }
 
@@ -20546,6 +21051,7 @@ function initializeAppUI() {
     //   ?data=<base64_encoded_text>        - decode inline data
     //   ?title=<text>                      - optional display title
     //   ?mask=<url>                        - fetch a 2D block-mask JSON and overlay it
+    //   ?bed=<url>                         - fetch a BED file and show it as the annotation track
     const urlParams = new URLSearchParams(window.location.search);
     const autoSnapshot = urlParams.get('snapshot');
     const autoSnapshotFile = urlParams.get('snapshotFile');
@@ -20553,6 +21059,12 @@ function initializeAppUI() {
     const autoData  = urlParams.get('data');
     const autoTitle = urlParams.get('title');
     const autoMask  = urlParams.get('mask');
+    const autoBed   = urlParams.get('bed');
+    // Loaded after the alignment: the mask overlay, then the annotation track
+    const _loadUrlExtras = () => {
+        const p = autoMask ? _loadBlockMaskFromUrl(autoMask) : Promise.resolve();
+        return autoBed ? p.then(() => loadAnnotationFromUrl(autoBed)) : p;
+    };
     const _loadBlockMaskFromUrl = (u) => fetch(u)
         .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
         .then(j => {
@@ -20600,7 +21112,7 @@ function initializeAppUI() {
                 state.currentFilename = autoTitle || autoUrl.split('/').pop() || 'URL';
                 return Promise.resolve(parseAndRender(true)).then(() => {
                     showMessage('Alignment loaded from URL', 2000);
-                    if (autoMask) return _loadBlockMaskFromUrl(autoMask);
+                    return _loadUrlExtras();
                 });
             })
             .catch(err => {
@@ -20615,7 +21127,7 @@ function initializeAppUI() {
             state.currentFilename = autoTitle || 'Inline data';
             Promise.resolve(parseAndRender(true)).then(() => {
                 showMessage('Alignment loaded from inline data', 2000);
-                if (autoMask) return _loadBlockMaskFromUrl(autoMask);
+                return _loadUrlExtras();
             });
         } catch (err) {
             console.error('Inline data decode failed:', err);
@@ -20628,6 +21140,7 @@ function initializeAppUI() {
     initTreeBuilderControls();
     initResEnzymeSearch();
     initBlockMaskPanel();
+    initAnnotationPanel();
     updateBamButtonVisibility();
 }
 

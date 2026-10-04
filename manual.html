@@ -233,6 +233,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
       <a href="#co-display">6.1 Consensus Display</a>
       <a href="#co-thresholds">6.2 Thresholds &amp; Coverage</a>
       <a href="#co-group">6.3 Group Consensus</a>
+      <a href="#an-track">6.4 Annotation track (BED)</a>
     </div>
   </div>
 
@@ -1327,6 +1328,33 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     consensus row into the alignment under the selection. The Group explorer
     can also copy an ungapped consensus to the clipboard without inserting a
     row. Useful for extracting a representative of each subfamily.
+  </p>
+
+  <h3 id="an-track">6.4 Annotation track (BED)</h3>
+  <p>
+    The <strong>Annotation</strong> menu (next to Consensus) puts a compact feature track
+    above the alignment: the genes of a mitogenome, exons, repeats, primers. Load a BED
+    file (<strong>Load BED file</strong>), a URL (<strong>Load URL</strong>), or open the
+    viewer with <code>?bed=&lt;url&gt;</code> next to <code>?url=</code>. The track is drawn
+    in Full, Block and Canvas modes; <strong>Show annotation track</strong> hides it without
+    unloading it, <strong>Clear</strong> removes it. It is saved in snapshots.
+  </p>
+  <table>
+    <tr><th>BED column</th><th>Use</th></tr>
+    <tr><td>1 chrom</td><td>The sequence the coordinates refer to: a sequence name of the alignment (the display name, the first word of the header, or a name that contains it, e.g. <code>NC_069019.1</code> for <code>Sbet_NC_069019_DK_BMNT</code>). <code>*</code>, <code>.</code>, <code>alignment</code> or <code>columns</code> means alignment columns</td></tr>
+    <tr><td>2-3 start, end</td><td>0-based, half-open, on the ungapped sequence. They are mapped through that row's gaps at every redraw, so the features follow gap edits</td></tr>
+    <tr><td>4 name</td><td>The label in the box (shown when it fits) and in the tooltip</td></tr>
+    <tr><td>5 score, 6 strand</td><td>Score in the tooltip; <code>+</code>/<code>-</code> draw an arrow head on the box</td></tr>
+    <tr><td>9 itemRgb</td><td><code>R,G,B</code> fill colour. Without it, mitochondrial gene names (ND, COX, ATP, CYTB, tRNA, rRNA, control region) get fixed colours and other names a stable colour from their text</td></tr>
+    <tr><td>13 (extra)</td><td>Free text shown in the tooltip, e.g. the GenBank product</td></tr>
+  </table>
+  <p>
+    Overlapping features go to further lanes (up to six). Hover a feature for its name,
+    description, coordinates on the sequence and the alignment columns; click it to
+    select those columns (Shift adds to the selection), then use the column tools as
+    usual. Features on a name that is not in the alignment are skipped and counted in
+    the menu's status line. The track is not drawn while <em>Variable sites only</em>
+    hides columns in Full or Block mode.
   </p>
 </section>
 
