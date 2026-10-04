@@ -19,6 +19,8 @@ No installation, no build step, no framework dependencies.
   align new sequences with no server
 - **Codon-aware analysis**: 15 NCBI genetic codes, synonymous/non-synonymous classification,
   frameshift detection, translation track
+- **Codon-aware alignment**: a JavaScript port of MACSE v2.07 `alignSequences` (same alignments as MACSE),
+  plus a fast reference-based approximation
 - **Subfamily clustering**: position-pattern clustering with fuzzy merging and configurable
   quality thresholds, plus diagnostic-feature tables and cluster colouring
 - **Sequence search**: BLAST-*like* search against loaded FASTA databases, runs entirely
@@ -117,6 +119,11 @@ For short, stable links on GitHub Pages:
 - Queue file at `/tmp/.msa_viewer_queue` must be world-writable (666)
 - All file transfers encrypted over SSH
 - Manual "Check Queue" button prevents continuous polling (safer for IDS-protected servers)
+
+## Licence
+
+ViewAlign is released under the MIT License (`LICENSE`). `macse-align.js` is a port of MACSE v2.07
+(Ranwez et al. 2011, 2018) and is distributed under MACSE's CeCILL 2.1 licence (`LICENSE-MACSE`).
 
 ## Support
 

@@ -627,8 +627,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="al-codon-align">3.2.2 Codon-aware alignment of coding sequences</h3>
   <p>
     Setting <strong>Sequence type</strong> to <strong>Coding sequence (codon, frameshift-aware)</strong> replaces MAFFT
-    with a built-in aligner for protein-coding nucleotide sequences, modelled on MACSE (Ranwez et al. 2011, 2018) and
-    written for this viewer in plain JavaScript (<code>codon-align.js</code>, run in a worker). It applies to
+    with a built-in aligner for protein-coding nucleotide sequences, run in a worker. It applies to
     <strong>Realign All</strong>, <strong>Realign Selected</strong> and <strong>Add &amp; Align</strong>, and honours
     <strong>Adjust direction</strong> (reverse-complemented coding sequences are flipped first). Sequences must be
     nucleotide CDS (DNA or RNA, upper or lower case, IUPAC codes allowed) in frame at their first nucleotide; protein
@@ -641,27 +640,44 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     (<code>---</code>) or a <em>frameshifted codon</em>: one or two real nucleotides, with the missing bases written as
     <code>-</code>, so the result is a plain nucleotide alignment and <a href="#di-codons">Codon analysis</a> marks the
     frameshifts and stop codons. (MACSE writes the missing bases as <code>!</code>; the viewer treats only <code>-</code>
-    and <code>.</code> as gaps, so <code>!</code> is not used here.) Codon pairs are scored with BLOSUM62 plus a small
-    nucleotide-identity bonus; gaps are affine (open 10, extension 1); every frameshifted codon costs 40 and every internal
-    stop codon 50, so that a single stop is kept in frame rather than being explained away by two frameshifts.
+    and <code>.</code> as gaps, so <code>!</code> is not used here.) The Codon alignment settings offer two methods.
   </p>
   <p>
-    One <strong>reference</strong> sequence defines the reading frame of the columns: the name typed in the Codon
-    alignment settings, or else the first row (as displayed) among the sequences being aligned. The other sequences are
-    aligned to it pairwise (banded Gotoh dynamic programming) and merged centre-star fashion. A first pass with a free
+    <strong>MACSE v2.07 (exact)</strong>, the default, is a JavaScript port of the <code>alignSequences</code> program of
+    MACSE v2.07 (Ranwez et al. 2011, 2018), file <code>macse-align.js</code>. It was ported class by class from the
+    MACSE v2.07 release and gives the same alignment as <code>java -jar macse_v2.07.jar -prog alignSequences</code> with the
+    same settings: on 2,636 four-species mammalian BUSCO genes every row of every alignment was identical to MACSE's output,
+    including the position of every frameshift. The algorithm is MACSE's: distances from maximal exact matches in the
+    three reading frames, a guide tree, progressive alignment of profiles nucleotide by nucleotide (codons scored with
+    BLOSUM62 as sums over all pairs of sequences, frameshift and stop-codon costs, gap openings counted from codon
+    patterns), then refinement by cutting the tree and realigning the two parts until the score stops improving.
+    The settings are MACSE's <code>-fs</code> (internal frameshift, default 30) and <code>-stop</code> (internal stop
+    codon, default 50); the other options keep MACSE's defaults (gap opening 7, extension 1, terminal gap opening 6.3 and
+    extension 0.9, terminal frameshift 10, standard genetic code). The run time is that of MACSE's algorithm without the
+    Java start-up: on one computer it took 0.7 to 32 s per four-species gene of 0.4 to 3.6 kb, 1.7 to 2.6 times faster
+    than MACSE itself (median 2.1). The busy indicator shows the stage. MACSE reads U and IUPAC codes other than R, Y and N as N;
+    the viewer aligns U as T and puts each sequence's own letters back into the result. Sequence names do not affect the
+    alignment (internal names are used, so commas, brackets and repeated names are safe). Alignments that would need
+    more than about 500 MB of memory are refused with a message. <code>macse-align.js</code> is distributed under
+    MACSE's CeCILL 2.1 licence (file <code>LICENSE-MACSE</code>).
+  </p>
+  <p>
+    <strong>fast (approximate)</strong> is written for this viewer (<code>codon-align.js</code>, from the published method
+    description, no MACSE code) and is much faster on long or many sequences. One <strong>reference</strong> sequence
+    defines the reading frame of the columns: the name typed in its settings, or else the first row (as displayed) among
+    the sequences being aligned. The other sequences are aligned to it pairwise (banded Gotoh dynamic programming) and
+    merged centre-star fashion. Codon pairs are scored with BLOSUM62 plus a small nucleotide-identity bonus; gaps are affine
+    (open 10, extension 1); every frameshifted codon costs 40 and every internal stop codon 50. A first pass with a free
     reference frame finds frameshifts that belong to the reference itself: a reference frameshift supported by at least half
     of the other sequences (at least two when there are three or more sequences) is fixed into the reference before the final
-    pass. The reference is taken to be in frame at its first nucleotide. Pick a complete, clean coding sequence as reference.
-    After alignment the status line reports the reference used, the number of frameshifted codons and internal stops (details
-    in the browser console), and warns if a typed reference name was not found.
+    pass. Pick a complete, clean coding sequence as reference. On the 2,636 BUSCO genes it reproduces 98.9% of MACSE's
+    homologous nucleotide pairs (median 99.7%) in a median 0.7 s per gene; differences are concentrated in poorly conserved
+    regions and in the attribution of compensating frameshifts. Pairs that would need more than about 300 MB of working
+    memory are refused with a message; trim them first.
   </p>
   <p>
-    Compared with MACSE v2.07 on 2,636 four-species mammalian BUSCO genes, the aligner reproduces 98.9% of MACSE's
-    homologous nucleotide pairs (median 99.7%) and takes a median 0.7 s per gene on one core instead of minutes.
-    Differences are concentrated in poorly conserved regions and in the attribution of compensating frameshifts; MACSE aligns
-    all sequences as profiles and lets every sequence shift frame, which the centre-star design does not. Pairs that would
-    need more than about 300 MB of working memory (very long sequences of very different length) are refused with a message;
-    trim them first. Written from the published method description; no MACSE code is used.
+    After alignment the status line reports the number of frameshifted codons and internal stops (details in the browser
+    console); with the fast method it also names the reference and warns if a typed reference name was not found.
   </p>
   <h3 id="al-addseq">3.3 Adding Sequences</h3>
   <p>
@@ -2100,6 +2116,12 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
       <td>Katoh K, Standley DM (2013) <em>Mol Biol Evol</em> 30:772-780</td>
     </tr>
     <tr>
+      <td><strong>MACSE</strong></td>
+      <td>Default codon-aware aligner (section 3.2.2): <code>macse-align.js</code> is a JavaScript port of MACSE v2.07 <code>alignSequences</code> that gives MACSE's alignments.</td>
+      <td>CeCILL 2.1</td>
+      <td>Ranwez V et al. (2011) <em>PLoS ONE</em> 6:e22594; Ranwez V et al. (2018) <em>Mol Biol Evol</em> 35:2582-2584</td>
+    </tr>
+    <tr>
       <td><strong>@gmod/cram</strong></td>
       <td>CRAM decoding in the browser (<code>vendor/gmod-cram</code>, v14.1.1, unmodified)</td>
       <td>MIT</td>
@@ -2134,7 +2156,7 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
     </tr>
     <tr>
       <td><strong>MACSE</strong></td>
-      <td>Codon-aware visualization with frameshift detection, synonymous/non-synonymous annotation; the built-in frameshift-aware codon aligner (section 3.2.2) follows MACSE's alignment model (codon columns, frameshift and stop-codon costs)</td>
+      <td>Codon-aware visualization with frameshift detection, synonymous/non-synonymous annotation; the default codon aligner (section 3.2.2) is a port of MACSE, and the fast one follows MACSE's alignment model (codon columns, frameshift and stop-codon costs)</td>
       <td>Ranwez V et al. (2011) <em>PLoS ONE</em> 6:e22594; Ranwez V et al. (2018) <em>Mol Biol Evol</em> 35:2582-2584</td>
     </tr>
     <tr>
@@ -2187,7 +2209,8 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
 
   <p style="margin-top:16px;font-size:13px;color:var(--muted);">
     MAFFT is included as a compiled WebAssembly binary under the BSD license, and MAFFT's own copyright applies to that binary. The JBrowse CRAM reader (@gmod/cram) is included unmodified in <code>vendor/gmod-cram</code> under the MIT license, with its licence file. samtools and BLAST+ are optional external programs and are not in this repository. GeneDoc, SPIN, Dotter, EMBOSS, Easel, and HMMER are cited for methods or formats; their source is not included.
-    The ViewAlign source code itself is released under the <strong>MIT License</strong>.
+    <code>macse-align.js</code> is a port of MACSE v2.07 and is distributed under MACSE's CeCILL 2.1 licence (<code>LICENSE-MACSE</code>).
+    The rest of the ViewAlign source code is released under the <strong>MIT License</strong>.
   </p>
 </section>
 

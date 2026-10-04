@@ -11,6 +11,8 @@ node tests/kmer/properties.test.js
 node tests/kmer/cut-reference-check.js
 node tests/realign-region/run.js
 node tests/codon-align/run.js
+node tests/macse-port/worker_test.js
+node tests/macse-port/run_fixtures.js tests/codon-align/fixtures 202190at40674,167757at40674,162343at40674
 node tests/clustering/svk_subset.test.js
 node tests/clustering/guided_small.test.js
 node tests/clustering/multi_dataset.test.js

@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v228';
+const BUILD_TAG = 'v229';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -15772,9 +15772,14 @@ function _initMafftAskPrefs() {
             const node = el(id);
             if (node) node.style.display = on ? '' : 'none';
         }
+        const fast = _codonEngine() === 'fast';
+        const m = el('codonMacseOpts'), f = el('codonFastOpts');
+        if (m) m.style.display = fast ? 'none' : '';
+        if (f) f.style.display = fast ? '' : 'none';
     };
     if (seqTypeSel) {
         seqTypeSel.addEventListener('change', toggleCodonOpts);
+        el('codonEngine')?.addEventListener('change', toggleCodonOpts);
         toggleCodonOpts();
     }
 }
@@ -17733,9 +17738,17 @@ function _runMafftInWorker(fasta, extraArgs) {
     });
 }
 
-// ── Built-in codon aligner (codon-align.js, MACSE-like) ────────────────────
+// ── Built-in codon aligners: macse-align.js (MACSE v2.07 port, default) and codon-align.js (fast) ──────────
+function _codonEngine() {
+    return el('codonEngine')?.value === 'fast' ? 'fast' : 'macse';
+}
+
 function _codonAlignOpts(fasta) {
     const num = (id, dflt) => { const v = parseFloat(el(id)?.value); return isNaN(v) ? dflt : v; };
+    if (_codonEngine() === 'macse') {
+        // MACSE's own cost parameters (-fs, -stop), MACSE defaults 30 and 50
+        return { engine: 'macse', fs: Math.abs(num('macseFs', 30)), stop: Math.abs(num('macseStop', 50)), frameRestored: true };
+    }
     const typed = (el('codonRef')?.value || '').trim();
     let ref = typed;
     if (!ref) {
@@ -17746,6 +17759,7 @@ function _codonAlignOpts(fasta) {
         ref = first ? (first.fullHeader || first.header) : 0;
     }
     return {
+        engine: 'fast',
         frameshift: -Math.abs(num('codonFs', 40)),
         stop: -Math.abs(num('codonStop', 50)),
         ref,
@@ -17760,7 +17774,7 @@ function _isCodonAlignMode() {
     return el('mafftSeqType')?.value === 'codon';
 }
 
-function _runCodonAlignInWorker(fasta, opts) {
+function _runCodonAlignInWorker(fasta, opts, onProgress) {
     return new Promise((resolve, reject) => {
         _cancelActiveMafftWorker();
         const id = Date.now();
@@ -17769,6 +17783,7 @@ function _runCodonAlignInWorker(fasta, opts) {
         _activeMafftReject = reject;
         worker.onmessage = (ev) => {
             if (ev.data?.id !== id) return;
+            if (ev.data.progress) { if (onProgress) onProgress(ev.data.progress); return; }
             _activeMafftWorker = null;
             _activeMafftReject = null;
             worker.terminate();
@@ -17795,9 +17810,14 @@ async function _codonAlignWithUi(fasta, label) {
         const result = await runWithProgress(
             label || 'Aligning coding sequences (codon-aware)...',
             async (updateBusy) => {
-                updateBusy(`${stats.seqCount} seqs, ${stats.totalResidues.toLocaleString()} nt, longest ${stats.maxLen.toLocaleString()}`);
+                const base = `${stats.seqCount} seqs, ${stats.totalResidues.toLocaleString()} nt, longest ${stats.maxLen.toLocaleString()}`;
+                updateBusy(base);
                 await yieldToPaint();
-                return _runCodonAlignInWorker(fasta, opts);
+                const stageText = { distances: 'distances', tree: 'progressive alignment', refine: 'refining' };
+                return _runCodonAlignInWorker(fasta, opts, (p) => {
+                    const it = p.stage === 'refine' && p.iter ? ` (round ${p.iter})` : '';
+                    updateBusy(`${base} · MACSE ${stageText[p.stage] || p.stage}${it} ${p.done}/${p.total}`);
+                });
             },
             '',
             () => { cancelled = true; _cancelActiveMafftWorker(); }
@@ -17810,11 +17830,13 @@ async function _codonAlignWithUi(fasta, label) {
         if (st && st.frameshifts) {
             const fsTot = st.frameshifts.reduce((a, x) => a + x.n, 0);
             const stTot = (st.internalStops || []).reduce((a, x) => a + x.n, 0);
-            const refShort = String(st.ref).split(/\s+/)[0];
-            console.log(`Codon alignment: reference ${st.ref}, ${st.columns} codon columns, ${fsTot} frameshifted codons, ${stTot} internal stops, ${Math.round(st.ms)} ms`, st);
+            const macse = st.engine === 'macse';
+            const refShort = macse ? '' : String(st.ref).split(/\s+/)[0];
+            console.log(`Codon alignment (${macse ? 'MACSE v2.07 port' : 'fast, reference ' + st.ref}): ${st.columns} codon columns, ${fsTot} frameshifted codons, ${stTot} internal stops, ${Math.round(st.ms)} ms`, st);
             const msgs = [];
-            if (opts.refTyped && st.refFound === false) msgs.push(`Reference "${opts.refTyped}" not found; used ${refShort}.`);
-            if (fsTot || stTot) msgs.push(`Codon alignment (ref ${refShort}): ${fsTot} frameshifted codon${fsTot === 1 ? '' : 's'}, ${stTot} internal stop${stTot === 1 ? '' : 's'}. Details in the console.`);
+            if (!macse && opts.refTyped && st.refFound === false) msgs.push(`Reference "${opts.refTyped}" not found; used ${refShort}.`);
+            const what = macse ? 'MACSE' : `ref ${refShort}`;
+            if (fsTot || stTot) msgs.push(`Codon alignment (${what}): ${fsTot} frameshifted codon${fsTot === 1 ? '' : 's'}, ${stTot} internal stop${stTot === 1 ? '' : 's'}. Details in the console.`);
             if (msgs.length) {
                 // The caller shows its own success message right after we return: append to it. If it shows none,
                 // show the note on its own.

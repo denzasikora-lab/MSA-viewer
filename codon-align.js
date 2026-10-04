@@ -441,5 +441,5 @@
         return out;
     }
 
-    return { alignPairwise, alignMultiple, toFasta, parseFasta, translateCodon, DEFAULTS, MOVES };
+    return { alignPairwise, alignMultiple, toFasta, parseFasta, translateCodon, checkNucleotide, DEFAULTS, MOVES };
 }));

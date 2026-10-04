@@ -669,13 +669,20 @@
                                     <option value="2" selected>Nucleotide</option>
                                     <option value="1">Protein (BLOSUM62)</option>
                                     <option value="0">Protein (JTT 200PAM)</option>
-                                    <option value="codon" title="Frameshift-aware codon alignment of coding sequences (MACSE-like, built in): codons scored by BLOSUM62, 1-2 nt indels marked as frameshifts, stop codons penalised. Columns follow the reading frame of one reference sequence.">Coding sequence (codon, frameshift-aware)</option>
+                                    <option value="codon" title="Frameshift-aware codon alignment of coding sequences, built in: MACSE v2.07 (exact port) or a fast reference-based approximation. Codons scored by BLOSUM62, 1-2 nt indels marked as frameshifts, stop codons penalised.">Coding sequence (codon, frameshift-aware)</option>
                                 </select>
                                 <span class="al-head" id="codonAlignHead" style="display:none" title="Settings of the built-in codon aligner (used when Sequence type is Coding sequence)">Codon alignment</span>
                                 <div class="al-checks" id="codonAlignOpts" style="display:none">
-                                    <label title="Penalty for a frameshifted codon (1 or 2 nucleotides instead of 3), in BLOSUM62 units (gap open 10, gap extension 1)."><span class="al-inline">frameshift</span> <input type="number" id="codonFs" value="40" min="0" max="300" step="1" style="width:4em"></label>
-                                    <label title="Penalty for an internal stop codon. Kept below two frameshifts so that a single stop is not explained away by a pair of frameshifts."><span class="al-inline">stop</span> <input type="number" id="codonStop" value="50" min="0" max="300" step="1" style="width:4em"></label>
-                                    <label title="Name of the sequence whose reading frame defines the codon columns (empty = first sequence). Pick a clean, complete coding sequence."><span class="al-inline">reference</span> <input type="text" id="codonRef" placeholder="first sequence" style="width:9em"></label>
+                                    <label title="MACSE v2.07: a JavaScript port of MACSE alignSequences (Ranwez et al. 2011, 2018) that gives the same alignment as MACSE with the same settings. Fast: a reference-based approximation, much quicker for long or many sequences."><span class="al-inline">method</span> <select id="codonEngine"><option value="macse" selected>MACSE v2.07 (exact)</option><option value="fast">fast (approximate)</option></select></label>
+                                    <span id="codonMacseOpts">
+                                        <label title="MACSE -fs: cost of an internal frameshift (default 30; gap opening costs 7, extension 1, BLOSUM62 scores)."><span class="al-inline">frameshift</span> <input type="number" id="macseFs" value="30" min="0" max="300" step="1" style="width:4em"></label>
+                                        <label title="MACSE -stop: cost of an internal stop codon (default 50; MACSE requires less than twice the frameshift cost)."><span class="al-inline">stop</span> <input type="number" id="macseStop" value="50" min="0" max="300" step="1" style="width:4em"></label>
+                                    </span>
+                                    <span id="codonFastOpts" style="display:none">
+                                        <label title="Penalty for a frameshifted codon (1 or 2 nucleotides instead of 3), in BLOSUM62 units (gap open 10, gap extension 1)."><span class="al-inline">frameshift</span> <input type="number" id="codonFs" value="40" min="0" max="300" step="1" style="width:4em"></label>
+                                        <label title="Penalty for an internal stop codon. Kept below two frameshifts so that a single stop is not explained away by a pair of frameshifts."><span class="al-inline">stop</span> <input type="number" id="codonStop" value="50" min="0" max="300" step="1" style="width:4em"></label>
+                                        <label title="Name of the sequence whose reading frame defines the codon columns (empty = first sequence). Pick a clean, complete coding sequence."><span class="al-inline">reference</span> <input type="text" id="codonRef" placeholder="first sequence" style="width:9em"></label>
+                                    </span>
                                 </div>
                                 <label for="mafftGapOpen">Gap open</label>
                                 <span class="al-pair">
@@ -1326,7 +1333,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=277"></script>
+    <script src="script.js?v=278"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

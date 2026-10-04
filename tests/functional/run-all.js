@@ -499,13 +499,16 @@ check('Codon-aware: protein input is refused with a clear message, alignment unc
     return { pass: true, detail: msg };
 });
 
-check('Codon-aware: unknown reference name is reported, lowercase kept, no ! in the result', async (page) => {
+check('Codon-aware (fast engine): unknown reference name is reported, lowercase kept, no ! in the result', async (page) => {
     await loadFasta(page, CODON_TOY.replace('>C\nATGGCTGAGAAG', '>C\natggctgagaag'));
     await _setCodonMode(page);
     const r = await page.evaluate(async () => {
+        const eng = document.getElementById('codonEngine');
+        eng.value = 'fast'; eng.dispatchEvent(new Event('change'));   // the reference applies to the fast engine only
         document.getElementById('codonRef').value = 'nope';
         await realignAll();
         document.getElementById('codonRef').value = '';
+        eng.value = 'macse'; eng.dispatchEvent(new Event('change'));
         return { msg: document.getElementById('statusMessage').textContent, seqs: state.seqs.map(s => s.seq), bangs: state.seqs.some(s => s.seq.includes('!')) };
     });
     if (!/"nope" not found/.test(r.msg)) return { pass: false, detail: `expected not-found warning, got "${r.msg}"` };
@@ -559,6 +562,32 @@ check('Codon-aware: Add & Align places a new CDS with a deletion as one frameshi
     if (new Set(r.seqs.map(x => x.s.length)).size !== 1 || r.seqs[0].s.length % 3 !== 0) return { pass: false, detail: 'lengths unequal / not codon columns' };
     if ((e.s.match(/-/g) || []).length !== 1) return { pass: false, detail: `E should have exactly one frameshift gap: ${e.s}` };
     return { pass: true, detail: `E = ${e.s}; ${r.msg}` };
+});
+
+check('Codon-aware (MACSE engine, default): a real 4-species gene gives exactly MACSE v2.07 alignment', async (page) => {
+    const fs = require('fs'), path = require('path');
+    const fx = path.join(__dirname, '..', 'codon-align', 'fixtures');
+    const id = '202190at40674';
+    const inp = fs.readFileSync(path.join(fx, id + '.in.fna'), 'utf8');
+    const mac = fs.readFileSync(path.join(fx, id + '.macse_NT.fna'), 'utf8').split('>').filter(Boolean)
+        .map(b => { const [h, ...r] = b.split('\n'); return { h: h.trim(), s: r.join('').trim().replace(/!/g, '-') }; });
+    await loadFasta(page, inp);
+    await _setCodonMode(page);
+    const r = await page.evaluate(async () => {
+        const eng = document.getElementById('codonEngine').value;
+        const shown = document.getElementById('codonMacseOpts').style.display !== 'none' && document.getElementById('codonFastOpts').style.display === 'none';
+        await realignAll();
+        return { eng, shown, seqs: state.seqs.map(s => ({ h: s.header, s: s.seq })), stats: window._lastCodonAlignStats, msg: document.getElementById('statusMessage').textContent };
+    });
+    if (r.eng !== 'macse') return { pass: false, detail: `default engine is ${r.eng}` };
+    if (!r.shown) return { pass: false, detail: 'MACSE settings not shown / fast settings not hidden' };
+    for (const m of mac) {
+        const x = r.seqs.find(y => y.h === m.h);
+        if (!x) return { pass: false, detail: `${m.h} missing` };
+        if (x.s !== m.s) return { pass: false, detail: `${m.h} differs from MACSE` };
+    }
+    if (!r.stats || r.stats.engine !== 'macse') return { pass: false, detail: 'stats: ' + JSON.stringify(r.stats) };
+    return { pass: true, detail: `identical to MACSE, ${r.stats.columns} codon columns, ${Math.round(r.stats.ms)} ms; ${r.msg}` };
 });
 
 async function main() {
