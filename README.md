@@ -30,7 +30,8 @@ No installation, no build step, no framework dependencies.
   broke and how it's guarded against recurring.
 - **Annotation track**: BED features (genes, exons, repeats) drawn as a compact track above
   the alignment in every view mode; coordinates on a named sequence are mapped through its
-  gaps, so the track follows the alignment. Load from a file, a URL, or `?bed=<url>`
+  gaps, so the track follows the alignment. Load from a file, a URL, or `?bed=<url>`; with
+  codon analysis on, each annotated CDS is translated in its own frame and strand
 - **More analysis**: dot plots with region detection, repeat/TSD finder, UPGMA trees,
   regex motif search, 50 restriction enzyme sites
 - **Publication export**: SVG (viewport or full), Word-compatible RTF with per-residue

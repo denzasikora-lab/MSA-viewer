@@ -1234,6 +1234,18 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     with ATG, then fewest stops) or set with the <strong>Frame</strong> selector next to the checkbox. Full and Block draw the
     annotations below. Canvas draws the amino-acid translation track only.
   </p>
+  <p>
+    <strong>By gene.</strong> With an annotation track that has CDS features (<a href="#an-track">6.4</a>),
+    <strong>Frame: Auto</strong> (or <strong>Genes</strong>) analyses each gene separately: its columns are read in its
+    own frame and strand (a minus-strand gene is translated from its reverse complement, so its codon
+    positions run right to left), and columns outside the genes get no codon marks. That is what a whole
+    mitogenome or a multi-gene region needs; one frame across it would put stops everywhere outside the
+    first gene. Where genes overlap (ATP8/ATP6, ND4L/ND4) the first gene keeps the shared codons. A BED
+    feature counts as a CDS when its description column starts with <code>CDS</code>, or, without a
+    description, when its name is not a tRNA, rRNA, origin or control-region name. Loading an annotation
+    that looks mitochondrial (tRNAs, rRNAs, ND/COX/ATP/CYTB) while the code is Standard switches the
+    <strong>Code</strong> to Vertebrate Mito and says so.
+  </p>
   <p>Select the appropriate genetic code from the <strong>Code</strong> dropdown (15 variants):</p>
   <table>
     <tr><th>Code</th><th>NCBI Table</th><th>Key Differences from Standard</th></tr>
@@ -1354,7 +1366,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     select those columns (Shift adds to the selection), then use the column tools as
     usual. Features on a name that is not in the alignment are skipped and counted in
     the menu's status line. The track is not drawn while <em>Variable sites only</em>
-    hides columns in Full or Block mode.
+    hides columns in Full or Block mode. With Codon analysis on, the CDS features of the
+    track set the reading frame and strand of each gene (<a href="#di-codons">5.4</a>).
   </p>
 </section>
 

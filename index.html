@@ -6,7 +6,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <title>ViewAlign</title>
-    <link rel="stylesheet" href="styles.css?v=161">
+    <link rel="stylesheet" href="styles.css?v=162">
     <!-- MAFFT WASM alignment (runs locally in browser) -->
     <script src="disttbfast.js"></script>
     <script src="mafft-wasm.js"></script>
@@ -216,6 +216,7 @@
                                 <label for="codonFrame" style="font-size:10px;color:#555;">Frame</label>
                                 <select id="codonFrame" style="font-size:10px;padding:0 2px;height:18px;" title="Reading frame (also in top bar when codon analysis is on)">
                                     <option value="auto" selected>Auto</option>
+                                    <option value="genes">Genes (annotation)</option>
                                     <option value="0">Pos 1</option>
                                     <option value="1">Pos 2</option>
                                     <option value="2">Pos 3</option>
@@ -778,7 +779,8 @@
                     <input type="radio" name="codonFrameQuick" id="cfPos1" value="0" title="Read codons starting at alignment column 1"><label for="cfPos1" title="Read codons starting at alignment column 1">Pos 1</label>
                     <input type="radio" name="codonFrameQuick" id="cfPos2" value="1" title="Read codons starting at alignment column 2"><label for="cfPos2" title="Read codons starting at alignment column 2">Pos 2</label>
                     <input type="radio" name="codonFrameQuick" id="cfPos3" value="2" title="Read codons starting at alignment column 3"><label for="cfPos3" title="Read codons starting at alignment column 3">Pos 3</label>
-                    <input type="radio" name="codonFrameQuick" id="cfAuto" value="auto" checked title="Auto-detect frame from ATG/M start codon"><label for="cfAuto" title="Auto-detect frame from ATG/M start codon">Auto</label>
+                    <input type="radio" name="codonFrameQuick" id="cfAuto" value="auto" checked title="Auto: the genes of the annotation track when it has CDS features, else the frame with most ATG starts and fewest stops"><label for="cfAuto" title="Auto: the genes of the annotation track when it has CDS features, else the frame with most ATG starts and fewest stops">Auto</label>
+                    <input type="radio" name="codonFrameQuick" id="cfGenes" value="genes" hidden title="Each annotated CDS in its own frame and strand"><label for="cfGenes" hidden title="Each annotated CDS in its own frame and strand">Genes</label>
                 </div>
                 <button type="button" class="codon-panel-btn" onclick="copyAATranslation()" title="Copy amino acid translation(s) as FASTA">Copy AA</button>
                 <button type="button" class="codon-panel-btn" onclick="downloadAATranslation()" title="Download amino acid translation(s) as FASTA">Save AA</button>
@@ -1355,7 +1357,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=282"></script>
+    <script src="script.js?v=283"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

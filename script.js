@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v233';
+const BUILD_TAG = 'v234';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -3132,6 +3132,7 @@ function _patchRowColumns(dataEl, index, start, end, oldS, oldE, newS, newE, cha
     _noteRowColumnWindow(dataEl, newS, newE);
     state.spanCache?.delete(index);
     _registerRowSpans(index, dataEl);
+    if (state._codonData && dataEl.parentElement) _appendCodonRows(dataEl.parentElement, index, newS, newE + 1, { blockLen: end - start, start, charWidthPx });
 }
 
 // Each column-windowed data row remembers its own window, because a
@@ -3230,6 +3231,7 @@ function _buildBlockElement(start, end, len, nameLen, stickyNames, standard, amb
     for (let i = 0; i < state.seqs.length; i++) {
         const lineDiv = createSequenceLine(i, start, end, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, conservationData);
         blockDiv.appendChild(lineDiv);
+        if (state._codonData) _appendCodonRows(lineDiv, i, start, end, null);
     }
     if (shouldRenderConsensus && consensusPosition === 'bottom') {
         addConsensusLine(blockDiv, consensus, start, end, nameLen, stickyNames, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, 'bottom', options);
@@ -3265,7 +3267,11 @@ function _invalidateUnifiedWindowMeasurements() {
 
 function _measureUnifiedRowHeight(sampleRowEl) {
     if (sampleRowEl) {
-        const h = sampleRowEl.getBoundingClientRect().height;
+        // The row pitch: the sequence row plus its translation row(s), when codon
+        // analysis is on (they follow it as siblings)
+        let h = sampleRowEl.getBoundingClientRect().height;
+        let sib = sampleRowEl.nextElementSibling;
+        while (sib && sib.classList.contains('aa-row')) { h += sib.getBoundingClientRect().height; sib = sib.nextElementSibling; }
         if (h > 1) _unifiedRowHeightPx = h;
     }
     return _unifiedRowHeightPx || 16;
@@ -3443,6 +3449,7 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
             if (dataEl) { _applyColumnWindowStyle(dataEl, blockLen, colStart - start, charWidthPx); _noteRowColumnWindow(dataEl, colStart, colEnd); }
         }
         blockDiv.appendChild(lineDiv);
+        if (state._codonData) _appendCodonRows(lineDiv, i, colStart, colEnd + 1, needsColWindow ? { blockLen, start, charWidthPx } : null);
     }
 
     // Bottom row spacer (fills the space of rows below the visible window)
@@ -3495,6 +3502,7 @@ function _incrementalUpdateBlockRows(blockDiv, blockIndex, newRowStart, newRowEn
     rowMap.forEach((rowEl, idx) => {
         if (idx < newRowStart || idx > newRowEnd) {
             state.spanCache?.delete(idx);
+            _removeCodonRows(rowEl);
             rowEl.remove();
             rowMap.delete(idx);
         }
@@ -3528,6 +3536,7 @@ function _incrementalUpdateBlockRows(blockDiv, blockIndex, newRowStart, newRowEn
                 if (d) { _applyColumnWindowStyle(d, colWin.blockLen, colStart - colWin.start, colWin.charWidthPx); _noteRowColumnWindow(d, colStart, colEnd); }
             }
             frag.appendChild(lineDiv);
+            if (state._codonData) _appendCodonRows(lineDiv, i, colStart, colEnd + 1, colWin);
         }
         let insertBefore = bottomRowSpacer;
         let nextGreaterIdx = Infinity;
@@ -3608,7 +3617,10 @@ function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNam
     if (firstRealBlock) {
         _measureUnifiedBlockHeight(firstRealBlock);
         _measureUnifiedHeaderHeight(firstRealBlock);
-        const firstRow = firstRealBlock.querySelector('.seq-line[data-seq-index]');
+        // A real sequence row, not the top consensus line (also .seq-line[data-seq-index],
+        // with index -1): the consensus has no translation row under it, so measuring it
+        // gave the bare row height while every sequence row was row + translation
+        const firstRow = firstRealBlock.querySelector('.seq-line[data-seq-index]:not([data-seq-index="-1"])');
         if (firstRow) {
             measuredRowHeightPx = _measureUnifiedRowHeight(firstRow);
             _measureUnifiedColumnMetrics(firstRow);
@@ -4679,6 +4691,70 @@ function _computeMultiFrameCodonAnalysis(seqs, len) {
     return { frames, refIdx: 0, bestFrame };
 }
 
+// ── Codon analysis by gene (annotation track) ─────────────────────────────
+// A BED feature is a CDS when its description (13th column) starts with "CDS", or,
+// without a description, when its name is not an RNA, origin or control-region name.
+function _annotIsCds(f) {
+    if (f.desc) return /^CDS\b/i.test(f.desc);
+    return !/trn|tRNA|rRNA|rrn|\b(12S|16S|18S|28S|5S)\b|D-loop|control|origin|^OL$|^CR$/i.test(f.name);
+}
+
+function _annotCdsFeatures() {
+    const placed = state._annotPlaced;
+    if (!placed) return [];
+    return placed.feats.filter(d => _annotIsCds(d.f) && d.ce - d.cs + 1 >= 3);
+}
+
+// Codon analysis of each annotated CDS in its own frame and strand: the gene's
+// columns are cut out of every row (reverse-complemented for a minus-strand gene),
+// analysed as a small CDS alignment (_computeCodonAnalysis, frame 0 = the gene's
+// first column), and mapped back to alignment columns. Columns outside the genes get
+// no codon marks; where genes overlap (ATP8/ATP6, ND4L/ND4) the earlier gene keeps
+// the shared codons. The reference for synonymous/non-synonymous calls is row 1 of
+// the alignment, as in the single-frame analysis.
+function _computeAnnotatedCodonAnalysis(seqs, len) {
+    const cds = _annotCdsFeatures();
+    if (!cds.length) return null;
+    const n = seqs.length;
+    const phase = Array.from({ length: n }, () => new Array(len).fill(-1));
+    const stops = Array.from({ length: n }, () => []);
+    const frameShifts = Array.from({ length: n }, () => []);
+    const synNonSyn = Array.from({ length: n }, () => new Array(len).fill(null));
+    const aaSeq = Array.from({ length: n }, () => []);
+    const claimed = Array.from({ length: n }, () => new Uint8Array(len));
+    let genes = 0;
+    for (const d of cds) {
+        const cs = d.cs, ce = d.ce, L = ce - cs + 1;
+        const minus = d.f.strand === '-';
+        const sub = seqs.map(s => {
+            let t = s.seq.slice(cs, ce + 1);
+            if (t.length < L) t += '-'.repeat(L - t.length);
+            return { seq: minus ? reverseComplement(t) : t };
+        });
+        const r = _computeCodonAnalysis(sub, L, 0);
+        if (!r) continue;
+        genes++;
+        const g = j => (minus ? ce - j : cs + j);
+        for (let i = 0; i < n; i++) {
+            for (const e of r.aaSeq[i]) {
+                const cols = e.cols.map(g).sort((a, b) => a - b);
+                if (cols.some(c => claimed[i][c])) continue;
+                cols.forEach(c => { claimed[i][c] = 1; });
+                e.cols.forEach(j => { phase[i][g(j)] = r.phase[i][j]; });
+                aaSeq[i].push({ cols, codon: e.codon, aa: e.aa, gene: d.f.name });
+                if (e.aa === '*') cols.forEach(c => stops[i].push(c));
+                for (const j of e.cols) { const v = r.synNonSyn[i][j]; if (v) synNonSyn[i][g(j)] = v; }
+            }
+            for (const fs of r.frameShifts[i]) {
+                const a = g(fs.runStart), b = g(fs.runStart + Math.max(1, fs.runLen) - 1);
+                frameShifts[i].push({ ...fs, pos: Math.min(a, b), runStart: Math.min(a, b), at: g(fs.at) });
+            }
+        }
+    }
+    for (let i = 0; i < n; i++) aaSeq[i].sort((a, b) => a.cols[0] - b.cols[0]);
+    return { phase, stops, frameShifts, synNonSyn, aaSeq, refIdx: 0, frameOffset: 0, byGene: true, genes };
+}
+
 // Build AA translation row aligned to alignment columns (handles gaps + reading-frame offset).
 // Amino-acid class of each residue, for the translation-track box colours
 const _AA_CLASS = {};
@@ -4691,6 +4767,84 @@ for (const [cls, aas] of Object.entries({ hyd: 'AILMVC', aro: 'FWY', pos: 'KRH',
 // nucleotide columns, coloured by amino-acid class, with the letter over the middle base;
 // stops are red. A frameshift (internal gap run whose length is not a multiple of 3) is
 // marked once, with "!" at the start of the run.
+// One translation row element (frameLabel null: the single active frame; 0-2: one of
+// the three-frame rows, isBest marks the best one), covering viewStart..viewEnd-1.
+function _buildAARowEl(aaSeqData, frameLabel, isBest, viewStart, viewEnd, frameShifts) {
+    const aaRow = document.createElement('div');
+    aaRow.className = 'aa-row';
+    if (frameLabel !== null) aaRow.classList.add('aa-row-f' + frameLabel);
+    if (isBest) aaRow.classList.add('aa-row-best');
+    const nameCol = document.createElement('div');
+    nameCol.className = 'aa-name';
+    // One translation row: no label (the frame is shown in the Codon bar above).
+    // Three rows: a short frame tag so they can be told apart.
+    if (frameLabel !== null) {
+        const tag = document.createElement('span');   // smaller text in a full-size column, so ch widths still match
+        tag.className = 'aa-tag';
+        tag.textContent = 'frame ' + (frameLabel + 1);
+        nameCol.appendChild(tag);
+        nameCol.title = 'Translation reading from alignment column ' + (frameLabel + 1) + (isBest ? ' (best frame: fewest stops)' : '');
+    } else {
+        nameCol.textContent = '';
+        if (state._codonData?.byGene) {
+            nameCol.title = 'Amino acid translation of each annotated CDS, in its own frame and strand';
+        } else {
+            const fr = state._codonActiveFrame >= 0 ? state._codonActiveFrame : (state._codonFrames?.bestFrame ?? 0);
+            nameCol.title = 'Amino acid translation (reading from alignment column ' + (fr + 1) + ')';
+        }
+    }
+    aaRow.appendChild(nameCol);
+    const dataCol = document.createElement('div');
+    dataCol.className = 'aa-data';
+    _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd, frameShifts);
+    aaRow.appendChild(dataCol);
+    return aaRow;
+}
+
+// The translation row(s) of one sequence for the current codon state (none when
+// codon analysis is off): one row, or three with Frame: All 3.
+function _codonRowsFor(seqIdx, viewStart, viewEnd) {
+    const cd = state._codonData;
+    if (!cd || !cd.aaSeq) return [];
+    const rows = [];
+    if (state._codonFrames && state._codonActiveFrame === -1) {
+        const best = state._codonFrames.bestFrame;
+        for (let fr = 0; fr < 3; fr++) {
+            const frData = state._codonFrames.frames[fr];
+            if (!frData) continue;
+            rows.push(_buildAARowEl(frData.aaSeq[seqIdx], fr, fr === best, viewStart, viewEnd, frData.frameShifts?.[seqIdx]));
+        }
+    } else {
+        rows.push(_buildAARowEl(cd.aaSeq[seqIdx], null, false, viewStart, viewEnd, cd.frameShifts?.[seqIdx]));
+    }
+    return rows;
+}
+
+function _removeCodonRows(lineDiv) {
+    let sib = lineDiv.nextElementSibling;
+    while (sib && sib.classList.contains('aa-row')) { const next = sib.nextElementSibling; sib.remove(); sib = next; }
+}
+
+// Puts a sequence row's translation row(s) right after it (replacing any it had), for
+// the columns viewStart..viewEnd-1; colWin ({ blockLen, start, charWidthPx }) gives a
+// column-windowed row the same width/padding as its sequence row. Every path that
+// creates or re-windows a row calls this, so the windowed renderer (rows added a
+// chunk per frame while scrolling) keeps the translation under every row and measures
+// the true row pitch - rows arriving without their translation rows made the content
+// shift under a steady scrollTop ("jerky steps back" when scrolling up).
+function _appendCodonRows(lineDiv, seqIdx, viewStart, viewEnd, colWin) {
+    _removeCodonRows(lineDiv);
+    let after = lineDiv;
+    for (const r of _codonRowsFor(seqIdx, viewStart, viewEnd)) {
+        if (colWin) {
+            const d = r.querySelector('.aa-data');
+            if (d) _applyColumnWindowStyle(d, colWin.blockLen, viewStart - colWin.start, colWin.charWidthPx);
+        }
+        after.insertAdjacentElement('afterend', r);
+        after = r;
+    }
+}
+
 function _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd, frameShifts) {
     dataCol.textContent = '';
     const cell = new Array(viewEnd - viewStart).fill(null);
@@ -6220,6 +6374,7 @@ function _annotTrackVisible() {
 function _prepareAnnotLayout(len) {
     state._annotLayout = null;
     state._annotReport = null;
+    state._annotPlaced = null;
     const a = state.annot;
     if (!a || !a.features.length || !state.seqs?.length) return;
     const chromIdx = new Map();
@@ -6266,6 +6421,8 @@ function _prepareAnnotLayout(len) {
     feats.forEach((d, i) => { d.fg = _annotTextColor(d.color); d.id = i; });
     const chroms = [...new Set(feats.map(d => d.seqIndex === 'cols' ? 'alignment columns' : state.seqs[d.seqIndex]?.header))];
     state._annotReport = { placed: feats.length, lanes: Math.max(1, laneEnd.length), unmatched, outside, chroms };
+    // The placed features, whether or not the track is shown (codon analysis by gene reads them)
+    state._annotPlaced = feats.length ? { feats } : null;
     const hiddenByVarSites = !!state._varSiteHiddenRanges && isSpanRenderMode();
     if (feats.length && _annotTrackVisible() && !hiddenByVarSites) {
         state._annotLayout = { feats, lanes: Math.max(1, laneEnd.length), label: a.trackName || a.sourceName || 'annotation' };
@@ -6472,6 +6629,14 @@ function setAnnotation(text, sourceName) {
         return false;
     }
     state.annot = { text: String(text), sourceName, trackName: parsed.trackName, features: parsed.features, skippedLines: parsed.skipped };
+    // A mitochondrial gene set (tRNAs, rRNAs, ND/COX/ATP/CYTB) with the Standard code
+    // still selected: switch to the vertebrate mitochondrial code, and say so
+    const mt = parsed.features.filter(f => /^(trn|tRNA|ND\d|NAD\d|COX\d|CO[123]\b|ATP[68]|CYTB|COB\b|12S|16S|rrn|control region|D-loop|OL$)/i.test(f.name)).length;
+    const codeSel = el('codonCode');
+    if (mt >= 10 && codeSel && codeSel.value === '1') {
+        codeSel.value = '2';
+        showMessageAfterRender('Annotation looks mitochondrial: genetic code set to Vertebrate Mito (Display > Code)', 5000);
+    }
     if (state.seqs?.length) renderAlignment(); else updateAnnotPanel();
     showMessage(`Annotation: ${parsed.features.length} feature${parsed.features.length === 1 ? '' : 's'} from ${sourceName}`, 3000);
     return true;
@@ -7730,12 +7895,30 @@ function _updateCodonAnalysisState(len) {
     const codonAnalysis = document.getElementById('codonAnalysis')?.checked;
     if (codonAnalysis) {
         try {
-            state._codonFrames = _computeMultiFrameCodonAnalysis(state.seqs, len);
             const frameSel = document.getElementById('codonFrame')?.value || 'auto';
+            // Frame: Genes, or Auto with an annotation track that has CDS features: each
+            // gene in its own frame and strand, nothing outside the genes
+            if (frameSel === 'genes' || frameSel === 'auto') {
+                const nCds = _annotCdsFeatures().length;
+                const byGene = nCds ? _computeAnnotatedCodonAnalysis(state.seqs, len) : null;
+                if (byGene) {
+                    state._codonFrames = { frames: [byGene], refIdx: 0, bestFrame: 0, byGene: true };
+                    state._codonData = byGene;
+                    state._codonActiveFrame = 0;
+                    document.body.classList.add('codon-mode');
+                    if (state._lastAnnouncedCodonFrame !== 'genes') {
+                        state._lastAnnouncedCodonFrame = 'genes';
+                        showMessage(`Codon analysis: ${byGene.genes} CDS from the annotation track, each in its own frame and strand`, 3500);
+                    }
+                    return;
+                }
+                if (frameSel === 'genes') showMessage('Frame "Genes" needs an annotation track with CDS features (Annotation menu); using Auto', 4000);
+            }
+            state._codonFrames = _computeMultiFrameCodonAnalysis(state.seqs, len);
             const validFrames = state._codonFrames?.frames?.filter(Boolean);
             if (state._codonFrames && validFrames && validFrames.length > 0) {
                 let activeFrame;
-                if (frameSel === 'auto') {
+                if (frameSel === 'auto' || frameSel === 'genes') {
                     activeFrame = state._codonFrames.bestFrame;
                 } else if (frameSel === 'all') {
                     activeFrame = -1;
@@ -7746,7 +7929,7 @@ function _updateCodonAnalysisState(len) {
                 state._codonData = state._codonFrames.frames[displayFrame] || validFrames[0];
                 state._codonActiveFrame = activeFrame;
                 document.body.classList.add('codon-mode');
-                if (frameSel === 'auto') {
+                if (frameSel === 'auto' || frameSel === 'genes') {
                     const bf = state._codonFrames.bestFrame;
                     if (state._lastAnnouncedCodonFrame !== bf) {
                         state._lastAnnouncedCodonFrame = bf;
@@ -8228,7 +8411,6 @@ function renderAlignment(options = {}) {
 
     // Post-process: AA translation rows (phase/stops now built inline)
     if (state._codonData) {
-        const cd = state._codonData;
         // Add AA translation rows below each sequence
         const seqRows = alignmentContainer.querySelectorAll('.seq-line');
         seqRows.forEach(rowEl => {
@@ -8236,34 +8418,6 @@ function renderAlignment(options = {}) {
             if (!Number.isInteger(seqIdx) || seqIdx < 0) return;
             // Check if already has AA rows
             if (rowEl.nextElementSibling?.classList.contains('aa-row')) return;
-
-            const buildAARow = (aaSeqData, frameLabel, isBest, viewStart, viewEnd, frameShifts) => {
-                const aaRow = document.createElement('div');
-                aaRow.className = 'aa-row';
-                if (frameLabel !== null) aaRow.classList.add('aa-row-f' + frameLabel);
-                if (isBest) aaRow.classList.add('aa-row-best');
-                const nameCol = document.createElement('div');
-                nameCol.className = 'aa-name';
-                // One translation row: no label (the frame is shown in the Codon bar above).
-                // Three rows: a short frame tag so they can be told apart.
-                if (frameLabel !== null) {
-                    const tag = document.createElement('span');   // smaller text in a full-size column, so ch widths still match
-                    tag.className = 'aa-tag';
-                    tag.textContent = 'frame ' + (frameLabel + 1);
-                    nameCol.appendChild(tag);
-                    nameCol.title = 'Translation reading from alignment column ' + (frameLabel + 1) + (isBest ? ' (best frame: fewest stops)' : '');
-                } else {
-                    const fr = state._codonActiveFrame >= 0 ? state._codonActiveFrame : (state._codonFrames?.bestFrame ?? 0);
-                    nameCol.textContent = '';
-                    nameCol.title = 'Amino acid translation (reading from alignment column ' + (fr + 1) + ')';
-                }
-                aaRow.appendChild(nameCol);
-                const dataCol = document.createElement('div');
-                dataCol.className = 'aa-data';
-                _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd, frameShifts);
-                aaRow.appendChild(dataCol);
-                return aaRow;
-            };
 
             const ntSpans = rowEl.querySelectorAll('.seq-data > span[data-pos]');
             let viewStart = 0;
@@ -8273,18 +8427,9 @@ function renderAlignment(options = {}) {
                 viewEnd = (parseInt(ntSpans[ntSpans.length - 1].dataset.pos) || 0) + 1;
             }
 
-            if (state._codonFrames && state._codonActiveFrame === -1) {
-                const best = state._codonFrames.bestFrame;
-                for (let fr = 2; fr >= 0; fr--) {
-                    const frData = state._codonFrames.frames[fr];
-                    if (!frData) continue;
-                    const aaRow = buildAARow(frData.aaSeq[seqIdx], fr, fr === best, viewStart, viewEnd, frData.frameShifts?.[seqIdx]);
-                    rowEl.insertAdjacentElement('afterend', aaRow);
-                }
-            } else {
-                const aaRow = buildAARow(cd.aaSeq[seqIdx], null, false, viewStart, viewEnd, cd.frameShifts?.[seqIdx]);
-                rowEl.insertAdjacentElement('afterend', aaRow);
-            }
+            // Rows built by the block builders already carry their translation rows (see
+            // _appendCodonRows); this covers any other row.
+            _appendCodonRows(rowEl, seqIdx, viewStart, viewEnd, null);
         });
     }
     syncCodonModePanel();
@@ -10981,6 +11126,10 @@ function syncCodonModePanel() {
     document.querySelectorAll('#codonFrameSwitch input[name="codonFrameQuick"]').forEach(r => {
         r.checked = (r.value === frameSel);
     });
+    // "Genes" only when an annotation track with CDS features is loaded
+    const hasGenes = _annotCdsFeatures().length > 0;
+    const gRadio = document.getElementById('cfGenes');
+    if (gRadio) { gRadio.hidden = !hasGenes; const lbl = gRadio.nextElementSibling; if (lbl) lbl.hidden = !hasGenes; }
 }
 
 function domEventTarget(e) {

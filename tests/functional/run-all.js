@@ -688,6 +688,38 @@ check('Annotation track: BED features map through gaps, stack in lanes, draw in 
     return { pass: true, detail: `4 features, 2 lanes, geneB -> columns 6-10 through the gap, tooltip + click + canvas + hide + clear` };
 });
 
+check('Codon analysis by gene: annotated CDS translated in their own frame and strand, nothing between them', async (page) => {
+    // columns 0-8: plus-strand CDS ATG GCC TAA (M A *); 9-11 spacer; 12-20: minus-strand CDS,
+    // whose plus-strand text TTATTTCAT reverse-complements to ATG AAA TAA (M K *)
+    const fasta = '>chr1\nATGGCCTAAGGGTTATTTCAT\n>two\nATGGCATAAGGGTTATTTCAT\n';   // row 2: GCC->GCA (synonymous, A)
+    await loadFasta(page, fasta);
+    const bed = ['chr1\t0\t9\tgeneP\t0\t+\t0\t9\t0\t1\t9\t0\tCDS: plus', 'chr1\t12\t21\tgeneM\t0\t-\t12\t21\t0\t1\t9\t0\tCDS: minus',
+        'chr1\t9\t12\tspacer\t0\t+\t9\t12\t0\t1\t3\t0\tmisc_feature: not coding'].join('\n');
+    const r = await page.evaluate((bed) => {
+        document.getElementById('codonCode').value = '1';
+        document.getElementById('codonFrame').value = 'auto';
+        setAnnotation(bed, 'genes.bed');
+        const cb = document.getElementById('codonAnalysis'); cb.checked = true; cb.dispatchEvent(new Event('change'));
+        return new Promise(res => setTimeout(() => {
+            const cd = state._codonData;
+            res({ byGene: !!cd?.byGene, genes: cd?.genes, frameSel: document.getElementById('codonFrame').value,
+                aa0: cd.aaSeq[0].map(e => e.aa + '@' + e.cols.join('.') + (e.gene ? '/' + e.gene : '')), stops0: cd.stops[0].slice().sort((a, b) => a - b),
+                phase0: cd.phase[0].join(''), syn1: cd.synNonSyn[1].map((v, i) => v ? i + v : '').filter(Boolean),
+                aaRows: document.querySelectorAll('.aa-row').length, cells: document.querySelector('.aa-row .aa-data')?.children.length,
+                genesRadio: !document.getElementById('cfGenes').hidden, cfChecked: document.querySelector('#codonFrameSwitch input:checked')?.value });
+        }, 600));
+    }, bed);
+    if (!r.byGene || r.genes !== 2) return { pass: false, detail: `expected analysis by 2 genes: ${JSON.stringify(r)}` };
+    const want = ['M@0.1.2/geneP', 'A@3.4.5/geneP', '*@6.7.8/geneP', '*@12.13.14/geneM', 'K@15.16.17/geneM', 'M@18.19.20/geneM'];
+    if (r.aa0.join(' ') !== want.join(' ')) return { pass: false, detail: `translation: ${r.aa0.join(' ')}` };
+    if (r.stops0.join(',') !== '6,7,8,12,13,14') return { pass: false, detail: `stops: ${r.stops0}` };
+    if (r.phase0 !== '012012012' + '-1-1-1' + '210210210') return { pass: false, detail: `phase: ${r.phase0}` };
+    if (r.syn1.join(',') !== '5syn') return { pass: false, detail: `synonymous marks on row 2: ${r.syn1}` };
+    if (r.aaRows !== 2 || r.cells !== 21) return { pass: false, detail: `translation rows ${r.aaRows}, cells ${r.cells}` };
+    if (!r.genesRadio) return { pass: false, detail: 'Genes radio not shown in the Codon bar' };
+    return { pass: true, detail: `2 CDS (one minus-strand) translated in place, spacer unmarked, GCC->GCA synonymous` };
+});
+
 async function main() {
     const { server, baseUrl } = await start();
     const results = [];
