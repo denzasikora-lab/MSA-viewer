@@ -594,6 +594,37 @@ check('Codon-aware (MACSE engine, default): real 4-species genes give exactly MA
     return { pass: true, detail: details.join('; ') };
 });
 
+check('Codon-aware (MACSE engine): a cancelled run frees its worker and the next run still gives MACSE alignment', async (page) => {
+    const fs = require('fs'), path = require('path');
+    const fx = path.join(__dirname, '..', 'codon-align', 'fixtures');
+    const id = '14911at40674';                                 // 3.6 kb: long enough to cancel mid-run
+    const inp = fs.readFileSync(path.join(fx, id + '.in.fna'), 'utf8');
+    const mac = fs.readFileSync(path.join(fx, id + '.macse_NT.fna'), 'utf8').split('>').filter(Boolean)
+        .map(b => { const [h, ...r] = b.split('\n'); return { h: h.trim(), s: r.join('').trim().replace(/!/g, '-') }; });
+    await loadFasta(page, inp);
+    await _setCodonMode(page);
+    const r = await page.evaluate(async () => {
+        const before = state.seqs.map(s => s.seq).join('|');
+        const p = realignAll();
+        await new Promise(res => setTimeout(res, 400));
+        const hadWorker = !!_macseWorker;
+        _cancelActiveMafftWorker();
+        await p;
+        const afterCancel = state.seqs.map(s => s.seq).join('|');
+        const freed = _macseWorker === null;
+        await realignAll();
+        return { unchanged: before === afterCancel, hadWorker, freed, seqs: state.seqs.map(s => ({ h: s.header, s: s.seq })), stats: window._lastCodonAlignStats };
+    });
+    if (!r.hadWorker) return { pass: false, detail: 'no MACSE worker while running' };
+    if (!r.unchanged) return { pass: false, detail: 'cancelled run changed the alignment' };
+    if (!r.freed) return { pass: false, detail: 'cancelled worker was kept' };
+    for (const m of mac) {
+        const x = r.seqs.find(y => y.h === m.h);
+        if (!x || x.s !== m.s) return { pass: false, detail: `${m.h} differs from MACSE after the rerun` };
+    }
+    return { pass: true, detail: `cancel freed the worker; rerun identical to MACSE in ${Math.round(r.stats.ms)} ms` };
+});
+
 async function main() {
     const { server, baseUrl } = await start();
     const results = [];

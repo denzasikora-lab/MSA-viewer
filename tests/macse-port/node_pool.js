@@ -10,6 +10,7 @@ function makePool(size, modulePath) {
     size = Math.max(1, size || Math.min(8, os.cpus().length - 1));
     const workerSrc = `
         const { parentPort } = require('worker_threads');
+        if (process.env.MACSE_DPSET_CAP) globalThis.MACSE_DPSET_CAP = +process.env.MACSE_DPSET_CAP;   // tests: force set resends
         const MA = require(${JSON.stringify(modulePath)});
         parentPort.on('message', ({ id, task }) => {
             let msg;
@@ -23,17 +24,32 @@ function makePool(size, modulePath) {
         for (let i = 1; i < queue.length; i++) if (queue[i].prio < queue[k].prio) k = i;
         return queue.splice(k, 1)[0];
     };
+    // Tiles: send a DP's sequence sets to a thread only with the first tile of that DP it gets.
+    const prepare = (w, job) => {
+        const t = job.task;
+        if (t.kind !== 'tile') return t;
+        if (w.sent.has(t.dpKey) && !job.resend) { const { s1, s2, ...rest } = t; return rest; }
+        w.sent.add(t.dpKey);
+        if (w.sent.size > 48) w.sent.delete(w.sent.values().next().value);
+        return t;
+    };
     const pump = () => {
         while (idle.length && queue.length) {
             const w = idle.pop(), job = takeNext();
             pending.set(job.id, job); job.worker = w;
-            w.postMessage({ id: job.id, task: job.task }, job.transfer);
+            const task = prepare(w, job);
+            w.postMessage({ id: job.id, task }, job.resend ? [] : job.transfer);
         }
     };
     for (let i = 0; i < size; i++) {
         const w = new Worker(workerSrc, { eval: true });
+        w.sent = new Set();
         w.on('message', ({ id, ok, result, error }) => {
             const job = pending.get(id); pending.delete(id);
+            if (job && ok && result && result.needSets) {          // the thread dropped this DP's sets: send them again
+                w.sent.delete(job.task.dpKey); job.resend = true; queue.unshift(job);
+                idle.push(w); pump(); return;
+            }
             idle.push(w); pump();
             if (!job) return;
             if (ok) job.resolve(result); else job.reject(new Error(error));
@@ -47,7 +63,8 @@ function makePool(size, modulePath) {
         run(task, gen, prio) {
             if (closed) return Promise.reject(new Error('pool closed'));
             return new Promise((resolve, reject) => {
-                queue.push({ id: nextId++, task, gen, prio: prio || 0, resolve, reject, transfer: task.kind === 'tile' ? MA.transferables(task) : [] });
+                // task inputs are copied, not moved (a tile may have to be sent again with its sequence sets)
+                queue.push({ id: nextId++, task, gen, prio: prio || 0, resolve, reject, transfer: [] });
                 pump();
             });
         },

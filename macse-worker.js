@@ -70,18 +70,33 @@ function makePool(size) {
         for (let i = 1; i < queue.length; i++) if (queue[i].prio < queue[k].prio) k = i;
         return queue.splice(k, 1)[0];
     };
+    // Tiles: send a DP's sequence sets to a thread only with the first tile of that DP it gets.
+    const prepare = (w, job) => {
+        const t = job.task;
+        if (t.kind !== 'tile') return t;
+        if (w.sent.has(t.dpKey) && !job.resend) { const { s1, s2, ...rest } = t; return rest; }
+        w.sent.add(t.dpKey);
+        if (w.sent.size > 48) w.sent.delete(w.sent.values().next().value);
+        return t;
+    };
     const pump = () => {
         while (idle.length && queue.length) {
             const w = idle.pop(), job = takeNext();
             pending.set(job.id, job); job.worker = w;
-            w.postMessage({ type: 'dp', id: job.id, task: job.task }, job.transfer);
+            const task = prepare(w, job);
+            w.postMessage({ type: 'dp', id: job.id, task }, job.resend ? [] : job.transfer);
         }
     };
     for (let i = 0; i < size; i++) {
         const w = new Worker(self.location.href);
+        w.sent = new Set();
         w.onmessage = (ev) => {
             const { id, ok, result, error } = ev.data || {};
             const job = pending.get(id); pending.delete(id);
+            if (job && ok && result && result.needSets) {          // the thread dropped this DP's sets: send them again
+                w.sent.delete(job.task.dpKey); job.resend = true; queue.unshift(job);
+                idle.push(w); pump(); return;
+            }
             idle.push(w); pump();
             if (!job) return;
             if (ok) job.resolve(result); else job.reject(new Error(error));
@@ -93,7 +108,8 @@ function makePool(size) {
         size,
         run(task, gen, prio) {
             return new Promise((resolve, reject) => {
-                queue.push({ id: nextId++, task, gen, prio: prio || 0, resolve, reject, transfer: task.kind === 'tile' ? MacseAlign.transferables(task) : [] });
+                // task inputs are copied, not moved (a tile may have to be sent again with its sequence sets)
+                queue.push({ id: nextId++, task, gen, prio: prio || 0, resolve, reject, transfer: [] });
                 pump();
             });
         },
@@ -107,6 +123,7 @@ function poolSize(requested) {
     return Math.max(0, Math.min(requested || 8, hw - 1));
 }
 
+let sharedPool = null;
 async function alignMacse(records, opts, post) {
     // Internal names: MACSE splits clade labels on ',' and '(' ')' and drops repeated names; the alignment does not
     // depend on the names otherwise. MACSE reads U and IUPAC letters other than R/Y/N as N; U is aligned as T and
@@ -116,12 +133,14 @@ async function alignMacse(records, opts, post) {
     const o = { gc: opts.gc || 1, maxTracebackCells: opts.maxTracebackCells || 2.5e8, onProgress: post };
     if (opts.fs != null) o.fs = opts.fs;
     if (opts.stop != null) o.stop = opts.stop;
+    // The pool is kept for the next alignment (the page keeps this worker for a while and terminates it, with its
+    // nested workers, on cancel); a pool that saw an error is replaced.
     const n = poolSize(opts.threads);
-    let pool = null;
-    try { if (n >= 2 && records.length >= 2) pool = makePool(n); } catch (e) { pool = null; }
+    if (!sharedPool && n >= 2) { try { sharedPool = makePool(n); } catch (e) { sharedPool = null; } }
+    const pool = sharedPool;
     let res;
     try { res = await MacseAlign.alignSequencesAsync(input, o, pool || MacseAlign.localRunner()); }
-    finally { if (pool) pool.close(); }
+    catch (e) { if (pool) { pool.close(); sharedPool = null; } throw e; }
     const ntById = new Map(res.nt.map(r => [r.name, r.seq]));
     const aaById = new Map(res.aa.map(r => [r.name, r.seq]));
     const nt = [], aa = [];

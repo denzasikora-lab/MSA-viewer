@@ -30,32 +30,47 @@ function generate(F, mode) {
     const tile = mode === 'tile';
     const out = [];
     const body = (b, s) => out.push(I(b) + s);
+    const ti = F.ti, tf = F.tf;
     out.push(...F.head(mode));
-    if (!tile) body(8, `let R0${F.ti} = 0, R1${F.ti} = W, R2${F.ti} = 2 * W, R3${F.ti} = 3 * W;`);
-    body(8, `let cPc${F.ti} = 0, cDi${F.ti} = 0, cDj${F.ti} = 0, code${F.ti} = 0, cc${F.ti} = 0;`);
-    body(8, `let best${F.tf} = NEG, p0${F.tf} = NEG, p1${F.tf} = NEG, p2${F.tf} = NEG, ps${F.tf} = 0, inn${F.tf} = 0;`);
-    body(8, `let s12${F.ti} = 0, sd${F.ti} = 0, go${F.ti} = 0, rb${F.ti} = 0, i1${F.ti} = 0, i2${F.ti} = 0, u${F.ti} = 0, e${F.ti} = 0, o${F.ti} = 0, v${F.ti} = 0, hb${F.ti} = 0;`);
+    if (!tile) body(8, `let R0${ti} = 0, R1${ti} = W, R2${ti} = 2 * W, R3${ti} = 3 * W;`);
+    body(8, `let cPc${ti} = 0, cDi${ti} = 0, cDj${ti} = 0, code${ti} = 0, cc${ti} = 0;`);
+    body(8, `let best${tf} = NEG, p0${tf} = NEG, p1${tf} = NEG, p2${tf} = NEG, ps${tf} = 0, inn${tf} = 0;`);
+    body(8, `let s12${ti} = 0, sd${ti} = 0, go${ti} = 0, rb${ti} = 0, u${ti} = 0, e${ti} = 0, q${ti} = 0;`);
     if (tile) {
         body(8, `if (r0 === 0 && c0 === 0) ${F.setF64('T', '3 * RS + 9 + 2', '0')};   // MUTATION at (0, 0)`);
-        body(8, `for (let lr${F.ti} = 0; lr < nR; lr++) {`);
-        body(12, `const line${F.ti} = r0 + lr;`);
-        body(12, `let cmin${F.ti} = ${F.i32('rowMin', 'lr')}, cmax${F.ti} = ${F.i32('rowMax', 'lr')};`);
+        body(8, `for (let lr${ti} = 0; lr < nR; lr++) {`);
+        body(12, `const line${ti} = r0 + lr;`);
+        body(12, `let cmin${ti} = ${F.i32('rowMin', 'lr')}, cmax${ti} = ${F.i32('rowMax', 'lr')};`);
         body(12, 'if (cmin < c0) cmin = c0;');
         body(12, 'if (cmax > c0 + nC) cmax = c0 + nC;');
-        body(12, `const rowBase${F.ti} = (lr + 3) * RS, L4${F.ti} = lr * 4, tbRow${F.ti} = lr * nC - c0;`);
-        body(12, `for (let col${F.ti} = cmin; col < cmax; col++) {`);
-        body(16, 'if (line === 0 && col === 0) continue;');
-        body(16, `const lc3${F.ti} = col - c0 + 3, C4${F.ti} = (col - c0) * 4;`);
+        body(12, `const rowBase${ti} = (lr + 3) * RS, L4${ti} = lr * 4, tbRow${ti} = lr * nC - c0;`);
     } else {
         body(8, F.setF64('sc', '2', '0') + ';   // MUTATION at (0, 0)');
-        body(8, `for (let line${F.ti} = 0; line < S1; line++) {`);
-        body(12, `const cmin${F.ti} = ${F.i32('rowMin', 'line')}, cmax${F.ti} = ${F.i32('rowMax', 'line')};`);
-        body(12, `if (line > 0) { const t${F.ti} = R3; R3 = R2; R2 = R1; R1 = R0; R0 = t; ${F.fillNeg('t', 'W')} }`);
-        body(12, `const off${F.tu} = ${F.rowOff('line')} - ${F.toU('cmin')}, L4${F.ti} = line * 4;`);
-        body(12, `for (let col${F.ti} = cmin; col < cmax; col++) {`);
-        body(16, 'if (line === 0 && col === 0) continue;');
-        body(16, `const C4${F.ti} = col * 4;`);
+        body(8, `for (let line${ti} = 0; line < S1; line++) {`);
+        body(12, `const cmin${ti} = ${F.i32('rowMin', 'line')}, cmax${ti} = ${F.i32('rowMax', 'line')};`);
+        body(12, `if (line > 0) { const t${ti} = R3; R3 = R2; R2 = R1; R1 = R0; R0 = t; ${F.fillNeg('t', 'W')} }`);
+        body(12, `const off${F.tu} = ${F.rowOff('line')} - ${F.toU('cmin')}, L4${ti} = line * 4;`);
     }
+    // Site values of the line profile for this row (gap sizes m = 0..3), loaded once per row instead of in every move
+    // group: the profile arrays are read-only here, so the values are the same.
+    for (let m = 0; m < 4; m++) {
+        body(12, `const a1_${m}${tf} = ${F.f64('in1', `L4 + ${m}`)}, l1_${m}${ti} = ${F.i32('cl1', `L4 + ${m}`)}, s1_${m}${ti} = ${F.i32('cs1', `L4 + ${m}`)}, o1_${m}${ti} = (L4 + ${m}) * 33;`);
+    }
+    const lists = new Set();
+    for (const T of TARGETS) for (const [di] of T.pairs) for (let pc = 0; pc < 3; pc++) lists.add(`${3 - di}${T.vf[pc]}`);
+    for (const mk of [...lists].sort()) {
+        const m = mk[0], k = mk[1];
+        body(12, `const ss${mk}${ti} = ${F.i32('spS', `(L4 + ${m}) * 3 + ${k}`)}, sl${mk}${ti} = ${F.i32('spL', `(L4 + ${m}) * 3 + ${k}`)};`);
+    }
+    // The cell (0, 0) only holds the start value: the loop starts at column 1 on line 0 instead of testing every cell.
+    body(12, `for (let col${ti} = (line === 0 && cmin === 0) ? 1 : cmin; col < cmax; col++) {`);
+    body(16, tile ? `const lc3${ti} = col - c0 + 3, C4${ti} = (col - c0) * 4;` : `const C4${ti} = col * 4;`);
+    // site values of the column profile for this cell (gap sizes n = 0..3)
+    for (let n = 0; n < 4; n++) {
+        body(16, `const a2_${n}${tf} = ${F.f64('in2', `C4 + ${n}`)}, l2_${n}${ti} = ${F.i32('cl2', `C4 + ${n}`)}, s2_${n}${ti} = ${F.i32('cs2', `C4 + ${n}`)}, o2_${n}${ti} = (C4 + ${n}) * 33, hb${n}${ti} = (C4 + ${n}) * 10;`);
+    }
+    // sum over a short list (usually 1-3 entries) in the same order as a loop: straight-line code for 1 and 2 entries
+    const listSum = (acc, term) => `if (e === 1) ${acc} = ${term('u')}; else if (e === 2) { ${acc} = ${term('u')}; ${acc} += ${term('u + 1')}; } else { ${acc} = 0; for (q = 0; q < e; q++) ${acc} += ${term('u + q')}; }`;
     const buf = tile ? 'T' : 'sc';
     body(16, 'code = 0;');
     for (const T of TARGETS) {
@@ -63,6 +78,7 @@ function generate(F, mode) {
         body(b, `// ---- target ${T.name}`);
         body(b, 'best = NEG;');
         for (const [di, dj] of T.pairs) {
+            const m = 3 - di, n = 3 - dj;
             const conds = [];
             if (di > 0) conds.push(`line >= ${di}`);
             if (dj > 0) conds.push(`col >= ${dj}`);
@@ -71,22 +87,20 @@ function generate(F, mode) {
             body(b, `if (${conds.join(' && ')}) {   // (${di}, ${dj})`);
             body(b + 4, `rb = ${rbExpr}; p0 = ${F.f64(buf, 'rb')}; p1 = ${F.f64(buf, 'rb + 1')}; p2 = ${F.f64(buf, 'rb + 2')};`);
             body(b + 4, 'if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {');
-            body(b + 8, `i1 = L4 + ${3 - di}; i2 = C4 + ${3 - dj}; inn = ${F.f64('in1', 'i1')} + ${F.f64('in2', 'i2')}; sd = 0;`);
+            body(b + 8, `inn = a1_${m} + a2_${n}; sd = 0;`);
             for (let pc = 0; pc < 3; pc++) {
-                const c = b + 8;
+                const c = b + 8, k = T.vf[pc], h = T.vh[pc];
                 body(c, `if (p${pc} !== NEG) {`);
                 body(c + 4, `ps = p${pc} + inn;`);
                 body(c + 4, `if (${full ? 'true' : 'ps > best'}) {`);
                 body(c + 8, 'if (sd === 0) {');
-                body(c + 12, 's12 = 0;');
-                body(c + 12, `if (${F.i32('cl1', 'i1')} > ${F.i32('cl2', 'i2')}) { o = i1 * 33; for (u = ${F.i32('cs2', 'i2')}, e = u + ${F.i32('cl2', 'i2')}; u < e; u++) s12 += ${F.i32('cf2', 'u')} * ${F.i32('if1', `o + ${F.i32('ca2', 'u')}`)}; }`);
-                body(c + 12, `else { o = i2 * 33; for (u = ${F.i32('cs1', 'i1')}, e = u + ${F.i32('cl1', 'i1')}; u < e; u++) s12 += ${F.i32('cf1', 'u')} * ${F.i32('if2', `o + ${F.i32('ca1', 'u')}`)}; }`);
+                body(c + 12, `if (l1_${m} > l2_${n}) { u = s2_${n}; e = l2_${n}; ${listSum('s12', x => `${F.i32('cf2', x)} * ${F.i32('if1', `o1_${m} + ${F.i32('ca2', x)}`)}`)} }`);
+                body(c + 12, `else { u = s1_${m}; e = l1_${m}; ${listSum('s12', x => `${F.i32('cf1', x)} * ${F.i32('if2', `o2_${n} + ${F.i32('ca1', x)}`)}`)} }`);
                 body(c + 12, `${F.wrap('s12')} sd = 1;`);
                 body(c + 8, '}');
                 body(c + 8, `ps += ${F.toF('s12')};`);
                 body(c + 8, 'if (ps > best) {');
-                body(c + 12, `v = i1 * 3 + ${T.vf[pc]}; hb = i2 * 10; go = 0;`);
-                body(c + 12, `for (u = ${F.i32('spS', 'v')}, e = u + ${F.i32('spL', 'v')}; u < e; u++) go += ${F.i32('spF', 'u')} * ${F.i32(T.vh[pc], `hb + ${F.i32('spP', 'u')}`)};`);
+                body(c + 12, `u = ss${m}${k}; e = sl${m}${k}; ${listSum('go', x => `${F.i32('spF', x)} * ${F.i32(h, `hb${n} + ${F.i32('spP', x)}`)}`)}`);
                 body(c + 12, `ps += ${F.toF(F.wrapExpr('go'))};`);
                 body(c + 12, `if (ps > best) { best = ps; cPc = ${pc}; cDi = ${di}; cDj = ${dj}; }`);
                 body(c + 8, '}');
@@ -136,6 +150,15 @@ const JS = {
     wrap: x => `${x} |= 0;`, wrapExpr: x => `(${x} | 0)`
 };
 // ---- AssemblyScript flavour (raw memory; all arrays are byte addresses into linear memory)
+function asLoad(type, shift, a, i) {
+    const m = /^(.+) \+ (\d+)$/.exec(i);
+    if (m) {
+        let depth = 0, ok = true;                      // the part before " + K" must be a complete expression
+        for (const ch of m[1]) { if (ch === '(') depth++; else if (ch === ')' && --depth < 0) ok = false; }
+        if (ok && depth === 0) return `load<${type}>(${a} + ((<usize>(${m[1]})) << ${shift}), ${(+m[2]) << shift})`;
+    }
+    return `load<${type}>(${a} + ((<usize>(${i})) << ${shift}))`;
+}
 const PROFILE_ARGS = 'in1: usize, cs1: usize, cl1: usize, ca1: usize, cf1: usize, if1: usize, spS: usize, spL: usize, spP: usize, spF: usize,\n' +
     '        in2: usize, cs2: usize, cl2: usize, ca2: usize, cf2: usize, if2: usize, hC: usize, hIE: usize, hXIE: usize';
 const AS = {
@@ -153,8 +176,9 @@ const AS = {
         '        const W: i32 = 3 * S2;',
         '        const NEG: f64 = -Infinity;'
     ],
-    f64: (a, i) => `load<f64>(${a} + ((<usize>(${i})) << 3))`,
-    i32: (a, i) => `load<i32>(${a} + ((<usize>(${i})) << 2))`,
+    // an index "x + K" (K a literal) becomes a load with an immediate byte offset: same address, less arithmetic
+    f64: (a, i) => asLoad('f64', 3, a, i),
+    i32: (a, i) => asLoad('i32', 2, a, i),
     setF64: (a, i, v) => `store<f64>(${a} + ((<usize>(${i})) << 3), ${v})`,
     setU16: (a, i, v) => `store<u16>(${a} + ((<usize>(${i})) << 1), <u16>${v})`,
     fillNeg: (t, W) => `for (let k: i32 = 0; k < ${W}; k++) store<f64>(sc + ((<usize>(${t} + k)) << 3), NEG);`,

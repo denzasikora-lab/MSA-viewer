@@ -382,15 +382,21 @@
         }
         return kept;
     }
-    function restrictNT(set, removeFS) {          // AbstractSeqSet.computeGapsRestriction(removeFS) for SeqSetNT
-        const kept = keptColumnsNT(set, removeFS), n = kept.length;
+    // AbstractSeqSet.computeGapsRestriction(removeFS) for SeqSetNT; `kept` may be passed when already computed
+    function restrictNT(set, removeFS, kept) {
+        if (!kept) kept = keptColumnsNT(set, removeFS);
+        const n = kept.length;
         let all = true; for (let i = 0; i < n; i++) if (!kept[i]) { all = false; break; }
         const out = new SeqSet();
         for (const s of set.arr) {
-            let acids;
-            if (all) acids = s.acids;
-            else { const b = []; for (let i = 0; i < n; i++) if (kept[i]) b.push(s.acids[i]); acids = b.join(''); }
-            if (ungapped(acids).length > 0) out.add(new SeqNT(s.name, acids, s.reliable));
+            let acids, real = false;
+            if (all) { acids = s.acids; real = ungapped(acids).length > 0; }
+            else {
+                const b = [], a = s.acids;
+                for (let i = 0; i < n; i++) if (kept[i]) { const c = a.charCodeAt(i); b.push(c); if (c !== C_DASH && c !== C_BANG) real = true; }
+                acids = codesToString(b);
+            }
+            if (real) out.add(new SeqNT(s.name, acids, s.reliable));
         }
         return out;
     }
@@ -464,7 +470,7 @@
         const freq = new Int32Array(n * 4 * NAA), dim = new Int32Array(n * 4 * 10), prevMono = new Int32Array(S);
         const GAPB = 8, B_HASH = A2B[C_HASH], B_DASH = A2B[C_DASH];
         for (const sq of set.arr) {
-            const upd = sq.updatedAcids(ctx), acids = sq.acids;
+            const upd = sq._updCache || sq.updatedAcids(ctx), acids = sq.acids;
             const first = sq.first(), last = sq.last(), rel = sq.reliable;
             let cgc = 7;
             for (let p = p0; p < s1; p++) {
@@ -511,16 +517,18 @@
             cfStart[i] = cfAA.length;
             for (let a = 0; a < NAA; a++) if (freq[fo + a] > 0) { cfAA.push(a); cfF.push(freq[fo + a]); }
             cfLen[i] = cfAA.length - cfStart[i];
+            const cs = cfStart[i], ce = cs + cfLen[i];
             let sp = 0;
-            for (let u = cfStart[i]; u < cfStart[i] + cfLen[i]; u++) {
-                const x = cfAA[u], fx = cfF[u];
-                sp = (sp + Math.imul(idiv(Math.imul(fx, fx - 1), 2), M[x * NAA + x])) | 0;
-                for (let v = u + 1; v < cfStart[i] + cfLen[i]; v++) sp = (sp + Math.imul(Math.imul(fx, cfF[v]), M[x * NAA + cfAA[v]])) | 0;
+            for (let u = cs; u < ce; u++) {
+                const x = cfAA[u], fx = cfF[u], row = x * NAA;
+                sp = (sp + Math.imul(idiv(Math.imul(fx, fx - 1), 2), M[row + x])) | 0;
+                for (let v = u + 1; v < ce; v++) sp = (sp + Math.imul(Math.imul(fx, cfF[v]), M[row + cfAA[v]])) | 0;
             }
             internal[i] = sp;
             for (let x = 0; x < NAA; x++) {
                 let t = 0;
-                for (let u = cfStart[i]; u < cfStart[i] + cfLen[i]; u++) t = (t + Math.imul(cfF[u], M[x * NAA + cfAA[u]])) | 0;
+                const row = x * NAA;
+                for (let u = cs; u < ce; u++) t = (t + Math.imul(cfF[u], M[row + cfAA[u]])) | 0;
                 inFront[i * NAA + x] = t;
             }
             for (let p = 3; p < 10; p++) dC[i * 10 + p] = dim[dO + p];
@@ -529,11 +537,16 @@
             dXIE[i * 10 + P_EX] += mX; dXIE[i * 10 + P_II] += mI; dXIE[i * 10 + P_EE] += mE;   // computeDimerFreqXIE
         }
         // H vectors (for use as the column profile): H[p1] = sum_p2 G[p1][p2] * f2[p2]
-        const G = GAP_OPEN_TEMPLATE.map(r => r.map(v => v === 1 ? ctx.costs.gapOpTerm : v === 2 ? ctx.costs.gapOpInt : 0));
+        // gap-open costs, as lists of the non-zero (p2, cost) entries per p1 in ascending p2 order (made once per ctx)
+        if (!ctx.gapOpenNZ) {
+            const G = GAP_OPEN_TEMPLATE.map(r => r.map(v => v === 1 ? ctx.costs.gapOpTerm : v === 2 ? ctx.costs.gapOpInt : 0));
+            ctx.gapOpenNZ = G.map(r => r.map((g, p2) => [p2, g]).filter(([p2, g]) => p2 >= 3 && g !== 0));
+        }
+        const NZ = ctx.gapOpenNZ;
         const hv = d => {
             const h = new Int32Array(N4 * 10);
             for (let i = 0; i < N4; i++) for (let p1 = 3; p1 < 10; p1++) {
-                let t = 0; for (let p2 = 3; p2 < 10; p2++) if (G[p1][p2]) t += G[p1][p2] * d[i * 10 + p2];
+                let t = 0; for (const [p2, g] of NZ[p1]) t += g * d[i * 10 + p2];
                 h[i * 10 + p1] = t;
             }
             return h;
@@ -612,35 +625,48 @@
         let R0 = 0, R1 = W, R2 = 2 * W, R3 = 3 * W;
         let cPc = 0, cDi = 0, cDj = 0, code = 0, cc = 0;
         let best = NEG, p0 = NEG, p1 = NEG, p2 = NEG, ps = 0, inn = 0;
-        let s12 = 0, sd = 0, go = 0, rb = 0, i1 = 0, i2 = 0, u = 0, e = 0, o = 0, v = 0, hb = 0;
+        let s12 = 0, sd = 0, go = 0, rb = 0, u = 0, e = 0, q = 0;
         sc[2] = 0;   // MUTATION at (0, 0)
         for (let line = 0; line < S1; line++) {
             const cmin = rowMin[line], cmax = rowMax[line];
             if (line > 0) { const t = R3; R3 = R2; R2 = R1; R1 = R0; R0 = t; sc.fill(NEG, t, t + W); }
             const off = rowOff[line] - cmin, L4 = line * 4;
-            for (let col = cmin; col < cmax; col++) {
-                if (line === 0 && col === 0) continue;
+            const a1_0 = in1[L4 + 0], l1_0 = cl1[L4 + 0], s1_0 = cs1[L4 + 0], o1_0 = (L4 + 0) * 33;
+            const a1_1 = in1[L4 + 1], l1_1 = cl1[L4 + 1], s1_1 = cs1[L4 + 1], o1_1 = (L4 + 1) * 33;
+            const a1_2 = in1[L4 + 2], l1_2 = cl1[L4 + 2], s1_2 = cs1[L4 + 2], o1_2 = (L4 + 2) * 33;
+            const a1_3 = in1[L4 + 3], l1_3 = cl1[L4 + 3], s1_3 = cs1[L4 + 3], o1_3 = (L4 + 3) * 33;
+            const ss00 = spS[(L4 + 0) * 3 + 0], sl00 = spL[(L4 + 0) * 3 + 0];
+            const ss02 = spS[(L4 + 0) * 3 + 2], sl02 = spL[(L4 + 0) * 3 + 2];
+            const ss10 = spS[(L4 + 1) * 3 + 0], sl10 = spL[(L4 + 1) * 3 + 0];
+            const ss12 = spS[(L4 + 1) * 3 + 2], sl12 = spL[(L4 + 1) * 3 + 2];
+            const ss20 = spS[(L4 + 2) * 3 + 0], sl20 = spL[(L4 + 2) * 3 + 0];
+            const ss22 = spS[(L4 + 2) * 3 + 2], sl22 = spL[(L4 + 2) * 3 + 2];
+            const ss30 = spS[(L4 + 3) * 3 + 0], sl30 = spL[(L4 + 3) * 3 + 0];
+            const ss31 = spS[(L4 + 3) * 3 + 1], sl31 = spL[(L4 + 3) * 3 + 1];
+            for (let col = (line === 0 && cmin === 0) ? 1 : cmin; col < cmax; col++) {
                 const C4 = col * 4;
+                const a2_0 = in2[C4 + 0], l2_0 = cl2[C4 + 0], s2_0 = cs2[C4 + 0], o2_0 = (C4 + 0) * 33, hb0 = (C4 + 0) * 10;
+                const a2_1 = in2[C4 + 1], l2_1 = cl2[C4 + 1], s2_1 = cs2[C4 + 1], o2_1 = (C4 + 1) * 33, hb1 = (C4 + 1) * 10;
+                const a2_2 = in2[C4 + 2], l2_2 = cl2[C4 + 2], s2_2 = cs2[C4 + 2], o2_2 = (C4 + 2) * 33, hb2 = (C4 + 2) * 10;
+                const a2_3 = in2[C4 + 3], l2_3 = cl2[C4 + 3], s2_3 = cs2[C4 + 3], o2_3 = (C4 + 3) * 33, hb3 = (C4 + 3) * 10;
                 code = 0;
                 // ---- target MUTATION
                 best = NEG;
                 if (line >= 3 && col >= 3) {   // (3, 3)
                     rb = R3 + (col - 3) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 0; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_0 + a2_0; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (true) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hXIE[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb0 + spP[u]]; go += spF[u + 1] * hXIE[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 3; }
                                 }
@@ -650,15 +676,13 @@
                             ps = p1 + inn;
                             if (true) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss02; e = sl02; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 3; }
                                 }
@@ -668,15 +692,13 @@
                             ps = p2 + inn;
                             if (true) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 3; }
                                 }
@@ -687,20 +709,18 @@
                 if (line >= 3 && col >= 2) {   // (3, 2)
                     rb = R3 + (col - 2) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 0; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_0 + a2_1; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hXIE[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb1 + spP[u]]; go += spF[u + 1] * hXIE[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 2; }
                                 }
@@ -710,15 +730,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss02; e = sl02; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 2; }
                                 }
@@ -728,15 +746,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 2; }
                                 }
@@ -747,20 +763,18 @@
                 if (line >= 2 && col >= 3) {   // (2, 3)
                     rb = R2 + (col - 3) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 1; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_1 + a2_0; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hXIE[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb0 + spP[u]]; go += spF[u + 1] * hXIE[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 3; }
                                 }
@@ -770,15 +784,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss12; e = sl12; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 3; }
                                 }
@@ -788,15 +800,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 3; }
                                 }
@@ -807,20 +817,18 @@
                 if (line >= 3 && col >= 1) {   // (3, 1)
                     rb = R3 + (col - 1) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 0; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_0 + a2_2; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hXIE[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb2 + spP[u]]; go += spF[u + 1] * hXIE[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 1; }
                                 }
@@ -830,15 +838,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss02; e = sl02; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 1; }
                                 }
@@ -848,15 +854,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 1; }
                                 }
@@ -867,20 +871,18 @@
                 if (line >= 1 && col >= 3) {   // (1, 3)
                     rb = R1 + (col - 3) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 2; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_2 + a2_0; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hXIE[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb0 + spP[u]]; go += spF[u + 1] * hXIE[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 3; }
                                 }
@@ -890,15 +892,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss22; e = sl22; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 3; }
                                 }
@@ -908,15 +908,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 3; }
                                 }
@@ -927,20 +925,18 @@
                 if (line >= 2 && col >= 2) {   // (2, 2)
                     rb = R2 + (col - 2) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 1; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_1 + a2_1; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hXIE[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb1 + spP[u]]; go += spF[u + 1] * hXIE[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 2; }
                                 }
@@ -950,15 +946,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss12; e = sl12; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 2; }
                                 }
@@ -968,15 +962,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 2; }
                                 }
@@ -987,20 +979,18 @@
                 if (line >= 2 && col >= 1) {   // (2, 1)
                     rb = R2 + (col - 1) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 1; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_1 + a2_2; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hXIE[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb2 + spP[u]]; go += spF[u + 1] * hXIE[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 1; }
                                 }
@@ -1010,15 +1000,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss12; e = sl12; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 1; }
                                 }
@@ -1028,15 +1016,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 1; }
                                 }
@@ -1047,20 +1033,18 @@
                 if (line >= 1 && col >= 2) {   // (1, 2)
                     rb = R1 + (col - 2) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 2; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_2 + a2_1; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hXIE[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb1 + spP[u]]; go += spF[u + 1] * hXIE[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 2; }
                                 }
@@ -1070,15 +1054,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss22; e = sl22; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 2; }
                                 }
@@ -1088,15 +1070,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 2; }
                                 }
@@ -1107,20 +1087,18 @@
                 if (line >= 1 && col >= 1) {   // (1, 1)
                     rb = R1 + (col - 1) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 2; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_2 + a2_2; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hXIE[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb2 + spP[u]]; go += spF[u + 1] * hXIE[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 1; }
                                 }
@@ -1130,15 +1108,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss22; e = sl22; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 1; }
                                 }
@@ -1148,15 +1124,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 1; }
                                 }
@@ -1172,20 +1146,18 @@
                 if (col >= 3) {   // (0, 3)
                     rb = R0 + (col - 3) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 3; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_3 + a2_0; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss30; e = sl30; if (e === 1) go = spF[u] * hXIE[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb0 + spP[u]]; go += spF[u + 1] * hXIE[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 3; }
                                 }
@@ -1195,15 +1167,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 1; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss31; e = sl31; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 3; }
                                 }
@@ -1213,15 +1183,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss30; e = sl30; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 3; }
                                 }
@@ -1232,20 +1200,18 @@
                 if (col >= 2) {   // (0, 2)
                     rb = R0 + (col - 2) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 3; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_3 + a2_1; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss30; e = sl30; if (e === 1) go = spF[u] * hXIE[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb1 + spP[u]]; go += spF[u + 1] * hXIE[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 2; }
                                 }
@@ -1255,15 +1221,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 1; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss31; e = sl31; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 2; }
                                 }
@@ -1273,15 +1237,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss30; e = sl30; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 2; }
                                 }
@@ -1292,20 +1254,18 @@
                 if (col >= 1) {   // (0, 1)
                     rb = R0 + (col - 1) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 3; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_3 + a2_2; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss30; e = sl30; if (e === 1) go = spF[u] * hXIE[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb2 + spP[u]]; go += spF[u + 1] * hXIE[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 1; }
                                 }
@@ -1315,15 +1275,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 1; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss31; e = sl31; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 1; }
                                 }
@@ -1333,15 +1291,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss30; e = sl30; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 1; }
                                 }
@@ -1357,20 +1313,18 @@
                 if (line >= 3) {   // (3, 0)
                     rb = R3 + (col - 0) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 0; i2 = C4 + 3; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_0 + a2_3; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hIE[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hIE[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hIE[hb3 + spP[u]]; go += spF[u + 1] * hIE[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hIE[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 0; }
                                 }
@@ -1380,15 +1334,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss02; e = sl02; if (e === 1) go = spF[u] * hC[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb3 + spP[u]]; go += spF[u + 1] * hC[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 0; }
                                 }
@@ -1398,15 +1350,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hC[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb3 + spP[u]]; go += spF[u + 1] * hC[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 0; }
                                 }
@@ -1417,20 +1367,18 @@
                 if (line >= 2) {   // (2, 0)
                     rb = R2 + (col - 0) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 1; i2 = C4 + 3; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_1 + a2_3; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hIE[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hIE[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hIE[hb3 + spP[u]]; go += spF[u + 1] * hIE[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hIE[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 0; }
                                 }
@@ -1440,15 +1388,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss12; e = sl12; if (e === 1) go = spF[u] * hC[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb3 + spP[u]]; go += spF[u + 1] * hC[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 0; }
                                 }
@@ -1458,15 +1404,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hC[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb3 + spP[u]]; go += spF[u + 1] * hC[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 0; }
                                 }
@@ -1477,20 +1421,18 @@
                 if (line >= 1) {   // (1, 0)
                     rb = R1 + (col - 0) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 2; i2 = C4 + 3; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_2 + a2_3; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hIE[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hIE[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hIE[hb3 + spP[u]]; go += spF[u + 1] * hIE[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hIE[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 0; }
                                 }
@@ -1500,15 +1442,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss22; e = sl22; if (e === 1) go = spF[u] * hC[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb3 + spP[u]]; go += spF[u + 1] * hC[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 0; }
                                 }
@@ -1518,15 +1458,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hC[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb3 + spP[u]]; go += spF[u + 1] * hC[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 0; }
                                 }
@@ -1552,7 +1490,7 @@
         const RS = (nC + 3) * 3, NEG = -Infinity;
         let cPc = 0, cDi = 0, cDj = 0, code = 0, cc = 0;
         let best = NEG, p0 = NEG, p1 = NEG, p2 = NEG, ps = 0, inn = 0;
-        let s12 = 0, sd = 0, go = 0, rb = 0, i1 = 0, i2 = 0, u = 0, e = 0, o = 0, v = 0, hb = 0;
+        let s12 = 0, sd = 0, go = 0, rb = 0, u = 0, e = 0, q = 0;
         if (r0 === 0 && c0 === 0) T[3 * RS + 9 + 2] = 0;   // MUTATION at (0, 0)
         for (let lr = 0; lr < nR; lr++) {
             const line = r0 + lr;
@@ -1560,29 +1498,42 @@
             if (cmin < c0) cmin = c0;
             if (cmax > c0 + nC) cmax = c0 + nC;
             const rowBase = (lr + 3) * RS, L4 = lr * 4, tbRow = lr * nC - c0;
-            for (let col = cmin; col < cmax; col++) {
-                if (line === 0 && col === 0) continue;
+            const a1_0 = in1[L4 + 0], l1_0 = cl1[L4 + 0], s1_0 = cs1[L4 + 0], o1_0 = (L4 + 0) * 33;
+            const a1_1 = in1[L4 + 1], l1_1 = cl1[L4 + 1], s1_1 = cs1[L4 + 1], o1_1 = (L4 + 1) * 33;
+            const a1_2 = in1[L4 + 2], l1_2 = cl1[L4 + 2], s1_2 = cs1[L4 + 2], o1_2 = (L4 + 2) * 33;
+            const a1_3 = in1[L4 + 3], l1_3 = cl1[L4 + 3], s1_3 = cs1[L4 + 3], o1_3 = (L4 + 3) * 33;
+            const ss00 = spS[(L4 + 0) * 3 + 0], sl00 = spL[(L4 + 0) * 3 + 0];
+            const ss02 = spS[(L4 + 0) * 3 + 2], sl02 = spL[(L4 + 0) * 3 + 2];
+            const ss10 = spS[(L4 + 1) * 3 + 0], sl10 = spL[(L4 + 1) * 3 + 0];
+            const ss12 = spS[(L4 + 1) * 3 + 2], sl12 = spL[(L4 + 1) * 3 + 2];
+            const ss20 = spS[(L4 + 2) * 3 + 0], sl20 = spL[(L4 + 2) * 3 + 0];
+            const ss22 = spS[(L4 + 2) * 3 + 2], sl22 = spL[(L4 + 2) * 3 + 2];
+            const ss30 = spS[(L4 + 3) * 3 + 0], sl30 = spL[(L4 + 3) * 3 + 0];
+            const ss31 = spS[(L4 + 3) * 3 + 1], sl31 = spL[(L4 + 3) * 3 + 1];
+            for (let col = (line === 0 && cmin === 0) ? 1 : cmin; col < cmax; col++) {
                 const lc3 = col - c0 + 3, C4 = (col - c0) * 4;
+                const a2_0 = in2[C4 + 0], l2_0 = cl2[C4 + 0], s2_0 = cs2[C4 + 0], o2_0 = (C4 + 0) * 33, hb0 = (C4 + 0) * 10;
+                const a2_1 = in2[C4 + 1], l2_1 = cl2[C4 + 1], s2_1 = cs2[C4 + 1], o2_1 = (C4 + 1) * 33, hb1 = (C4 + 1) * 10;
+                const a2_2 = in2[C4 + 2], l2_2 = cl2[C4 + 2], s2_2 = cs2[C4 + 2], o2_2 = (C4 + 2) * 33, hb2 = (C4 + 2) * 10;
+                const a2_3 = in2[C4 + 3], l2_3 = cl2[C4 + 3], s2_3 = cs2[C4 + 3], o2_3 = (C4 + 3) * 33, hb3 = (C4 + 3) * 10;
                 code = 0;
                 // ---- target MUTATION
                 best = NEG;
                 if (line >= 3 && col >= 3) {   // (3, 3)
                     rb = rowBase - 3 * RS + (lc3 - 3) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 0; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_0 + a2_0; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (true) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hXIE[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb0 + spP[u]]; go += spF[u + 1] * hXIE[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 3; }
                                 }
@@ -1592,15 +1543,13 @@
                             ps = p1 + inn;
                             if (true) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss02; e = sl02; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 3; }
                                 }
@@ -1610,15 +1559,13 @@
                             ps = p2 + inn;
                             if (true) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 3; }
                                 }
@@ -1629,20 +1576,18 @@
                 if (line >= 3 && col >= 2) {   // (3, 2)
                     rb = rowBase - 3 * RS + (lc3 - 2) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 0; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_0 + a2_1; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hXIE[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb1 + spP[u]]; go += spF[u + 1] * hXIE[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 2; }
                                 }
@@ -1652,15 +1597,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss02; e = sl02; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 2; }
                                 }
@@ -1670,15 +1613,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 2; }
                                 }
@@ -1689,20 +1630,18 @@
                 if (line >= 2 && col >= 3) {   // (2, 3)
                     rb = rowBase - 2 * RS + (lc3 - 3) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 1; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_1 + a2_0; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hXIE[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb0 + spP[u]]; go += spF[u + 1] * hXIE[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 3; }
                                 }
@@ -1712,15 +1651,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss12; e = sl12; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 3; }
                                 }
@@ -1730,15 +1667,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 3; }
                                 }
@@ -1749,20 +1684,18 @@
                 if (line >= 3 && col >= 1) {   // (3, 1)
                     rb = rowBase - 3 * RS + (lc3 - 1) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 0; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_0 + a2_2; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hXIE[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb2 + spP[u]]; go += spF[u + 1] * hXIE[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 1; }
                                 }
@@ -1772,15 +1705,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss02; e = sl02; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 1; }
                                 }
@@ -1790,15 +1721,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 1; }
                                 }
@@ -1809,20 +1738,18 @@
                 if (line >= 1 && col >= 3) {   // (1, 3)
                     rb = rowBase - 1 * RS + (lc3 - 3) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 2; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_2 + a2_0; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hXIE[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb0 + spP[u]]; go += spF[u + 1] * hXIE[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 3; }
                                 }
@@ -1832,15 +1759,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss22; e = sl22; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 3; }
                                 }
@@ -1850,15 +1775,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 3; }
                                 }
@@ -1869,20 +1792,18 @@
                 if (line >= 2 && col >= 2) {   // (2, 2)
                     rb = rowBase - 2 * RS + (lc3 - 2) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 1; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_1 + a2_1; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hXIE[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb1 + spP[u]]; go += spF[u + 1] * hXIE[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 2; }
                                 }
@@ -1892,15 +1813,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss12; e = sl12; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 2; }
                                 }
@@ -1910,15 +1829,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 2; }
                                 }
@@ -1929,20 +1846,18 @@
                 if (line >= 2 && col >= 1) {   // (2, 1)
                     rb = rowBase - 2 * RS + (lc3 - 1) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 1; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_1 + a2_2; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hXIE[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb2 + spP[u]]; go += spF[u + 1] * hXIE[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 1; }
                                 }
@@ -1952,15 +1867,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss12; e = sl12; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 1; }
                                 }
@@ -1970,15 +1883,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 1; }
                                 }
@@ -1989,20 +1900,18 @@
                 if (line >= 1 && col >= 2) {   // (1, 2)
                     rb = rowBase - 1 * RS + (lc3 - 2) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 2; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_2 + a2_1; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hXIE[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb1 + spP[u]]; go += spF[u + 1] * hXIE[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 2; }
                                 }
@@ -2012,15 +1921,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss22; e = sl22; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 2; }
                                 }
@@ -2030,15 +1937,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 2; }
                                 }
@@ -2049,20 +1954,18 @@
                 if (line >= 1 && col >= 1) {   // (1, 1)
                     rb = rowBase - 1 * RS + (lc3 - 1) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 2; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_2 + a2_2; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hXIE[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb2 + spP[u]]; go += spF[u + 1] * hXIE[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 1; }
                                 }
@@ -2072,15 +1975,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss22; e = sl22; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 1; }
                                 }
@@ -2090,15 +1991,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 1; }
                                 }
@@ -2114,20 +2013,18 @@
                 if (col >= 3) {   // (0, 3)
                     rb = rowBase - 0 * RS + (lc3 - 3) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 3; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_3 + a2_0; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss30; e = sl30; if (e === 1) go = spF[u] * hXIE[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb0 + spP[u]]; go += spF[u + 1] * hXIE[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 3; }
                                 }
@@ -2137,15 +2034,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 1; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss31; e = sl31; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 3; }
                                 }
@@ -2155,15 +2050,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_0 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_0 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_0 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_0 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss30; e = sl30; if (e === 1) go = spF[u] * hC[hb0 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb0 + spP[u]]; go += spF[u + 1] * hC[hb0 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb0 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 3; }
                                 }
@@ -2174,20 +2067,18 @@
                 if (col >= 2) {   // (0, 2)
                     rb = rowBase - 0 * RS + (lc3 - 2) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 3; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_3 + a2_1; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss30; e = sl30; if (e === 1) go = spF[u] * hXIE[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb1 + spP[u]]; go += spF[u + 1] * hXIE[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 2; }
                                 }
@@ -2197,15 +2088,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 1; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss31; e = sl31; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 2; }
                                 }
@@ -2215,15 +2104,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_1 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_1 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_1 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_1 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss30; e = sl30; if (e === 1) go = spF[u] * hC[hb1 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb1 + spP[u]]; go += spF[u + 1] * hC[hb1 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb1 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 2; }
                                 }
@@ -2234,20 +2121,18 @@
                 if (col >= 1) {   // (0, 1)
                     rb = rowBase - 0 * RS + (lc3 - 1) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 3; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_3 + a2_2; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    u = ss30; e = sl30; if (e === 1) go = spF[u] * hXIE[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hXIE[hb2 + spP[u]]; go += spF[u + 1] * hXIE[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hXIE[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 1; }
                                 }
@@ -2257,15 +2142,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 1; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss31; e = sl31; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 1; }
                                 }
@@ -2275,15 +2158,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_3 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = cf2[u] * if1[o1_3 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_3 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_3 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_3 + ca2[u + q]]; } }
+                                    else { u = s1_3; e = l1_3; if (e === 1) s12 = cf1[u] * if2[o2_2 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_2 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_2 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_2 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss30; e = sl30; if (e === 1) go = spF[u] * hC[hb2 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb2 + spP[u]]; go += spF[u + 1] * hC[hb2 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb2 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 1; }
                                 }
@@ -2299,20 +2180,18 @@
                 if (line >= 3) {   // (3, 0)
                     rb = rowBase - 3 * RS + (lc3 - 0) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 0; i2 = C4 + 3; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_0 + a2_3; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hIE[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hIE[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hIE[hb3 + spP[u]]; go += spF[u + 1] * hIE[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hIE[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 0; }
                                 }
@@ -2322,15 +2201,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss02; e = sl02; if (e === 1) go = spF[u] * hC[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb3 + spP[u]]; go += spF[u + 1] * hC[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 0; }
                                 }
@@ -2340,15 +2217,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_0 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_0 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_0 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_0 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_0 + ca2[u + q]]; } }
+                                    else { u = s1_0; e = l1_0; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss00; e = sl00; if (e === 1) go = spF[u] * hC[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb3 + spP[u]]; go += spF[u + 1] * hC[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 0; }
                                 }
@@ -2359,20 +2234,18 @@
                 if (line >= 2) {   // (2, 0)
                     rb = rowBase - 2 * RS + (lc3 - 0) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 1; i2 = C4 + 3; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_1 + a2_3; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hIE[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hIE[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hIE[hb3 + spP[u]]; go += spF[u + 1] * hIE[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hIE[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 0; }
                                 }
@@ -2382,15 +2255,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss12; e = sl12; if (e === 1) go = spF[u] * hC[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb3 + spP[u]]; go += spF[u + 1] * hC[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 0; }
                                 }
@@ -2400,15 +2271,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_1 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_1 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_1 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_1 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_1 + ca2[u + q]]; } }
+                                    else { u = s1_1; e = l1_1; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss10; e = sl10; if (e === 1) go = spF[u] * hC[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb3 + spP[u]]; go += spF[u + 1] * hC[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 0; }
                                 }
@@ -2419,20 +2288,18 @@
                 if (line >= 1) {   // (1, 0)
                     rb = rowBase - 1 * RS + (lc3 - 0) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
                     if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                        i1 = L4 + 2; i2 = C4 + 3; inn = in1[i1] + in2[i2]; sd = 0;
+                        inn = a1_2 + a2_3; sd = 0;
                         if (p0 !== NEG) {
                             ps = p0 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hIE[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hIE[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hIE[hb3 + spP[u]]; go += spF[u + 1] * hIE[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hIE[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 0; }
                                 }
@@ -2442,15 +2309,13 @@
                             ps = p1 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss22; e = sl22; if (e === 1) go = spF[u] * hC[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb3 + spP[u]]; go += spF[u + 1] * hC[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 0; }
                                 }
@@ -2460,15 +2325,13 @@
                             ps = p2 + inn;
                             if (ps > best) {
                                 if (sd === 0) {
-                                    s12 = 0;
-                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    if (l1_2 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = cf2[u] * if1[o1_2 + ca2[u]]; else if (e === 2) { s12 = cf2[u] * if1[o1_2 + ca2[u]]; s12 += cf2[u + 1] * if1[o1_2 + ca2[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf2[u + q] * if1[o1_2 + ca2[u + q]]; } }
+                                    else { u = s1_2; e = l1_2; if (e === 1) s12 = cf1[u] * if2[o2_3 + ca1[u]]; else if (e === 2) { s12 = cf1[u] * if2[o2_3 + ca1[u]]; s12 += cf1[u + 1] * if2[o2_3 + ca1[u + 1]]; } else { s12 = 0; for (q = 0; q < e; q++) s12 += cf1[u + q] * if2[o2_3 + ca1[u + q]]; } }
                                     s12 |= 0; sd = 1;
                                 }
                                 ps += s12;
                                 if (ps > best) {
-                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    u = ss20; e = sl20; if (e === 1) go = spF[u] * hC[hb3 + spP[u]]; else if (e === 2) { go = spF[u] * hC[hb3 + spP[u]]; go += spF[u + 1] * hC[hb3 + spP[u + 1]]; } else { go = 0; for (q = 0; q < e; q++) go += spF[u + q] * hC[hb3 + spP[u + q]]; }
                                     ps += (go | 0);
                                     if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 0; }
                                 }
@@ -2609,17 +2472,19 @@
     // ------------------------------------------------------------------ SP score (sequences.sp_scores.SPscoreLinear)
     function spScoreLinear(setAA, ctx) {
         const seqs = setAA.arr, n = setAA.sites(), M = ctx.matrix, c = ctx.costs;
-        const freq = new Int32Array(NAA * Math.max(n, 0));
-        for (const s of seqs) { const u = s.updated(); for (let site = 0; site < n; site++) freq[aByte(u[site]) * n + site]++; }
+        const freq = new Int32Array(NAA * Math.max(n, 0));          // site-major: [site * NAA + amino byte]
+        for (const s of seqs) { const u = s.updated(); for (let site = 0; site < n; site++) { const t = u[site]; freq[site * NAA + (t < 91 ? A2B[t] : aByte(t))]++; } }
         let subst = 0;
+        const used = new Int32Array(NAA);
         for (let site = 0; site < n; site++) {
-            const used = [];
-            for (let a = 0; a < NAA; a++) if (freq[a * n + site] > 0) used.push(a);
+            const f = site * NAA;
+            let nu = 0;
+            for (let a = 0; a < NAA; a++) if (freq[f + a] > 0) used[nu++] = a;
             let siteScore = 0;
-            for (let x = 0; x < used.length; x++) {
-                const ax = used[x], fx = freq[ax * n + site];
+            for (let x = 0; x < nu; x++) {
+                const ax = used[x], fx = freq[f + ax];
                 siteScore = (siteScore + Math.imul(idiv(Math.imul(fx, fx - 1), 2), M[ax * NAA + ax])) | 0;
-                for (let y = x + 1; y < used.length; y++) siteScore = (siteScore + Math.imul(Math.imul(fx, freq[used[y] * n + site]), M[ax * NAA + used[y]])) | 0;
+                for (let y = x + 1; y < nu; y++) siteScore = (siteScore + Math.imul(Math.imul(fx, freq[f + used[y]]), M[ax * NAA + used[y]])) | 0;
             }
             subst = (subst + siteScore) | 0;
         }
@@ -3146,12 +3011,12 @@
     // profile slices of its rows and columns; the coordinator keeps the tracebacks and walks them as dp() does.
     // Per-thread cache of the sequence sets and profile ranges of the last tiled alignments (tiles of the same row or
     // column block reuse the profile range when they land on the same thread).
-    const tileCache = new Map();
+    const tileCache = new Map(), dpSetCache = new Map();
     function tileCached(key, make) {
         if (tileCache.has(key)) { const v = tileCache.get(key); tileCache.delete(key); tileCache.set(key, v); return v; }
         const v = make();
         tileCache.set(key, v);
-        while (tileCache.size > 24) tileCache.delete(tileCache.keys().next().value);
+        while (tileCache.size > 160) tileCache.delete(tileCache.keys().next().value);   // room for several whole grids (2 + nI + nJ keys each)
         return v;
     }
     function runWasmTile(K, t) {
@@ -3179,20 +3044,31 @@
     function fillTileBorders(T, t, RS) {
         T.fill(-Infinity);
         if (t.top) T.set(t.top, 0);
-        if (t.left) for (let lr = 0; lr < t.nR; lr++) T.set(t.left.subarray(lr * 9, lr * 9 + 9), (lr + 3) * RS);
+        if (t.left) { const L = t.left; for (let lr = 0; lr < t.nR; lr++) { const d = (lr + 3) * RS, o = lr * 9; for (let k = 0; k < 9; k++) T[d + k] = L[o + k]; } }
     }
     function tileOutputs(T, tb, t, RS) {
         const { nR, nC } = t;
         const bottom = new Float64Array(3 * nC * 3), right = new Float64Array(nR * 9);
         for (let k = 0; k < 3; k++) bottom.set(T.subarray((nR + k) * RS + 9, (nR + k + 1) * RS), k * nC * 3);
-        for (let lr = 0; lr < nR; lr++) right.set(T.subarray((lr + 3) * RS + nC * 3, (lr + 4) * RS), lr * 9);
+        for (let lr = 0; lr < nR; lr++) { const o = (lr + 3) * RS + nC * 3, d = lr * 9; for (let k = 0; k < 9; k++) right[d + k] = T[o + k]; }
         return { bottom, right, tb: tb.slice() };
     }
     // Runs one tile (called in pool threads): builds the profile ranges of its rows and columns, then dpTile.
     function runTileTask(t) {
         let ctx = taskCtxCache.get(t.opts.key);
         if (!ctx) { ctx = makeCtx(t.opts.o); taskCtxCache.set(t.opts.key, ctx); }
-        const set1 = tileCached(t.dpKey + ':s1', () => wireToSet(t.s1)), set2 = tileCached(t.dpKey + ':s2', () => wireToSet(t.s2));
+        // The sequence sets of a DP come with the first tile a thread gets; later tiles of that DP carry none (the
+        // pool keeps track). They are translated once per thread (never modified, so the cache stays valid).
+        let sets = dpSetCache.get(t.dpKey);
+        if (!sets) {
+            if (!t.s1) return { needSets: true };
+            const withUpd = w => { const set = wireToSet(w); for (const q of set.arr) q._updCache = q.updatedAcids(ctx); return set; };
+            sets = [withUpd(t.s1), withUpd(t.s2)];
+            dpSetCache.set(t.dpKey, sets);
+            const cap = (typeof globalThis !== 'undefined' && globalThis.MACSE_DPSET_CAP) || 64;   // tests shrink it to force resends
+            while (dpSetCache.size > cap) dpSetCache.delete(dpSetCache.keys().next().value);
+        }
+        const [set1, set2] = sets;
         t.P1 = tileCached(`${t.dpKey}:L${t.r0}`, () => buildProfile(set1, ctx, t.r0, t.r0 + t.nR, 'line'));
         t.P2 = tileCached(`${t.dpKey}:C${t.c0}`, () => buildProfile(set2, ctx, t.c0, t.c0 + t.nC, 'col'));
         const K = t.useWasm === false ? null : getWasmKernel();
@@ -3202,9 +3078,13 @@
         dpTile(t.S1, t.S2, t.r0, t.nR, t.c0, t.nC, t.rowMin, t.rowMax, T, tb, t.P1, t.P2);
         return tileOutputs(T, tb, t, RS);
     }
-    function runTask(task) { return task.kind === 'tile' ? runTileTask(task) : runDpTask(task); }
+    // Distances of one row of pairs (i, j > i): Aligner.computeInitialSequenceDistanceMEM, one SuffixTree per pair.
+    function runDistTask(t) { return t.b.map(b => javaRoundF(f32(new SuffixTree(t.a, b, 6, t.alphabet).memDist3RF() * f32(500)))); }
+    function runTask(task) { return task.kind === 'tile' ? runTileTask(task) : (task.kind === 'dist' ? runDistTask(task) : runDpTask(task)); }
     // Typed-array buffers of a task or result that can be moved (not copied) between threads.
     function transferables(obj) {
+        if (obj && obj.kind === 'tile') return [obj.rowMin, obj.rowMax, obj.top, obj.left].filter(Boolean).map(a => a.buffer);
+        if (obj && obj.bottom) return [obj.bottom.buffer, obj.right.buffer, obj.tb.buffer];
         const out = new Set();
         const walk = o => {
             if (!o || typeof o !== 'object') return;
@@ -3253,10 +3133,10 @@
                     }
                     const task = {
                         kind: 'tile', S1, S2, r0, nR, c0, nC, rowMin: rowMin.slice(r0, r0 + nR), rowMax: rowMax.slice(r0, r0 + nR),
-                        top, left: left ? left.right.slice() : null, useWasm: ctx.useWasm,
+                        top, left: left ? left.right : null, useWasm: ctx.useWasm,   // copied when sent, so no slice here
                         opts: ctx.taskOpts, dpKey, s1: w1, s2: w2
                     };
-                    return runner.run(task, gen, prio);
+                    return runner.run(task, gen, prio + (I + J) / (nI + nJ));   // within one DP: earlier anti-diagonals first
                 });
                 pr.catch(() => { });
                 proms[I * nJ + J] = pr;
@@ -3398,13 +3278,14 @@
                 if (!cands.length) break;
                 const myGen = ++gen, conservedNow = conserved, real = localReal;
                 const dispatch = c => {
-                    const c1 = new RestrictedCoordinates(keptColumnsNT(c.s1, true)), c2 = new RestrictedCoordinates(keptColumnsNT(c.s2, true));
+                    const k1 = keptColumnsNT(c.s1, true), k2 = keptColumnsNT(c.s2, true);
+                    const c1 = new RestrictedCoordinates(k1), c2 = new RestrictedCoordinates(k2);
                     c1.setFacingSite(c2);
                     let deltaDefault = Math.ceil(f32(f32(c.s2.sites()) * real));
                     deltaDefault = Math.max(deltaDefault, 30);
                     const bounds = c1.boundsDeltaMax(c2, deltaDefault, idiv(deltaDefault, 2), conservedNow);
                     c.c1 = c1;
-                    c.promise = exec(restrictNT(c.s1, true), restrictNT(c.s2, true), bounds, myGen);
+                    c.promise = exec(restrictNT(c.s1, true, k1), restrictNT(c.s2, true, k2), bounds, myGen);
                     c.promise.catch(() => { });
                 };
                 let d = 0, accepted = false;
@@ -3525,6 +3406,19 @@
         }
         return dist;
     }
+    // distanceMatrix with the rows of pairs computed in the pool (same values)
+    async function distanceMatrixAsync(set, ctx, runner, progress) {
+        if (runner.size < 2) return distanceMatrix(set, ctx, progress);
+        const n = set.size, dist = Array.from({ length: n }, () => new Array(n).fill(0));
+        const tr = set.arr.map(q => seqCons3RF(q, ctx));
+        let pairsDone = 0;
+        await Promise.all(tr.slice(0, n - 1).map((a, i) => runner.run({ kind: 'dist', alphabet: ctx.alphabet, a, b: tr.slice(i + 1) }, 0, 0).then(row => {
+            row.forEach((d, k) => { dist[i][i + 1 + k] = d; dist[i + 1 + k][i] = d; });
+            pairsDone += row.length;
+            if (progress) progress('distances', pairsDone, n * (n - 1) / 2);
+        })));
+        return dist;
+    }
     function finishOutput(out, set, ctx, t0, extra) {
         const nt = out.arr.filter(q => q.acids.length).map(q => ({ name: q.name, seq: q.acids }));
         const aa = out.arr.filter(q => q.acids.length).map(q => ({ name: q.name, seq: q.toAminos(ctx).frameAminos(1).acids }));
@@ -3532,8 +3426,11 @@
     }
 
     // Synchronous, single thread.
+    // The warm-up only helps the JavaScript kernel; with WebAssembly (or with the DP in pool threads) skip it.
+    const needsWarmUp = (opts, runner) => !warmedUp && !(opts && opts._warm) && !(runner && runner.size >= 2) &&
+        (opts && opts.useWasm === false || !getWasmKernel());
     function alignSequences(records, opts) {
-        if (!warmedUp && !(opts && opts._warm)) warmUp();
+        if (needsWarmUp(opts)) warmUp();
         const t0 = Date.now();
         const { ctx, set, progress } = prepareInput(records, opts);
         let out;
@@ -3554,8 +3451,8 @@
 
     // Same result as alignSequences; profile alignments run through `runner` (a pool of threads, see above).
     async function alignSequencesAsync(records, opts, runner) {
-        if (!warmedUp && !(opts && opts._warm)) warmUp();
         runner = runner || localRunner();
+        if (needsWarmUp(opts, runner)) warmUp();
         const t0 = Date.now();
         const { ctx, set, progress } = prepareInput(records, opts);
         let out;
@@ -3566,7 +3463,7 @@
             out = wireToSet((await makeExecutor(ctx, runner)(a, b, null, 0)).set);
         } else {
             for (const q of set.arr) q.removeGaps();
-            const dist = distanceMatrix(set, ctx, progress);
+            const dist = await distanceMatrixAsync(set, ctx, runner, progress);
             out = await dynamicTreeAsync(set, dist, ctx, runner, progress);
             if (ctx.opts.optim === 2) out = await refine2cutAsync(out, ctx, runner, progress);
             else if (ctx.opts.optim === 1) out = await cutLeavesAsync(out, ctx, runner);

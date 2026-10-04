@@ -656,9 +656,11 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     extension 0.9, terminal frameshift 10, standard genetic code). The port computes exactly what MACSE computes, but
     faster: its innermost loop runs as WebAssembly, and it uses several processor cores (up to 8). Steps of MACSE that do
     not depend on each other run at the same time, refinement steps that MACSE would try next are computed ahead and used
-    in MACSE's order, and large pairwise profile alignments are split into tiles computed in parallel. On one computer, for
-    24 four-species genes of 0.4 to 3.6 kb, it took 0.6 to 4 s per gene, 8 times faster than MACSE overall (median 8,
-    up to 14 for the longest gene); on one core it is 4 times faster. The final version was checked against MACSE on
+    in MACSE's order, and large pairwise profile alignments are split into tiles computed in parallel. The worker threads
+    are kept for the next codon alignment (for two minutes), so later alignments start faster. On one computer, for 24
+    four-species genes of 0.4 to 3.6 kb, a first alignment took 0.6 to 3.9 s per gene, 9 times faster than MACSE
+    overall (up to 14 times for the longest gene); later ones took 0.14 to 2.9 s, 17 times faster (median 17); on one
+    core it is 4.7 times faster. The final version was checked against MACSE on
     the 2,636 genes and on 260 random sets of 2 to 24 sequences: every alignment identical. The busy indicator shows
     the stage. MACSE reads U and IUPAC codes other than R, Y and N as N;
     the viewer aligns U as T and puts each sequence's own letters back into the result. Sequence names do not affect the

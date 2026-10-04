@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v230';
+const BUILD_TAG = 'v231';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -17704,6 +17704,7 @@ function _confirmMafftJob(stats, extraArgs) {
 function _cancelActiveMafftWorker() {
     if (_activeMafftWorker) {
         _activeMafftWorker.terminate();
+        if (_activeMafftWorker === _macseWorker) _macseWorker = null;
         _activeMafftWorker = null;
     }
     if (_activeMafftReject) {
@@ -17774,13 +17775,29 @@ function _isCodonAlignMode() {
     return el('mafftSeqType')?.value === 'codon';
 }
 
+// The MACSE worker (and the threads it starts) is kept for the next codon alignment, so the threads, the module
+// and the WebAssembly kernel are not set up again each time; it is freed after 2 idle minutes, on cancel or on error.
+let _macseWorker = null, _macseWorkerIdle = null;
+function _takeMacseWorker() {
+    if (_macseWorkerIdle) { clearTimeout(_macseWorkerIdle); _macseWorkerIdle = null; }
+    if (!_macseWorker) _macseWorker = new Worker(`macse-worker.js?v=${BUILD_TAG.replace(/^v/, '')}`);
+    return _macseWorker;
+}
+function _parkMacseWorker() {
+    if (_macseWorkerIdle) clearTimeout(_macseWorkerIdle);
+    _macseWorkerIdle = setTimeout(() => {
+        _macseWorkerIdle = null;
+        if (_macseWorker && _activeMafftWorker !== _macseWorker) { _macseWorker.terminate(); _macseWorker = null; }
+    }, 120000);
+}
+
 function _runCodonAlignInWorker(fasta, opts, onProgress) {
     return new Promise((resolve, reject) => {
         _cancelActiveMafftWorker();
         const id = Date.now();
         // MACSE port: macse-worker.js (CeCILL 2.1, may start nested workers); fast engine: codon-align-worker.js (MIT)
-        const file = opts && opts.engine === 'macse' ? 'macse-worker.js' : 'codon-align-worker.js';
-        const worker = new Worker(`${file}?v=${BUILD_TAG.replace(/^v/, '')}`);
+        const macse = !!(opts && opts.engine === 'macse');
+        const worker = macse ? _takeMacseWorker() : new Worker(`codon-align-worker.js?v=${BUILD_TAG.replace(/^v/, '')}`);
         _activeMafftWorker = worker;
         _activeMafftReject = reject;
         worker.onmessage = (ev) => {
@@ -17788,7 +17805,7 @@ function _runCodonAlignInWorker(fasta, opts, onProgress) {
             if (ev.data.progress) { if (onProgress) onProgress(ev.data.progress); return; }
             _activeMafftWorker = null;
             _activeMafftReject = null;
-            worker.terminate();
+            if (macse) _parkMacseWorker(); else worker.terminate();
             if (ev.data.ok) {
                 window._lastCodonAlignStats = ev.data.stats || null;
                 resolve(ev.data.result);
@@ -17798,6 +17815,7 @@ function _runCodonAlignInWorker(fasta, opts, onProgress) {
             _activeMafftWorker = null;
             _activeMafftReject = null;
             worker.terminate();
+            if (worker === _macseWorker) _macseWorker = null;
             reject(err);
         };
         worker.postMessage({ id, type: 'align', fasta, opts });

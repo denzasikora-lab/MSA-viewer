@@ -31,7 +31,12 @@ as MACSE. Do not tune or "improve" its results: any change must keep every check
 - 2026-10-04, first port: 2,636 of 2,636 hamster BUSCO alignments identical to MACSE (DRAGEN), 24/24 fixtures, 60/60
   corpus sets, and identical with changed `-fs`, `-stop`, `-gap_op`, `-optim 1`, `-max_refine_iter 0`.
 - 2026-10-04, parallel version before tiling: 200/200 sets of the larger corpus identical (Monsoon).
-- Final checks of the tiled parallel version: see the Hamster project notes.
+- 2026-10-04, v230 (tiled parallel version): 2,636/2,636 identical, 400/400 runs on the larger corpus (default and
+  forced 48-cell tiles); the 25 genes MACSE had not finished in 15 min were aligned by MACSE without limit (13-36 min
+  each) and are all identical to the port (38-228 s with 8 threads).
+- 2026-10-04, v231 (after the GLM speed audit, `reference/glm-macse-speed-audit-2026-10-04/`): 2,636/2,636 identical,
+  400/400 larger-corpus runs, 24/24 fixtures, 60/60 random sets on every path; 4.7x MACSE on one thread, 9.0x with 8
+  threads, 16.8x when the pool is kept between alignments (same machine, 24 genes).
 
 To compare against MACSE on new data, run MACSE and the port on the same FASTA (same sequence order):
 

@@ -8,35 +8,48 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
     let R0: i32 = 0, R1: i32 = W, R2: i32 = 2 * W, R3: i32 = 3 * W;
     let cPc: i32 = 0, cDi: i32 = 0, cDj: i32 = 0, code: i32 = 0, cc: i32 = 0;
     let best: f64 = NEG, p0: f64 = NEG, p1: f64 = NEG, p2: f64 = NEG, ps: f64 = 0, inn: f64 = 0;
-    let s12: i32 = 0, sd: i32 = 0, go: i32 = 0, rb: i32 = 0, i1: i32 = 0, i2: i32 = 0, u: i32 = 0, e: i32 = 0, o: i32 = 0, v: i32 = 0, hb: i32 = 0;
+    let s12: i32 = 0, sd: i32 = 0, go: i32 = 0, rb: i32 = 0, u: i32 = 0, e: i32 = 0, q: i32 = 0;
     store<f64>(sc + ((<usize>(2)) << 3), 0);   // MUTATION at (0, 0)
     for (let line: i32 = 0; line < S1; line++) {
         const cmin: i32 = load<i32>(rowMin + ((<usize>(line)) << 2)), cmax: i32 = load<i32>(rowMax + ((<usize>(line)) << 2));
         if (line > 0) { const t: i32 = R3; R3 = R2; R2 = R1; R1 = R0; R0 = t; for (let k: i32 = 0; k < W; k++) store<f64>(sc + ((<usize>(t + k)) << 3), NEG); }
         const off: u32 = load<u32>(rowOff + ((<usize>(line)) << 2)) - <u32>cmin, L4: i32 = line * 4;
-        for (let col: i32 = cmin; col < cmax; col++) {
-            if (line === 0 && col === 0) continue;
+        const a1_0: f64 = load<f64>(in1 + ((<usize>(L4)) << 3), 0), l1_0: i32 = load<i32>(cl1 + ((<usize>(L4)) << 2), 0), s1_0: i32 = load<i32>(cs1 + ((<usize>(L4)) << 2), 0), o1_0: i32 = (L4 + 0) * 33;
+        const a1_1: f64 = load<f64>(in1 + ((<usize>(L4)) << 3), 8), l1_1: i32 = load<i32>(cl1 + ((<usize>(L4)) << 2), 4), s1_1: i32 = load<i32>(cs1 + ((<usize>(L4)) << 2), 4), o1_1: i32 = (L4 + 1) * 33;
+        const a1_2: f64 = load<f64>(in1 + ((<usize>(L4)) << 3), 16), l1_2: i32 = load<i32>(cl1 + ((<usize>(L4)) << 2), 8), s1_2: i32 = load<i32>(cs1 + ((<usize>(L4)) << 2), 8), o1_2: i32 = (L4 + 2) * 33;
+        const a1_3: f64 = load<f64>(in1 + ((<usize>(L4)) << 3), 24), l1_3: i32 = load<i32>(cl1 + ((<usize>(L4)) << 2), 12), s1_3: i32 = load<i32>(cs1 + ((<usize>(L4)) << 2), 12), o1_3: i32 = (L4 + 3) * 33;
+        const ss00: i32 = load<i32>(spS + ((<usize>((L4 + 0) * 3)) << 2), 0), sl00: i32 = load<i32>(spL + ((<usize>((L4 + 0) * 3)) << 2), 0);
+        const ss02: i32 = load<i32>(spS + ((<usize>((L4 + 0) * 3)) << 2), 8), sl02: i32 = load<i32>(spL + ((<usize>((L4 + 0) * 3)) << 2), 8);
+        const ss10: i32 = load<i32>(spS + ((<usize>((L4 + 1) * 3)) << 2), 0), sl10: i32 = load<i32>(spL + ((<usize>((L4 + 1) * 3)) << 2), 0);
+        const ss12: i32 = load<i32>(spS + ((<usize>((L4 + 1) * 3)) << 2), 8), sl12: i32 = load<i32>(spL + ((<usize>((L4 + 1) * 3)) << 2), 8);
+        const ss20: i32 = load<i32>(spS + ((<usize>((L4 + 2) * 3)) << 2), 0), sl20: i32 = load<i32>(spL + ((<usize>((L4 + 2) * 3)) << 2), 0);
+        const ss22: i32 = load<i32>(spS + ((<usize>((L4 + 2) * 3)) << 2), 8), sl22: i32 = load<i32>(spL + ((<usize>((L4 + 2) * 3)) << 2), 8);
+        const ss30: i32 = load<i32>(spS + ((<usize>((L4 + 3) * 3)) << 2), 0), sl30: i32 = load<i32>(spL + ((<usize>((L4 + 3) * 3)) << 2), 0);
+        const ss31: i32 = load<i32>(spS + ((<usize>((L4 + 3) * 3)) << 2), 4), sl31: i32 = load<i32>(spL + ((<usize>((L4 + 3) * 3)) << 2), 4);
+        for (let col: i32 = (line === 0 && cmin === 0) ? 1 : cmin; col < cmax; col++) {
             const C4: i32 = col * 4;
+            const a2_0: f64 = load<f64>(in2 + ((<usize>(C4)) << 3), 0), l2_0: i32 = load<i32>(cl2 + ((<usize>(C4)) << 2), 0), s2_0: i32 = load<i32>(cs2 + ((<usize>(C4)) << 2), 0), o2_0: i32 = (C4 + 0) * 33, hb0: i32 = (C4 + 0) * 10;
+            const a2_1: f64 = load<f64>(in2 + ((<usize>(C4)) << 3), 8), l2_1: i32 = load<i32>(cl2 + ((<usize>(C4)) << 2), 4), s2_1: i32 = load<i32>(cs2 + ((<usize>(C4)) << 2), 4), o2_1: i32 = (C4 + 1) * 33, hb1: i32 = (C4 + 1) * 10;
+            const a2_2: f64 = load<f64>(in2 + ((<usize>(C4)) << 3), 16), l2_2: i32 = load<i32>(cl2 + ((<usize>(C4)) << 2), 8), s2_2: i32 = load<i32>(cs2 + ((<usize>(C4)) << 2), 8), o2_2: i32 = (C4 + 2) * 33, hb2: i32 = (C4 + 2) * 10;
+            const a2_3: f64 = load<f64>(in2 + ((<usize>(C4)) << 3), 24), l2_3: i32 = load<i32>(cl2 + ((<usize>(C4)) << 2), 12), s2_3: i32 = load<i32>(cs2 + ((<usize>(C4)) << 2), 12), o2_3: i32 = (C4 + 3) * 33, hb3: i32 = (C4 + 3) * 10;
             code = 0;
             // ---- target MUTATION
             best = NEG;
             if (line >= 3 && col >= 3) {   // (3, 3)
-                rb = R3 + (col - 3) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R3 + (col - 3) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 0; i2 = C4 + 0; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_0 + a2_0; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (true) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 3; }
                             }
@@ -46,15 +59,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (true) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss02; e = sl02; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 3; }
                             }
@@ -64,15 +75,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (true) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 3; }
                             }
@@ -81,22 +90,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                 }
             }
             if (line >= 3 && col >= 2) {   // (3, 2)
-                rb = R3 + (col - 2) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R3 + (col - 2) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 0; i2 = C4 + 1; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_0 + a2_1; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 2; }
                             }
@@ -106,15 +113,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss02; e = sl02; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 2; }
                             }
@@ -124,15 +129,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 2; }
                             }
@@ -141,22 +144,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                 }
             }
             if (line >= 2 && col >= 3) {   // (2, 3)
-                rb = R2 + (col - 3) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R2 + (col - 3) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 1; i2 = C4 + 0; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_1 + a2_0; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 3; }
                             }
@@ -166,15 +167,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss12; e = sl12; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 3; }
                             }
@@ -184,15 +183,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 3; }
                             }
@@ -201,22 +198,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                 }
             }
             if (line >= 3 && col >= 1) {   // (3, 1)
-                rb = R3 + (col - 1) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R3 + (col - 1) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 0; i2 = C4 + 2; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_0 + a2_2; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 1; }
                             }
@@ -226,15 +221,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss02; e = sl02; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 1; }
                             }
@@ -244,15 +237,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 1; }
                             }
@@ -261,22 +252,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                 }
             }
             if (line >= 1 && col >= 3) {   // (1, 3)
-                rb = R1 + (col - 3) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R1 + (col - 3) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 2; i2 = C4 + 0; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_2 + a2_0; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 3; }
                             }
@@ -286,15 +275,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss22; e = sl22; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 3; }
                             }
@@ -304,15 +291,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 3; }
                             }
@@ -321,22 +306,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                 }
             }
             if (line >= 2 && col >= 2) {   // (2, 2)
-                rb = R2 + (col - 2) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R2 + (col - 2) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 1; i2 = C4 + 1; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_1 + a2_1; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 2; }
                             }
@@ -346,15 +329,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss12; e = sl12; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 2; }
                             }
@@ -364,15 +345,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 2; }
                             }
@@ -381,22 +360,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                 }
             }
             if (line >= 2 && col >= 1) {   // (2, 1)
-                rb = R2 + (col - 1) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R2 + (col - 1) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 1; i2 = C4 + 2; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_1 + a2_2; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 1; }
                             }
@@ -406,15 +383,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss12; e = sl12; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 1; }
                             }
@@ -424,15 +399,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 1; }
                             }
@@ -441,22 +414,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                 }
             }
             if (line >= 1 && col >= 2) {   // (1, 2)
-                rb = R1 + (col - 2) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R1 + (col - 2) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 2; i2 = C4 + 1; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_2 + a2_1; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 2; }
                             }
@@ -466,15 +437,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss22; e = sl22; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 2; }
                             }
@@ -484,15 +453,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 2; }
                             }
@@ -501,22 +468,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                 }
             }
             if (line >= 1 && col >= 1) {   // (1, 1)
-                rb = R1 + (col - 1) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R1 + (col - 1) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 2; i2 = C4 + 2; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_2 + a2_2; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 1; }
                             }
@@ -526,15 +491,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss22; e = sl22; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 1; }
                             }
@@ -544,15 +507,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 1; }
                             }
@@ -566,22 +527,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
             // ---- target DELETION
             best = NEG;
             if (col >= 3) {   // (0, 3)
-                rb = R0 + (col - 3) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R0 + (col - 3) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 3; i2 = C4 + 0; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_3 + a2_0; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss30; e = sl30; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 3; }
                             }
@@ -591,15 +550,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 1; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss31; e = sl31; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 3; }
                             }
@@ -609,15 +566,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss30; e = sl30; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 3; }
                             }
@@ -626,22 +581,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                 }
             }
             if (col >= 2) {   // (0, 2)
-                rb = R0 + (col - 2) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R0 + (col - 2) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 3; i2 = C4 + 1; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_3 + a2_1; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss30; e = sl30; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 2; }
                             }
@@ -651,15 +604,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 1; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss31; e = sl31; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 2; }
                             }
@@ -669,15 +620,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss30; e = sl30; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 2; }
                             }
@@ -686,22 +635,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                 }
             }
             if (col >= 1) {   // (0, 1)
-                rb = R0 + (col - 1) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R0 + (col - 1) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 3; i2 = C4 + 2; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_3 + a2_2; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss30; e = sl30; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 1; }
                             }
@@ -711,15 +658,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 1; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss31; e = sl31; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 1; }
                             }
@@ -729,15 +674,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss30; e = sl30; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 1; }
                             }
@@ -751,22 +694,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
             // ---- target INSERTION
             best = NEG;
             if (line >= 3) {   // (3, 0)
-                rb = R3 + (col - 0) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R3 + (col - 0) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 0; i2 = C4 + 3; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_0 + a2_3; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 0; }
                             }
@@ -776,15 +717,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss02; e = sl02; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 0; }
                             }
@@ -794,15 +733,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 0; }
                             }
@@ -811,22 +748,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                 }
             }
             if (line >= 2) {   // (2, 0)
-                rb = R2 + (col - 0) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R2 + (col - 0) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 1; i2 = C4 + 3; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_1 + a2_3; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 0; }
                             }
@@ -836,15 +771,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss12; e = sl12; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 0; }
                             }
@@ -854,15 +787,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 0; }
                             }
@@ -871,22 +802,20 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                 }
             }
             if (line >= 1) {   // (1, 0)
-                rb = R1 + (col - 0) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(sc + ((<usize>(rb + 2)) << 3));
+                rb = R1 + (col - 0) * 3; p0 = load<f64>(sc + ((<usize>(rb)) << 3)); p1 = load<f64>(sc + ((<usize>(rb)) << 3), 8); p2 = load<f64>(sc + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 2; i2 = C4 + 3; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_2 + a2_3; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 0; }
                             }
@@ -896,15 +825,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss22; e = sl22; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 0; }
                             }
@@ -914,15 +841,13 @@ export function dpCore(S1: i32, S2: i32, rowMin: usize, rowMax: usize, rowOff: u
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 0; }
                             }
@@ -946,7 +871,7 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
     const NEG: f64 = -Infinity;
     let cPc: i32 = 0, cDi: i32 = 0, cDj: i32 = 0, code: i32 = 0, cc: i32 = 0;
     let best: f64 = NEG, p0: f64 = NEG, p1: f64 = NEG, p2: f64 = NEG, ps: f64 = 0, inn: f64 = 0;
-    let s12: i32 = 0, sd: i32 = 0, go: i32 = 0, rb: i32 = 0, i1: i32 = 0, i2: i32 = 0, u: i32 = 0, e: i32 = 0, o: i32 = 0, v: i32 = 0, hb: i32 = 0;
+    let s12: i32 = 0, sd: i32 = 0, go: i32 = 0, rb: i32 = 0, u: i32 = 0, e: i32 = 0, q: i32 = 0;
     if (r0 === 0 && c0 === 0) store<f64>(T + ((<usize>(3 * RS + 9 + 2)) << 3), 0);   // MUTATION at (0, 0)
     for (let lr: i32 = 0; lr < nR; lr++) {
         const line: i32 = r0 + lr;
@@ -954,29 +879,42 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
         if (cmin < c0) cmin = c0;
         if (cmax > c0 + nC) cmax = c0 + nC;
         const rowBase: i32 = (lr + 3) * RS, L4: i32 = lr * 4, tbRow: i32 = lr * nC - c0;
-        for (let col: i32 = cmin; col < cmax; col++) {
-            if (line === 0 && col === 0) continue;
+        const a1_0: f64 = load<f64>(in1 + ((<usize>(L4)) << 3), 0), l1_0: i32 = load<i32>(cl1 + ((<usize>(L4)) << 2), 0), s1_0: i32 = load<i32>(cs1 + ((<usize>(L4)) << 2), 0), o1_0: i32 = (L4 + 0) * 33;
+        const a1_1: f64 = load<f64>(in1 + ((<usize>(L4)) << 3), 8), l1_1: i32 = load<i32>(cl1 + ((<usize>(L4)) << 2), 4), s1_1: i32 = load<i32>(cs1 + ((<usize>(L4)) << 2), 4), o1_1: i32 = (L4 + 1) * 33;
+        const a1_2: f64 = load<f64>(in1 + ((<usize>(L4)) << 3), 16), l1_2: i32 = load<i32>(cl1 + ((<usize>(L4)) << 2), 8), s1_2: i32 = load<i32>(cs1 + ((<usize>(L4)) << 2), 8), o1_2: i32 = (L4 + 2) * 33;
+        const a1_3: f64 = load<f64>(in1 + ((<usize>(L4)) << 3), 24), l1_3: i32 = load<i32>(cl1 + ((<usize>(L4)) << 2), 12), s1_3: i32 = load<i32>(cs1 + ((<usize>(L4)) << 2), 12), o1_3: i32 = (L4 + 3) * 33;
+        const ss00: i32 = load<i32>(spS + ((<usize>((L4 + 0) * 3)) << 2), 0), sl00: i32 = load<i32>(spL + ((<usize>((L4 + 0) * 3)) << 2), 0);
+        const ss02: i32 = load<i32>(spS + ((<usize>((L4 + 0) * 3)) << 2), 8), sl02: i32 = load<i32>(spL + ((<usize>((L4 + 0) * 3)) << 2), 8);
+        const ss10: i32 = load<i32>(spS + ((<usize>((L4 + 1) * 3)) << 2), 0), sl10: i32 = load<i32>(spL + ((<usize>((L4 + 1) * 3)) << 2), 0);
+        const ss12: i32 = load<i32>(spS + ((<usize>((L4 + 1) * 3)) << 2), 8), sl12: i32 = load<i32>(spL + ((<usize>((L4 + 1) * 3)) << 2), 8);
+        const ss20: i32 = load<i32>(spS + ((<usize>((L4 + 2) * 3)) << 2), 0), sl20: i32 = load<i32>(spL + ((<usize>((L4 + 2) * 3)) << 2), 0);
+        const ss22: i32 = load<i32>(spS + ((<usize>((L4 + 2) * 3)) << 2), 8), sl22: i32 = load<i32>(spL + ((<usize>((L4 + 2) * 3)) << 2), 8);
+        const ss30: i32 = load<i32>(spS + ((<usize>((L4 + 3) * 3)) << 2), 0), sl30: i32 = load<i32>(spL + ((<usize>((L4 + 3) * 3)) << 2), 0);
+        const ss31: i32 = load<i32>(spS + ((<usize>((L4 + 3) * 3)) << 2), 4), sl31: i32 = load<i32>(spL + ((<usize>((L4 + 3) * 3)) << 2), 4);
+        for (let col: i32 = (line === 0 && cmin === 0) ? 1 : cmin; col < cmax; col++) {
             const lc3: i32 = col - c0 + 3, C4: i32 = (col - c0) * 4;
+            const a2_0: f64 = load<f64>(in2 + ((<usize>(C4)) << 3), 0), l2_0: i32 = load<i32>(cl2 + ((<usize>(C4)) << 2), 0), s2_0: i32 = load<i32>(cs2 + ((<usize>(C4)) << 2), 0), o2_0: i32 = (C4 + 0) * 33, hb0: i32 = (C4 + 0) * 10;
+            const a2_1: f64 = load<f64>(in2 + ((<usize>(C4)) << 3), 8), l2_1: i32 = load<i32>(cl2 + ((<usize>(C4)) << 2), 4), s2_1: i32 = load<i32>(cs2 + ((<usize>(C4)) << 2), 4), o2_1: i32 = (C4 + 1) * 33, hb1: i32 = (C4 + 1) * 10;
+            const a2_2: f64 = load<f64>(in2 + ((<usize>(C4)) << 3), 16), l2_2: i32 = load<i32>(cl2 + ((<usize>(C4)) << 2), 8), s2_2: i32 = load<i32>(cs2 + ((<usize>(C4)) << 2), 8), o2_2: i32 = (C4 + 2) * 33, hb2: i32 = (C4 + 2) * 10;
+            const a2_3: f64 = load<f64>(in2 + ((<usize>(C4)) << 3), 24), l2_3: i32 = load<i32>(cl2 + ((<usize>(C4)) << 2), 12), s2_3: i32 = load<i32>(cs2 + ((<usize>(C4)) << 2), 12), o2_3: i32 = (C4 + 3) * 33, hb3: i32 = (C4 + 3) * 10;
             code = 0;
             // ---- target MUTATION
             best = NEG;
             if (line >= 3 && col >= 3) {   // (3, 3)
-                rb = rowBase - 3 * RS + (lc3 - 3) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 3 * RS + (lc3 - 3) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 0; i2 = C4 + 0; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_0 + a2_0; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (true) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 3; }
                             }
@@ -986,15 +924,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (true) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss02; e = sl02; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 3; }
                             }
@@ -1004,15 +940,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (true) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 3; }
                             }
@@ -1021,22 +955,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                 }
             }
             if (line >= 3 && col >= 2) {   // (3, 2)
-                rb = rowBase - 3 * RS + (lc3 - 2) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 3 * RS + (lc3 - 2) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 0; i2 = C4 + 1; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_0 + a2_1; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 2; }
                             }
@@ -1046,15 +978,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss02; e = sl02; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 2; }
                             }
@@ -1064,15 +994,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 2; }
                             }
@@ -1081,22 +1009,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                 }
             }
             if (line >= 2 && col >= 3) {   // (2, 3)
-                rb = rowBase - 2 * RS + (lc3 - 3) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 2 * RS + (lc3 - 3) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 1; i2 = C4 + 0; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_1 + a2_0; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 3; }
                             }
@@ -1106,15 +1032,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss12; e = sl12; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 3; }
                             }
@@ -1124,15 +1048,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 3; }
                             }
@@ -1141,22 +1063,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                 }
             }
             if (line >= 3 && col >= 1) {   // (3, 1)
-                rb = rowBase - 3 * RS + (lc3 - 1) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 3 * RS + (lc3 - 1) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 0; i2 = C4 + 2; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_0 + a2_2; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 1; }
                             }
@@ -1166,15 +1086,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss02; e = sl02; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 1; }
                             }
@@ -1184,15 +1102,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 1; }
                             }
@@ -1201,22 +1117,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                 }
             }
             if (line >= 1 && col >= 3) {   // (1, 3)
-                rb = rowBase - 1 * RS + (lc3 - 3) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 1 * RS + (lc3 - 3) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 2; i2 = C4 + 0; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_2 + a2_0; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 3; }
                             }
@@ -1226,15 +1140,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss22; e = sl22; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 3; }
                             }
@@ -1244,15 +1156,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 3; }
                             }
@@ -1261,22 +1171,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                 }
             }
             if (line >= 2 && col >= 2) {   // (2, 2)
-                rb = rowBase - 2 * RS + (lc3 - 2) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 2 * RS + (lc3 - 2) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 1; i2 = C4 + 1; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_1 + a2_1; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 2; }
                             }
@@ -1286,15 +1194,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss12; e = sl12; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 2; }
                             }
@@ -1304,15 +1210,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 2; }
                             }
@@ -1321,22 +1225,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                 }
             }
             if (line >= 2 && col >= 1) {   // (2, 1)
-                rb = rowBase - 2 * RS + (lc3 - 1) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 2 * RS + (lc3 - 1) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 1; i2 = C4 + 2; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_1 + a2_2; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 1; }
                             }
@@ -1346,15 +1248,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss12; e = sl12; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 1; }
                             }
@@ -1364,15 +1264,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 1; }
                             }
@@ -1381,22 +1279,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                 }
             }
             if (line >= 1 && col >= 2) {   // (1, 2)
-                rb = rowBase - 1 * RS + (lc3 - 2) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 1 * RS + (lc3 - 2) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 2; i2 = C4 + 1; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_2 + a2_1; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 2; }
                             }
@@ -1406,15 +1302,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss22; e = sl22; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 2; }
                             }
@@ -1424,15 +1318,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 2; }
                             }
@@ -1441,22 +1333,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                 }
             }
             if (line >= 1 && col >= 1) {   // (1, 1)
-                rb = rowBase - 1 * RS + (lc3 - 1) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 1 * RS + (lc3 - 1) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 2; i2 = C4 + 2; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_2 + a2_2; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 1; }
                             }
@@ -1466,15 +1356,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss22; e = sl22; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 1; }
                             }
@@ -1484,15 +1372,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 1; }
                             }
@@ -1506,22 +1392,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
             // ---- target DELETION
             best = NEG;
             if (col >= 3) {   // (0, 3)
-                rb = rowBase - 0 * RS + (lc3 - 3) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 0 * RS + (lc3 - 3) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 3; i2 = C4 + 0; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_3 + a2_0; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss30; e = sl30; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 3; }
                             }
@@ -1531,15 +1415,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 1; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss31; e = sl31; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 3; }
                             }
@@ -1549,15 +1431,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_0) { u = s2_0; e = l2_0; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_0 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss30; e = sl30; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb0 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 3; }
                             }
@@ -1566,22 +1446,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                 }
             }
             if (col >= 2) {   // (0, 2)
-                rb = rowBase - 0 * RS + (lc3 - 2) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 0 * RS + (lc3 - 2) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 3; i2 = C4 + 1; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_3 + a2_1; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss30; e = sl30; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 2; }
                             }
@@ -1591,15 +1469,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 1; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss31; e = sl31; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 2; }
                             }
@@ -1609,15 +1485,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_1) { u = s2_1; e = l2_1; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_1 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss30; e = sl30; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb1 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 2; }
                             }
@@ -1626,22 +1500,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                 }
             }
             if (col >= 1) {   // (0, 1)
-                rb = rowBase - 0 * RS + (lc3 - 1) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 0 * RS + (lc3 - 1) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 3; i2 = C4 + 2; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_3 + a2_2; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss30; e = sl30; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hXIE + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 1; }
                             }
@@ -1651,15 +1523,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 1; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss31; e = sl31; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 1; }
                             }
@@ -1669,15 +1539,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_3 > l2_2) { u = s2_2; e = l2_2; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_3 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_3; e = l1_3; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_2 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss30; e = sl30; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb2 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 1; }
                             }
@@ -1691,22 +1559,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
             // ---- target INSERTION
             best = NEG;
             if (line >= 3) {   // (3, 0)
-                rb = rowBase - 3 * RS + (lc3 - 0) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 3 * RS + (lc3 - 0) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 0; i2 = C4 + 3; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_0 + a2_3; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 0; }
                             }
@@ -1716,15 +1582,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss02; e = sl02; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 0; }
                             }
@@ -1734,15 +1598,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_0 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_0 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_0; e = l1_0; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss00; e = sl00; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 0; }
                             }
@@ -1751,22 +1613,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                 }
             }
             if (line >= 2) {   // (2, 0)
-                rb = rowBase - 2 * RS + (lc3 - 0) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 2 * RS + (lc3 - 0) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 1; i2 = C4 + 3; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_1 + a2_3; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 0; }
                             }
@@ -1776,15 +1636,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss12; e = sl12; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 0; }
                             }
@@ -1794,15 +1652,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_1 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_1 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_1; e = l1_1; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss10; e = sl10; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 0; }
                             }
@@ -1811,22 +1667,20 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                 }
             }
             if (line >= 1) {   // (1, 0)
-                rb = rowBase - 1 * RS + (lc3 - 0) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb + 1)) << 3)); p2 = load<f64>(T + ((<usize>(rb + 2)) << 3));
+                rb = rowBase - 1 * RS + (lc3 - 0) * 3; p0 = load<f64>(T + ((<usize>(rb)) << 3)); p1 = load<f64>(T + ((<usize>(rb)) << 3), 8); p2 = load<f64>(T + ((<usize>(rb)) << 3), 16);
                 if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
-                    i1 = L4 + 2; i2 = C4 + 3; inn = load<f64>(in1 + ((<usize>(i1)) << 3)) + load<f64>(in2 + ((<usize>(i2)) << 3)); sd = 0;
+                    inn = a1_2 + a2_3; sd = 0;
                     if (p0 !== NEG) {
                         ps = p0 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hIE + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 0; }
                             }
@@ -1836,15 +1690,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p1 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 2; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss22; e = sl22; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 0; }
                             }
@@ -1854,15 +1706,13 @@ export function dpTile(S1: i32, S2: i32, r0: i32, nR: i32, c0: i32, nC: i32, row
                         ps = p2 + inn;
                         if (ps > best) {
                             if (sd === 0) {
-                                s12 = 0;
-                                if (load<i32>(cl1 + ((<usize>(i1)) << 2)) > load<i32>(cl2 + ((<usize>(i2)) << 2))) { o = i1 * 33; for (u = load<i32>(cs2 + ((<usize>(i2)) << 2)), e = u + load<i32>(cl2 + ((<usize>(i2)) << 2)); u < e; u++) s12 += load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); }
-                                else { o = i2 * 33; for (u = load<i32>(cs1 + ((<usize>(i1)) << 2)), e = u + load<i32>(cl1 + ((<usize>(i1)) << 2)); u < e; u++) s12 += load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); }
+                                if (l1_2 > l2_3) { u = s2_3; e = l2_3; if (e === 1) s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf2 + ((<usize>(u)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf2 + ((<usize>(u)) << 2), 4) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf2 + ((<usize>(u + q)) << 2)) * load<i32>(if1 + ((<usize>(o1_2 + load<i32>(ca2 + ((<usize>(u + q)) << 2)))) << 2)); } }
+                                else { u = s1_2; e = l1_2; if (e === 1) s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { s12 = load<i32>(cf1 + ((<usize>(u)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2)))) << 2)); s12 += load<i32>(cf1 + ((<usize>(u)) << 2), 4) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u)) << 2), 4))) << 2)); } else { s12 = 0; for (q = 0; q < e; q++) s12 += load<i32>(cf1 + ((<usize>(u + q)) << 2)) * load<i32>(if2 + ((<usize>(o2_3 + load<i32>(ca1 + ((<usize>(u + q)) << 2)))) << 2)); } }
                                  sd = 1;
                             }
                             ps += <f64>(s12);
                             if (ps > best) {
-                                v = i1 * 3 + 0; hb = i2 * 10; go = 0;
-                                for (u = load<i32>(spS + ((<usize>(v)) << 2)), e = u + load<i32>(spL + ((<usize>(v)) << 2)); u < e; u++) go += load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb + load<i32>(spP + ((<usize>(u)) << 2)))) << 2));
+                                u = ss20; e = sl20; if (e === 1) go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); else if (e === 2) { go = load<i32>(spF + ((<usize>(u)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2)))) << 2)); go += load<i32>(spF + ((<usize>(u)) << 2), 4) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u)) << 2), 4))) << 2)); } else { go = 0; for (q = 0; q < e; q++) go += load<i32>(spF + ((<usize>(u + q)) << 2)) * load<i32>(hC + ((<usize>(hb3 + load<i32>(spP + ((<usize>(u + q)) << 2)))) << 2)); }
                                 ps += <f64>(go);
                                 if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 0; }
                             }
