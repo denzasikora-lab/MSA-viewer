@@ -1931,7 +1931,11 @@ span.ge-col-flash {
     padding: 0 calc(4px + var(--name-gap)) 0 12px;
     margin-right: 0;
     margin-left: -12px;
-    overflow: hidden;
+    /* Clip horizontally only (ellipsis). overflow:hidden also clipped the tops of the glyphs, because
+       .seq-name-text is raised by 0.16em inside a row that is exactly 1em high; at fractional browser
+       zoom (90%, 110%, 125%) the capital tops were cut off. */
+    overflow-x: clip;
+    overflow-y: visible;
     text-overflow: ellipsis;
     white-space: nowrap;
     font-weight: bold;
