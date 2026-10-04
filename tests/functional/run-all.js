@@ -720,6 +720,93 @@ check('Codon analysis by gene: annotated CDS translated in their own frame and s
     return { pass: true, detail: `2 CDS (one minus-strand) translated in place, spacer unmarked, GCC->GCA synonymous` };
 });
 
+// GenBank flat file -> { seq, cds: [{ gene, start, end, strand, translation, polyA }] }
+function _parseGenBankCds(text) {
+    text = text.replace(/\r\n/g, '\n');   // the fixture may be checked out with CRLF
+    const origin = text.split(/^ORIGIN.*$/m)[1] || '';
+    const seq = origin.replace(/\/\/[\s\S]*$/, '').replace(/[\d\s]/g, '').toUpperCase();
+    const cds = [];
+    const re = /^     CDS\s+(\S+)\n((?:^ {21}.*\n)+)/gm;
+    let m;
+    while ((m = re.exec(text))) {
+        const q = m[2];
+        const gene = (/\/gene="([^"]+)"/.exec(q) || [])[1];
+        const tr = (/\/translation="([^"]+)"/.exec(q) || [])[1];
+        const loc = m[1];
+        const nums = loc.match(/\d+/g).map(Number);
+        cds.push({ gene, start: Math.min(...nums) - 1, end: Math.max(...nums), strand: /^complement/.test(loc) ? '-' : '+',
+            translation: tr ? tr.replace(/[\s]/g, '') : null, polyA: /completed by the addition of 3' A/.test(q.replace(/\n\s+/g, ' ')) });
+    }
+    return { seq, cds };
+}
+
+check('Codon analysis by gene (oracle): the 13 CDS of mitogenome NC_069019.1 translate to the GenBank /translation, through gaps too', async (page) => {
+    const fs = require('fs'), path = require('path');
+    const gb = _parseGenBankCds(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'codon', 'NC_069019.1.gb'), 'utf8'));
+    if (gb.seq.length !== 16412 || gb.cds.length !== 13) return { pass: false, detail: `fixture: ${gb.seq.length} nt, ${gb.cds.length} CDS` };
+    // Row 1: the record with a 3-base gap in every gene (so the BED coordinates must be
+    // mapped through gaps); row 2: the same with NNN there, in frame for that gene (one X
+    // codon, no frameshift). The insertion sits at a codon boundary of the gene, past
+    // any overlap with the previous gene.
+    const insertAt = new Set(gb.cds.map(c => c.strand === '+' ? c.start + 3 * Math.floor((c.end - c.start) / 6) : c.end - 3 * Math.floor((c.end - c.start) / 6)));
+    let gapped = '', withN = '';
+    for (let i = 0; i < gb.seq.length; i++) { if (insertAt.has(i)) { gapped += '---'; withN += 'NNN'; } gapped += gb.seq[i]; withN += gb.seq[i]; }
+    const fasta = `>NC_069019.1 Sicista betulina mitochondrion\n${gapped}\n>with_insertions\n${withN}\n`;
+    const bed = gb.cds.map(c => `NC_069019.1\t${c.start}\t${c.end}\t${c.gene}\t0\t${c.strand}\t${c.start}\t${c.end}\t0\t1\t${c.end - c.start}\t0\tCDS: ${c.gene}`).join('\n');
+    await loadFasta(page, fasta);
+    const r = await page.evaluate((bed) => {
+        document.getElementById('codonCode').value = '1';
+        document.getElementById('codonFrame').value = 'auto';
+        setAnnotation(bed, 'NC_069019.bed');
+        const cb = document.getElementById('codonAnalysis'); cb.checked = true; cb.dispatchEvent(new Event('change'));
+        return new Promise(res => setTimeout(() => {
+            const cd = state._codonData;
+            // entries per gene in the gene's reading direction (minus strand: right to left)
+            const byGene = row => { const out = {}; for (const e of cd.aaSeq[row]) { (out[e.gene] = out[e.gene] || []).push(e); } for (const g in out) if (out[g][0].strand === '-') out[g].reverse(); return out; };
+            res({ code: document.getElementById('codonCode').value, byGeneMode: !!cd?.byGene, genes: cd?.genes, lanes: cd?.lanes,
+                row0: Object.fromEntries(Object.entries(byGene(0)).map(([g, es]) => [g, { aa: es.map(e => e.aa).join(''), first: es[0].codon, lastCodon: es[es.length - 1].codon, partialStop: !!es[es.length - 1].partial, lane1: es.filter(e => e.lane === 1).length }])),
+                row1: Object.fromEntries(Object.entries(byGene(1)).map(([g, es]) => [g, es.map(e => e.aa).join('')])),
+                fs: cd.frameShifts.map(f => f.length), stops0: cd.stops[0].length,
+                aaRows: document.querySelector('.block-block')?.querySelectorAll('.aa-row').length,   // per block: 2 rows x lanes
+                fasta: buildAATranslationFasta().split('\n').slice(0, 4) });
+        }, 800));
+    }, bed);
+    if (r.code !== '2') return { pass: false, detail: `genetic code should have switched to Vertebrate Mito (2), is ${r.code}` };
+    if (!r.byGeneMode || r.genes !== 13) return { pass: false, detail: `expected 13 genes by annotation: ${JSON.stringify({ byGeneMode: r.byGeneMode, genes: r.genes })}` };
+    const MITO_STARTS = new Set(['ATG', 'ATA', 'ATT', 'ATC', 'GTG']);
+    const problems = [];
+    let compared = 0;
+    for (const c of gb.cds) {
+        const got = r.row0[c.gene];
+        if (!got) { problems.push(`${c.gene}: no translation`); continue; }
+        // GenBank writes M for any start codon and omits the stop; a stop completed by
+        // polyadenylation is an incomplete codon at the gene end, which gets no amino acid
+        let ours = got.aa;
+        if (!MITO_STARTS.has(got.first)) problems.push(`${c.gene}: first codon ${got.first} is not a vertebrate mito start`);
+        if (!ours.endsWith('*')) problems.push(`${c.gene}: no stop codon at the end (last codon ${got.lastCodon})`);
+        if (c.polyA !== got.partialStop) problems.push(`${c.gene}: polyA-completed stop ${c.polyA ? 'expected' : 'not expected'}, got ${got.lastCodon}`);
+        ours = ours.replace(/\*$/, '');
+        const want = c.translation;
+        if (ours.slice(1) !== want.slice(1)) {
+            let k = 0; while (k < ours.length && ours[k] === want[k]) k++;
+            problems.push(`${c.gene}: ${ours.length} vs ${want.length} aa, first difference at ${k + 1}: ours ${ours.slice(Math.max(0, k - 3), k + 5)} / GenBank ${want.slice(Math.max(0, k - 3), k + 5)}`);
+        }
+        compared++;
+        // Row 2 (one in-frame NNN per gene): the same translation with one X codon, no frameshift
+        // (the record itself has a few ambiguous bases, X in GenBank and in ours alike)
+        const row1 = r.row1[c.gene] || '';
+        const nX = s => (s.match(/X/g) || []).length;
+        if (nX(row1) !== nX(got.aa) + 1 || row1.replace(/X/g, '') !== got.aa.replace(/X/g, '')) problems.push(`${c.gene}: row with an NNN codon: ${row1.length} aa, ${nX(row1)} X; expected the same translation plus one X`);
+    }
+    const overlapping = ['ATP6', 'COX3', 'ND4', 'ND6'].filter(g => r.row0[g] && r.row0[g].lane1 > 0);
+    if (overlapping.length !== 4) problems.push(`overlapping genes should have codons on lane 2: ${JSON.stringify(Object.fromEntries(['ATP6', 'COX3', 'ND4', 'ND6'].map(g => [g, r.row0[g]?.lane1])))}`);
+    if (r.lanes !== 2 || r.aaRows !== 4) problems.push(`expected 2 translation lanes (4 rows for 2 sequences), got lanes ${r.lanes}, rows ${r.aaRows}`);
+    if (r.fs[1] !== 0 || r.fs[0] !== 0) problems.push(`frameshifts flagged: ${r.fs}`);
+    if (!/^>NC_069019\.1 .* gene=ND1$/.test(r.fasta[0]) || !/^M/.test(r.fasta[1])) problems.push(`AA FASTA by gene: ${r.fasta.slice(0, 2).join(' / ')}`);
+    if (problems.length) return { pass: false, detail: problems.join(' | ') };
+    return { pass: true, detail: `${compared} CDS identical to GenBank (start codons normalised), 4 polyA-completed stops, 4 overlapping genes on lane 2, gapped row mapped, NNN codon = X, per-gene AA FASTA` };
+});
+
 async function main() {
     const { server, baseUrl } = await start();
     const results = [];

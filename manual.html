@@ -1240,11 +1240,18 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     own frame and strand (a minus-strand gene is translated from its reverse complement, so its codon
     positions run right to left), and columns outside the genes get no codon marks. That is what a whole
     mitogenome or a multi-gene region needs; one frame across it would put stops everywhere outside the
-    first gene. Where genes overlap (ATP8/ATP6, ND4L/ND4) the first gene keeps the shared codons. A BED
+    first gene. Where genes overlap (ATP8/ATP6, ND4L/ND4, ND5/ND6) the later gene's codons on the shared
+    bases go to a second translation row, so its start or stop codon is still shown; the bases keep the
+    first gene's codon positions. A gene whose last codon is cut to <code>T</code> or <code>TA</code> (a
+    stop completed by polyadenylation of the mRNA, as GenBank notes it) shows a stop over those bases. A BED
     feature counts as a CDS when its description column starts with <code>CDS</code>, or, without a
     description, when its name is not a tRNA, rRNA, origin or control-region name. Loading an annotation
     that looks mitochondrial (tRNAs, rRNAs, ND/COX/ATP/CYTB) while the code is Standard switches the
-    <strong>Code</strong> to Vertebrate Mito and says so.
+    <strong>Code</strong> to Vertebrate Mito and says so. <strong>Copy AA</strong> and <strong>Save AA</strong>
+    then give one record per sequence and gene, each read in the gene's direction. A codon with IUPAC
+    ambiguity letters translates to the amino acid all its readings share (<code>CCN</code> = P), else X.
+    Checked against GenBank: the 13 CDS of NC_069019.1 translate exactly to the record's own
+    <code>/translation</code> fields (functional test "Codon analysis by gene (oracle)").
   </p>
   <p>Select the appropriate genetic code from the <strong>Code</strong> dropdown (15 variants):</p>
   <table>

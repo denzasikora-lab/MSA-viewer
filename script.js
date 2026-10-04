@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v234';
+const BUILD_TAG = 'v235';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -4471,6 +4471,31 @@ function _getSynCodons(code) {
     return syn;
 }
 
+// A codon with IUPAC ambiguity letters translates to the one amino acid all its
+// readings share (CCN = P, GCY = A, TAR = stop), else X. Cached per code table.
+const _IUPAC_NT = { A: 'A', C: 'C', G: 'G', T: 'T', U: 'T', R: 'AG', Y: 'CT', M: 'AC', K: 'GT', S: 'CG', W: 'AT',
+    H: 'ACT', B: 'CGT', V: 'ACG', D: 'AGT', N: 'ACGT' };
+const _degenerateCache = new WeakMap();
+function _translateDegenerate(codon, code) {
+    let cache = _degenerateCache.get(code);
+    if (!cache) { cache = new Map(); _degenerateCache.set(code, cache); }
+    if (cache.has(codon)) return cache.get(codon);
+    let aa = 'X';
+    const sets = [...codon].map(ch => _IUPAC_NT[ch]);
+    if (sets.length === 3 && sets.every(Boolean)) {
+        let common = null;
+        outer: for (const a of sets[0]) for (const b of sets[1]) for (const c of sets[2]) {
+            const t = code[a + b + c];
+            if (t == null) { common = null; break outer; }     // a codon absent from this table
+            if (common === null) common = t;
+            else if (common !== t) { common = null; break outer; }
+        }
+        if (common) aa = common;
+    }
+    cache.set(codon, aa);
+    return aa;
+}
+
 // Compute per-position codon analysis for a single frame (frameOffset = 0,1,2 alignment columns)
 // Gaps are skipped during codon assembly (no frameshift on gaps); incomplete terminal codons flagged.
 // When frameOffset is omitted, defaults to 0 (backward-compatible single-frame mode).
@@ -4560,7 +4585,7 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
             }
             if (codonPhase >= 3) {
                 const codon = codonBuf.replace(/[Nn]/g, 'N');
-                const aa = activeCode[codon] || 'X';
+                const aa = activeCode[codon] || _translateDegenerate(codon, activeCode);
                 aaSeq[i].push({ cols: codonCols.slice(), codon, aa });
 
                 if (aa === '*') {
@@ -4709,8 +4734,12 @@ function _annotCdsFeatures() {
 // columns are cut out of every row (reverse-complemented for a minus-strand gene),
 // analysed as a small CDS alignment (_computeCodonAnalysis, frame 0 = the gene's
 // first column), and mapped back to alignment columns. Columns outside the genes get
-// no codon marks; where genes overlap (ATP8/ATP6, ND4L/ND4) the earlier gene keeps
-// the shared codons. The reference for synonymous/non-synonymous calls is row 1 of
+// no codon marks. Where genes overlap (ATP8/ATP6, ND4L/ND4, ND5/ND6 in a mitogenome)
+// the later gene's codons on shared columns go to a second translation lane, so
+// its start or stop codon is still shown; the nucleotide row keeps the first
+// gene's codon positions. A gene whose last codon is cut to T or TA (a stop
+// completed by polyadenylation of the mRNA, as GenBank notes) gets a stop entry
+// over those bases. The reference for synonymous/non-synonymous calls is row 1 of
 // the alignment, as in the single-frame analysis.
 function _computeAnnotatedCodonAnalysis(seqs, len) {
     const cds = _annotCdsFeatures();
@@ -4721,8 +4750,10 @@ function _computeAnnotatedCodonAnalysis(seqs, len) {
     const frameShifts = Array.from({ length: n }, () => []);
     const synNonSyn = Array.from({ length: n }, () => new Array(len).fill(null));
     const aaSeq = Array.from({ length: n }, () => []);
-    const claimed = Array.from({ length: n }, () => new Uint8Array(len));
-    let genes = 0;
+    const claimed = [0, 1].map(() => Array.from({ length: n }, () => new Uint8Array(len)));
+    const code = _getActiveCode();
+    const polyAStop = code['TAA'] === '*';
+    let genes = 0, lanes = 1;
     for (const d of cds) {
         const cs = d.cs, ce = d.ce, L = ce - cs + 1;
         const minus = d.f.strand === '-';
@@ -4736,14 +4767,29 @@ function _computeAnnotatedCodonAnalysis(seqs, len) {
         genes++;
         const g = j => (minus ? ce - j : cs + j);
         for (let i = 0; i < n; i++) {
-            for (const e of r.aaSeq[i]) {
-                const cols = e.cols.map(g).sort((a, b) => a - b);
-                if (cols.some(c => claimed[i][c])) continue;
-                cols.forEach(c => { claimed[i][c] = 1; });
-                e.cols.forEach(j => { phase[i][g(j)] = r.phase[i][j]; });
-                aaSeq[i].push({ cols, codon: e.codon, aa: e.aa, gene: d.f.name });
-                if (e.aa === '*') cols.forEach(c => stops[i].push(c));
-                for (const j of e.cols) { const v = r.synNonSyn[i][j]; if (v) synNonSyn[i][g(j)] = v; }
+            const entries = r.aaSeq[i].map(e => ({ cols: e.cols.map(g).sort((a, b) => a - b), src: e.cols, codon: e.codon, aa: e.aa }));
+            // A stop cut short by the gene end: the trailing 1-2 bases after the last codon
+            if (polyAStop) {
+                const lastEnd = entries.length ? Math.max(...entries[entries.length - 1].src) : -1;
+                const tail = [];
+                for (let j = lastEnd + 1; j < L; j++) if (r.phase[i][j] >= 0) tail.push(j);
+                const bases = tail.map(j => sub[i].seq[j].toUpperCase().replace('U', 'T')).join('');
+                if (tail.length && (bases === 'T' || bases === 'TA')) {
+                    entries.push({ cols: tail.map(g).sort((a, b) => a - b), src: tail, codon: bases + '-'.repeat(3 - bases.length), aa: '*', partial: true });
+                }
+            }
+            for (const e of entries) {
+                let lane = 0;
+                if (e.cols.some(c => claimed[0][i][c])) {
+                    if (e.cols.some(c => claimed[1][i][c])) continue;
+                    lane = 1;
+                    lanes = 2;
+                }
+                e.cols.forEach(c => { claimed[lane][i][c] = 1; });
+                if (lane === 0) e.src.forEach(j => { phase[i][g(j)] = r.phase[i][j]; });
+                aaSeq[i].push({ cols: e.cols, codon: e.codon, aa: e.aa, gene: d.f.name, strand: d.f.strand || '+', lane, partial: !!e.partial });
+                if (e.aa === '*') e.cols.forEach(c => stops[i].push(c));
+                if (lane === 0) for (const j of e.src) { const v = r.synNonSyn[i][j]; if (v) synNonSyn[i][g(j)] = v; }
             }
             for (const fs of r.frameShifts[i]) {
                 const a = g(fs.runStart), b = g(fs.runStart + Math.max(1, fs.runLen) - 1);
@@ -4752,7 +4798,22 @@ function _computeAnnotatedCodonAnalysis(seqs, len) {
         }
     }
     for (let i = 0; i < n; i++) aaSeq[i].sort((a, b) => a.cols[0] - b.cols[0]);
-    return { phase, stops, frameShifts, synNonSyn, aaSeq, refIdx: 0, frameOffset: 0, byGene: true, genes };
+    return { phase, stops, frameShifts, synNonSyn, aaSeq, refIdx: 0, frameOffset: 0, byGene: true, genes, lanes };
+}
+
+// The translations of one row by gene, each read in its gene's direction:
+// [{ gene, strand, aa }] in order along the alignment. partial stops count as '*'.
+function _aaByGene(frameData, seqIdx) {
+    const groups = new Map();
+    for (const e of frameData?.aaSeq?.[seqIdx] || []) {
+        const key = e.gene || '';
+        if (!groups.has(key)) groups.set(key, { gene: key, strand: e.strand || '+', entries: [] });
+        groups.get(key).entries.push(e);
+    }
+    return [...groups.values()].map(gr => {
+        const es = gr.strand === '-' ? gr.entries.slice().reverse() : gr.entries;
+        return { gene: gr.gene, strand: gr.strand, aa: es.map(e => e.aa).join('') };
+    });
 }
 
 // Build AA translation row aligned to alignment columns (handles gaps + reading-frame offset).
@@ -4807,7 +4868,12 @@ function _codonRowsFor(seqIdx, viewStart, viewEnd) {
     const cd = state._codonData;
     if (!cd || !cd.aaSeq) return [];
     const rows = [];
-    if (state._codonFrames && state._codonActiveFrame === -1) {
+    if (cd.byGene && cd.lanes > 1) {
+        // Overlapping genes: the later gene's shared codons on a second row
+        for (let lane = 0; lane < cd.lanes; lane++) {
+            rows.push(_buildAARowEl(cd.aaSeq[seqIdx].filter(e => (e.lane || 0) === lane), null, false, viewStart, viewEnd, lane === 0 ? cd.frameShifts?.[seqIdx] : null));
+        }
+    } else if (state._codonFrames && state._codonActiveFrame === -1) {
         const best = state._codonFrames.bestFrame;
         for (let fr = 0; fr < 3; fr++) {
             const frData = state._codonFrames.frames[fr];
@@ -4853,10 +4919,12 @@ function _populateAlignedAARow(dataCol, aaSeqData, viewStart, viewEnd, frameShif
         if (!cols.length || cols[cols.length - 1] < viewStart || cols[0] >= viewEnd) continue;
         const cls = entry.aa === '*' ? 'stop' : (_AA_CLASS[entry.aa] || 'unk');
         const mid = cols[Math.floor(cols.length / 2)];
+        const what = entry.partial ? `Stop (${entry.codon}), completed by polyadenylation of the mRNA` : `${entry.aa === '*' ? 'Stop' : entry.aa} (${entry.codon})`;
+        const where = entry.gene ? `${entry.gene}${entry.strand === '-' ? ' (minus strand)' : ''}, ` : '';
         cols.forEach((c, k) => {
             if (c < viewStart || c >= viewEnd) return;
             cell[c - viewStart] = { cls, text: c === mid ? entry.aa : '', first: k === 0, last: k === cols.length - 1,
-                title: `${entry.aa === '*' ? 'Stop' : entry.aa} (${entry.codon}), columns ${cols[0] + 1}-${cols[cols.length - 1] + 1}` };
+                title: `${what}, ${where}columns ${cols[0] + 1}-${cols[cols.length - 1] + 1}` };
         });
     }
     const fsStart = new Map();
@@ -5116,7 +5184,7 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
     // All-frames mode (state._codonActiveFrame === -1) draws 3 AA rows per
     // sequence (frames 0, 1, 2), matching DOM mode's 3-row layout.
     const hasCodon = !!(state._codonData && state._codonData.aaSeq);
-    const aaRowCount = hasCodon ? (state._codonActiveFrame === -1 ? 3 : 1) : 0;
+    const aaRowCount = hasCodon ? (state._codonData.byGene ? (state._codonData.lanes || 1) : (state._codonActiveFrame === -1 ? 3 : 1)) : 0;
     const aaRowH = hasCodon ? CHAR_H : 0;
     const rowPitch = CHAR_H + aaRowCount * aaRowH;
     _canvasState.rowPitch = rowPitch;
@@ -5380,22 +5448,30 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
 
             // AA translation row(s) (codon analysis)
             if (hasCodon && state._codonData.aaSeq[i]) {
-                const framesToDraw = state._codonActiveFrame === -1
-                    ? [2, 1, 0]  // all-frames: frame 2 at top, 0 at bottom (matches DOM)
-                    : [null];     // single frame: use state._codonData directly
                 const bestFrame = state._codonFrames?.bestFrame ?? 0;
+                // The translation rows of this sequence: by gene (one per lane, a second
+                // lane for the shared codons of overlapping genes), all three frames, or one
+                let rowsToDraw;
+                if (state._codonData.byGene) {
+                    const nLanes = state._codonData.lanes || 1;
+                    rowsToDraw = [];
+                    for (let lane = 0; lane < nLanes; lane++) {
+                        rowsToDraw.push({ aaData: state._codonData.aaSeq[i].filter(e => (e.lane || 0) === lane), label: nLanes > 1 ? 'genes ' + (lane + 1) + ':' : 'genes:' });
+                    }
+                } else if (state._codonActiveFrame === -1) {
+                    rowsToDraw = [2, 1, 0].map(fr => ({ aaData: state._codonFrames?.frames[fr]?.aaSeq[i], label: 'Pos ' + (fr + 1) + ':' }));   // frame 2 at top, 0 at bottom (matches DOM)
+                } else {
+                    const fr = state._codonActiveFrame >= 0 ? state._codonActiveFrame : bestFrame;
+                    rowsToDraw = [{ aaData: state._codonData.aaSeq[i], label: 'Pos ' + (fr + 1) + ':' }];
+                }
 
-                for (let frIdx = 0; frIdx < framesToDraw.length; frIdx++) {
-                    const fr = framesToDraw[frIdx];
+                for (let frIdx = 0; frIdx < rowsToDraw.length; frIdx++) {
                     const aaY = y + CHAR_H + frIdx * aaRowH;
-                    const aaData = fr !== null
-                        ? (state._codonFrames?.frames[fr]?.aaSeq[i])
-                        : state._codonData.aaSeq[i];
+                    const aaData = rowsToDraw[frIdx].aaData;
                     if (!aaData) continue;
 
                     // Name label in the name column
-                    const labelFrame = fr !== null ? fr : (state._codonActiveFrame >= 0 ? state._codonActiveFrame : bestFrame);
-                    const aaLabel = 'Pos ' + (labelFrame + 1) + ':';
+                    const aaLabel = rowsToDraw[frIdx].label;
                     ctx.font = fontStr;
                     if (stickyNames) {
                         ctx.fillStyle = '#fff';
@@ -12008,6 +12084,20 @@ function buildAATranslationFasta() {
     if (!state._codonFrames?.frames || !state.seqs?.length) return null;
     const frameSel = document.getElementById('codonFrame')?.value || 'auto';
     const parts = [];
+    if (state._codonFrames.byGene) {
+        // One record per row and gene, each gene read in its own direction
+        const frData = state._codonFrames.frames[0];
+        for (let i = 0; i < state.seqs.length; i++) {
+            const s = state.seqs[i];
+            const hdr = s.fullHeader || s.header;
+            for (const g of _aaByGene(frData, i)) {
+                if (!g.aa) continue;
+                parts.push(`>${hdr} gene=${g.gene}${g.strand === '-' ? ' strand=-' : ''}`);
+                parts.push(g.aa);
+            }
+        }
+        return parts.length ? parts.join('\n') : null;
+    }
     const pushFrame = (fr, headerSuffix) => {
         const frData = state._codonFrames.frames[fr];
         if (!frData) return;
@@ -12033,6 +12123,7 @@ function buildAATranslationFasta() {
 function frameSelCount() {
     const frameSel = document.getElementById('codonFrame')?.value || 'auto';
     const n = state.seqs?.length || 0;
+    if (state._codonFrames?.byGene) return n * (state._codonData?.genes || 1);
     return frameSel === 'all' ? n * 3 : n;
 }
 
