@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v228';
+const BUILD_TAG = 'v230';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -2933,25 +2933,260 @@ function _applyColumnWindowStyle(dataEl, len, colStart, charWidthPx) {
 // is blockLen*charWidthPx wide and starts at the left edge of the scrollable
 // data area, so scrollLeft maps to block-local column offsets. Adding `start`
 // converts the local offset back to an absolute alignment column.
-function _computeBlockColumnWindow(start, end, scrollLeft, visibleDataWidth, charWidthPx) {
+// Returns the columns on screen (visStart..visEnd) and the columns to keep
+// rendered (colStart..colEnd = on screen plus bufferCols on each side).
+function _computeBlockColumnWindow(start, end, scrollLeft, visibleDataWidth, charWidthPx, bufferCols = 20) {
     const blockLen = end - start;
     if (blockLen * charWidthPx <= visibleDataWidth) {
-        return { colStart: start, colEnd: end - 1, needsColWindow: false };
+        return { colStart: start, colEnd: end - 1, visStart: start, visEnd: end - 1, needsColWindow: false };
     }
-    const overscan = 20;
     // Horizontal scrollLeft is container-global. Clamp it to this block's width
     // so a pan in an earlier block cannot truncate a vertically focused block.
     const maxLocalScroll = Math.max(0, blockLen * charWidthPx - visibleDataWidth);
     const localScrollLeft = Math.min(Math.max(0, scrollLeft), maxLocalScroll);
-    let colStart = start + Math.max(0, Math.floor(localScrollLeft / charWidthPx) - overscan);
-    let colEnd = start + Math.min(
-        blockLen - 1,
-        Math.ceil((localScrollLeft + visibleDataWidth) / charWidthPx) - 1 + overscan
-    );
-    colStart = Math.max(start, Math.min(colStart, end - 1));
-    colEnd = Math.max(colStart, Math.min(colEnd, end - 1));
+    let visStart = start + Math.max(0, Math.floor(localScrollLeft / charWidthPx));
+    let visEnd = start + Math.min(blockLen - 1, Math.ceil((localScrollLeft + visibleDataWidth) / charWidthPx) - 1);
+    visStart = Math.max(start, Math.min(visStart, end - 1));
+    visEnd = Math.max(visStart, Math.min(visEnd, end - 1));
+    const buf = Math.max(0, bufferCols | 0);
+    let colStart = Math.max(start, visStart - buf);
+    let colEnd = Math.min(end - 1, visEnd + buf);
     if (colStart > colEnd) { colStart = start; colEnd = end - 1; }
-    return { colStart, colEnd, needsColWindow: colStart > start || colEnd < end - 1 };
+    return { colStart, colEnd, visStart, visEnd, needsColWindow: colStart > start || colEnd < end - 1 };
+}
+
+// -- Scroll smoothness: buffered windows with hysteresis --------------------
+// Measured on a 62 x 16,808 alignment (Chrome trace, 12 scroll steps): every
+// scroll frame used to move the row/column window by a few rows or columns,
+// and each of those small changes cost a layout of the whole rendered block
+// (~20,000 dirty layout objects) plus a repaint - 170 ms per step, 17 of 36
+// frames over 100 ms. So the window is now kept well beyond the viewport and
+// scroll frames inside it change nothing; only when the viewport comes within
+// a guard distance of the window's edge is the window re-centred, and then by
+// patching the existing rows (columns added/removed at the ends, rows added/
+// removed at the ends) rather than replacing the block.
+//
+// Sizes come from a budget of residue spans, so a tall alignment gets a
+// shorter column buffer and a wide one a shorter row buffer.
+function _unifiedWindowBudget(visibleRows, visibleCols, nSeq, blockLen) {
+    const vc = Math.max(1, Math.min(visibleCols, blockLen));
+    let bufferRows = Math.max(20, 2 * visibleRows);
+    const colsFor = (renderedRows) => Math.min(3 * vc, Math.max(vc, Math.floor(20000 / Math.max(1, renderedRows))));
+    let renderedRows = Math.min(nSeq, visibleRows + 2 * bufferRows);
+    let bufferCols = colsFor(renderedRows);
+    if (renderedRows * Math.min(blockLen, vc + 2 * bufferCols) > 70000) {
+        bufferRows = Math.max(10, Math.floor(bufferRows / 2));
+        renderedRows = Math.min(nSeq, visibleRows + 2 * bufferRows);
+        bufferCols = colsFor(renderedRows);
+    }
+    return { bufferRows, bufferCols, guardRows: Math.ceil(bufferRows / 2), guardCols: Math.ceil(bufferCols / 2) };
+}
+
+// Rows per animation frame when a block's row window grows (a block entering
+// the view, or rows added at the ends after a vertical scroll): about 3,000
+// residue spans a frame. Measured on a 62-row x 137-column block: building
+// all 62 rows in one frame cost ~250 ms and the worst frame during
+// continuous scrolling ~600 ms; 21 rows a frame brought that to ~250 ms with
+// the mean frame unchanged (~17 ms).
+function _unifiedRowsPerFrame(windowCols) {
+    return Math.max(2, Math.floor(3000 / Math.max(1, windowCols)));
+}
+
+// Per-block follow-up work, one step per animation frame, independent of
+// scroll events (it finishes whether or not the user keeps scrolling).
+// A job is replaced when the same block gets new work, and dropped when the
+// block leaves the DOM. Keyed by block and kind (only 'rows' = row growth
+// at present; 'cols' is reserved).
+const _unifiedBlockJobs = new Map();
+let _unifiedBlockJobRaf = 0;
+function _scheduleBlockJob(blockIndex, kind, step) {
+    _unifiedBlockJobs.set(blockIndex + ':' + kind, step);
+    if (!_unifiedBlockJobRaf) _unifiedBlockJobRaf = requestAnimationFrame(_runUnifiedBlockJobs);
+}
+function _cancelBlockJob(blockIndex, kind) {
+    if (kind) { _unifiedBlockJobs.delete(blockIndex + ':' + kind); return; }
+    _unifiedBlockJobs.delete(blockIndex + ':cols');
+    _unifiedBlockJobs.delete(blockIndex + ':rows');
+}
+function _cancelAllBlockJobs() { _unifiedBlockJobs.clear(); }
+function _runUnifiedBlockJobs() {
+    _unifiedBlockJobRaf = 0;
+    for (const [b, step] of [..._unifiedBlockJobs]) {
+        let done = true;
+        try { done = step(); } catch (e) { console.error('block job', b, e); }
+        if (done && _unifiedBlockJobs.get(b) === step) _unifiedBlockJobs.delete(b);
+    }
+    if (_unifiedBlockJobs.size) _unifiedBlockJobRaf = requestAnimationFrame(_runUnifiedBlockJobs);
+}
+
+// Brings a block's rendered row range to targetS..targetE: rows beyond the
+// target go at once (cheap), rows still missing are added a chunk per frame,
+// starting with mustS..mustE (the rows on screen) in this call. Returns false
+// if the block cannot be patched in place (caller rebuilds it).
+function _growBlockRows(blockDiv, blockIndex, targetS, targetE, mustS, mustE, rowHeightPx, colStart, colEnd, p, isLastBlock, nSeq, colWin) {
+    const cur = _unifiedRenderedRowRanges.get(blockIndex);
+    if (!cur) return false;
+    const K = _unifiedRowsPerFrame(colEnd - colStart + 1);
+    // This frame: drop rows beyond the target, cover the on-screen rows, and
+    // grow by at most K rows per side.
+    const s = Math.max(targetS, Math.min(mustS, cur.rowStart - K));
+    const e = Math.min(targetE, Math.max(mustE, cur.rowEnd + K));
+    if (!_incrementalUpdateBlockRows(blockDiv, blockIndex, s, e, rowHeightPx, colStart, colEnd, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, isLastBlock, nSeq, colWin)) return false;
+    if (s > targetS || e < targetE) _scheduleBlockRowGrowth(blockDiv, blockIndex, targetS, targetE, rowHeightPx, p, isLastBlock, nSeq, colWin);
+    return true;
+}
+
+// Adds the rest of a block's row buffer (targetS..targetE) K rows per frame.
+// Stops when the block leaves the DOM or its column window changes (a new
+// job will have been scheduled for the new window).
+function _scheduleBlockRowGrowth(blockDiv, blockIndex, targetS, targetE, rowHeightPx, p, isLastBlock, nSeq, colWin) {
+    const at = _unifiedRenderedRowRanges.get(blockIndex);
+    if (!at) return;
+    const colStart = at.colStart, colEnd = at.colEnd;
+    const K = _unifiedRowsPerFrame(colEnd - colStart + 1);
+    _scheduleBlockJob(blockIndex, 'rows', () => {
+        if (!blockDiv.isConnected) return true;
+        const r = _unifiedRenderedRowRanges.get(blockIndex);
+        if (!r || r.colStart !== colStart || r.colEnd !== colEnd) return true;   // superseded
+        const ns = Math.max(targetS, r.rowStart - K), ne = Math.min(targetE, r.rowEnd + K);
+        if (ns === r.rowStart && ne === r.rowEnd) return true;
+        if (!_incrementalUpdateBlockRows(blockDiv, blockIndex, ns, ne, rowHeightPx, colStart, colEnd, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, isLastBlock, nSeq, colWin)) return true;
+        return ns <= targetS && ne >= targetE;
+    });
+}
+
+// For a block just built by _buildUnifiedBlock (on-screen rows only): queue
+// its row buffer, as recorded with the block's window.
+function _scheduleBuiltBlockGrowth(blockDiv, blockIndex, start, end, rowHeightPx, charWidthPx, p, nSeq) {
+    const r = _unifiedRenderedRowRanges.get(blockIndex);
+    if (!r || !(r.bufferRows > 0)) return;
+    const targetS = Math.max(0, r.rowStart - r.bufferRows);
+    const targetE = Math.min(Math.max(0, nSeq - 1), r.rowEnd + r.bufferRows);
+    if (targetS === r.rowStart && targetE === r.rowEnd) return;
+    const colWin = (r.colEnd - r.colStart + 1 < end - start) ? { blockLen: end - start, start, charWidthPx } : null;
+    _scheduleBlockRowGrowth(blockDiv, blockIndex, targetS, targetE, rowHeightPx, p, end >= p.len, nSeq, colWin);
+}
+
+// Rows of one block that intersect the viewport (no buffer). The header
+// (ruler + optional top consensus) sits between the block's top and its rows.
+function _unifiedVisibleRows(blockIndex, blockHeightPx, headerHeightPx, rowHeightPx, scrollTop, clientHeight, nSeq) {
+    const blockTop = blockIndex * blockHeightPx;
+    const rowAreaTop = blockTop + headerHeightPx;
+    const h = Math.max(1, rowHeightPx);
+    const visTop = Math.max(scrollTop, rowAreaTop);
+    const visBottom = Math.min(scrollTop + clientHeight, blockTop + blockHeightPx);
+    let s = Math.max(0, Math.floor((visTop - rowAreaTop) / h));
+    let e = Math.min(Math.max(0, nSeq - 1), Math.floor((visBottom - rowAreaTop) / h));
+    if (e < s) {
+        // A block entirely above or below the viewport (the block overscan):
+        // start from its row nearest the viewport; the buffer rows follow a
+        // chunk per frame. Otherwise (header taller than the block, container
+        // height clamped to 0) show a small window from the top rather than nothing.
+        if (blockTop >= scrollTop + clientHeight) { s = 0; e = 0; }
+        else if (blockTop + blockHeightPx <= scrollTop) { s = e = Math.max(0, nSeq - 1); }
+        else { s = 0; e = Math.min(Math.max(0, nSeq - 1), 50); }
+    }
+    return { s, e, visibleRows: Math.max(1, Math.ceil(clientHeight / h)) };
+}
+
+// True when the rendered range still covers the visible range with at least
+// `guard` to spare on each side (or already reaches the hard limit there).
+function _rangeWithinGuard(rendS, rendE, visS, visE, guard, minS, maxE) {
+    return (rendS <= minS || rendS <= visS - guard) && (rendE >= maxE || rendE >= visE + guard);
+}
+
+function _removeLeadingChildren(el, n) {
+    const r = document.createRange();
+    r.setStart(el, 0); r.setEnd(el, n);
+    r.deleteContents();
+}
+function _removeTrailingChildren(el, n) {
+    const r = document.createRange();
+    r.setStart(el, el.childNodes.length - n); r.setEnd(el, el.childNodes.length);
+    r.deleteContents();
+}
+
+// Moves one data row's rendered column window from oldS..oldE to newS..newE
+// in place: spans that leave are deleted at the ends, spans that enter are
+// inserted at the ends, the padding offset is updated. Column positions on
+// screen do not move (the padding grows by exactly the width removed), so the
+// visible area does not repaint beyond the touched edges. Falls back to a
+// full rebuild of the row's content when a one-span-per-column count cannot
+// be relied on (variable-sites breakpoint markers) or the length badge is
+// involved.
+function _patchRowColumns(dataEl, index, start, end, oldS, oldE, newS, newE, charWidthPx, p, isLastBlock) {
+    const html = (a, b) => _seqDataSpansHtml(index, a, b + 1, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData);
+    const badgeOld = isLastBlock && oldE >= end - 1;
+    const badgeNew = isLastBlock && newE >= end - 1;
+    const countable = !(state._brkBeforePos && state._brkBeforePos.size > 0) && !badgeOld && !badgeNew
+        && dataEl.childNodes.length === (oldE - oldS + 1);
+    if (!countable || newS > oldE || newE < oldS) {
+        dataEl.innerHTML = html(newS, newE) + (badgeNew ? _seqLengthBadgeHtml(index) : '');
+    } else {
+        if (newS > oldS) _removeLeadingChildren(dataEl, newS - oldS);
+        else if (newS < oldS) dataEl.insertAdjacentHTML('afterbegin', html(newS, oldS - 1));
+        if (newE < oldE) _removeTrailingChildren(dataEl, oldE - newE);
+        else if (newE > oldE) dataEl.insertAdjacentHTML('beforeend', html(oldE + 1, newE));
+    }
+    _applyColumnWindowStyle(dataEl, end - start, newS - start, charWidthPx);
+    _noteRowColumnWindow(dataEl, newS, newE);
+    state.spanCache?.delete(index);
+    _registerRowSpans(index, dataEl);
+}
+
+// Each column-windowed data row remembers its own window, because a
+// re-centre is applied a chunk of rows per frame and a later re-centre may
+// find rows at different windows.
+function _noteRowColumnWindow(dataEl, colStart, colEnd) {
+    dataEl.dataset.cs = String(colStart);
+    dataEl.dataset.ce = String(colEnd);
+}
+
+// Re-centres the column window of an existing block in one frame: every
+// data row is patched in place (_patchRowColumns), the ruler and consensus
+// rows get new content. Names and row elements are untouched. fallbackS/E is
+// the block's previous window, for rows that carry no window of their own.
+//
+// One frame on purpose. Spreading the rows over frames was measured (62 rows
+// x 16,808 columns, 3 rows a frame): a frame that changes any row costs ~30 ms
+// before the per-row cost (~9 ms a row), so 20 small frames of 100-170 ms
+// replaced one of ~550 ms and the median scroll step went from 15 ms back to
+// 115 ms. Between re-centres nothing changes, and a re-centre comes every
+// (bufferCols - guardCols) columns of scrolling - about 1,700 px here.
+function _patchBlockColumnWindow(blockDiv, blockIndex, start, end, fallbackS, fallbackE, newS, newE, charWidthPx, p, isLastBlock) {
+    const blockLen = end - start;
+    blockDiv.querySelectorAll(':scope > .seq-line[data-seq-index]').forEach(rowEl => {
+        const idx = parseInt(rowEl.getAttribute('data-seq-index'), 10);
+        if (Number.isNaN(idx) || idx < 0) return;   // consensus rows are handled below
+        const d = rowEl.querySelector('.seq-data');
+        if (!d) return;
+        const oS = d.dataset.cs != null ? +d.dataset.cs : fallbackS;
+        const oE = d.dataset.ce != null ? +d.dataset.ce : fallbackE;
+        if (oS === newS && oE === newE) return;
+        _patchRowColumns(d, idx, start, end, oS, oE, newS, newE, charWidthPx, p, isLastBlock);
+    });
+    const ruler = blockDiv.querySelector(':scope > .scale-ruler-line > .seq-data');
+    if (ruler) {
+        const rulerLen = newE - newS + 1;
+        ruler.dataset.scale = rulerLen + ':' + newS;
+        if (state._diffColumns) ruler.innerHTML = generateScaleHTML(rulerLen, 10, newS);
+        else ruler.textContent = generateScale(rulerLen, 10, newS);
+        _applyColumnWindowStyle(ruler, blockLen, newS - start, charWidthPx);
+    }
+    if (p.shouldRenderConsensus) {
+        state.spanCache?.delete(CONSENSUS_ROW_INDEX);
+        blockDiv.querySelectorAll(':scope > .consensus-line').forEach(line => {
+            const position = line.classList.contains('consensus-top') ? 'top' : 'bottom';
+            const tmp = document.createElement('div');
+            addConsensusLine(tmp, p.consensus, newS, newE + 1, p.nameLen, p.stickyNames, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, isLastBlock && newE >= end - 1, position, p.options);
+            const fresh = tmp.firstElementChild?.querySelector('.seq-data');
+            const old = line.querySelector('.seq-data');
+            if (fresh && old) {
+                _applyColumnWindowStyle(fresh, blockLen, newS - start, charWidthPx);
+                old.replaceWith(fresh);
+            }
+        });
+    }
 }
 
 // Builds one block's DOM for the non-windowed (small-alignment) render path.
@@ -3019,6 +3254,7 @@ function _invalidateUnifiedWindowMeasurements() {
     _unifiedCharWidthPx = null;
     _unifiedNameColWidthPx = null;
     _unifiedRenderedRowRanges.clear();
+    _cancelAllBlockJobs();
 }
 
 function _measureUnifiedRowHeight(sampleRowEl) {
@@ -3108,7 +3344,11 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     // than the viewport (Full mode with 1 giant block), only visible columns
     // are rendered with padding-left for the offset.
     const visibleDataWidth = Math.max(0, clientWidth - nameColWidthPx);
-    const { colStart, colEnd, needsColWindow } = _computeBlockColumnWindow(start, end, scrollLeft, visibleDataWidth, charWidthPx);
+    const nSeq = state.seqs.length;
+    const headerHeight = headerHeightPxIn != null ? headerHeightPxIn : _measureUnifiedHeaderHeight(null);
+    const _vis = _unifiedVisibleRows(blockIndex, blockHeightPx, headerHeight, rowHeightPx, effectiveScrollTop, clientHeight, nSeq);
+    const _budget = _unifiedWindowBudget(_vis.visibleRows, Math.max(1, Math.ceil(visibleDataWidth / Math.max(1, charWidthPx))), nSeq, blockLen);
+    const { colStart, colEnd, needsColWindow } = _computeBlockColumnWindow(start, end, scrollLeft, visibleDataWidth, charWidthPx, _budget.bufferCols);
 
     // Ruler — was previously generated for the block's FULL width (blockLen,
     // up to the whole alignment in Full mode's single-block case) on every
@@ -3163,25 +3403,13 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     // in the block, which on a real 3408-row alignment produced a phantom
     // ~6651px "header" (versus the real ~30px ruler+consensus) and made the
     // row range collapse to negative, rendering zero rows.
-    const nSeq = state.seqs.length;
-    const blockTop = blockIndex * blockHeightPx;
-    const headerHeight = headerHeightPxIn != null ? headerHeightPxIn : _measureUnifiedHeaderHeight(null);
-    const rowAreaTop = blockTop + headerHeight;
-    const overscanRows = 15;
-    const visTop = Math.max(effectiveScrollTop, rowAreaTop);
-    const visBottom = Math.min(effectiveScrollTop + clientHeight, blockTop + blockHeightPx);
-    const safeRowHeightPx = Math.max(1, rowHeightPx);
-    let rowStart = Math.max(0, Math.floor((visTop - rowAreaTop) / safeRowHeightPx) - overscanRows);
-    let rowEnd = Math.min(Math.max(0, nSeq - 1), Math.floor((visBottom - rowAreaTop) / safeRowHeightPx) + overscanRows, rowStart + 300);
-    // Safety fallback: if the visible area is empty or inverted (e.g.,
-    // header taller than the block, or container height clamped to 0),
-    // render a small window from the top so the user sees something
-    // instead of a blank alignment.
-    if (rowEnd < rowStart) {
-        rowStart = 0;
-        rowEnd = Math.min(Math.max(0, nSeq - 1), 50);
-    }
-    _unifiedRenderedRowRanges.set(blockIndex, { rowStart, rowEnd });
+    // The rows on screen now; the buffer rows around them are added a chunk
+    // per frame by the caller (_growBlockRows), so a block entering the
+    // window never costs one long frame. _vis already applied the
+    // empty/inverted-area fallback.
+    const rowStart = Math.max(0, _vis.s);
+    const rowEnd = Math.min(Math.max(0, nSeq - 1), _vis.e);
+    _unifiedRenderedRowRanges.set(blockIndex, { rowStart, rowEnd, colStart, colEnd, bufferRows: _budget.bufferRows });
 
     // Top row spacer (fills the space of rows above the visible window)
     const topRowSpacer = document.createElement('div');
@@ -3189,12 +3417,13 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
     topRowSpacer.style.height = (rowStart * rowHeightPx) + 'px';
     blockDiv.appendChild(topRowSpacer);
 
-    // Visible rows
+    // Visible rows. The length badge belongs after the block's real last
+    // column only - same rule as the consensus line above.
     for (let i = rowStart; i <= rowEnd; i++) {
-        const lineDiv = createSequenceLine(i, colStart, colEnd + 1, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, conservationData);
+        const lineDiv = createSequenceLine(i, colStart, colEnd + 1, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock && colEnd >= end - 1, conservationData);
         if (needsColWindow) {
             const dataEl = lineDiv.querySelector('.seq-data');
-            if (dataEl) _applyColumnWindowStyle(dataEl, blockLen, colStart - start, charWidthPx);
+            if (dataEl) { _applyColumnWindowStyle(dataEl, blockLen, colStart - start, charWidthPx); _noteRowColumnWindow(dataEl, colStart, colEnd); }
         }
         blockDiv.appendChild(lineDiv);
     }
@@ -3221,9 +3450,13 @@ function _buildUnifiedBlock(blockIndex, start, end, len, blockHeightPx, rowHeigh
 // and recreating everything. Returns true if it performed an incremental
 // update, false if it couldn't (caller should fall back to a full rebuild
 // of this block via _buildUnifiedBlock).
-function _incrementalUpdateBlockRows(blockDiv, blockIndex, newRowStart, newRowEnd, rowHeightPx, colStart, colEnd, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, isLastBlock, nSeq) {
+// colWin ({ blockLen, start, charWidthPx }) is passed when the block is wider
+// than the viewport, so rows created here get the same padding offset as
+// _buildUnifiedBlock gives them.
+function _incrementalUpdateBlockRows(blockDiv, blockIndex, newRowStart, newRowEnd, rowHeightPx, colStart, colEnd, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData, isLastBlock, nSeq, colWin = null) {
     const oldRange = _unifiedRenderedRowRanges.get(blockIndex);
     if (!oldRange) return false;
+    const showLength = isLastBlock && (!colWin || colEnd >= colWin.start + colWin.blockLen - 1);
 
     const rowSpacers = blockDiv.querySelectorAll(':scope > .unified-row-spacer');
     if (rowSpacers.length !== 2) return false;
@@ -3272,7 +3505,11 @@ function _incrementalUpdateBlockRows(blockDiv, blockIndex, newRowStart, newRowEn
     for (const [start, end] of missingRuns) {
         const frag = document.createDocumentFragment();
         for (let i = start; i <= end; i++) {
-            const lineDiv = createSequenceLine(i, colStart, colEnd + 1, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, isLastBlock, conservationData);
+            const lineDiv = createSequenceLine(i, colStart, colEnd + 1, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, showLength, conservationData);
+            if (colWin) {
+                const d = lineDiv.querySelector('.seq-data');
+                if (d) { _applyColumnWindowStyle(d, colWin.blockLen, colStart - colWin.start, colWin.charWidthPx); _noteRowColumnWindow(d, colStart, colEnd); }
+            }
             frag.appendChild(lineDiv);
         }
         let insertBefore = bottomRowSpacer;
@@ -3289,7 +3526,7 @@ function _incrementalUpdateBlockRows(blockDiv, blockIndex, newRowStart, newRowEn
     topRowSpacer.style.height = (newRowStart * rowHeightPx) + 'px';
     bottomRowSpacer.style.height = (Math.max(0, nSeq - 1 - newRowEnd) * rowHeightPx) + 'px';
 
-    _unifiedRenderedRowRanges.set(blockIndex, { rowStart: newRowStart, rowEnd: newRowEnd });
+    _unifiedRenderedRowRanges.set(blockIndex, { ...oldRange, rowStart: newRowStart, rowEnd: newRowEnd });
     return true;
 }
 
@@ -3385,6 +3622,14 @@ function renderUnifiedWindowedDom(container, len, blockWidth, nameLen, stickyNam
         _unifiedScrollController.suppressNextEvent();
         container.scrollTop = preservedScrollTop;
     }
+    // The blocks hold their on-screen rows; queue their row buffers.
+    _cancelAllBlockJobs();
+    container.querySelectorAll(':scope > .block-block[data-block-index]').forEach(blockDiv => {
+        const b = parseInt(blockDiv.getAttribute('data-block-index'), 10);
+        if (Number.isNaN(b)) return;
+        const start = b * blockWidth, end = Math.min(start + blockWidth, len);
+        _scheduleBuiltBlockGrowth(blockDiv, b, start, end, measuredRowHeightPx, _unifiedCharWidthPx || charWidthPx, _unifiedWindowRenderParams, state.seqs.length);
+    });
     _setupUnifiedScrollListener(container);
 }
 
@@ -3430,31 +3675,19 @@ function _refreshUnifiedWindowOnScroll(container) {
     const headerHeightPx = _unifiedHeaderHeightPx != null ? _unifiedHeaderHeightPx : _measureUnifiedHeaderHeight(null);
     const nSeq = state.seqs.length;
 
-    // Incremental update: reuse existing block DOM nodes in place instead of
-    // unconditionally removing and rebuilding everything on every scroll
-    // event. A previous version of this function called
-    // _removeNodesBetweenSpacers + rebuilt every visible block from scratch
-    // on every scroll - profiled directly (Chrome CPU profiler, real 621-
-    // seq/1928-col alignment, 15 scroll steps) at ~250-450ms/step, almost
-    // entirely native layout/style-recalc cost from destroying and
-    // recreating thousands of row/span DOM nodes most of which hadn't
-    // actually left the viewport.
-    //
-    // Each existing block is patched via _incrementalUpdateBlockRows (only
-    // removes rows that scrolled out, only creates rows that scrolled in)
-    // when ALL of these hold: the block already exists in the DOM, its
-    // column window (colStart/colEnd) is unchanged since its last render,
-    // and it was previously rendered with row-range tracking present. If a
-    // block's own width requires column windowing (needsColWindow - i.e. the
-    // block is wider than the viewport, only possible in Full mode's
-    // single-block case, not the many-narrow-blocks Block mode this was
-    // profiled against) it's deliberately excluded from the incremental path
-    // and always falls back to a full rebuild for that one block: patching
-    // existing rows' spans to a new horizontal column window in place would
-    // need the same _applyColumnWindowStyle padding-offset logic
-    // _buildUnifiedBlock applies to freshly-built rows, and getting that
-    // wrong silently misaligns residues rather than throwing - correctness
-    // over completeness here, this case is no slower than it already was.
+    // Per block, in order of preference:
+    //  1. nothing - the viewport is still inside the rendered window with a
+    //     guard to spare on both axes (most scroll frames end here);
+    //  2. patch in place - the column window is re-centred on the existing
+    //     rows (_patchBlockColumnWindow) and/or rows are added/removed at the
+    //     ends (_incrementalUpdateBlockRows); names and untouched spans stay;
+    //  3. full build - the block is not in the DOM yet (or has no window
+    //     record), built and inserted before any old copy is removed.
+    // History: the first version rebuilt every visible block on every scroll
+    // (250-450 ms/step on a 621 x 1928 alignment); the second patched rows
+    // but still replaced the whole block whenever the column window moved,
+    // which in Full mode is every horizontal scroll frame (213 ms/step,
+    // every frame over 100 ms, on 62 x 16,808).
     const existingBlocksByIndex = new Map();
     container.querySelectorAll(':scope > .block-block[data-block-index]').forEach(el => {
         const idx = parseInt(el.getAttribute('data-block-index'), 10);
@@ -3462,48 +3695,55 @@ function _refreshUnifiedWindowOnScroll(container) {
     });
 
     const keptIndices = new Set();
+    let changed = false;
+    const visibleDataWidth = Math.max(0, effectiveClientWidth - nameColWidthPx);
+    const visibleCols = Math.max(1, Math.ceil(visibleDataWidth / Math.max(1, charWidthPx)));
     for (let b = blockStart; b <= blockEnd; b++) {
         const start = b * p.blockWidth;
         const end = Math.min(start + p.blockWidth, p.len);
+        const blockLen = end - start;
         const isLastBlock = end >= p.len;
         const existingBlockDiv = existingBlocksByIndex.get(b);
 
-        // Recompute this block's column window exactly as _buildUnifiedBlock
-        // does, so we can tell whether an existing block's rows can be
-        // patched in place or need a full rebuild (see comment above).
-        const visibleDataWidth = Math.max(0, effectiveClientWidth - nameColWidthPx);
-        const { colStart, colEnd, needsColWindow } = _computeBlockColumnWindow(start, end, effectiveScrollLeft, visibleDataWidth, charWidthPx);
-
-        // Recompute this block's row window exactly as _buildUnifiedBlock does.
-        const blockTop = b * blockHeightPx;
-        const rowAreaTop = blockTop + headerHeightPx;
-        const overscanRows = 15;
-        const visTop = Math.max(effectiveScrollTop, rowAreaTop);
-        const visBottom = Math.min(effectiveScrollTop + effectiveClientHeight, blockTop + blockHeightPx);
-        const safeRowHeightPx = Math.max(1, rowHeightPx);
-        let rowStart = Math.max(0, Math.floor((visTop - rowAreaTop) / safeRowHeightPx) - overscanRows);
-        let rowEnd = Math.min(Math.max(0, nSeq - 1), Math.floor((visBottom - rowAreaTop) / safeRowHeightPx) + overscanRows, rowStart + 300);
-        if (rowEnd < rowStart) {
-            rowStart = 0;
-            rowEnd = Math.min(Math.max(0, nSeq - 1), 50);
-        }
+        // Same window arithmetic as _buildUnifiedBlock: what is on screen, and
+        // the buffer/guard sizes for this alignment.
+        const vis = _unifiedVisibleRows(b, blockHeightPx, headerHeightPx, rowHeightPx, effectiveScrollTop, effectiveClientHeight, nSeq);
+        const budget = _unifiedWindowBudget(vis.visibleRows, visibleCols, nSeq, blockLen);
+        const cw = _computeBlockColumnWindow(start, end, effectiveScrollLeft, visibleDataWidth, charWidthPx, budget.bufferCols);
+        const colWin = cw.needsColWindow ? { blockLen, start, charWidthPx } : null;
 
         const oldRange = _unifiedRenderedRowRanges.get(b);
-        const canTryIncremental = !!existingBlockDiv && !needsColWindow &&
-            oldRange && oldRange.colStart === colStart && oldRange.colEnd === colEnd;
-
         let handledIncrementally = false;
-        if (canTryIncremental) {
-            handledIncrementally = _incrementalUpdateBlockRows(existingBlockDiv, b, rowStart, rowEnd, rowHeightPx, colStart, colEnd, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, isLastBlock, nSeq);
-            if (handledIncrementally) {
-                // _incrementalUpdateBlockRows only tracks rowStart/rowEnd - store
-                // colStart/colEnd too so the next refresh can still tell whether
-                // the column window has since changed.
-                _unifiedRenderedRowRanges.set(b, { rowStart, rowEnd, colStart, colEnd });
+        if (existingBlockDiv && oldRange && oldRange.colStart != null) {
+            // Hysteresis: nothing to do while the viewport stays at least a
+            // guard distance inside the rendered window on both axes.
+            const rowsOk = _rangeWithinGuard(oldRange.rowStart, oldRange.rowEnd, vis.s, vis.e, budget.guardRows, 0, Math.max(0, nSeq - 1));
+            const colsOk = !cw.needsColWindow || _rangeWithinGuard(oldRange.colStart, oldRange.colEnd, cw.visStart, cw.visEnd, budget.guardCols, start, end - 1);
+            if (rowsOk && colsOk) {
+                keptIndices.add(b);
+                continue;
+            }
+            let curColStart = oldRange.colStart, curColEnd = oldRange.colEnd;
+            if (!colsOk) {
+                // Re-centre the column window on the rows that exist, in place.
+                // The record is updated first so a row-growth job in flight
+                // sees its window superseded and stops.
+                _unifiedRenderedRowRanges.set(b, { ...oldRange, colStart: cw.colStart, colEnd: cw.colEnd });
+                _patchBlockColumnWindow(existingBlockDiv, b, start, end, curColStart, curColEnd, cw.colStart, cw.colEnd, charWidthPx, p, isLastBlock);
+                curColStart = cw.colStart; curColEnd = cw.colEnd;
+                changed = true;
+                handledIncrementally = true;
+            }
+            if (!rowsOk) {
+                const rowStart = Math.max(0, vis.s - budget.bufferRows);
+                const rowEnd = Math.min(Math.max(0, nSeq - 1), vis.e + budget.bufferRows);
+                handledIncrementally = _growBlockRows(existingBlockDiv, b, rowStart, rowEnd, vis.s, vis.e, rowHeightPx, curColStart, curColEnd, p, isLastBlock, nSeq, colWin);
+                if (handledIncrementally) changed = true;
             }
         }
 
         if (!handledIncrementally) {
+            changed = true;
             // Full rebuild for this one block: build and insert the replacement
             // BEFORE removing the old one, so the container never has a gap
             // where this block's columns/width are momentarily absent. This
@@ -3521,8 +3761,11 @@ function _refreshUnifiedWindowOnScroll(container) {
             // attempt - because by then this block's cached colStart/colEnd
             // already matched the target position and the incremental path
             // (which never removes anything) applied instead.
+            // (_buildUnifiedBlock records the block's rendered row/column window:
+            // the rows on screen; the buffer rows follow a chunk per frame.)
+            _cancelBlockJob(b);
             const blockDiv = _buildUnifiedBlock(b, start, end, p.len, blockHeightPx, rowHeightPx, effectiveScrollTop, effectiveClientHeight, effectiveScrollLeft, effectiveClientWidth, charWidthPx, nameColWidthPx, p.nameLen, p.stickyNames, p.standard, p.ambiguous, p.blackThresh, p.darkThresh, p.lightThresh, p.enableBlack, p.enableDark, p.enableLight, p.conservationData, p.shouldRenderConsensus, p.consensusPosition, p.consensus, p.options, headerHeightPx);
-            _unifiedRenderedRowRanges.set(b, { rowStart, rowEnd, colStart, colEnd });
+            _scheduleBuiltBlockGrowth(blockDiv, b, start, end, rowHeightPx, charWidthPx, p, nSeq);
             if (existingBlockDiv) {
                 container.insertBefore(blockDiv, existingBlockDiv);
                 // Drop the old block's rows' spanCache entries, then remove it
@@ -3556,11 +3799,19 @@ function _refreshUnifiedWindowOnScroll(container) {
             });
             el.remove();
             _unifiedRenderedRowRanges.delete(idx);
+            _cancelBlockJob(idx);
+            changed = true;
         }
     });
 
-    topSpacer.style.height = (blockStart * blockHeightPx) + 'px';
-    bottomSpacer.style.height = (Math.max(0, numBlocks - 1 - blockEnd) * blockHeightPx) + 'px';
+    // Most scroll frames end here with the DOM untouched (see the hysteresis
+    // note above _unifiedWindowBudget); only touch spacers and selection
+    // classes when something was actually rebuilt.
+    if (!changed) return;
+    const topH = (blockStart * blockHeightPx) + 'px';
+    const bottomH = (Math.max(0, numBlocks - 1 - blockEnd) * blockHeightPx) + 'px';
+    if (topSpacer.style.height !== topH) topSpacer.style.height = topH;
+    if (bottomSpacer.style.height !== bottomH) bottomSpacer.style.height = bottomH;
     // Don't re-measure here — it forces a synchronous layout of everything just
     // inserted, for no benefit on the hot scroll path.
     _syncSelectionDomFromState();
@@ -8691,6 +8942,109 @@ function _startSeqNameEdit(nameSpan, index) {
     document.addEventListener('mousedown', onOutside, true);
 }
 
+// The residue spans of one row for columns start..end-1, as an HTML string.
+// Shared by createSequenceLine (whole row) and the windowed renderer's
+// in-place column patch (_patchRowColumns), so a span looks the same
+// whichever path made it.
+function _seqDataSpansHtml(index, start, end, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData) {
+    const seq = state.seqs[index].seq;
+    const selectedCols = state.selectedColumns;
+    const htmlParts = [];
+    const colorScheme = getAlignmentColorScheme();
+    const effectiveColorScheme = getEffectiveColorScheme(colorScheme);
+    const renderConfig = {
+        blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight,
+        colorScheme, effectiveColorScheme
+    };
+
+    // Var-sites: check if breakpoints are active for this render
+    const showBrk = state._brkBeforePos && state._brkBeforePos.size > 0;
+    const brkBeforePos = state._brkBeforePos || new Set();
+    const brkInfo = state._brkInfo || {};
+
+    const ovCtx = _overlayRowCtx(index);
+    for (let pos = start; pos < end; pos++) {
+            // Insert breakpoint marker before this position if needed
+            if (showBrk && brkBeforePos.has(pos)) {
+                const r = brkInfo[pos];
+                const title = `${r.count} column${r.count > 1 ? 's' : ''} hidden (positions ${r.start + 1}–${r.end + 1})`;
+                htmlParts.push(`<span class="col-breakpoint" data-break="${r.start}-${r.end}" title="${title}" style="pointer-events:none;">${_escapeHtml(brkStyle.symbol)}</span>`);
+            }
+            const base = seq[pos] || '-';
+            const baseUp = base.toUpperCase();
+            const baseClass = getResidueAnnotationClasses(base, standard, ambiguous, effectiveColorScheme);
+
+            const posData = conservationData[pos] || { hasData: false, hasValidCoverage: false };
+            let cls = applyConservationShadeClass(baseUp, posData, renderConfig);
+
+            // Codon analysis classes built inline (avoids 160K-node DOM scan)
+            if (state._codonData && state._codonData.phase && state._codonData.phase[index]) {
+                const ph = state._codonData.phase[index][pos];
+                if (ph >= 0) cls += ' codon-p' + ph;
+            }
+            if (state._codonData && state._codonData.stops && state._codonData.stops[index]) {
+                if (state._codonData.stops[index].includes(pos)) cls += ' codon-stop';
+            }
+            if (state._codonData && state._codonData.frameShifts && state._codonData.frameShifts[index]) {
+                for (const fs of state._codonData.frameShifts[index]) {
+                    if (fs.pos === pos && fs.type === 'incomplete') {
+                        cls += ' codon-fs';
+                        break;
+                    }
+                    if (fs.pos === pos && fs.type === 'indel') {
+                        cls += ' codon-fs-internal';
+                        break;
+                    }
+                }
+            }
+            if (state._codonData && state._codonData.synNonSyn && state._codonData.synNonSyn[index]) {
+                if (state._codonData.synNonSyn[index][pos]) cls += ' codon-' + state._codonData.synNonSyn[index][pos];
+            }
+            if (state._diffColumns && state._diffColumns.has(pos)) {
+                cls += ' diff-highlight';
+            }
+            if (state.trimBoundaries) {
+                if (pos <= state.trimBoundaries.leftTrimEnd) cls += ' trim-left';
+                else if (pos >= state.trimBoundaries.rightTrimStart) cls += ' trim-right';
+            }
+
+            const colSelected = selectedCols.has(pos) ? ' column-selected' : '';
+            const ov = ovCtx.any ? residueOverlay(ovCtx, pos, base) : null;
+            if (!ov) {
+                htmlParts.push(`<span class="${cls}${baseClass ? ' ' + baseClass : ''}${colSelected}" data-pos="${pos}">${base}</span>`);
+                continue;
+            }
+            const ovc = _overlayClassList(ov);
+            let attrs = '';
+            if (ov.titles.length) attrs += ` title="${_escapeHtml(ov.titles.join(' | '))}"`;
+            if (ov.hit) attrs += ` data-search-hit="${ov.hit.className}"`;
+            if (ov.rep) attrs += ` data-repeat-hl="1"`;
+            htmlParts.push(`<span class="${cls}${baseClass ? ' ' + baseClass : ''}${colSelected}${ovc ? ' ' + ovc : ''}" data-pos="${pos}"${attrs}>${base}</span>`);
+        }
+    return htmlParts.join('');
+}
+
+// The "sequence length" badge shown after a row's last column.
+function _seqLengthBadgeHtml(index) {
+    const gaplessPositions = state.seqs[index].gaplessPositions;
+    const gaplessLength = gaplessPositions[gaplessPositions.length - 1] || 0;
+    return `<span class="seq-length" title="Sequence length: ${gaplessLength} (gapless)">${gaplessLength}</span>`;
+}
+
+// Register a row's rendered spans for the selection features (skipped for
+// large view-only renders).
+function _registerRowSpans(index, dataSpan) {
+    if (state._enableSpanCache === false) return;
+    const spans = dataSpan.children;
+    for (let i = 0; i < spans.length; i++) {
+        const span = spans[i];
+        const pos = span.dataset.pos;
+        if (pos !== undefined) {
+            registerSpanInCache(index, parseInt(pos), span);
+        }
+    }
+}
+
 function createSequenceLine(index, start, end, nameLen, stickyNames, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, showLength = false, conservationData) {
     const lineDiv = document.createElement('div');
     lineDiv.className = 'seq-line';
@@ -8750,102 +9104,10 @@ function createSequenceLine(index, start, end, nameLen, stickyNames, standard, a
         // Do nothing here - no copy, no selection, no-op by design
     });
 
-    // *** PERFORMANCE: Pre-cache references and build HTML string ***
-    const seq = state.seqs[index].seq;
-    const gaplessPositions = state.seqs[index].gaplessPositions;
-    const selectedCols = state.selectedColumns;
-    const htmlParts = [];
-    const colorScheme = getAlignmentColorScheme();
-    const effectiveColorScheme = getEffectiveColorScheme(colorScheme);
-    const renderConfig = {
-        blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight,
-        colorScheme, effectiveColorScheme
-    };
-
-    // Var-sites: check if breakpoints are active for this render
-    const showBrk = state._brkBeforePos && state._brkBeforePos.size > 0;
-    const brkBeforePos = state._brkBeforePos || new Set();
-    const brkInfo = state._brkInfo || {};
-
-    const ovCtx = _overlayRowCtx(index);
-    for (let pos = start; pos < end; pos++) {
-            // Insert breakpoint marker before this position if needed
-            if (showBrk && brkBeforePos.has(pos)) {
-                const r = brkInfo[pos];
-                const title = `${r.count} column${r.count > 1 ? 's' : ''} hidden (positions ${r.start + 1}\u2013${r.end + 1})`;
-                htmlParts.push(`<span class="col-breakpoint" data-break="${r.start}-${r.end}" title="${title}" style="pointer-events:none;">${_escapeHtml(brkStyle.symbol)}</span>`);
-            }
-            const base = seq[pos] || '-';
-            const baseUp = base.toUpperCase();
-            const baseClass = getResidueAnnotationClasses(base, standard, ambiguous, effectiveColorScheme);
-
-            const posData = conservationData[pos] || { hasData: false, hasValidCoverage: false };
-            let cls = applyConservationShadeClass(baseUp, posData, renderConfig);
-
-            // Codon analysis classes built inline (avoids 160K-node DOM scan)
-            if (state._codonData && state._codonData.phase && state._codonData.phase[index]) {
-                const ph = state._codonData.phase[index][pos];
-                if (ph >= 0) cls += ' codon-p' + ph;
-            }
-            if (state._codonData && state._codonData.stops && state._codonData.stops[index]) {
-                if (state._codonData.stops[index].includes(pos)) cls += ' codon-stop';
-            }
-            if (state._codonData && state._codonData.frameShifts && state._codonData.frameShifts[index]) {
-                for (const fs of state._codonData.frameShifts[index]) {
-                    if (fs.pos === pos && fs.type === 'incomplete') {
-                        cls += ' codon-fs';
-                        break;
-                    }
-                    if (fs.pos === pos && fs.type === 'indel') {
-                        cls += ' codon-fs-internal';
-                        break;
-                    }
-                }
-            }
-            if (state._codonData && state._codonData.synNonSyn && state._codonData.synNonSyn[index]) {
-                if (state._codonData.synNonSyn[index][pos]) cls += ' codon-' + state._codonData.synNonSyn[index][pos];
-            }
-            if (state._diffColumns && state._diffColumns.has(pos)) {
-                cls += ' diff-highlight';
-            }
-            if (state.trimBoundaries) {
-                if (pos <= state.trimBoundaries.leftTrimEnd) cls += ' trim-left';
-                else if (pos >= state.trimBoundaries.rightTrimStart) cls += ' trim-right';
-            }
-
-            const colSelected = selectedCols.has(pos) ? ' column-selected' : '';
-            const ov = ovCtx.any ? residueOverlay(ovCtx, pos, base) : null;
-            if (!ov) {
-                htmlParts.push(`<span class="${cls}${baseClass ? ' ' + baseClass : ''}${colSelected}" data-pos="${pos}">${base}</span>`);
-                continue;
-            }
-            const ovc = _overlayClassList(ov);
-            let attrs = '';
-            if (ov.titles.length) attrs += ` title="${_escapeHtml(ov.titles.join(' | '))}"`;
-            if (ov.hit) attrs += ` data-search-hit="${ov.hit.className}"`;
-            if (ov.rep) attrs += ` data-repeat-hl="1"`;
-            htmlParts.push(`<span class="${cls}${baseClass ? ' ' + baseClass : ''}${colSelected}${ovc ? ' ' + ovc : ''}" data-pos="${pos}"${attrs}>${base}</span>`);
-        }
-    // Add sequence length at the end (only for last block)
-    if (showLength) {
-        const gaplessLength = gaplessPositions[gaplessPositions.length - 1] || 0;
-        htmlParts.push(`<span class="seq-length" title="Sequence length: ${gaplessLength} (gapless)">${gaplessLength}</span>`);
-    }
-
-    // *** PERFORMANCE: Set innerHTML once instead of many appendChild calls ***
-    dataSpan.innerHTML = htmlParts.join('');
-
-    // Register spans in cache for selection features (skipped for large view-only renders)
-    if (state._enableSpanCache !== false) {
-        const spans = dataSpan.children;
-        for (let i = 0; i < spans.length; i++) {
-            const span = spans[i];
-            const pos = span.dataset.pos;
-            if (pos !== undefined) {
-                registerSpanInCache(index, parseInt(pos), span);
-            }
-        }
-    }
+    // *** PERFORMANCE: build one HTML string, set innerHTML once ***
+    dataSpan.innerHTML = _seqDataSpansHtml(index, start, end, standard, ambiguous, blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight, conservationData)
+        + (showLength ? _seqLengthBadgeHtml(index) : '');   // length badge only after the last block
+    _registerRowSpans(index, dataSpan);
 
     lineDiv.appendChild(dataSpan);   // repeats are part of the residue overlay above
     if (state.selectedRows.has(index)) {

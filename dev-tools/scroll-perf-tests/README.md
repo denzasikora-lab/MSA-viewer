@@ -81,6 +81,21 @@ Start the app server first: `node server.js` from the repo root (default port 30
   mark at the log midpoint, that clicking the mark restores 100%, and that
   a mutated slider min/max cannot move that mark to the left edge.
 
+- **`measure_scroll_windowed.js`** and **`trace_scroll_windowed.js`** (2026-10-04) -
+  self-contained (they serve the repo root themselves, no `server.js`, no port
+  3000) and take the mode, alignment URL and sequence count as arguments, so
+  the same run works on `/oma_test.fas` (621 x 1928, Block mode by default)
+  and on a wide one such as the 62 x 16,808 Sicista mitogenome alignment
+  (Full mode, horizontal scrolling). `measure_` gives per-step wall time,
+  refresh JS time, DOM churn, whole-block replacements, frame gaps during
+  continuous scrolling and a content check of every rendered row; `trace_`
+  gives a Chrome trace split by category, the script functions that ran,
+  layouts forced from script and the compositing state of the container.
+  `NOOP=1` on `measure_` shows what scrolling costs with the renderer doing
+  nothing at all, which is the floor to compare against. These found and
+  verified the v230 fix (buffered windows with hysteresis, in-place column
+  patching, chunked follow-up work): see the commit message for the numbers.
+
 Each script prints its own pass/fail-shaped JSON to stdout - read the
 comments at the top of each for exactly what it's asserting.
 
