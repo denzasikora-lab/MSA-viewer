@@ -10,7 +10,15 @@ MACSE is distributed under the CeCILL 2.1 licence. macse-align.js is a modified 
 text follows. The software is provided without warranty; see Articles 8 and 9 below. The full source
 of macse-align.js is the file itself.
 
-This licence applies to macse-align.js only. The rest of ViewAlign is under the MIT License (LICENSE).
+Contribution notice (CeCILL 2.1, Article 5.2): the JavaScript translation and its later changes were made by
+Toki-bio for ViewAlign (https://github.com/Toki-bio/MSA-viewer), created 2026-10-04.
+
+This licence applies to the files of the MACSE port only:
+  macse-align.js, macse-worker.js, macse-dp-wasm.js, and in tests/macse-port the files macse-align.reference.js,
+  gen_dp.js and dpcore.ts (which contain or generate MACSE-derived code).
+The rest of ViewAlign, including codon-align.js and codon-align-worker.js (the fast codon aligner, written without
+MACSE code), is under the MIT License (LICENSE). The ViewAlign page talks to macse-worker.js only by messages; the
+port runs in its own worker threads.
 
 --------------------------------------------------------------------------------
 

@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v229';
+const BUILD_TAG = 'v230';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -17778,7 +17778,9 @@ function _runCodonAlignInWorker(fasta, opts, onProgress) {
     return new Promise((resolve, reject) => {
         _cancelActiveMafftWorker();
         const id = Date.now();
-        const worker = new Worker(`codon-align-worker.js?v=${BUILD_TAG.replace(/^v/, '')}`);
+        // MACSE port: macse-worker.js (CeCILL 2.1, may start nested workers); fast engine: codon-align-worker.js (MIT)
+        const file = opts && opts.engine === 'macse' ? 'macse-worker.js' : 'codon-align-worker.js';
+        const worker = new Worker(`${file}?v=${BUILD_TAG.replace(/^v/, '')}`);
         _activeMafftWorker = worker;
         _activeMafftReject = reject;
         worker.onmessage = (ev) => {

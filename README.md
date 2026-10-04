@@ -122,8 +122,9 @@ For short, stable links on GitHub Pages:
 
 ## Licence
 
-ViewAlign is released under the MIT License (`LICENSE`). `macse-align.js` is a port of MACSE v2.07
-(Ranwez et al. 2011, 2018) and is distributed under MACSE's CeCILL 2.1 licence (`LICENSE-MACSE`).
+ViewAlign is released under the MIT License (`LICENSE`). The MACSE port (`macse-align.js`, `macse-worker.js`,
+`macse-dp-wasm.js`; Ranwez et al. 2011, 2018) is distributed under MACSE's CeCILL 2.1 licence (`LICENSE-MACSE`). It runs
+in its own worker and talks to the rest of ViewAlign only by messages.
 
 ## Support
 

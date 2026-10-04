@@ -653,9 +653,14 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     patterns), then refinement by cutting the tree and realigning the two parts until the score stops improving.
     The settings are MACSE's <code>-fs</code> (internal frameshift, default 30) and <code>-stop</code> (internal stop
     codon, default 50); the other options keep MACSE's defaults (gap opening 7, extension 1, terminal gap opening 6.3 and
-    extension 0.9, terminal frameshift 10, standard genetic code). The run time is that of MACSE's algorithm without the
-    Java start-up: on one computer it took 0.7 to 32 s per four-species gene of 0.4 to 3.6 kb, 1.7 to 2.6 times faster
-    than MACSE itself (median 2.1). The busy indicator shows the stage. MACSE reads U and IUPAC codes other than R, Y and N as N;
+    extension 0.9, terminal frameshift 10, standard genetic code). The port computes exactly what MACSE computes, but
+    faster: its innermost loop runs as WebAssembly, and it uses several processor cores (up to 8). Steps of MACSE that do
+    not depend on each other run at the same time, refinement steps that MACSE would try next are computed ahead and used
+    in MACSE's order, and large pairwise profile alignments are split into tiles computed in parallel. On one computer, for
+    24 four-species genes of 0.4 to 3.6 kb, it took 0.6 to 4 s per gene, 8 times faster than MACSE overall (median 8,
+    up to 14 for the longest gene); on one core it is 4 times faster. The final version was checked against MACSE on
+    the 2,636 genes and on 260 random sets of 2 to 24 sequences: every alignment identical. The busy indicator shows
+    the stage. MACSE reads U and IUPAC codes other than R, Y and N as N;
     the viewer aligns U as T and puts each sequence's own letters back into the result. Sequence names do not affect the
     alignment (internal names are used, so commas, brackets and repeated names are safe). Alignments that would need
     more than about 500 MB of memory are refused with a message. <code>macse-align.js</code> is distributed under
@@ -2209,7 +2214,7 @@ Hsap_AluSx_chr9_12388   Mmus_B2_chr13_40988</pre>
 
   <p style="margin-top:16px;font-size:13px;color:var(--muted);">
     MAFFT is included as a compiled WebAssembly binary under the BSD license, and MAFFT's own copyright applies to that binary. The JBrowse CRAM reader (@gmod/cram) is included unmodified in <code>vendor/gmod-cram</code> under the MIT license, with its licence file. samtools and BLAST+ are optional external programs and are not in this repository. GeneDoc, SPIN, Dotter, EMBOSS, Easel, and HMMER are cited for methods or formats; their source is not included.
-    <code>macse-align.js</code> is a port of MACSE v2.07 and is distributed under MACSE's CeCILL 2.1 licence (<code>LICENSE-MACSE</code>).
+    The MACSE port (<code>macse-align.js</code>, <code>macse-worker.js</code>, <code>macse-dp-wasm.js</code>) is distributed under MACSE's CeCILL 2.1 licence (<code>LICENSE-MACSE</code>); it runs in its own worker and exchanges only messages with the rest of ViewAlign.
     The rest of the ViewAlign source code is released under the <strong>MIT License</strong>.
   </p>
 </section>

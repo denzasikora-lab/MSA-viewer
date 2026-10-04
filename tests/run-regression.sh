@@ -13,6 +13,8 @@ node tests/realign-region/run.js
 node tests/codon-align/run.js
 node tests/macse-port/worker_test.js
 node tests/macse-port/run_fixtures.js tests/codon-align/fixtures 202190at40674,167757at40674,162343at40674
+node tests/macse-port/run_corpus.js r001,r002,r003,r004,r005,r006,r007,r008,r010,r011
+node tests/macse-port/run_corpus.js --async 4 r002,r012,r013
 node tests/clustering/svk_subset.test.js
 node tests/clustering/guided_small.test.js
 node tests/clustering/multi_dataset.test.js

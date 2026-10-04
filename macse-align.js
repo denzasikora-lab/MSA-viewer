@@ -11,6 +11,11 @@
  * 96873a1465f1e1aa9d0c462d469eee6954d36e8639727f69f34a72fcb6583963), and is therefore distributed under CeCILL 2.1.
  * See LICENSE-MACSE in this repository.
  *
+ * Contribution notice (CeCILL 2.1, Article 5.2): this JavaScript translation of MACSE v2.07, and its later changes,
+ * were made by Toki-bio for ViewAlign (https://github.com/Toki-bio/MSA-viewer). Created 2026-10-04.
+ * Changes: translation from Java to JavaScript (2026-10-04); faster dynamic programming with the same results
+ * (2026-10-04).
+ *
  * Goal: identical output to `java -jar macse_v2.07.jar -prog alignSequences` with default options (or the options
  * given below). Order of operations, tie-breaking, integer and single-precision float arithmetic follow the Java code.
  * Differences that do not change the result: score and traceback storage (typed arrays; only the band is stored),
@@ -22,10 +27,20 @@
  *     opts: { gc (genetic code number, 1), fs (30), fs_term (10), fs_lr (10), fs_lr_term (7), stop (50), stop_lr (17),
  *             gap_op (7), gap_ext (1), gap_op_term (6.3), gap_ext_term (0.9), max_refine_iter (-1),
  *             local_realign_init (0.5), local_realign_dec (0.5), optim (2), lessReliable: [names],
- *             ambi_OFF (false), maxTracebackCells (4e8), onProgress (fn(stage, done, total)) }
+ *             ambi_OFF (false), maxTracebackCells (4e8), onProgress (fn(stage, done, total)),
+ *             useWasm (true), tileSize (0 = automatic), tileMinCells (600000) }
  *     nt: aligned nucleotides in MACSE's output order, '!' marks frameshift padding, '-' gaps (raw alignSequences
  *         output). aa: MACSE's out_AA translation ('!' frameshift, '*' stop).
+ *   MacseAlign.alignSequencesAsync(records, opts, runner) -> Promise of the same result, computed in parallel:
+ *     runner = { size, run(task, generation, priority) -> Promise, cancel(generation), close() } executes
+ *     MacseAlign.runTask(task) in other threads (see macse-worker.js, tests/macse-port/node_pool.js);
+ *     MacseAlign.localRunner() runs everything in this thread. MACSE's control flow and order are kept; guide-tree
+ *     merges whose subtrees are done, and the refinement cuts after the last accepted one, are computed ahead in
+ *     parallel and used in MACSE's order; large profile alignments are cut into tiles that run in parallel.
  *   MacseAlign.parseFasta(text), MacseAlign.toFasta(records)
+ *
+ * Speed (same results): the dynamic programming kernel is generated unrolled (tests/macse-port/gen_dp.js) and runs
+ * as WebAssembly (macse-dp-wasm.js) when available, otherwise as JavaScript.
  */
 (function (root, factory) {
     const api = factory();
@@ -437,25 +452,34 @@
     })();
     function dimerCode(prev, cur) { const v = DIMER_CODING[prev][cur]; if (v < 0) throw MacseError('internal: invalid dimer'); return v; }
 
-    function buildProfile(set, ctx) {
+    // Profile of a sequence set (programs.profile.Profile with its SiteInfo objects) for the profile sites s0..s1-1
+    // (default: all). Arrays are indexed by local site (site - s0) * 4 + gapSize. A site depends only on the three
+    // sites before it, so a range is built by running each sequence from three sites earlier without recording
+    // them; the values are the same as in the whole profile. side 'line' / 'col' skips the vectors that the other
+    // side of the dynamic programming does not use.
+    function buildProfile(set, ctx, s0, s1, side) {
         const S = set.sites() + 1;
-        const freq = new Int32Array(S * 4 * NAA), dim = new Int32Array(S * 4 * 10), prevMono = new Int32Array(S);
+        if (s0 === undefined) { s0 = 0; s1 = S; }
+        const n = s1 - s0, p0 = Math.max(0, s0 - 3);
+        const freq = new Int32Array(n * 4 * NAA), dim = new Int32Array(n * 4 * 10), prevMono = new Int32Array(S);
         const GAPB = 8, B_HASH = A2B[C_HASH], B_DASH = A2B[C_DASH];
         for (const sq of set.arr) {
             const upd = sq.updatedAcids(ctx), acids = sq.acids;
             const first = sq.first(), last = sq.last(), rel = sq.reliable;
             let cgc = 7;
-            for (let p = 0; p < S; p++) {
+            for (let p = p0; p < s1; p++) {
                 const ss = p - 1; let amino;
                 if (ss < 0) { cgc = 0; amino = C_X; }
                 else { cgc = pullGapCode(cgc, N2B[acids.charCodeAt(ss)]); amino = upd[ss]; }
-                const ab = aByte(amino);
-                freq[(p * 4) * NAA + ab]++;
                 const cur = amino === C_HASH ? P_E : (amino === C_DASH ? P_I : P_X);
                 prevMono[p] = cur;
+                if (p < s0) continue;                  // warm-up sites before the range: state only
+                const lp = p - s0;
+                const ab = aByte(amino);
+                freq[(lp * 4) * NAA + ab]++;
                 let pm = p - 3 < 0 ? P_X : prevMono[p - 3];
-                dim[(p * 4) * 10 + cur]++;
-                dim[(p * 4) * 10 + dimerCode(pm, cur)]++;
+                dim[(lp * 4) * 10 + cur]++;
+                dim[(lp * 4) * 10 + dimerCode(pm, cur)]++;
                 let addGap, mgm;
                 if (ss < first || ss >= last) { addGap = B_HASH; mgm = P_E; } else { addGap = B_DASH; mgm = P_I; }
                 let mcgc = pullGapCode(cgc, GAPB);
@@ -463,7 +487,7 @@
                     if (g === 2) mcgc = pullGapCode(mcgc, GAPB);
                     if (mcgc === 0) throw MacseError('Bug profile init site info gap1.');
                     const pmg = p + g - 3 < 0 ? P_X : prevMono[p + g - 3];
-                    const o = (p * 4 + g);
+                    const o = (lp * 4 + g);
                     if (mcgc === 7) {
                         freq[o * NAA + addGap]++; dim[o * 10 + mgm]++; dim[o * 10 + dimerCode(pmg, mgm)]++;
                     } else {
@@ -472,17 +496,17 @@
                     }
                 }
                 pm = prevMono[p];
-                const o3 = p * 4 + 3;
+                const o3 = lp * 4 + 3;
                 freq[o3 * NAA + addGap]++; dim[o3 * 10 + mgm]++; dim[o3 * 10 + dimerCode(pm, mgm)]++;
             }
         }
-        // SiteInfo for every (gapSize g, site s); index i = g*S + s
-        const M = ctx.matrix, N4 = 4 * S;
+        // SiteInfo for every (local site, gapSize g); index i = (site - s0) * 4 + g
+        const M = ctx.matrix, N4 = 4 * n;
         const internal = new Float64Array(N4), inFront = new Int32Array(N4 * NAA);
         const cfStart = new Int32Array(N4), cfLen = new Int32Array(N4);
         const cfAA = [], cfF = [];
         const dC = new Int32Array(N4 * 10), dIE = new Int32Array(N4 * 10), dXIE = new Int32Array(N4 * 10);
-        for (let g = 0; g < 4; g++) for (let s = 0; s < S; s++) {
+        for (let s = 0; s < n; s++) for (let g = 0; g < 4; g++) {   // site-major
             const i = s * 4 + g, fo = i * NAA, dO = i * 10;
             cfStart[i] = cfAA.length;
             for (let a = 0; a < NAA; a++) if (freq[fo + a] > 0) { cfAA.push(a); cfF.push(freq[fo + a]); }
@@ -515,16 +539,17 @@
             return h;
         };
         // sparse (pattern, count) lists of the three dimer vectors, for use as the line profile
+        const P = { S, s0, n, set, internal, inFront, cfStart, cfLen, cfAA: Int32Array.from(cfAA), cfF: Int32Array.from(cfF) };
+        if (side !== 'line') { P.hC = hv(dC); P.hIE = hv(dIE); P.hXIE = hv(dXIE); }
+        if (side === 'col') return P;
         const spStart = new Int32Array(3 * N4), spLen = new Int32Array(3 * N4), spP = [], spF = [];
         for (let i = 0; i < N4; i++) [dC, dIE, dXIE].forEach((d, v) => {
             spStart[i * 3 + v] = spP.length;
             for (let p = 3; p < 10; p++) { const f = d[i * 10 + p]; if (f) { spP.push(p); spF.push(f); } }
             spLen[i * 3 + v] = spP.length - spStart[i * 3 + v];
         });
-        return {
-            S, set, internal, inFront, cfStart, cfLen, cfAA: Int32Array.from(cfAA), cfF: Int32Array.from(cfF),
-            hC: hv(dC), hIE: hv(dIE), hXIE: hv(dXIE), spStart, spLen, spP: Int32Array.from(spP), spF: Int32Array.from(spF)
-        };
+        P.spStart = spStart; P.spLen = spLen; P.spP = Int32Array.from(spP); P.spF = Int32Array.from(spF);
+        return P;
     }
 
     // ------------------------------------------------------------------ RestrictedCoordinates
@@ -577,16 +602,1935 @@
     for (const [di, dj] of [[0, 3], [0, 2], [0, 1]]) for (const pc of [INS, DEL, MUT]) MOVES[DEL].push([pc, di, dj]);
     for (const [di, dj] of [[3, 3], [3, 2], [2, 3], [3, 1], [1, 3], [2, 2], [2, 1], [1, 2], [1, 1]]) for (const pc of [INS, DEL, MUT]) MOVES[MUT].push([pc, di, dj]);
     const TEMPLATE_FWD = ['---', '!!N', '!NN', 'NNN'];
-    const TARGET_ORDER = [MUT, DEL, INS];
-    const PAIRS = [];                              // (di, dj) groups in MatrixMovement order
-    PAIRS[INS] = Int32Array.from([3, 0, 2, 0, 1, 0]);
-    PAIRS[DEL] = Int32Array.from([0, 3, 0, 2, 0, 1]);
-    PAIRS[MUT] = Int32Array.from([3, 3, 3, 2, 2, 3, 3, 1, 1, 3, 2, 2, 2, 1, 1, 2, 1, 1]);
-    // gap-open vectors per (target, predecessor): line profile 0 = compacted, 1 = IE, 2 = XIE; column profile H 0 = C, 1 = IE, 2 = XIE
-    const VARF = [], VARH = [];
-    VARF[MUT] = [0, 2, 0]; VARH[MUT] = [2, 0, 0];
-    VARF[DEL] = [0, 1, 0]; VARH[DEL] = [2, 0, 0];
-    VARF[INS] = [0, 2, 0]; VARH[INS] = [1, 0, 0];   // codonTemplate reversed (the Java builder is reversed at the end)
+    // BEGIN GENERATED dpCore (tests/macse-port/gen_dp.js); do not edit by hand
+    // Fills the score rows and the traceback for one profile pair; returns the row base of the last line.
+    function dpCore(S1, S2, rowMin, rowMax, rowOff, tb, sc, P1, P2) {
+        const in1 = P1.internal, cs1 = P1.cfStart, cl1 = P1.cfLen, ca1 = P1.cfAA, cf1 = P1.cfF, if1 = P1.inFront;
+        const in2 = P2.internal, cs2 = P2.cfStart, cl2 = P2.cfLen, ca2 = P2.cfAA, cf2 = P2.cfF, if2 = P2.inFront;
+        const spS = P1.spStart, spL = P1.spLen, spP = P1.spP, spF = P1.spF, hC = P2.hC, hIE = P2.hIE, hXIE = P2.hXIE;
+        const W = 3 * S2, NEG = -Infinity;
+        let R0 = 0, R1 = W, R2 = 2 * W, R3 = 3 * W;
+        let cPc = 0, cDi = 0, cDj = 0, code = 0, cc = 0;
+        let best = NEG, p0 = NEG, p1 = NEG, p2 = NEG, ps = 0, inn = 0;
+        let s12 = 0, sd = 0, go = 0, rb = 0, i1 = 0, i2 = 0, u = 0, e = 0, o = 0, v = 0, hb = 0;
+        sc[2] = 0;   // MUTATION at (0, 0)
+        for (let line = 0; line < S1; line++) {
+            const cmin = rowMin[line], cmax = rowMax[line];
+            if (line > 0) { const t = R3; R3 = R2; R2 = R1; R1 = R0; R0 = t; sc.fill(NEG, t, t + W); }
+            const off = rowOff[line] - cmin, L4 = line * 4;
+            for (let col = cmin; col < cmax; col++) {
+                if (line === 0 && col === 0) continue;
+                const C4 = col * 4;
+                code = 0;
+                // ---- target MUTATION
+                best = NEG;
+                if (line >= 3 && col >= 3) {   // (3, 3)
+                    rb = R3 + (col - 3) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 0; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (true) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (true) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (true) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 3; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 3 && col >= 2) {   // (3, 2)
+                    rb = R3 + (col - 2) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 0; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 2; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 2 && col >= 3) {   // (2, 3)
+                    rb = R2 + (col - 3) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 1; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 3; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 3 && col >= 1) {   // (3, 1)
+                    rb = R3 + (col - 1) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 0; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 1; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 1 && col >= 3) {   // (1, 3)
+                    rb = R1 + (col - 3) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 2; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 3; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 2 && col >= 2) {   // (2, 2)
+                    rb = R2 + (col - 2) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 1; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 2; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 2 && col >= 1) {   // (2, 1)
+                    rb = R2 + (col - 1) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 1; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 1; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 1 && col >= 2) {   // (1, 2)
+                    rb = R1 + (col - 2) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 2; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 2; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 1 && col >= 1) {   // (1, 1)
+                    rb = R1 + (col - 1) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 2; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 1; }
+                                }
+                            }
+                        }
+                    }
+                }
+                sc[R0 + col * 3 + 2] = best;
+                cc = cPc << 2;
+                code |= ((cc | cDi) << 2) | cDj;
+                // ---- target DELETION
+                best = NEG;
+                if (col >= 3) {   // (0, 3)
+                    rb = R0 + (col - 3) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 3; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 1; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 3; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (col >= 2) {   // (0, 2)
+                    rb = R0 + (col - 2) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 3; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 1; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 2; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (col >= 1) {   // (0, 1)
+                    rb = R0 + (col - 1) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 3; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 1; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 1; }
+                                }
+                            }
+                        }
+                    }
+                }
+                sc[R0 + col * 3 + 1] = best;
+                cc = cPc << 2;
+                code |= (cc | cDj) << 10;
+                // ---- target INSERTION
+                best = NEG;
+                if (line >= 3) {   // (3, 0)
+                    rb = R3 + (col - 0) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 0; i2 = C4 + 3; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 0; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 0; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 0; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 2) {   // (2, 0)
+                    rb = R2 + (col - 0) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 1; i2 = C4 + 3; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 0; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 0; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 0; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 1) {   // (1, 0)
+                    rb = R1 + (col - 0) * 3; p0 = sc[rb]; p1 = sc[rb + 1]; p2 = sc[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 2; i2 = C4 + 3; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 0; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 0; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 0; }
+                                }
+                            }
+                        }
+                    }
+                }
+                sc[R0 + col * 3 + 0] = best;
+                cc = cPc << 2;
+                code |= (cc | cDi) << 6;
+                tb[off + col] = code;
+            }
+        }
+        return R0;
+    }
+
+    // Fills one tile (rows r0..r0+nR-1, columns c0..c0+nC-1) of a profile pair; P1/P2 are the matching profile
+    // slices (sliceProfile), rowMin/rowMax the band limits of the tile rows, T the tile buffer (see gen_dp.js).
+    function dpTile(S1, S2, r0, nR, c0, nC, rowMin, rowMax, T, tb, P1, P2) {
+        const in1 = P1.internal, cs1 = P1.cfStart, cl1 = P1.cfLen, ca1 = P1.cfAA, cf1 = P1.cfF, if1 = P1.inFront;
+        const in2 = P2.internal, cs2 = P2.cfStart, cl2 = P2.cfLen, ca2 = P2.cfAA, cf2 = P2.cfF, if2 = P2.inFront;
+        const spS = P1.spStart, spL = P1.spLen, spP = P1.spP, spF = P1.spF, hC = P2.hC, hIE = P2.hIE, hXIE = P2.hXIE;
+        const RS = (nC + 3) * 3, NEG = -Infinity;
+        let cPc = 0, cDi = 0, cDj = 0, code = 0, cc = 0;
+        let best = NEG, p0 = NEG, p1 = NEG, p2 = NEG, ps = 0, inn = 0;
+        let s12 = 0, sd = 0, go = 0, rb = 0, i1 = 0, i2 = 0, u = 0, e = 0, o = 0, v = 0, hb = 0;
+        if (r0 === 0 && c0 === 0) T[3 * RS + 9 + 2] = 0;   // MUTATION at (0, 0)
+        for (let lr = 0; lr < nR; lr++) {
+            const line = r0 + lr;
+            let cmin = rowMin[lr], cmax = rowMax[lr];
+            if (cmin < c0) cmin = c0;
+            if (cmax > c0 + nC) cmax = c0 + nC;
+            const rowBase = (lr + 3) * RS, L4 = lr * 4, tbRow = lr * nC - c0;
+            for (let col = cmin; col < cmax; col++) {
+                if (line === 0 && col === 0) continue;
+                const lc3 = col - c0 + 3, C4 = (col - c0) * 4;
+                code = 0;
+                // ---- target MUTATION
+                best = NEG;
+                if (line >= 3 && col >= 3) {   // (3, 3)
+                    rb = rowBase - 3 * RS + (lc3 - 3) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 0; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (true) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (true) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (true) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 3; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 3 && col >= 2) {   // (3, 2)
+                    rb = rowBase - 3 * RS + (lc3 - 2) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 0; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 2; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 2 && col >= 3) {   // (2, 3)
+                    rb = rowBase - 2 * RS + (lc3 - 3) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 1; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 3; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 3 && col >= 1) {   // (3, 1)
+                    rb = rowBase - 3 * RS + (lc3 - 1) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 0; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 1; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 1 && col >= 3) {   // (1, 3)
+                    rb = rowBase - 1 * RS + (lc3 - 3) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 2; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 3; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 2 && col >= 2) {   // (2, 2)
+                    rb = rowBase - 2 * RS + (lc3 - 2) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 1; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 2; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 2 && col >= 1) {   // (2, 1)
+                    rb = rowBase - 2 * RS + (lc3 - 1) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 1; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 1; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 1 && col >= 2) {   // (1, 2)
+                    rb = rowBase - 1 * RS + (lc3 - 2) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 2; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 2; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 1 && col >= 1) {   // (1, 1)
+                    rb = rowBase - 1 * RS + (lc3 - 1) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 2; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 1; }
+                                }
+                            }
+                        }
+                    }
+                }
+                T[rowBase + lc3 * 3 + 2] = best;
+                cc = cPc << 2;
+                code |= ((cc | cDi) << 2) | cDj;
+                // ---- target DELETION
+                best = NEG;
+                if (col >= 3) {   // (0, 3)
+                    rb = rowBase - 0 * RS + (lc3 - 3) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 3; i2 = C4 + 0; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 1; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 3; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 3; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (col >= 2) {   // (0, 2)
+                    rb = rowBase - 0 * RS + (lc3 - 2) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 3; i2 = C4 + 1; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 1; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 2; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 2; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (col >= 1) {   // (0, 1)
+                    rb = rowBase - 0 * RS + (lc3 - 1) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 3; i2 = C4 + 2; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hXIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 0; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 1; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 0; cDj = 1; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 0; cDj = 1; }
+                                }
+                            }
+                        }
+                    }
+                }
+                T[rowBase + lc3 * 3 + 1] = best;
+                cc = cPc << 2;
+                code |= (cc | cDj) << 10;
+                // ---- target INSERTION
+                best = NEG;
+                if (line >= 3) {   // (3, 0)
+                    rb = rowBase - 3 * RS + (lc3 - 0) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 0; i2 = C4 + 3; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 3; cDj = 0; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 3; cDj = 0; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 3; cDj = 0; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 2) {   // (2, 0)
+                    rb = rowBase - 2 * RS + (lc3 - 0) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 1; i2 = C4 + 3; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 2; cDj = 0; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 2; cDj = 0; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 2; cDj = 0; }
+                                }
+                            }
+                        }
+                    }
+                }
+                if (line >= 1) {   // (1, 0)
+                    rb = rowBase - 1 * RS + (lc3 - 0) * 3; p0 = T[rb]; p1 = T[rb + 1]; p2 = T[rb + 2];
+                    if (p0 !== NEG || p1 !== NEG || p2 !== NEG) {
+                        i1 = L4 + 2; i2 = C4 + 3; inn = in1[i1] + in2[i2]; sd = 0;
+                        if (p0 !== NEG) {
+                            ps = p0 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hIE[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 0; cDi = 1; cDj = 0; }
+                                }
+                            }
+                        }
+                        if (p1 !== NEG) {
+                            ps = p1 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 2; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 1; cDi = 1; cDj = 0; }
+                                }
+                            }
+                        }
+                        if (p2 !== NEG) {
+                            ps = p2 + inn;
+                            if (ps > best) {
+                                if (sd === 0) {
+                                    s12 = 0;
+                                    if (cl1[i1] > cl2[i2]) { o = i1 * 33; for (u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
+                                    else { o = i2 * 33; for (u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
+                                    s12 |= 0; sd = 1;
+                                }
+                                ps += s12;
+                                if (ps > best) {
+                                    v = i1 * 3 + 0; hb = i2 * 10; go = 0;
+                                    for (u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * hC[hb + spP[u]];
+                                    ps += (go | 0);
+                                    if (ps > best) { best = ps; cPc = 2; cDi = 1; cDj = 0; }
+                                }
+                            }
+                        }
+                    }
+                }
+                T[rowBase + lc3 * 3 + 0] = best;
+                cc = cPc << 2;
+                code |= (cc | cDi) << 6;
+                tb[tbRow + col] = code;
+            }
+        }
+        return 0;
+    }
+    // END GENERATED dpCore
+
+    // ------------------------------------------------------------------ WebAssembly build of the same kernel
+    // macse-dp-wasm.js holds dpCore compiled from tests/macse-port/dpcore.ts (generated from the same template). It is
+    // used when available; otherwise the JavaScript dpCore runs. Both give the same scores and traceback.
+    let wasmKernel = null, wasmTried = false;
+    function getWasmKernel() {
+        if (wasmTried) return wasmKernel;
+        wasmTried = true;
+        try {
+            let b64 = (typeof self !== 'undefined' && self.MacseDpWasm) || (typeof globalThis !== 'undefined' && globalThis.MacseDpWasm) || null;
+            if (!b64 && typeof require === 'function') { try { b64 = require('./macse-dp-wasm.js'); } catch (e) { b64 = null; } }
+            if (!b64 || typeof WebAssembly === 'undefined') return null;
+            const bytes = typeof Buffer !== 'undefined' ? new Uint8Array(Buffer.from(b64, 'base64')) : Uint8Array.from(atob(b64), c => c.charCodeAt(0));
+            const memory = new WebAssembly.Memory({ initial: 256, maximum: 65536 });
+            const inst = new WebAssembly.Instance(new WebAssembly.Module(bytes), { env: { memory, abort: () => { throw MacseError('wasm kernel abort'); } } });
+            wasmKernel = { memory, dpCore: inst.exports.dpCore, dpTile: inst.exports.dpTile };
+        } catch (e) {
+            wasmKernel = null;
+        }
+        return wasmKernel;
+    }
+    function runWasmDp(K, S1, S2, rowMin, rowMax, rowOff, tot, P1, P2) {
+        let off = 0;
+        const al = bytes => { const p = off; off += (bytes + 7) & ~7; return p; };
+        const lay = [];                                  // [ptr, typed array constructor, source array]
+        const put = (Ctor, src) => { const ptr = al(src.length * Ctor.BYTES_PER_ELEMENT); lay.push([ptr, Ctor, src]); return ptr; };
+        const pRowMin = put(Int32Array, rowMin), pRowMax = put(Int32Array, rowMax), pRowOff = put(Uint32Array, rowOff);
+        const pSc = al(8 * 12 * S2);
+        const a1 = [put(Float64Array, P1.internal), put(Int32Array, P1.cfStart), put(Int32Array, P1.cfLen), put(Int32Array, P1.cfAA),
+            put(Int32Array, P1.cfF), put(Int32Array, P1.inFront), put(Int32Array, P1.spStart), put(Int32Array, P1.spLen),
+            put(Int32Array, P1.spP), put(Int32Array, P1.spF)];
+        const a2 = [put(Float64Array, P2.internal), put(Int32Array, P2.cfStart), put(Int32Array, P2.cfLen), put(Int32Array, P2.cfAA),
+            put(Int32Array, P2.cfF), put(Int32Array, P2.inFront), put(Int32Array, P2.hC), put(Int32Array, P2.hIE), put(Int32Array, P2.hXIE)];
+        const pTb = al(2 * tot);
+        if (off > 4294967296 - 65536) throw MacseError('alignment needs more than 4 GB of memory');
+        const have = K.memory.buffer.byteLength;
+        if (off > have) {
+            try { K.memory.grow(Math.ceil((off - have) / 65536)); }
+            catch (e) { throw MacseError(`alignment needs ${Math.round(off / 1048576)} MB of memory, more than this browser allows`); }
+        }
+        const buf = K.memory.buffer;
+        for (const [ptr, Ctor, src] of lay) new Ctor(buf, ptr, src.length).set(src);
+        new Float64Array(buf, pSc, 12 * S2).fill(-Infinity);
+        const last = K.dpCore(S1, S2, pRowMin, pRowMax, pRowOff, pTb, pSc, ...a1, ...a2);
+        return { last, sc: new Float64Array(buf, pSc, 12 * S2), tb: new Uint16Array(buf, pTb, tot) };
+    }
 
     class ProfileAligner {
         constructor(ctx) { this.ctx = ctx; this.cur = [INS, 0, 0]; this.p1Coord = null; }
@@ -595,6 +2539,11 @@
             const ctx = this.ctx;
             const P1 = buildProfile(set1, ctx), P2 = buildProfile(set2, ctx);
             const { t1, t2 } = this.dp(P1, P2, bounds);
+            return this.finish(P1, P2, t1, t2);
+        }
+
+        // ProfileAligner.alignProfiles after the dynamic programming: backtrack, gap restriction, frameshift positions.
+        finish(P1, P2, t1, t2) {
             // ProfileAlignerBacktrack.backtrack
             const bt = new SeqSet();
             for (const [P, t] of [[P1, t1], [P2, t2]]) for (const sq of P.set.arr) {
@@ -608,8 +2557,9 @@
             let f1 = '', f2 = '';
             for (let i = 0; i < kept.length; i++) if (kept[i]) { f1 += t1[i]; f2 += t2[i]; }
             const toKept = t => { const k = new Uint8Array(t.length); for (let i = 0; i < t.length; i++) k[i] = t[i] !== '-' && t[i] !== '!' ? 1 : 0; return k; };
-            this.p1Coord = new RestrictedCoordinates(toKept(f1));
-            this.p1Coord.setFacingSite(new RestrictedCoordinates(toKept(f2)));
+            this.p1Kept = toKept(f1); this.p2Kept = toKept(f2);
+            this.p1Coord = new RestrictedCoordinates(this.p1Kept);
+            this.p1Coord.setFacingSite(new RestrictedCoordinates(this.p2Kept));
             improveFrameshiftsPositions(set);
             return set;
         }
@@ -624,72 +2574,18 @@
                 rowMin[l] = a; rowMax[l] = b; rowOff[l] = tot; tot += Math.max(0, b - a);
             }
             if (tot > ctx.maxTracebackCells) throw MacseError(`alignment needs ${Math.round(tot * 2 / 1048576)} MB of traceback memory (limit ${Math.round(ctx.maxTracebackCells * 2 / 1048576)} MB)`);
-            const tb = new Uint16Array(tot);
-            const W = 3 * S2;
-            const sc = new Float64Array(4 * W).fill(-Infinity);   // [row slot + col*3 + matrix]; -Infinity = not set (Java isSetCells false)
-            const slot = new Int32Array([0, W, 2 * W, 3 * W]);    // rows line, line-1, line-2, line-3
-            sc[MUT] = 0;
-            const in1 = P1.internal, cs1 = P1.cfStart, cl1 = P1.cfLen, ca1 = P1.cfAA, cf1 = P1.cfF, if1 = P1.inFront;
-            const in2 = P2.internal, cs2 = P2.cfStart, cl2 = P2.cfLen, ca2 = P2.cfAA, cf2 = P2.cfF, if2 = P2.inFront;
-            const spS = P1.spStart, spL = P1.spLen, spP = P1.spP, spF = P1.spF;
-            const H = [P2.hC, P2.hIE, P2.hXIE];
-            const cur = this.cur;
-            let cPc = cur[0], cDi = cur[1], cDj = cur[2];       // ProfileAligner.currentMatrixPosition (shared, may be stale)
-            for (let line = 0; line < S1; line++) {
-                const cmin = rowMin[line], cmax = rowMax[line];
-                if (line > 0) {
-                    const t = slot[3]; slot[3] = slot[2]; slot[2] = slot[1]; slot[1] = slot[0]; slot[0] = t;
-                    sc.fill(-Infinity, t, t + W);
-                }
-                const off = rowOff[line] - cmin, row0 = slot[0];
-                for (let col = cmin; col < cmax; col++) {
-                    if (line === 0 && col === 0) continue;
-                    let code = 0;
-                    for (let ti = 0; ti < 3; ti++) {                 // findBestMovement for MUTATION, DELETION, INSERTION
-                        const target = TARGET_ORDER[ti], pairs = PAIRS[target], vf = VARF[target], vh = VARH[target];
-                        let best = -Infinity;
-                        for (let q = 0; q < pairs.length; q += 2) {   // moves grouped by (di, dj); within a group INS, DEL, MUT
-                            const di = pairs[q], dj = pairs[q + 1];
-                            if (line < di || col < dj) continue;
-                            const rb = slot[di] + (col - dj) * 3;
-                            const p0 = sc[rb], p1 = sc[rb + 1], p2 = sc[rb + 2];
-                            if (p0 === -Infinity && p1 === -Infinity && p2 === -Infinity) continue;
-                            const i1 = line * 4 + 3 - di, i2 = col * 4 + 3 - dj;
-                            const inn = in1[i1] + in2[i2];
-                            const full = di === 3 && dj === 3;
-                            let s12 = 0, s12done = false;
-                            for (let pc = 0; pc < 3; pc++) {
-                                const prev = pc === 0 ? p0 : (pc === 1 ? p1 : p2);
-                                if (prev === -Infinity) continue;
-                                let ps = prev + inn;
-                                if (!full && !(ps > best)) continue;
-                                if (!s12done) {                       // SiteInfo.computeSPscoreS1_S2_nonInternal (symmetric)
-                                    if (cl1[i1] > cl2[i2]) { const o = i1 * NAA; for (let u = cs2[i2], e = u + cl2[i2]; u < e; u++) s12 += cf2[u] * if1[o + ca2[u]]; }
-                                    else { const o = i2 * NAA; for (let u = cs1[i1], e = u + cl1[i1]; u < e; u++) s12 += cf1[u] * if2[o + ca1[u]]; }
-                                    s12 |= 0; s12done = true;
-                                }
-                                ps += s12;
-                                if (!(ps > best)) continue;
-                                const v = i1 * 3 + vf[pc], h = H[vh[pc]], hb = i2 * 10;   // computeGapOpenCost
-                                let go = 0;
-                                for (let u = spS[v], e = u + spL[v]; u < e; u++) go += spF[u] * h[hb + spP[u]];
-                                ps += go | 0;
-                                if (!(ps > best)) continue;
-                                best = ps; cPc = pc; cDi = di; cDj = dj;
-                            }
-                        }
-                        sc[row0 + col * 3 + target] = best;
-                        const cc = cPc << 2;
-                        code |= target === DEL ? (cc | cDj) << 10 : (target === INS ? (cc | cDi) << 6 : ((cc | cDi) << 2) | cDj);
-                    }
-                    tb[off + col] = code;
-                }
-                if (ctx.onRow) ctx.onRow(line, S1);
+            // score rows [row slot + col*3 + matrix], -Infinity = not set (Java isSetCells false); traceback in the band
+            let tb, sc, last;
+            const K = ctx.useWasm === false ? null : getWasmKernel();
+            if (K) ({ tb, sc, last } = runWasmDp(K, S1, S2, rowMin, rowMax, rowOff, tot, P1, P2));
+            else {
+                tb = new Uint16Array(tot);
+                sc = new Float64Array(12 * S2).fill(-Infinity);
+                last = dpCore(S1, S2, rowMin, rowMax, rowOff, tb, sc, P1, P2);
             }
-            cur[0] = cPc; cur[1] = cDi; cur[2] = cDj;
             // computeBacktrackPosition
             let best = -Infinity, bm = -1;
-            for (let m = 0; m < 3; m++) { const v = sc[slot[0] + (S2 - 1) * 3 + m]; if (v !== -Infinity && v >= best) { best = v; bm = m; } }
+            for (let m = 0; m < 3; m++) { const v = sc[last + (S2 - 1) * 3 + m]; if (v !== -Infinity && v >= best) { best = v; bm = m; } }
             if (bm < 0) throw MacseError('internal: no alignment path inside the band');
             const parts1 = [], parts2 = [];
             let line = S1 - 1, col = S2 - 1, m = bm;
@@ -1217,26 +3113,397 @@
         return set;
     }
 
+    // ------------------------------------------------------------------ parallel execution (same results)
+    // A DP task is one ProfileAligner.alignProfiles call: it depends only on its two profiles and its band, so it can
+    // run in another thread. alignSequencesAsync follows MACSE's control flow in MACSE's order; it only computes ahead,
+    // in parallel, the profile alignments that the sequential program would compute next if nothing changed in between:
+    // guide-tree merges whose subtrees are finished (MACSE's merge order depends only on the distances and cluster
+    // sizes), and refinement cuts after the last accepted one. Results computed ahead are used in MACSE's order and
+    // dropped as soon as an earlier cut is accepted, so the output is the same as alignSequences.
+    function setToWire(set) { return set.arr.map(q => [q.name, q.acids, q.reliable]); }
+    function wireToSet(w) { const set = new SeqSet(); for (const [name, acids, rel] of w) set.add(new SeqNT(name, acids, rel, false)); return set; }
+    function makeTask(ctx, s1, s2, bounds) { return { opts: ctx.taskOpts, s1: setToWire(s1), s2: setToWire(s2), bounds }; }
+    const taskCtxCache = new Map();
+    // Runs one DP task (called in pool threads, or in place by localRunner).
+    function runDpTask(task) {
+        let ctx = taskCtxCache.get(task.opts.key);
+        if (!ctx) { ctx = makeCtx(task.opts.o); taskCtxCache.set(task.opts.key, ctx); }
+        const al = new ProfileAligner(ctx);
+        const set = al.alignProfiles(wireToSet(task.s1), wireToSet(task.s2), task.bounds);
+        return { set: setToWire(set), k1: al.p1Kept, k2: al.p2Kept };
+    }
+    // Runner interface: { size, run(task, generation) -> Promise<result>, cancel(generation), close() }.
+    function localRunner() {
+        return {
+            size: 1, cancel() { }, close() { },
+            run: task => new Promise((resolve, reject) => { try { resolve(runTask(task)); } catch (e) { reject(e); } })
+        };
+    }
+
+    // ---- tiles of one profile alignment (parallel dynamic programming, same cells, same values)
+    // The DP grid is cut into tiles; a tile needs the last 3 rows of the tile above and the last 3 columns of the tile
+    // to its left (no move reaches further back), so tiles on an anti-diagonal run in parallel. Each tile gets the
+    // profile slices of its rows and columns; the coordinator keeps the tracebacks and walks them as dp() does.
+    // Per-thread cache of the sequence sets and profile ranges of the last tiled alignments (tiles of the same row or
+    // column block reuse the profile range when they land on the same thread).
+    const tileCache = new Map();
+    function tileCached(key, make) {
+        if (tileCache.has(key)) { const v = tileCache.get(key); tileCache.delete(key); tileCache.set(key, v); return v; }
+        const v = make();
+        tileCache.set(key, v);
+        while (tileCache.size > 24) tileCache.delete(tileCache.keys().next().value);
+        return v;
+    }
+    function runWasmTile(K, t) {
+        const { nR, nC } = t, RS = (nC + 3) * 3;
+        let off = 0;
+        const al = bytes => { const ptr = off; off += (bytes + 7) & ~7; return ptr; };
+        const lay = [];
+        const put = (Ctor, src) => { const ptr = al(src.length * Ctor.BYTES_PER_ELEMENT); lay.push([ptr, Ctor, src]); return ptr; };
+        const pMin = put(Int32Array, t.rowMin), pMax = put(Int32Array, t.rowMax);
+        const pT = al(8 * (nR + 3) * RS), pTb = al(2 * nR * nC);
+        const a1 = [put(Float64Array, t.P1.internal), put(Int32Array, t.P1.cfStart), put(Int32Array, t.P1.cfLen), put(Int32Array, t.P1.cfAA),
+            put(Int32Array, t.P1.cfF), put(Int32Array, t.P1.inFront), put(Int32Array, t.P1.spStart), put(Int32Array, t.P1.spLen),
+            put(Int32Array, t.P1.spP), put(Int32Array, t.P1.spF)];
+        const a2 = [put(Float64Array, t.P2.internal), put(Int32Array, t.P2.cfStart), put(Int32Array, t.P2.cfLen), put(Int32Array, t.P2.cfAA),
+            put(Int32Array, t.P2.cfF), put(Int32Array, t.P2.inFront), put(Int32Array, t.P2.hC), put(Int32Array, t.P2.hIE), put(Int32Array, t.P2.hXIE)];
+        const have = K.memory.buffer.byteLength;
+        if (off > have) K.memory.grow(Math.ceil((off - have) / 65536));
+        const buf = K.memory.buffer;
+        for (const [ptr, Ctor, src] of lay) new Ctor(buf, ptr, src.length).set(src);
+        const T = new Float64Array(buf, pT, (nR + 3) * RS);
+        fillTileBorders(T, t, RS);
+        K.dpTile(t.S1, t.S2, t.r0, nR, t.c0, nC, pMin, pMax, pT, pTb, ...a1, ...a2);
+        return tileOutputs(T, new Uint16Array(buf, pTb, nR * nC), t, RS);
+    }
+    function fillTileBorders(T, t, RS) {
+        T.fill(-Infinity);
+        if (t.top) T.set(t.top, 0);
+        if (t.left) for (let lr = 0; lr < t.nR; lr++) T.set(t.left.subarray(lr * 9, lr * 9 + 9), (lr + 3) * RS);
+    }
+    function tileOutputs(T, tb, t, RS) {
+        const { nR, nC } = t;
+        const bottom = new Float64Array(3 * nC * 3), right = new Float64Array(nR * 9);
+        for (let k = 0; k < 3; k++) bottom.set(T.subarray((nR + k) * RS + 9, (nR + k + 1) * RS), k * nC * 3);
+        for (let lr = 0; lr < nR; lr++) right.set(T.subarray((lr + 3) * RS + nC * 3, (lr + 4) * RS), lr * 9);
+        return { bottom, right, tb: tb.slice() };
+    }
+    // Runs one tile (called in pool threads): builds the profile ranges of its rows and columns, then dpTile.
+    function runTileTask(t) {
+        let ctx = taskCtxCache.get(t.opts.key);
+        if (!ctx) { ctx = makeCtx(t.opts.o); taskCtxCache.set(t.opts.key, ctx); }
+        const set1 = tileCached(t.dpKey + ':s1', () => wireToSet(t.s1)), set2 = tileCached(t.dpKey + ':s2', () => wireToSet(t.s2));
+        t.P1 = tileCached(`${t.dpKey}:L${t.r0}`, () => buildProfile(set1, ctx, t.r0, t.r0 + t.nR, 'line'));
+        t.P2 = tileCached(`${t.dpKey}:C${t.c0}`, () => buildProfile(set2, ctx, t.c0, t.c0 + t.nC, 'col'));
+        const K = t.useWasm === false ? null : getWasmKernel();
+        if (K) return runWasmTile(K, t);
+        const RS = (t.nC + 3) * 3, T = new Float64Array((t.nR + 3) * RS), tb = new Uint16Array(t.nR * t.nC);
+        fillTileBorders(T, t, RS);
+        dpTile(t.S1, t.S2, t.r0, t.nR, t.c0, t.nC, t.rowMin, t.rowMax, T, tb, t.P1, t.P2);
+        return tileOutputs(T, tb, t, RS);
+    }
+    function runTask(task) { return task.kind === 'tile' ? runTileTask(task) : runDpTask(task); }
+    // Typed-array buffers of a task or result that can be moved (not copied) between threads.
+    function transferables(obj) {
+        const out = new Set();
+        const walk = o => {
+            if (!o || typeof o !== 'object') return;
+            if (ArrayBuffer.isView(o)) { if (o.byteOffset === 0 && o.byteLength === o.buffer.byteLength) out.add(o.buffer); return; }
+            for (const k in o) walk(o[k]);
+        };
+        walk(obj);
+        return [...out];
+    }
+    function blocksOf(n, size) {
+        const k = Math.max(1, Math.min(Math.round(n / size), Math.floor(n / 3))), base = Math.floor(n / k), extra = n - base * k, out = [];   // every block >= 3
+        let s0 = 0;
+        for (let i = 0; i < k; i++) { const len = base + (i < extra ? 1 : 0); out.push([s0, len]); s0 += len; }
+        return out;
+    }
+
+    let tiledCounter = 0;
+    async function alignProfilesTiled(ctx, set1, set2, bounds, runner, gen, prio) {
+        const S1 = set1.sites() + 1, S2 = set2.sites() + 1;
+        const w1 = setToWire(set1), w2 = setToWire(set2), dpKey = 'dp' + (++tiledCounter) + '.' + Math.random().toString(36).slice(2, 8);
+        const rowMin = new Int32Array(S1), rowMax = new Int32Array(S1);
+        for (let l = 0; l < S1; l++) { rowMin[l] = bounds ? bounds[l][0] : 0; rowMax[l] = bounds ? bounds[l][1] : S2; }
+        const ts = ctx.tileSize > 0 ? ctx.tileSize : Math.max(96, Math.ceil(Math.max(S1, S2) / 24));   // tile edge (auto: 96, larger for long genes)
+        const RB = blocksOf(S1, ts), CB = blocksOf(S2, ts), nI = RB.length, nJ = CB.length;
+        const blockOfRow = new Int32Array(S1), blockOfCol = new Int32Array(S2);
+        RB.forEach(([r0, n], I) => blockOfRow.fill(I, r0, r0 + n));
+        CB.forEach(([c0, n], J) => blockOfCol.fill(J, c0, c0 + n));
+        const proms = new Array(nI * nJ), NEG3 = n => new Float64Array(n).fill(-Infinity);
+        for (let I = 0; I < nI; I++) {
+            const [r0, nR] = RB[I];
+            for (let J = 0; J < nJ; J++) {
+                const [c0, nC] = CB[J];
+                let active = false;
+                for (let l = r0; l < r0 + nR && !active; l++) active = Math.max(rowMin[l], c0) < Math.min(rowMax[l], c0 + nC);
+                if (!active) { proms[I * nJ + J] = Promise.resolve(null); continue; }
+                const deps = [I > 0 ? proms[(I - 1) * nJ + J] : null, J > 0 ? proms[I * nJ + J - 1] : null, I > 0 && J > 0 ? proms[(I - 1) * nJ + J - 1] : null];
+                const pr = Promise.all(deps).then(([up, left, ul]) => {
+                    const RS = (nC + 3) * 3;
+                    let top = null;
+                    if (up || ul) {
+                        top = NEG3(3 * RS);
+                        for (let k = 0; k < 3; k++) {
+                            if (ul) { const ulC = CB[J - 1][1]; top.set(ul.bottom.subarray((k * ulC + ulC - 3) * 3, (k * ulC + ulC) * 3), k * RS); }
+                            if (up) top.set(up.bottom.subarray(k * nC * 3, (k + 1) * nC * 3), k * RS + 9);
+                        }
+                    }
+                    const task = {
+                        kind: 'tile', S1, S2, r0, nR, c0, nC, rowMin: rowMin.slice(r0, r0 + nR), rowMax: rowMax.slice(r0, r0 + nR),
+                        top, left: left ? left.right.slice() : null, useWasm: ctx.useWasm,
+                        opts: ctx.taskOpts, dpKey, s1: w1, s2: w2
+                    };
+                    return runner.run(task, gen, prio);
+                });
+                pr.catch(() => { });
+                proms[I * nJ + J] = pr;
+            }
+        }
+        const res = await Promise.all(proms);
+        // computeBacktrackPosition: the last cell, in the bottom rows of the last tile
+        const lastTile = res[nI * nJ - 1];
+        if (!lastTile) throw MacseError('internal: no alignment path inside the band');
+        const lastC = CB[nJ - 1][1];
+        let best = -Infinity, bm = -1;
+        for (let m = 0; m < 3; m++) { const v = lastTile.bottom[(2 * lastC + lastC - 1) * 3 + m]; if (v !== -Infinity && v >= best) { best = v; bm = m; } }
+        if (bm < 0) throw MacseError('internal: no alignment path inside the band');
+        const parts1 = [], parts2 = [];
+        let line = S1 - 1, col = S2 - 1, m = bm;
+        while (line !== 0 || col !== 0) {
+            if (col < rowMin[line] || col >= rowMax[line]) throw MacseError('internal: traceback left the band');
+            const I = blockOfRow[line], J = blockOfCol[col], tl = res[I * nJ + J];
+            const mv = tl.tb[(line - RB[I][0]) * CB[J][1] + (col - CB[J][0])];
+            let di, dj, pm;
+            if (m === DEL) { const x = mv >> 10; di = 0; dj = x & 3; pm = (x & 0xC) >> 2; }
+            else if (m === INS) { const x = mv >> 6; di = x & 3; dj = 0; pm = (x & 0xC) >> 2; }
+            else { dj = mv & 3; di = (mv & 0xC) >> 2; pm = (mv & 0x30) >> 4; }
+            if (di === 0 && dj === 0) throw MacseError('Infinite loop : ' + line + ' ' + col + '.');
+            parts1.push(TEMPLATE_FWD[di]); parts2.push(TEMPLATE_FWD[dj]);
+            line -= di; col -= dj; m = pm;
+        }
+        const t1 = parts1.reverse().join(''), t2 = parts2.reverse().join('');
+        if (t1.length > S1 + S2) throw MacseError('Crash.');
+        const al = new ProfileAligner(ctx);
+        const set = al.finish({ set: set1 }, { set: set2 }, t1, t2);
+        return { set: setToWire(set), k1: al.p1Kept, k2: al.p2Kept };
+    }
+
+    // Runs one ProfileAligner.alignProfiles through the runner: tiled when it is large and threads are available.
+    function makeExecutor(ctx, runner) {
+        let prio = 0;
+        return (s1, s2, bounds, gen) => {
+            const pr = ++prio;
+            if (runner.size >= 2 && ctx.tileMinCells >= 0) {
+                const S1 = s1.sites() + 1, S2 = s2.sites() + 1;
+                let tot = 0;
+                if (bounds) for (let l = 0; l < S1; l++) tot += Math.max(0, bounds[l][1] - bounds[l][0]); else tot = S1 * S2;
+                if (tot >= ctx.tileMinCells && S1 >= 6 && S2 >= 6) return alignProfilesTiled(ctx, s1, s2, bounds, runner, gen, pr);
+            }
+            return runner.run(makeTask(ctx, s1, s2, bounds), gen, pr);
+        };
+    }
+
+    async function dynamicTreeAsync(set, distances, ctx, runner, progress) {
+        const exec = makeExecutor(ctx, runner);
+        const n = set.size, info = new Map();
+        set.arr.forEach((sq, i) => {
+            const one = new SeqSet(); one.add(sq);
+            info.set(i, Promise.resolve({ label: sq.name, cluster: one, restricted: one, cons: seqCons3RF(sq, ctx) }));
+        });
+        // merge order of AlignmentDynamicTree (findMinimumDistances / loadDistances), computed before any alignment
+        let nbUsed = n;
+        const orders = new Int32Array(n), ids = [], size = new Map();
+        for (let i = 0; i < n; i++) { orders[i] = i; ids.push(i); size.set(i, 1); }
+        const merges = [];
+        while (nbUsed > 1) {
+            let minI = 0, minJ = 1, minValue = distances[orders[0]][orders[1]];
+            for (let i = 0; i < nbUsed; i++) for (let j = i + 1; j < nbUsed; j++) {
+                const d = distances[orders[i]][orders[j]];
+                if (d < minValue) { minI = i; minJ = j; minValue = d; }
+            }
+            if (minI > minJ) { const t = minI; minI = minJ; minJ = t; }
+            const idI = ids[minI], idJ = ids[minJ], id = n + merges.length;
+            merges.push({ idI, idJ, id, minValue });
+            ids[minI] = id;
+            const sI = size.get(idI), sJ = size.get(idJ);
+            for (let k = 0; k < nbUsed; k++) {
+                if (k === minI || k === minJ) continue;
+                const dk = orders[k], di = orders[minI], dj = orders[minJ];
+                const nd = idiv(distances[dk][di] * sI + distances[dk][dj] * sJ, sI + sJ);
+                distances[dk][di] = nd; distances[di][dk] = nd;
+            }
+            size.set(id, sI + sJ);
+            orders[minJ] = orders[nbUsed - 1];
+            ids[minJ] = ids[nbUsed - 1];
+            --nbUsed;
+        }
+        let step = 0;
+        for (const m of merges) {
+            const pr = Promise.all([info.get(m.idI), info.get(m.idJ)]).then(async ([infoI, infoJ]) => {
+                const minVal = f32(f32(m.minValue) / f32(500));
+                let bounds = null;
+                if (minVal < 0.3) bounds = treeBounds(infoI, infoJ, javaIntF(Math.min(f32(50), f32(f32(1 - minVal) * f32(50)))), ctx);
+                const res = await exec(infoI.restricted, infoJ.restricted, bounds, 0);
+                const aligned = wireToSet(res.set);
+                if (aligned.size !== size.get(m.id)) throw MacseError('internal: cluster size differs from the guide tree');
+                const restricted = restrictNT(aligned, true);
+                const out = { label: nodeLabel(infoI.label, infoJ.label), cluster: aligned, restricted, cons: consensusSequence(toAminosSet(restricted, ctx), ctx, 0.6) };
+                if (progress) progress('tree', ++step, n - 1);
+                return out;
+            });
+            pr.catch(() => { });
+            info.set(m.id, pr);
+        }
+        return (await info.get(merges[merges.length - 1].id)).cluster;
+    }
+
+    async function refine2cutAsync(setIn, ctx, runner, progress) {
+        if (setIn.size < 2) return setIn;
+        const width = Math.max(1, runner.size | 0), exec = makeExecutor(ctx, runner);
+        const testedCut = [];
+        let improve = true, nbIter = 0, nbTest = 0, conservedScore = null, gen = 0;
+        let set = setIn;
+        let currentScore = spScoreLinear(frameSet(toAminosSet(set, ctx), 1), ctx);
+        let localReal = f32(ctx.localRealignInit);
+        while ((ctx.maxRefines < 0 || nbIter < ctx.maxRefines) && improve) {
+            let conserved;
+            if (nbIter > 0) { conserved = new Uint8Array(conservedScore.length); for (let i = 0; i < conserved.length; i++) conserved[i] = conservedScore[i] === nbTest ? 1 : 0; }
+            else conserved = new Uint8Array(set.sites());
+            conservedScore = new Int32Array(set.sites());
+            nbTest = 0; improve = false;
+            const framed = frameSet(toAminosSet(set, ctx), 1);
+            const nf = framed.size, dist = Array.from({ length: nf }, () => new Array(nf).fill(0));
+            for (let i = 0; i < nf; i++) for (let j = i + 1; j < nf; j++) { dist[i][j] = memOverlDist(framed.arr[i], framed.arr[j], ctx); dist[j][i] = dist[i][j]; }
+            const postOrder = refineTreePostOrder(set, dist).reverse();
+            ++nbIter;
+            let idx = 0;
+            while (idx < postOrder.length) {
+                // the cuts the sequential loop would test from here on if none of them were accepted
+                const seen = new Set(testedCut), cands = [];
+                for (let j = idx; j < postOrder.length; j++) {
+                    const inClade = new Set(javaSplitComma(postOrder[j].label.replace(/\(/g, '').replace(/\)/g, '')));
+                    const s1 = new SeqSet(), s2 = new SeqSet();
+                    for (const sq of set.arr) (inClade.has(sq.name) ? s1 : s2).add(sq);
+                    if (s1.size === 0 || s2.size === 0) continue;
+                    const sig = x => x.arr.map(q => q.name + ',').join('');
+                    const g1 = sig(s1), g2 = sig(s2);
+                    const signature = s1.size < s2.size || (s1.size === s2.size && g1 < g2) ? g1 + '  |  ' + g2 : g2 + '  |  ' + g1;
+                    if (seen.has(signature)) continue;
+                    seen.add(signature);
+                    cands.push({ j, s1, s2, signature });
+                }
+                if (!cands.length) break;
+                const myGen = ++gen, conservedNow = conserved, real = localReal;
+                const dispatch = c => {
+                    const c1 = new RestrictedCoordinates(keptColumnsNT(c.s1, true)), c2 = new RestrictedCoordinates(keptColumnsNT(c.s2, true));
+                    c1.setFacingSite(c2);
+                    let deltaDefault = Math.ceil(f32(f32(c.s2.sites()) * real));
+                    deltaDefault = Math.max(deltaDefault, 30);
+                    const bounds = c1.boundsDeltaMax(c2, deltaDefault, idiv(deltaDefault, 2), conservedNow);
+                    c.c1 = c1;
+                    c.promise = exec(restrictNT(c.s1, true), restrictNT(c.s2, true), bounds, myGen);
+                    c.promise.catch(() => { });
+                };
+                let d = 0, accepted = false;
+                for (let k = 0; k < cands.length; k++) {
+                    while (d < cands.length && d - k < width) dispatch(cands[d++]);
+                    const c = cands[k];
+                    testedCut.push(c.signature);
+                    ++nbTest;
+                    const res = await c.promise;
+                    const newAlign = wireToSet(res.set);
+                    const newScore = spScoreLinear(frameSet(toAminosSet(newAlign, ctx), 1), ctx);
+                    if (progress) progress('refine', c.j + 1, postOrder.length, nbIter);
+                    const former = conservedScore;
+                    if (newScore > currentScore) {
+                        set = newAlign; currentScore = newScore; testedCut.length = 0; improve = true;
+                        const p1 = new RestrictedCoordinates(res.k1);
+                        p1.setFacingSite(new RestrictedCoordinates(res.k2));
+                        const pairs = c.c1.conservedSites(p1);
+                        conservedScore = new Int32Array(newAlign.sites());
+                        for (const [o, nw] of pairs) conservedScore[nw] = 1 + former[o];
+                        const formerC = conserved;
+                        conserved = new Uint8Array(newAlign.sites());
+                        for (const [o, nw] of pairs) conserved[nw] = formerC[o];
+                        if (runner.cancel) runner.cancel(myGen);
+                        idx = c.j + 1; accepted = true;
+                        break;
+                    }
+                    for (let q = 0; q < conservedScore.length; q++) conservedScore[q]++;
+                }
+                if (!accepted) idx = postOrder.length;
+            }
+            localReal = f32(localReal * f32(ctx.localRealignDec));
+        }
+        ctx.refineIterations = nbIter;
+        return set;
+    }
+
+    async function cutLeavesAsync(setIn, ctx, runner) {
+        if (setIn.size < 2) return setIn;
+        const exec = makeExecutor(ctx, runner);
+        let canImprove = true, nbIter = 0, set = setIn;
+        let currentScore = spScoreLinear(frameSet(toAminosSet(set, ctx), 1), ctx);
+        let localReal = f32(ctx.localRealignInit);
+        while ((ctx.maxRefines < 0 || nbIter < ctx.maxRefines) && canImprove) {
+            canImprove = false;
+            for (const sq of set.arr.slice()) {
+                let s1 = new SeqSet(); s1.add(sq);
+                const k1 = keptColumnsNT(s1, true); s1 = restrictNT(s1, true);
+                let s2 = new SeqSet(); for (const o of set.arr) if (o.name !== sq.name) s2.add(o);
+                const k2 = keptColumnsNT(s2, true); s2 = restrictNT(s2, true);
+                const c1 = new RestrictedCoordinates(k1), c2 = new RestrictedCoordinates(k2);
+                c1.setFacingSite(c2);
+                let dd = Math.ceil(f32(f32(s2.sites()) * localReal)); dd = Math.max(dd, 30);
+                const res = await exec(s1, s2, c1.boundsDeltaMax(c2, dd, dd, null), 0);
+                const na = wireToSet(res.set);
+                const ns = spScoreLinear(frameSet(toAminosSet(na, ctx), 1), ctx);
+                if (ns > currentScore) { set = na; currentScore = ns; canImprove = true; }
+            }
+            ++nbIter;
+            localReal = f32(localReal * f32(ctx.localRealignDec));
+        }
+        return set;
+    }
+
     // ------------------------------------------------------------------ top level (programs.align.Aligner)
     const DEFAULTS = {
         gc: 1, ambi_OFF: false, fs: 30, fs_lr: 10, fs_term: 10, fs_lr_term: 7, gap_ext: 1, gap_ext_term: 0.9, gap_op: 7, gap_op_term: 6.3,
         stop: 50, stop_lr: 17, max_refine_iter: -1, local_realign_init: 0.5, local_realign_dec: 0.5, optim: 2, alphabet_AA: 'SE_B_8',
-        lessReliable: [], maxTracebackCells: 4e8, onProgress: null
+        lessReliable: [], maxTracebackCells: 4e8, onProgress: null, useWasm: true, tileSize: 0, tileMinCells: 600000
     };
     function makeCtx(opts) {
         const o = Object.assign({}, DEFAULTS, opts || {});
         const costs = makeCosts(o);
+        const t = {};
+        for (const k of ['gc', 'ambi_OFF', 'fs', 'fs_lr', 'fs_term', 'fs_lr_term', 'gap_ext', 'gap_ext_term', 'gap_op', 'gap_op_term', 'stop', 'stop_lr', 'maxTracebackCells', 'useWasm']) t[k] = o[k];
         return {
+            taskOpts: { key: JSON.stringify(t), o: t },
             opts: o, costs, matrix: makeMatrix(costs), ribo: ribosome(o.gc, o.ambi_OFF), alphabet: o.alphabet_AA,
             maxRefines: o.max_refine_iter, localRealignInit: o.local_realign_init, localRealignDec: o.local_realign_dec,
-            maxTracebackCells: o.maxTracebackCells, refineIterations: 0
+            maxTracebackCells: o.maxTracebackCells, useWasm: o.useWasm, tileSize: o.tileSize, tileMinCells: o.tileMinCells, refineIterations: 0
         };
     }
 
-    function alignSequences(records, opts) {
-        const t0 = Date.now();
+    // V8 warm-up: one small alignment that reaches every branch of the kernel (profiles of several sequences,
+    // frameshifts, gaps at both ends, a stop, ambiguity codes), so that later runs are not slowed by repeated
+    // de-optimisation of code paths first met mid-run. It does not change any result.
+    let warmedUp = false;
+    function warmUp() {
+        warmedUp = true;
+        const b = 'ATGGCTGAAAAGCTGGATACCGTTGGAATGCCAGGTCTGAAACGTGCTTTCAAAGAGCTGCGTACCGATCAGGGCTTAAACCTGGAACGT' +
+            'TACGAAGTGATTCGCGGTAACCTGGCAGAACAGTTCGGTATTGATAACCCGCACGTTGGCCAGTAA';
+        const v = [b, b.slice(0, 40) + b.slice(41), b.slice(0, 70) + 'AC' + b.slice(70), b.slice(12),
+            b.slice(0, 150).replace(/^(.{60})GAT/, '$1TAA'), b.slice(0, 90) + b.slice(93).replace(/GCAG/, 'GNRY'),
+            b.replace(/C/g, (c, i) => (i % 7 === 0 ? 'T' : c))];
+        try { alignSequences(v.map((seq, i) => ({ name: 'w' + i, seq })), { _warm: true }); } catch (e) { /* warm-up only */ }
+    }
+
+    function prepareInput(records, opts) {
         const ctx = makeCtx(opts);
-        const progress = ctx.opts.onProgress;
         const lr = new Set(ctx.opts.lessReliable || []);
         const set = new SeqSet();
         for (const r of records) {
@@ -1244,29 +3511,67 @@
             set.add(new SeqNT(r.name, r.seq.replace(/\s+/g, ''), !lr.has(r.name)));
         }
         if (set.size === 0) throw MacseError('no sequences');
+        return { ctx, set, progress: ctx.opts.onProgress };
+    }
+    // Aligner.computeInitialSequenceDistanceMEM
+    function distanceMatrix(set, ctx, progress) {
+        const n = set.size, dist = Array.from({ length: n }, () => new Array(n).fill(0));
+        const tr = set.arr.map(q => seqCons3RF(q, ctx));
+        let pairsDone = 0;
+        for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
+            const d = javaRoundF(f32(new SuffixTree(tr[i], tr[j], 6, ctx.alphabet).memDist3RF() * f32(500)));
+            dist[i][j] = d; dist[j][i] = d;
+            if (progress) progress('distances', ++pairsDone, n * (n - 1) / 2);
+        }
+        return dist;
+    }
+    function finishOutput(out, set, ctx, t0, extra) {
+        const nt = out.arr.filter(q => q.acids.length).map(q => ({ name: q.name, seq: q.acids }));
+        const aa = out.arr.filter(q => q.acids.length).map(q => ({ name: q.name, seq: q.toAminos(ctx).frameAminos(1).acids }));
+        return { nt, aa, stats: Object.assign({ sequences: set.size, columns: nt.length ? nt[0].seq.length : 0, refineIterations: ctx.refineIterations, ms: Date.now() - t0 }, extra || {}) };
+    }
+
+    // Synchronous, single thread.
+    function alignSequences(records, opts) {
+        if (!warmedUp && !(opts && opts._warm)) warmUp();
+        const t0 = Date.now();
+        const { ctx, set, progress } = prepareInput(records, opts);
         let out;
         if (set.size === 1) out = set;
         else if (set.size === 2) {
-            for (const s of set.arr) s.removeGaps();
+            for (const q of set.arr) q.removeGaps();
             const a = new SeqSet(), b = new SeqSet(); a.add(set.arr[0]); b.add(set.arr[1]);
             out = new ProfileAligner(ctx).alignProfiles(a, b, null);
         } else {
-            for (const s of set.arr) s.removeGaps();
-            const n = set.size, dist = Array.from({ length: n }, () => new Array(n).fill(0));
-            const tr = set.arr.map(s => seqCons3RF(s, ctx));
-            let pairsDone = 0;
-            for (let i = 0; i < n; i++) for (let j = i + 1; j < n; j++) {
-                const d = javaRoundF(f32(new SuffixTree(tr[i], tr[j], 6, ctx.alphabet).memDist3RF() * f32(500)));
-                dist[i][j] = d; dist[j][i] = d;
-                if (progress) progress('distances', ++pairsDone, n * (n - 1) / 2);
-            }
+            for (const q of set.arr) q.removeGaps();
+            const dist = distanceMatrix(set, ctx, progress);
             out = dynamicTree(set, dist, ctx, progress);
             if (ctx.opts.optim === 2) out = refine2cut(out, ctx, progress);
             else if (ctx.opts.optim === 1) out = cutLeaves(out, ctx);
         }
-        const nt = out.arr.filter(s => s.acids.length).map(s => ({ name: s.name, seq: s.acids }));
-        const aa = out.arr.filter(s => s.acids.length).map(s => ({ name: s.name, seq: s.toAminos(ctx).frameAminos(1).acids }));
-        return { nt, aa, stats: { sequences: set.size, columns: nt.length ? nt[0].seq.length : 0, refineIterations: ctx.refineIterations, ms: Date.now() - t0 } };
+        return finishOutput(out, set, ctx, t0);
+    }
+
+    // Same result as alignSequences; profile alignments run through `runner` (a pool of threads, see above).
+    async function alignSequencesAsync(records, opts, runner) {
+        if (!warmedUp && !(opts && opts._warm)) warmUp();
+        runner = runner || localRunner();
+        const t0 = Date.now();
+        const { ctx, set, progress } = prepareInput(records, opts);
+        let out;
+        if (set.size === 1) out = set;
+        else if (set.size === 2) {
+            for (const q of set.arr) q.removeGaps();
+            const a = new SeqSet(), b = new SeqSet(); a.add(set.arr[0]); b.add(set.arr[1]);
+            out = wireToSet((await makeExecutor(ctx, runner)(a, b, null, 0)).set);
+        } else {
+            for (const q of set.arr) q.removeGaps();
+            const dist = distanceMatrix(set, ctx, progress);
+            out = await dynamicTreeAsync(set, dist, ctx, runner, progress);
+            if (ctx.opts.optim === 2) out = await refine2cutAsync(out, ctx, runner, progress);
+            else if (ctx.opts.optim === 1) out = await cutLeavesAsync(out, ctx, runner);
+        }
+        return finishOutput(out, set, ctx, t0, { threads: runner.size });
     }
 
     function parseFasta(text) {
@@ -1281,5 +3586,8 @@
     }
     function toFasta(records) { return records.map(r => '>' + r.name + '\n' + r.seq + '\n').join(''); }
 
-    return { alignSequences, parseFasta, toFasta, DEFAULTS, _internal: { SuffixTree, spScoreLinear, makeCtx, SeqNT, SeqSet, ProfileAligner } };
+    return {
+        alignSequences, alignSequencesAsync, runTask, runDpTask, transferables, localRunner, parseFasta, toFasta, DEFAULTS, wasmAvailable: () => !!getWasmKernel(),
+        _internal: { SuffixTree, spScoreLinear, makeCtx, SeqNT, SeqSet, ProfileAligner }
+    };
 }));
