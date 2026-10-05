@@ -7,7 +7,7 @@
 // carry, and the distances within and between the pieces.
 //   node tests/kmer/peel-explain.js [ccr|oma] [minSize 2] [minDiag 2] [outDir]
 const fs = require('fs'), path = require('path'), KT = require('../../kmer-tree.js'), Peel = require('../../peel.js');
-const [, , which = 'oma', minSizeArg = '2', minDiagArg = '2', outArg] = process.argv;
+const [, , which = 'oma', minSizeArg = '3', minDiagArg = '2', outArg] = process.argv;
 const minSize = +minSizeArg, minDiag = +minDiagArg;
 const DIR = 'C:/work/SINE_discriminator/site/alignments/';
 const OUT = outArg || path.join(DIR, 'peel_explain');
@@ -26,7 +26,7 @@ if (which === 'ccr') {
   truth = seqs.map(s => m.get(String(+num(s.header))) || null);
 }
 const log = [];
-const r = Peel.peel(seqs, { criterion: 'diag', minSize, minDiag, refine: 1, outliers: false, log });
+const r = Peel.peel(seqs, Object.assign({}, Peel.defaults, { minSize, minDiag, log }));
 const D = KT.pDistanceMatrix(seqs);
 const key = ids => [...ids].sort((a, b) => a - b).join(',');
 const logByKey = new Map(); log.forEach((e, k) => { e.step = k + 1; logByKey.set(key(e.ids), e); });
@@ -34,7 +34,7 @@ const pieceOf = new Array(seqs.length).fill(-1); r.groups.forEach((g, k) => g.fo
 const mean = (A, B) => { let t = 0, c = 0; for (const a of A) for (const b of B) if (a !== b) { t += D[a][b]; c++; } return c ? t / c : NaN; };
 fs.mkdirSync(OUT, { recursive: true });
 const report = [`# Over-split groups: ${which}`, '',
-  `Peel settings: Min size ${minSize}, at least ${minDiag} diagnostic columns, refine 1 (the defaults in ViewAlign v237).`,
+  `Peel settings: Min size ${minSize}, at least ${minDiag} diagnostic columns, refine 1, second pass 4 columns (indel x2) (the defaults in ViewAlign v238).`,
   `Source alignment: \`${src}\`. A group of his is listed when its chunks end up in more than one peel group.`, '',
   'How to read each file: rows are `<piece>|<chunk name>`, ordered piece by piece. Above each piece, `DIAG_<piece>` shows the characters',
   'that made the loop peel that piece: at those columns the piece was (at least 90%) fixed for that character, and at most 2% of the',

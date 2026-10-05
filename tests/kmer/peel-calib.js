@@ -23,7 +23,7 @@ const CH = c => { c = c.toUpperCase(); return c === 'U' ? 'T' : ('ACGT-'.include
 const cases = [];
 for (const which of ['oma', 'ccr']) {
   const { seqs, truth } = load(which);
-  const r = Peel.peel(seqs, { criterion: 'diag', minSize: 2, minDiag: 2, refine: 1, outliers: false });
+  const r = Peel.peel(seqs, Peel.defaults);
   const D = KT.pDistanceMatrix(seqs);
   const pieceOf = new Array(seqs.length).fill(-1); r.groups.forEach((g, k) => g.forEach(i => { pieceOf[i] = k; }));
   for (const g of [...new Set(truth.filter(Boolean))]) {

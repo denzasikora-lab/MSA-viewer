@@ -64,11 +64,11 @@
         for (const id of ids) { const c = codes[id]; for (let j = 0; j < L; j++) total[6 * j + c[j]]++; }
         const cnt = new Array(2 * n).fill(null), size = new Int32Array(2 * n), cur = Array.from({ length: n }, (_, i) => i), mem = new Array(2 * n);
         for (let i = 0; i < n; i++) { const a = new Uint16Array(6 * L), c = codes[ids[i]]; for (let j = 0; j < L; j++) a[6 * j + c[j]] = 1; cnt[i] = a; size[i] = 1; mem[i] = [i]; }
-        const out = [];
+        const out = [], parent = new Int32Array(2 * n).fill(-1), byNode = new Map();
         tree.merges.forEach((mg, k) => {
             const a = cur[mg.i], b = cur[mg.j], v = n + k, ca = cnt[a], cb = cnt[b], cv = new Uint16Array(6 * L);
             for (let x = 0; x < 6 * L; x++) cv[x] = ca[x] + cb[x];
-            cnt[v] = cv; size[v] = size[a] + size[b]; mem[v] = mem[a].concat(mem[b]); cur[mg.i] = v; cnt[a] = cnt[b] = null; mem[a] = mem[b] = null;
+            parent[a] = v; parent[b] = v; cnt[v] = cv; size[v] = size[a] + size[b]; mem[v] = mem[a].concat(mem[b]); cur[mg.i] = v; cnt[a] = cnt[b] = null; mem[a] = mem[b] = null;
             const m = size[v], nout = n - m;
             if (m < minSize || nout < minSize) return;
             let diag = 0, logE = 0, subs = 0, indels = 0, prevIndel = -2; const cols = [], chars = [];
@@ -89,9 +89,42 @@
                 if (best === 4 || restGap >= 0.5) { if (prevIndel !== j - 1) indels++; prevIndel = j; } else subs++;
             }
             // score: substitutions count one each, an indel (a run of indel columns) counts indelWeight, as he weighs them
-            out.push({ members: mem[v].map(i => ids[i]), size: m, diag: indelW == null ? diag : subs + indelW * indels, columns: diag, subs, indels, enrich: logE, cols, chars, poolSize: n });
+            const cand = { node: v, members: mem[v].map(i => ids[i]), size: m, diag: indelW == null ? diag : subs + indelW * indels, columns: diag, subs, indels, enrich: logE, cols, chars, poolSize: n }; byNode.set(v, cand); out.push(cand);
         });
+        out.parent = parent; out.byNode = byNode;
         return out;
+    }
+
+    // A candidate and its parent branch often have the SAME diagnostic columns (a pair of chunks of one subfamily carries every
+    // column that sets the whole subfamily apart). Then the larger branch is the group: grow to the largest ancestor that still
+    // carries at least `keep` of the columns (and leaves a real remainder). Complements are not ancestors, so the tie-break to the
+    // smaller group still settles "X versus everything but X".
+    function growToAncestor(best, cands, keep) {
+        let cur = best;
+        for (;;) {
+            const up = cands.byNode.get(cands.parent[cur.node]);
+            if (!up || !up.cols.length) break;
+            const have = new Set(up.cols); let hit = 0; cur.cols.forEach(c => { if (have.has(c)) hit++; });
+            if (hit < keep * cur.cols.length) break;
+            cur = up;
+        }
+        return cur;
+    }
+
+    // Membership by pattern (his "carries the pattern" test): every remaining sequence that has the group's diagnostic character at
+    // `theta` of its diagnostic columns joins it. A subfamily need not be one branch of the tree (its chunks can interleave with
+    // others); its diagnostic pattern is what holds it together. Gaps count as characters, missing data (N) is skipped.
+    function expandByPattern(best, remaining, codes, theta) {
+        if (!best.cols || best.cols.length < 2) return best;
+        const want = best.chars.map(c => 'ACGT-'.indexOf(c)), inSet = new Set(best.members), add = [];
+        for (const i of remaining) {
+            if (inSet.has(i)) continue;
+            let hit = 0, known = 0; const c = codes[i];
+            best.cols.forEach((j, q) => { if (c[j] === 5) return; known++; if (c[j] === want[q]) hit++; });
+            if (known >= 0.7 * best.cols.length && hit >= theta * known) add.push(i);
+        }
+        if (!add.length) return best;
+        return Object.assign({}, best, { members: best.members.concat(add), size: best.size + add.length, expanded: add.length });
     }
 
     // Sequences with no close relative at all: nearest-neighbour distance far above the typical one (robust: median + z * MAD).
@@ -123,8 +156,12 @@
                 best = nextCandidates(dist, remaining, minSize, opts.linkage, opts.alpha).filter(c => c.gap >= minGap && c.rel >= (opts.minRel || 0))[0];
             } else {
                 const minDiag = opts.minDiag != null ? opts.minDiag : 3, byEnrich = opts.score === 'enrich';
-                best = diagCandidates(codes, dist, remaining, minSize, opts).filter(c => c.diag >= minDiag)
+                const cands = diagCandidates(codes, dist, remaining, minSize, opts);
+                best = cands.filter(c => c.diag >= minDiag)
                     .sort((p, q) => (byEnrich ? q.enrich - p.enrich : q.diag - p.diag) || p.size - q.size)[0];
+                if (best && opts.grow !== false) best = growToAncestor(best, cands, opts.growKeep || 0.8);
+                if (best && opts.pattern !== false) best = expandByPattern(best, remaining, codes, opts.patternTheta || 0.85);
+                if (best && remaining.length - best.size < minSize) best = null;
             }
             if (!best) break;
             groups.push(best.members); steps.push({ kind: 'group', size: best.size, diag: best.diag, gap: best.gap, ids: best.members });
@@ -148,7 +185,7 @@
             for (const g of groups) {
                 if (g.length < 2 * minSize) { refined.push(g); continue; }
                 const outer = opts._map || (i => i);
-                const sub = peel(g.map(i => seqs[i]), Object.assign({}, opts, { refine: depth - 1, outliers: false, metric, _map: i => outer(g[i]), _level: (opts._level || 0) + 1 }));
+                const sub = peel(g.map(i => seqs[i]), Object.assign({}, opts, { refine: depth - 1, outliers: false, metric, minDiag: opts.refineMinDiag != null ? opts.refineMinDiag : (opts.minDiag != null ? opts.minDiag : 3), minSize: opts.refineMinSize || minSize, indelWeight: opts.refineIndelWeight != null ? opts.refineIndelWeight : opts.indelWeight, tolerate: opts.refineTolerate != null ? opts.refineTolerate : opts.tolerate, _map: i => outer(g[i]), _level: (opts._level || 0) + 1 }));
                 if (sub.groups.length < 2 && !(sub.groups.length === 1 && sub.remaining.length >= minSize)) { refined.push(g); continue; }
                 sub.groups.forEach(x => refined.push(x.map(i => g[i])));
                 if (sub.remaining.length >= minSize) refined.push(sub.remaining.map(i => g[i]));
@@ -158,7 +195,11 @@
         return { groups: refined, coarse: groups, outliers, unassigned: remaining.concat(outliers).sort((a, b) => a - b), remaining, steps, metric };
     }
 
-    const api = { peel, nextCandidates, diagCandidates, findOutliers };
+    // What ViewAlign uses (tuned against his ccr and oma peels): groups of at least 3 (a pair with a few private columns is noise),
+    // and inside a peeled group a sub-group needs 4 columns, an indel counting double.
+    const defaults = { criterion: 'diag', minSize: 3, minDiag: 2, refine: 1, refineMinDiag: 4, refineIndelWeight: 2, outliers: false };
+
+    const api = { defaults, peel, nextCandidates, diagCandidates, expandByPattern, findOutliers };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else root.Peel = api;
 })(typeof window !== 'undefined' ? window : this);

@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v237';
+const BUILD_TAG = 'v238';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -15330,7 +15330,7 @@ async function clusterByGuideTree() {
         let cut;
         if (canPeel) {
             // the same result shape as a tree cut, so the explorer, colours and Gather work unchanged
-            const pr = Peel.peel(seqs, { criterion: 'diag', minSize: Math.max(2, minSize), minDiag: peelDiag, refine: 1, outliers: false });
+            const pr = Peel.peel(seqs, Object.assign({}, Peel.defaults, { minSize: Math.max(Peel.defaults.minSize, minSize), minDiag: peelDiag }));
             cut = { groups: pr.groups, unassigned: pr.unassigned, auto: true, reached: true, warnings: [], metric: 'peel', target: pr.groups.length, k, cutHeight: null, plateau: null, alternatives: [], peelDiag };
         } else cut = cutGuideTree(seqs, groupsArg, k, minSize, metric, !!el('guideTreeStrand')?.checked, el('guideTreeLinkage')?.value === 'single' ? 'single' : 'average');
         const ms = performance.now() - t0;
