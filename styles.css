@@ -2241,7 +2241,8 @@ body.suppress-menu-hover #controls .menu-section.menu-open .control-group {
     display: inline-block;
     vertical-align: top;
     margin: 0;
-    padding: 0;
+    padding: 0 0 0.5px 0;   /* 0.5px of overlap below: at fractional browser zoom (90%, 110%, 125%...) the row pitch is not a whole
+                               number of device pixels and a 1px light seam showed every few rows between two shaded rows */
     line-height: 1.0;
     /* No position/z-index here: it made each of the (up to ~500k) residue spans its own
        paint layer, and every click hit-tested all of them (~0.3 s per click at 316k spans,
