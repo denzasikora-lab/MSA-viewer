@@ -127,6 +127,20 @@
         return Object.assign({}, best, { members: best.members.concat(add), size: best.size + add.length, expanded: add.length });
     }
 
+    // Membership check (his case: a truncated or deleted chunk that carries none of the group's pattern sits in the group only because
+    // of its place in the tree). Members that carry fewer than `theta` of the group's diagnostic characters go back to the pool.
+    function dropMisfits(best, codes, theta) {
+        if (!best.cols || best.cols.length < 2) return best;
+        const want = best.chars.map(c => 'ACGT-'.indexOf(c)), keep = [], drop = [];
+        for (const i of best.members) {
+            let hit = 0, known = 0; const c = codes[i];
+            best.cols.forEach((j, q) => { if (c[j] === 5) return; known++; if (c[j] === want[q]) hit++; });
+            (known === 0 || hit >= theta * best.cols.length ? keep : drop).push(i);
+        }
+        if (!drop.length) return best;
+        return Object.assign({}, best, { members: keep, size: keep.length, dropped: drop.length });
+    }
+
     // Sequences with no close relative at all: nearest-neighbour distance far above the typical one (robust: median + z * MAD).
     function findOutliers(dist, ids, z) {
         const n = ids.length; if (n < 8) return [];
@@ -161,6 +175,8 @@
                     .sort((p, q) => (byEnrich ? q.enrich - p.enrich : q.diag - p.diag) || p.size - q.size)[0];
                 if (best && opts.grow !== false) best = growToAncestor(best, cands, opts.growKeep || 0.8);
                 if (best && opts.pattern !== false) best = expandByPattern(best, remaining, codes, opts.patternTheta || 0.85);
+                if (best && opts.misfits !== false) best = dropMisfits(best, codes, opts.misfitTheta || 0.5);
+                if (best && best.size < minSize) best = null;
                 if (best && remaining.length - best.size < minSize) best = null;
             }
             if (!best) break;
