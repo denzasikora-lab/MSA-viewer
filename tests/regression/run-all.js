@@ -2798,6 +2798,41 @@ check('k-mer groups: Distance selector (aligned columns / k-mer), k greyed out, 
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+check('k-mer groups: Method "peel" finds planted subfamilies by diagnostic columns; controls grey out; needs an alignment', async (page) => {
+  let x = 11; const rnd = () => { x = (x * 16807) % 2147483647; return x; };
+  const rb = n => Array.from({ length: n }, () => 'ACGT'[rnd() % 4]).join('');
+  const base = rb(400).split('');
+  let fa = '';
+  for (let f = 0; f < 4; f++) {
+    const fam = base.slice();
+    for (let i = 0; i < 6; i++) { const p = 40 + f * 80 + i * 9; fam[p] = 'ACGT'[('ACGT'.indexOf(base[p]) + 1 + (f % 3)) % 4]; }   // 6 columns unique to this subfamily
+    for (let m = 0; m < 10; m++) { const s = fam.map((c, j) => (rnd() % 1000 < 6 ? 'ACGT'[rnd() % 4] : c)).join(''); fa += `>f${f}_${m}
+${s}
+`; }
+  }
+  await loadFasta(page, fa);
+  const r = await page.evaluate(async () => {
+    const wait = ms => new Promise(res => setTimeout(res, ms));
+    const out = {}, sel = el('guideTreeMethod'), diag = el('guideTreePeelDiag');
+    out.default = [sel.value, diag.style.display];
+    sel.value = 'peel'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+    out.greyed = [el('guideTreeMetric').disabled, el('guideTreeGroups').disabled, diag.style.display === ''];
+    el('guideTreeMinSize').value = '3'; diag.value = '2';
+    await clusterByGuideTree(); await wait(400);
+    const m = state._geMeta, res = state.clusterResults;
+    out.meta = [m.metric, m.nGroups, m.nUnassigned, m.peelDiag];
+    out.pure = res.clusters.every(c => new Set(c.sequences.map(q => q.id.split('_')[0])).size === 1);
+    out.families = new Set(res.clusters.map(c => c.sequences[0].id.split('_')[0])).size;
+    out.summary = /peeled by diagnostic columns/.test(el('geSummary')?.textContent || '');
+    sel.value = 'tree'; sel.dispatchEvent(new Event('change', { bubbles: true }));
+    out.backEnabled = !el('guideTreeGroups').disabled && diag.style.display === 'none';
+    return out;
+  });
+  const ok = r.default[0] === 'tree' && r.default[1] === 'none' && r.greyed[0] && r.greyed[1] && r.greyed[2]
+    && r.meta[0] === 'peel' && r.meta[1] === 4 && r.meta[3] === 2 && r.pure && r.families === 4 && r.summary && r.backEnabled;
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 check('Group explorer: gather and move group never lose rows when sequence names repeat', async (page) => {
   let x = 3; const rnd = () => { x = (x * 16807) % 2147483647; return x; };
   const rb = n => Array.from({ length: n }, () => 'ACGT'[rnd() % 4]).join('');

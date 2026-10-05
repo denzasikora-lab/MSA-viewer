@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v236';
+const BUILD_TAG = 'v237';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -14890,6 +14890,9 @@ function _guideTreeK() {
 function _syncGuideTreeMetricUI() {
     const sel = el('guideTreeMetric'), k = el('guideTreeK');
     if (!sel || !k) return;
+    const peel = el('guideTreeMethod')?.value === 'peel', pd = el('guideTreePeelDiag');
+    if (pd) pd.style.display = peel ? '' : 'none';
+    ['guideTreeMetric', 'guideTreeLinkage', 'guideTreeStrand', 'guideTreeGroups', 'guideTreeAuto'].forEach(id => { const x = el(id); if (x) x.disabled = peel; });
     const aligned = sel.value === 'pdist';
     k.disabled = aligned;
     const st = el('guideTreeStrand'); if (st) st.disabled = aligned;
@@ -14899,6 +14902,7 @@ function _syncGuideTreeMetricUI() {
 
 function _initGuideTreeAuto() {
     el('guideTreeMetric')?.addEventListener('change', _syncGuideTreeMetricUI);
+    el('guideTreeMethod')?.addEventListener('change', _syncGuideTreeMetricUI);
     _syncGuideTreeMetricUI();
     const auto = el('guideTreeAuto'), num = el('guideTreeGroups');
     if (!auto || !num || auto._wired) return;
@@ -15316,10 +15320,19 @@ async function clusterByGuideTree() {
     // an alignment: with rows of different lengths the k-mer distance is used.
     const wantAligned = (el('guideTreeMetric')?.value || 'pdist') === 'pdist';
     const metric = wantAligned && KmerTree.isAligned(getSeqsForClustering()) ? 'pdist' : 'jaccard';
-    return runWithProgress('Grouping by k-mer tree...', () => {
+    const wantPeel = el('guideTreeMethod')?.value === 'peel';
+    const canPeel = wantPeel && typeof Peel !== 'undefined' && KmerTree.isAligned(getSeqsForClustering());
+    if (wantPeel && !canPeel) clampNote.push('Peel needs an alignment (all rows the same length), so the tree cut was used.');
+    const peelDiag = Math.max(1, parseInt(el('guideTreePeelDiag')?.value, 10) || 2);
+    return runWithProgress(canPeel ? 'Peeling groups by diagnostic columns...' : 'Grouping by k-mer tree...', () => {
         const seqs = getSeqsForClustering();
         const t0 = performance.now();
-        const cut = cutGuideTree(seqs, groupsArg, k, minSize, metric, !!el('guideTreeStrand')?.checked, el('guideTreeLinkage')?.value === 'single' ? 'single' : 'average');
+        let cut;
+        if (canPeel) {
+            // the same result shape as a tree cut, so the explorer, colours and Gather work unchanged
+            const pr = Peel.peel(seqs, { criterion: 'diag', minSize: Math.max(2, minSize), minDiag: peelDiag, refine: 1, outliers: false });
+            cut = { groups: pr.groups, unassigned: pr.unassigned, auto: true, reached: true, warnings: [], metric: 'peel', target: pr.groups.length, k, cutHeight: null, plateau: null, alternatives: [], peelDiag };
+        } else cut = cutGuideTree(seqs, groupsArg, k, minSize, metric, !!el('guideTreeStrand')?.checked, el('guideTreeLinkage')?.value === 'single' ? 'single' : 'average');
         const ms = performance.now() - t0;
 
         const clusters = cut.groups.map((members, idx) => ({
@@ -15338,7 +15351,7 @@ async function clusterByGuideTree() {
             clusters,
             unassigned,
             summary: { nClusters: clusters.length, nAssigned, nUnassigned: unassigned.length, nTotal: state.seqs.length }
-        }, 'kmers', k + '-mer groups');
+        }, 'kmers', canPeel ? 'peeled groups' : k + '-mer groups');
         const warn = clampNote.slice();
         if (!cut.auto && !cut.reached) warn.push(`Only ${clusters.length} group${clusters.length === 1 ? '' : 's'} of at least ${minSize} sequences exist (asked for ${cut.target}); lower Min size or Groups.`);
         if (cut.warnings.includes('k-too-long')) warn.push(`k=${k} is too long for these sequences: most pairs share no ${k}-mers, so the tree is unreliable. Use a smaller k or the aligned-columns distance.`);
@@ -15359,8 +15372,9 @@ async function clusterByGuideTree() {
             cut: cut.cutHeight,
             auto: cut.auto,
             target: cut.target,
+            peelDiag: canPeel ? peelDiag : null,
             source: 'kmers',
-            sourceLabel: k + '-mer groups'
+            sourceLabel: canPeel ? 'peeled groups' : k + '-mer groups'
         };
         displayClusteringResults(state.clusterResults);
     }, `${state.seqs.length} sequences`);
@@ -16574,7 +16588,8 @@ function _geSummaryHtml() {
     if (m.source === 'kmers') {
         const cut = (m.cut != null && Number.isFinite(Number(m.cut))) ? Number(m.cut).toFixed(3) : '';
         const aligned = m.metric === 'pdist';
-        sub = (aligned ? 'aligned columns' : ('k-mer tree · k=<span class="ge-var">' + (m.k || 6) + '</span>'))
+        if (m.metric === 'peel') sub = 'peeled by diagnostic columns (at least <span class="ge-var">' + (m.peelDiag || 2) + '</span>) · ' + (m.nGroups || 0) + ' group' + (m.nGroups === 1 ? '' : 's') + ' of at least ' + (m.minSize || 1);
+        else sub = (aligned ? 'aligned columns' : ('k-mer tree · k=<span class="ge-var">' + (m.k || 6) + '</span>'))
             + ' · ' + (m.auto ? 'auto' : 'asked for ' + m.target) + ' (' + (m.nGroups || 0) + ' group' + (m.nGroups === 1 ? '' : 's') + ' of at least ' + (m.minSize || 1) + ')'
             + (cut ? (' · cut <span class="ge-var">' + cut + '</span>') : '');
         if (m.plateau && m.plateau.share != null) {

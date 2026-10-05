@@ -395,6 +395,13 @@
                                     <button id="clusterClearKmerButton" title="Remove name and letter colours from k-mer or SNP grouping. Does not change row order. 2D rectangles stay until you Clear them in 2D analysis.">Clear</button>
                                 </div>
                                 <div class="cluster-actions">
+                                    <label style="font-size: 10px; white-space: nowrap;" title="Tree cut: split the similarity tree at the height that fits best (default). Peel: for alignments of chunk consensi or subfamilies. Repeatedly takes the group that differs most clearly from the rest (most diagnostic columns: a column where the group is almost fixed for one base that almost no other sequence has), sets it aside, and continues with the rest, then looks inside each peeled group. Needs an alignment.">Method:
+                                        <select id="guideTreeMethod" style="font-size: 11px;">
+                                            <option value="tree" selected>tree cut</option>
+                                            <option value="peel">peel (diagnostic columns)</option>
+                                        </select>
+                                        <input type="number" id="guideTreePeelDiag" min="1" max="50" step="1" value="2" style="width: 38px; font-size: 11px; display: none;" title="Peel: smallest number of diagnostic columns a group needs. Lower finds more, weaker groups (2 is the loosest sensible value); higher keeps only well-supported groups.">
+                                    </label>
                                     <label style="font-size: 10px; white-space: nowrap;" title="How sequences are compared. Aligned columns: the differences between the alignment columns two sequences both have (best for an alignment; does not depend on k). k-mer: shared words of length k, alignment-free.">Distance:
                                         <select id="guideTreeMetric" style="font-size: 11px;">
                                             <option value="pdist" selected>aligned columns</option>
@@ -1353,11 +1360,12 @@ B: -</pre>
 
     <script src="cluster.js?v=171"></script>
     <script src="kmer-tree.js?v=3"></script>
+    <script src="peel.js?v=2"></script>
     <script src="bam-parser.js?v=166"></script>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=284"></script>
+    <script src="script.js?v=285"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

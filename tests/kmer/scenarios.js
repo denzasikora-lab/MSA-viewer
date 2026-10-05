@@ -2,6 +2,7 @@
 // then scores every valid one. Usage:  node tests/kmer/scenarios.js [--validate] [--seeds 2]
 const fs = require('fs'), path = require('path');
 const KT = require('../../kmer-tree.js'), { ari } = require('./metrics.js');
+const Peel = require('../../peel.js');
 const DIR = path.join(__dirname, 'scenarios');
 const args = process.argv.slice(2);
 const SEEDS = +(args[args.indexOf('--seeds') + 1] || 2) || 2, VALIDATE_ONLY = args.includes('--validate');
@@ -61,9 +62,9 @@ for (const f of files) {
 console.log(`${valid.length} of ${files.length} scenarios valid`);
 if (VALIDATE_ONLY) process.exit(0);
 
-const CONFIGS = [['pdist', 6], ['jaccard', 4], ['jaccard', 6], ['jaccard', 8]];
+const CONFIGS = [['pdist', 6], ['jaccard', 4], ['jaccard', 6], ['jaccard', 8], ['peel', 0]];
 console.log('\nrecovery (ARI vs the scenario labels; noise sequences = unassigned is correct)');
-console.log('scenario'.padEnd(26) + CONFIGS.map(([m, k]) => (m === 'pdist' ? 'aligned' : 'k=' + k).padStart(10) + '/auto' + ''.padStart(1)).join('') + CONFIGS.map(([m, k]) => ((m === 'pdist' ? 'aligned' : 'k=' + k) + '/given').padStart(16)).join(''));
+console.log('scenario'.padEnd(26) + CONFIGS.map(([m, k]) => (m === 'pdist' ? 'aligned' : m === 'peel' ? 'peel' : 'k=' + k).padStart(10) + '/auto' + ''.padStart(1)).join('') + CONFIGS.map(([m, k]) => ((m === 'pdist' ? 'aligned' : m === 'peel' ? 'peel' : 'k=' + k) + '/given').padStart(16)).join(''));
 const totals = CONFIGS.map(() => [0, 0]);
 for (const mod of valid) {
   const row = [], row2 = [];
@@ -73,6 +74,11 @@ for (const mod of valid) {
       const r = mod.generate(seed), n = r.seqs.length, minSize = Number.isInteger(r.minSize) ? r.minSize : 3;
       const c = new Map(); r.labels.forEach(l => c.set(l, (c.get(l) || 0) + 1));
       const truth = r.labels.map((l, i) => c.get(l) >= minSize ? 'g' + l : 'n' + i), G = [...c.values()].filter(v => v >= minSize).length;
+      if (metric === 'peel') {   // peel by diagnostic columns (needs rows of equal length); the 'given' column repeats Auto
+        const pr = Peel.peel(r.seqs, { criterion: 'diag', minSize: Math.max(3, minSize), minDiag: +(process.env.PD || 3), refine: +(process.env.PR || 1), outliers: false });
+        const lp = new Array(n); pr.groups.forEach((gr, gi) => gr.forEach(i => { lp[i] = 'g' + gi; })); pr.unassigned.forEach(i => { lp[i] = 'u' + i; });
+        const v = ari(truth, lp); a += v; g += v; cnt++; continue;
+      }
       const t = KT.guideTree(r.seqs, k, { metric, canonical: !!process.env.CANON, linkage: process.env.LINK });
       const lab = cut => { const out = new Array(n); cut.groups.forEach((gr, gi) => gr.forEach(i => { out[i] = 'g' + gi; })); cut.unassigned.forEach(i => { out[i] = 'u' + i; }); return out; };
       a += ari(truth, lab(KT.cutTree(t, 'auto', minSize))); g += ari(truth, lab(KT.cutTree(t, Math.max(1, G), minSize))); cnt++;
