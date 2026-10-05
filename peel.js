@@ -56,7 +56,8 @@
     function codesOf(seq) { const a = new Uint8Array(seq.length); for (let i = 0; i < seq.length; i++) { const c = seq.charCodeAt(i); a[i] = c < 128 ? CODE5[c] : 5; } return a; }
 
     function diagCandidates(codes, dist, ids, minSize, o) {
-        const n = ids.length, L = codes[ids[0]].length, fIn = o.fIn || 0.9, fOut = o.fOut != null ? o.fOut : 0.02;
+        const n = ids.length, L = codes[ids[0]].length, fIn = o.fIn || 0.9, fOut = o.fOut != null ? o.fOut : 0.02,
+            tol = o.tolerate != null ? o.tolerate : 0, indelW = o.indelWeight;   // defaults keep v237: no tolerance, score = column count
         if (n < 2 * minSize) return [];
         const sub = submatrix(dist, ids), tree = KT.upgma(sub, n, o.linkage === 'single');
         const total = new Uint16Array(6 * L);
@@ -70,16 +71,25 @@
             cnt[v] = cv; size[v] = size[a] + size[b]; mem[v] = mem[a].concat(mem[b]); cur[mg.i] = v; cnt[a] = cnt[b] = null; mem[a] = mem[b] = null;
             const m = size[v], nout = n - m;
             if (m < minSize || nout < minSize) return;
-            let diag = 0, logE = 0; const cols = [], chars = [];
+            let diag = 0, logE = 0, subs = 0, indels = 0, prevIndel = -2; const cols = [], chars = [];
             for (let j = 0; j < L; j++) {
                 const base = 6 * j; let best = 0, bc = -1, known = 0, totKnown = 0;
                 for (let q = 0; q < 5; q++) { known += cv[base + q]; totKnown += total[base + q]; if (cv[base + q] > bc) { bc = cv[base + q]; best = q; } }
                 const nk = totKnown - known;                         // sequences outside the group with a known character here
-                if (known < 0.7 * m || bc / known < fIn || nk < 1) continue;
-                const fo = (total[base + best] - bc) / nk;
-                if (fo <= fOut) { diag++; logE += Math.log2((bc / known) / Math.max(fo, 0.005)); cols.push(j); chars.push('ACGT-'[best]); }
+                if (known < 0.7 * m || nk < 1) continue;
+                // exceptions allowed: the percentage (fIn / fOut), but in small groups at least `tol` sequence on each side,
+                // so one misaligned or odd sequence does not veto an otherwise clean column (his SINE24 column 23)
+                const inMiss = known - bc, outHas = total[base + best] - bc;
+                if (inMiss > Math.max((1 - fIn) * known, m >= 5 ? tol : 0)) continue;
+                if (outHas > Math.max(fOut * nk, nk >= 10 ? tol : 0)) continue;
+                const fo = outHas / nk;
+                diag++; logE += Math.log2((bc / known) / Math.max(fo, 0.005)); cols.push(j); chars.push('ACGT-'[best]);
+                // an indel column: the group has a gap where the rest has bases, or a base where the rest mostly has gaps
+                const restGap = (total[base + 4] - cv[base + 4]) / nk;
+                if (best === 4 || restGap >= 0.5) { if (prevIndel !== j - 1) indels++; prevIndel = j; } else subs++;
             }
-            out.push({ members: mem[v].map(i => ids[i]), size: m, diag, enrich: logE, cols, chars, poolSize: n });
+            // score: substitutions count one each, an indel (a run of indel columns) counts indelWeight, as he weighs them
+            out.push({ members: mem[v].map(i => ids[i]), size: m, diag: indelW == null ? diag : subs + indelW * indels, columns: diag, subs, indels, enrich: logE, cols, chars, poolSize: n });
         });
         return out;
     }
