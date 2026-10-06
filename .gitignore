@@ -63,3 +63,6 @@ tests/compat/report.json
 
 # Public site assembled by tools/build-site.sh
 _site/
+
+# Raw captures written by tools/figures/build_manual_figures.js
+tools/figures/_fig/

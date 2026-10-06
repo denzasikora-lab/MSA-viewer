@@ -1,16 +1,16 @@
 // Screenshot for manual section 9.7: a dot plot of SVK SINE copies (default: row 21, K3_499, against itself)
 // from examples/svk_k4.fa, with the hover preview showing. Writes img/dotplot-example.png.
-//   node scratch/build_dotplot_figure.js [rowA] [rowB]
+//   node tools/figures/build_dotplot_figure.js [rowA] [rowB]
 const path = require('path');
-const { launch } = require('../tests/lib/browser');
-const { start } = require('../tests/lib/static-server');
+const { launch } = require('../../tests/lib/browser');
+const { start } = require('../../tests/lib/static-server');
 (async () => {
   const rowA = +(process.argv[2] || 20), rowB = +(process.argv[3] || 20);
   const { server, baseUrl } = await start();
   const b = await launch();
   const p = await b.newPage({ viewport: { width: 1200, height: 860 }, deviceScaleFactor: 2 });
   await p.goto(baseUrl + '/index.html', { waitUntil: 'networkidle' });
-  await p.setInputFiles('#fileInput', path.join(__dirname, '..', 'examples', 'svk_k4.fa'));
+  await p.setInputFiles('#fileInput', path.join(__dirname, '..', '..', 'examples', 'svk_k4.fa'));
   await p.waitForTimeout(2500);
   const info = await p.evaluate(async ({ rowA, rowB }) => {
     const a = state.seqs[rowA], b = state.seqs[rowB];
@@ -37,7 +37,7 @@ const { start } = require('../tests/lib/static-server');
   }, target);
   await p.mouse.move(pos.x, pos.y);
   await p.waitForTimeout(400);
-  const out = path.join(__dirname, '..', 'img', 'dotplot-example.png');
+  const out = path.join(__dirname, '..', '..', 'img', 'dotplot-example.png');
   await p.locator('#dotPlotDialog').screenshot({ path: out });
   console.log('wrote', out, JSON.stringify(target));
   await b.close(); server.close();

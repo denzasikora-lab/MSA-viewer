@@ -1,13 +1,13 @@
 // Screenshots for manual sections 1.4, 5.4, 8.4 and 9.4, from the files in examples/.
-// Writes raw captures plus element boxes to scratch/_fig/; scratch/build_manual_figures.py
+// Writes raw captures plus element boxes to tools/figures/_fig/; tools/figures/build_manual_figures.py
 // then labels and assembles them into img/.
-//   node scratch/build_manual_figures.js && python scratch/build_manual_figures.py
+//   node tools/figures/build_manual_figures.js && python tools/figures/build_manual_figures.py
 const fs = require('fs');
 const path = require('path');
-const { launch } = require('../tests/lib/browser');
-const { start } = require('../tests/lib/static-server');
+const { launch } = require('../../tests/lib/browser');
+const { start } = require('../../tests/lib/static-server');
 
-const ROOT = path.join(__dirname, '..');
+const ROOT = path.join(__dirname, '..', '..');
 const OUT = path.join(__dirname, '_fig');
 fs.mkdirSync(OUT, { recursive: true });
 

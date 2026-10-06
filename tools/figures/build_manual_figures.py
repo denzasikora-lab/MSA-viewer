@@ -1,8 +1,8 @@
 """Assemble manual figures from the captures made by build_manual_figures.js.
 
-Reads scratch/_fig/*.png and report.json; writes img/interface-layout.png,
+Reads tools/figures/_fig/*.png and report.json; writes img/interface-layout.png,
 img/codon-example.png, img/move-slide-example.png and img/tree-example.png.
-Run: node scratch/build_manual_figures.js && python scratch/build_manual_figures.py
+Run: node tools/figures/build_manual_figures.js && python tools/figures/build_manual_figures.py
 """
 import json
 import os
@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 HERE = os.path.dirname(__file__)
 FIG = os.path.join(HERE, '_fig')
-IMG = os.path.join(HERE, '..', 'img')
+IMG = os.path.join(HERE, '..', '..', 'img')
 SCALE = 2  # deviceScaleFactor used for the captures
 report = json.load(open(os.path.join(FIG, 'report.json'), encoding='utf-8'))
 
