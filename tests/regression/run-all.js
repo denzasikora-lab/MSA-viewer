@@ -43,15 +43,23 @@ check('large (crazy) alignment triggers windowed DOM path', async (page) => {
   // that's the windowed-DOM path this check is actually about.
   await loadSyntheticFasta(page, 500, 12000);
   await setMode(page, 'full');
-  const info = await page.evaluate(() => ({
-    isCrazy: !!state.alignmentIndex?.isCrazy,
-    domRows: document.querySelectorAll('.seq-line[data-seq-index]').length,
-  }));
+  const info = await page.evaluate(() => {
+    const container = document.getElementById('alignmentContainer');
+    const row = document.querySelector('.seq-line[data-seq-index]');
+    return {
+      isCrazy: !!state.alignmentIndex?.isCrazy,
+      domRows: document.querySelectorAll('.seq-line[data-seq-index]').length,
+      visibleRows: Math.ceil(container.clientHeight / Math.max(1, row ? row.getBoundingClientRect().height : 16)),
+    };
+  });
   if (!info.isCrazy) return { pass: false, detail: 'expected isCrazy=true for 6M-residue alignment' };
-  if (info.domRows === 0 || info.domRows > 100) {
-    return { pass: false, detail: `expected a small windowed row count (viewport-bounded), got ${info.domRows}` };
+  // Windowed: the rows on screen plus a scroll guard above and below (at most
+  // three screens' worth), never the whole 500-row alignment
+  const limit = Math.min(3 * info.visibleRows, 250);
+  if (info.domRows === 0 || info.domRows > limit) {
+    return { pass: false, detail: `expected a viewport-bounded row count (<= ${limit} for ${info.visibleRows} visible rows), got ${info.domRows}` };
   }
-  return { pass: true };
+  return { pass: true, detail: `${info.domRows} rows in the DOM, ${info.visibleRows} visible` };
 });
 
 check('consensus row respects column windowing on horizontal scroll (v179 regression)', async (page) => {
