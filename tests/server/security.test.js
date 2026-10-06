@@ -74,7 +74,9 @@ async function main() {
     let log = '';
     server.stdout.on('data', d => { log += d; });
     server.stderr.on('data', d => { log += d; });
-    for (let i = 0; i < 50 && !/running on/.test(log); i++) await new Promise(r => setTimeout(r, 100));
+    // Wait for the whole startup banner: "running on" and the loopback notice
+    // are separate writes, and a slow runner can read between them
+    for (let i = 0; i < 200 && !/Initializing BLAST databases/.test(log); i++) await new Promise(r => setTimeout(r, 100));
 
     try {
         check('server listens on loopback only by default', /this machine only/.test(log), log);
