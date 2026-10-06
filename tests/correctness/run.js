@@ -103,6 +103,120 @@ check('consensus: displayed consensus row and Copy selected consensus use the sa
   return { pass: ok, detail: JSON.stringify(r) };
 });
 
+// ---------- MSF ----------
+
+const msf = (type, rows, names = rows.map(r => r[0])) => [
+  'PileUp', '',
+  ` MSF: ${rows[0][1].length}  ${type ? 'Type: ' + type + '  ' : ''}Check: 0 ..`, '',
+  ...names.map(n => ` Name: ${n}  Len: ${rows[0][1].length}  Check: 0  Weight: 1.00`),
+  '', '//', '',
+  ...rows.map(([n, s]) => `${n.padEnd(10)} ${s}`), '',
+].join('\n');
+
+check('MSF: a name that is a prefix of another name keeps both rows', async (page) => {
+  const r = await openText(page, 't.msf', msf('N', [['seq1', 'ACGTACGT'], ['seq10', 'TTTTGGGG']]));
+  const ok = JSON.stringify(r.names) === '["seq1","seq10"]' && JSON.stringify(r.seqs) === '["ACGTACGT","TTTTGGGG"]';
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+check('MSF: names listed short-first and long-first both work', async (page) => {
+  const r = await openText(page, 't.msf', msf('N', [['seq10', 'TTTTGGGG'], ['seq1', 'ACGTACGT']]));
+  const ok = JSON.stringify(r.seqs) === '["TTTTGGGG","ACGTACGT"]';
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+check('MSF: protein residues survive a missing Type line', async (page) => {
+  const r = await openText(page, 't.msf', msf(null, [['p1', 'MKVLEFGIQP'], ['p2', 'MKV-EFGIQP']]));
+  return { pass: r.seqs[0] === 'MKVLEFGIQP' && r.seqs[1] === 'MKV-EFGIQP', detail: JSON.stringify(r.seqs) };
+});
+
+check('MSF: protein residues survive "Type:P" written without a space', async (page) => {
+  const text = msf(null, [['p1', 'MKVLEFGIQP'], ['p2', 'MKVLEFGIQP']]).replace(' MSF: 10  Check', ' MSF: 10  Type:P  Check');
+  const r = await openText(page, 't.msf', text);
+  return { pass: r.seqs[0] === 'MKVLEFGIQP', detail: JSON.stringify(r.seqs) };
+});
+
+check('MSF: ~ and . gaps become -', async (page) => {
+  const r = await openText(page, 't.msf', msf('N', [['a', 'AC~~GT..'], ['b', 'ACGTGTAC']]));
+  return { pass: r.seqs[0] === 'AC--GT--', detail: JSON.stringify(r.seqs) };
+});
+
+// ---------- NEXUS ----------
+
+const nexus = (format, matrix, dims = 'ntax=2 nchar=16') =>
+  `#NEXUS\nbegin data;\n  dimensions ${dims};\n  format ${format};\n  matrix\n${matrix}\n  ;\nend;\n`;
+
+check('NEXUS: a sequential matrix wrapped over several lines is read whole', async (page) => {
+  const r = await openText(page, 't.nex', nexus('datatype=dna missing=? gap=-',
+    't1 ACGTACGT\n   ACGTACGT\nt2 TTTTGGGG\n   CCCCAAAA'));
+  const ok = JSON.stringify(r.names) === '["t1","t2"]' && r.seqs[0] === 'ACGTACGTACGTACGT' && r.seqs[1] === 'TTTTGGGGCCCCAAAA';
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+check('NEXUS: wrapped continuation lines with spaced groups are not taken as taxa', async (page) => {
+  const r = await openText(page, 't.nex', nexus('datatype=dna',
+    't1 ACGT ACGT\n   ACGT ACGT\nt2 TTTT GGGG\n   CCCC AAAA'));
+  const ok = JSON.stringify(r.names) === '["t1","t2"]' && r.seqs[1] === 'TTTTGGGGCCCCAAAA';
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+check('NEXUS: a name on its own line, sequence below', async (page) => {
+  const r = await openText(page, 't.nex', nexus('datatype=dna', 't1\nACGT\nt2\nTTGG', 'ntax=2 nchar=4'));
+  const ok = JSON.stringify(r.names) === '["t1","t2"]' && r.seqs[0] === 'ACGT' && r.seqs[1] === 'TTGG';
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+check('NEXUS: MATCHCHAR is resolved against the first taxon', async (page) => {
+  const r = await openText(page, 't.nex', nexus('datatype=dna missing=? gap=- matchchar=.',
+    't1 ACGTACGT\nt2 ..A.-..?', 'ntax=2 nchar=8'));
+  return { pass: r.seqs[1] === 'ACAT-CG?', detail: JSON.stringify(r.seqs) };
+});
+
+check('NEXUS: MATCHCHAR keeps gaps in the second taxon', async (page) => {
+  const r = await openText(page, 't.nex', nexus('datatype=dna gap=- matchchar=.',
+    't1 ACGTACGT\nt2 ..A.-..T', 'ntax=2 nchar=8'));
+  return { pass: r.seqs[1] === 'ACAT-CGT', detail: JSON.stringify(r.seqs) };
+});
+
+check('NEXUS: polymorphisms {AG} and (CT) are one IUPAC column each', async (page) => {
+  const r = await openText(page, 't.nex', nexus('datatype=dna', 't1 A{AG}G(CT)\nt2 ACGT', 'ntax=2 nchar=4'));
+  return { pass: r.seqs[0] === 'ARGY' && r.seqs[1] === 'ACGT', detail: JSON.stringify(r.seqs) };
+});
+
+check('NEXUS: a custom gap symbol becomes a gap, not a deleted column', async (page) => {
+  const r = await openText(page, 't.nex', nexus('datatype=dna gap=~', 't1 AC~T\nt2 ACGT', 'ntax=2 nchar=4'));
+  return { pass: r.seqs[0] === 'AC-T', detail: JSON.stringify(r.seqs) };
+});
+
+check('NEXUS: interleaved blocks still join per taxon', async (page) => {
+  const r = await openText(page, 't.nex', nexus('datatype=dna interleave',
+    't1 ACGT\nt2 TTTT\n\nt1 GGGG\nt2 CCCC', 'ntax=2 nchar=8'));
+  return { pass: r.seqs[0] === 'ACGTGGGG' && r.seqs[1] === 'TTTTCCCC', detail: JSON.stringify(r.seqs) };
+});
+
+check('NEXUS: a DISTANCES block before DATA is not taken for the alignment', async (page) => {
+  const text = '#NEXUS\nbegin distances;\n dimensions ntax=2;\n matrix\n t1 0\n t2 0.5 0\n ;\nend;\n' +
+    nexus('datatype=dna', 't1 ACGT\nt2 TTGG', 'ntax=2 nchar=4').replace('#NEXUS\n', '');
+  const r = await openText(page, 't.nex', text);
+  return { pass: r.seqs.length === 2 && r.seqs[0] === 'ACGT', detail: JSON.stringify(r.seqs) };
+});
+
+check('NEXUS: datatype=standard keeps digit states', async (page) => {
+  const r = await openText(page, 't.nex', nexus('datatype=standard symbols="012"', 't1 0120\nt2 1?21', 'ntax=2 nchar=4'));
+  return { pass: r.seqs[0] === '0120' && r.seqs[1] === '1?21', detail: JSON.stringify(r.seqs) };
+});
+
+check('NEXUS: NCHAR mismatch is reported, not silent', async (page) => {
+  const r = await openText(page, 't.nex', nexus('datatype=dna interleave', 't1 ACGT\nt2 TTGG', 'ntax=2 nchar=6'));
+  return { pass: /NCHAR=6/.test(r.message), detail: r.message };
+});
+
+check('NEXUS: quoted names with spaces and comments still work', async (page) => {
+  const r = await openText(page, 't.nex', nexus('datatype=dna', "'Homo sapiens' ACGT [c;omment]\n'it''s' TTGG", 'ntax=2 nchar=4'));
+  const ok = r.names[0] === 'Homo_sapiens' && r.seqs[0] === 'ACGT' && r.seqs[1] === 'TTGG';
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const filter = process.env.CHECK_FILTER ? process.env.CHECK_FILTER.toLowerCase() : null;

@@ -6044,10 +6044,54 @@ function _nexusStripComments(text) {
     return out;
 }
 
+// Reads NEXUS FORMAT/DIMENSIONS settings from the text of one block
+function _nexusBlockSettings(blockText) {
+    const opt = (re) => { const m = blockText.match(re); return m ? m[1] : null; };
+    const sym = (key) => {
+        const m = blockText.match(new RegExp('\\b' + key + '\\s*=\\s*(\'[^\']\'|"[^"]"|\\S)', 'i'));
+        if (!m) return null;
+        const v = m[1];
+        return v.length === 3 ? v[1] : v;
+    };
+    const ntax = opt(/\bNTAX\s*=\s*(\d+)/i);
+    const nchar = opt(/\bNCHAR\s*=\s*(\d+)/i);
+    return {
+        ntax: ntax ? parseInt(ntax, 10) : null,
+        nchar: nchar ? parseInt(nchar, 10) : null,
+        datatype: (opt(/\bDATATYPE\s*=\s*(\w+)/i) || 'standard').toLowerCase(),
+        interleave: /\bINTERLEAVE(?!\s*=\s*NO\b)/i.test(blockText),
+        gap: sym('GAP'),
+        missing: sym('MISSING') || '?',
+        matchchar: sym('MATCHCHAR'),
+    };
+}
+
+// One-character code for a NEXUS polymorphism/uncertainty set {AG} or (AG)
+function _nexusSetCode(states, datatype) {
+    const up = states.toUpperCase().replace(/[\s,]/g, '');
+    if (datatype === 'dna' || datatype === 'rna' || datatype === 'nucleotide') return iupacFromBases(up.split(''));
+    if (datatype === 'protein') return _proteinAmbiguityCode(up.split(''));
+    return '?';
+}
+
+// NEXUS parser. Uses the DATA or CHARACTERS block (a TAXA/DISTANCES/TREES
+// MATRIX is never taken for the alignment) and honours its FORMAT settings:
+// INTERLEAVE, GAP, MISSING and MATCHCHAR (resolved against the first taxon).
+// {..}/(..) state sets count as one column: an IUPAC code for DNA/RNA, B/Z/J
+// or X for protein, '?' otherwise. A non-interleaved matrix may wrap a
+// sequence over several lines; NCHAR says where each one ends.
 function parseNexus(text) {
     const t = _nexusStripComments(text.replace(/\r\n?/g, '\n'));
-    const matrixIdx = t.search(/\bMATRIX\b/i);
-    if (matrixIdx < 0) return null;
+    // Prefer the MATRIX inside a DATA or CHARACTERS block
+    let blockStart = -1;
+    const blockRe = /\bBEGIN\s+(DATA|CHARACTERS)\s*;/ig;
+    const bm = blockRe.exec(t);
+    if (bm) blockStart = bm.index;
+    const searchFrom = blockStart >= 0 ? blockStart : 0;
+    const relMatrix = t.slice(searchFrom).search(/\bMATRIX\b/i);
+    if (relMatrix < 0) return null;
+    const matrixIdx = searchFrom + relMatrix;
+    const settings = _nexusBlockSettings(t.slice(searchFrom, matrixIdx));
     // The matrix ends at the first ';' outside a quoted name
     let content = '', quoted = false;
     for (let i = matrixIdx + 6; i < t.length; i++) {
@@ -6056,39 +6100,111 @@ function parseNexus(text) {
         else if (c === ';' && !quoted) break;
         content += c;
     }
-    const seqMap = new Map();
-    const display = new Map();
-    for (const line of content.split('\n')) {
-        const s = line.trim();
-        if (!s) continue;
-        let name, rest;
-        if (s[0] === "'") {
-            const m = s.match(/^'((?:[^']|'')*)'\s*(.*)$/);
-            if (!m) continue;
-            name = m[1].replace(/''/g, "'");
-            rest = m[2];
-        } else if (s[0] === '"') {
-            const m = s.match(/^"([^"]*)"\s*(.*)$/);
-            if (!m) continue;
-            name = m[1];
-            rest = m[2];
-        } else {
-            const m = s.match(/^(\S+)\s+(.*)$/);
-            if (!m) continue;
-            name = m[1].replace(/_/g, ' ');
-            rest = m[2];
+
+    const notices = [];
+    const datatype = settings.datatype;
+    const digitsAreStates = !(datatype === 'dna' || datatype === 'rna' || datatype === 'nucleotide' || datatype === 'protein');
+    // Reads a taxon name at str[pos]; returns [name, nextPos] or null
+    const readName = (str, pos) => {
+        while (pos < str.length && /\s/.test(str[pos])) pos++;
+        if (pos >= str.length) return null;
+        if (str[pos] === "'") {
+            let name = '', i = pos + 1;
+            for (; i < str.length; i++) {
+                if (str[i] === "'") {
+                    if (str[i + 1] === "'") { name += "'"; i++; continue; }
+                    break;
+                }
+                name += str[i];
+            }
+            return [name, i + 1];
         }
-        const seq = rest.replace(/\s/g, '').replace(/[^A-Za-z?*\-.]/g, '');
-        if (!seq) continue;
+        if (str[pos] === '"') {
+            const close = str.indexOf('"', pos + 1);
+            if (close < 0) return null;
+            return [str.slice(pos + 1, close), close + 1];
+        }
+        let i = pos;
+        while (i < str.length && !/\s/.test(str[i])) i++;
+        return [str.slice(pos, i).replace(/_/g, ' '), i];
+    };
+    // Reads up to `limit` columns from str[pos..]; returns [cols, nextPos]
+    const readChars = (str, pos, limit) => {
+        const cols = [];
+        while (pos < str.length && cols.length < limit) {
+            const c = str[pos];
+            if (/\s/.test(c)) { pos++; continue; }
+            if (c === '{' || c === '(') {
+                const close = str.indexOf(c === '{' ? '}' : ')', pos + 1);
+                if (close < 0) { pos = str.length; break; }
+                cols.push(_nexusSetCode(str.slice(pos + 1, close), datatype));
+                pos = close + 1;
+                continue;
+            }
+            cols.push(c);
+            pos++;
+        }
+        return [cols, pos];
+    };
+
+    const order = [];
+    const rows = new Map();
+    const display = new Map();
+    const append = (name, cols) => {
         const key = name.replace(/_/g, ' ');
-        if (!seqMap.has(key)) { seqMap.set(key, ''); display.set(key, name.replace(/ /g, '_')); }
-        seqMap.set(key, seqMap.get(key) + seq);
+        if (!rows.has(key)) { rows.set(key, []); display.set(key, key.replace(/ /g, '_')); order.push(key); }
+        const arr = rows.get(key);
+        for (const c of cols) arr.push(c);
+    };
+
+    if (!settings.interleave && settings.nchar) {
+        // Sequential: name, then exactly NCHAR columns, which may span lines
+        let pos = 0;
+        while (pos < content.length) {
+            const nm = readName(content, pos);
+            if (!nm || !nm[0]) break;
+            const [cols, next] = readChars(content, nm[1], settings.nchar);
+            append(nm[0], cols);
+            pos = next;
+        }
+    } else {
+        // Interleaved, or no NCHAR: one "name residues" pair per line
+        for (const line of content.split('\n')) {
+            const nm = readName(line, 0);
+            if (!nm || !nm[0]) continue;
+            const [cols] = readChars(line, nm[1], Infinity);
+            if (cols.length) append(nm[0], cols);
+        }
     }
-    if (seqMap.size === 0) return null;
+    if (rows.size === 0) return null;
+
+    // Map the block's symbols onto the viewer's alphabet
+    const gapSym = settings.gap;
+    const matchSym = settings.matchchar;
+    const first = rows.get(order[0]);
     const seqs = [];
-    for (const [key, seq] of seqMap) {
-        seqs.push({ header: display.get(key), fullHeader: key, seq: seq, gaplessPositions: calculateGaplessPositions(seq) });
+    for (const key of order) {
+        const cols = rows.get(key);
+        let out = '';
+        for (let i = 0; i < cols.length; i++) {
+            let c = cols[i];
+            if (matchSym && c === matchSym && key !== order[0]) c = first[i] || '?';
+            if (gapSym && c === gapSym) c = '-';
+            else if (c === settings.missing && !/[A-Za-z]/.test(c)) c = '?';
+            if (!/[A-Za-z?*\-.]/.test(c) && !(digitsAreStates && /[0-9]/.test(c))) continue;
+            out += c;
+        }
+        seqs.push({ header: display.get(key), fullHeader: key, seq: out, gaplessPositions: calculateGaplessPositions(out) });
     }
+
+    if (settings.ntax && settings.ntax !== seqs.length) {
+        notices.push(`NEXUS header says NTAX=${settings.ntax} but the matrix has ${seqs.length} taxa`);
+    }
+    if (settings.nchar) {
+        const off = seqs.filter(q => q.seq.length !== settings.nchar);
+        if (off.length) notices.push(`NEXUS header says NCHAR=${settings.nchar} but ${off.length} taxon/taxa differ (e.g. '${off[0].header}' has ${off[0].seq.length})`);
+    }
+    if (notices.length) _parseNotice = notices.join('; ') + '.';
     return seqs;
 }
 
@@ -6255,7 +6371,8 @@ function parseFasta(text) {
 function parseMsf(text) {
     const lines = text.trim().split(/\r?\n/);
     let i = 0;
-    let isNucleic = true;
+    let declaredType = text.includes('!!AA_MULTIPLE_ALIGNMENT') ? 'P'
+        : text.includes('!!NA_MULTIPLE_ALIGNMENT') ? 'N' : null;
     let maxLen = 0;
     const seqMap = {};
     let names = [];
@@ -6264,11 +6381,8 @@ function parseMsf(text) {
     if (headerIndex !== -1) {
         i = headerIndex;
         const headerLine = lines[headerIndex].trim();
-        if (headerLine.includes('Type: P')) {
-            isNucleic = false;
-        } else if (headerLine.includes('Type: N')) {
-            isNucleic = true;
-        }
+        const typeMatch = headerLine.match(/\bType:\s*([NP])/i);
+        if (typeMatch) declaredType = typeMatch[1].toUpperCase();
         i += 1; // Start after header
     } else {
         i = 0;
@@ -6294,6 +6408,7 @@ function parseMsf(text) {
         }
         i += 1;
     }
+    const namesByLength = names.slice().sort((a, b) => b.length - a.length);
     // Parse alignment blocks
     while (i < lines.length) {
         let line = lines[i].trim();
@@ -6307,8 +6422,10 @@ function parseMsf(text) {
             continue;
         }
         let foundName = null;
-        for (let n of names) {
-            if (line.startsWith(n)) {
+        // A row starts with its name followed by whitespace; try longer names
+        // first so 'seq1' never claims a 'seq10' row
+        for (let n of namesByLength) {
+            if (line.startsWith(n) && (line.length === n.length || /\s/.test(line[n.length]))) {
                 foundName = n;
                 let seqPart = line.substring(n.length).trim();
                 let blockSeq = seqPart.replace(/\s+/g, '').replace(/~/g, '-');
@@ -6323,16 +6440,17 @@ function parseMsf(text) {
         }
         i += 1;
     }
+    // Residue letters are kept as written (a wrong or missing Type line must
+    // not turn protein residues into N); only non-letter symbols other than
+    // gaps and '*' become N (nucleotide) or X (protein). Without a Type line
+    // the residues decide.
+    const isNucleic = declaredType ? declaredType === 'N'
+        : !Object.values(seqMap).some(o => /[EFIJLOPQZ]/i.test(o.seq));
     const seqs = [];
     for (let name of names) {
         if (seqMap[name]) {
             let seqObj = seqMap[name];
-            let processedSeq;
-            if (isNucleic) {
-                processedSeq = seqObj.seq.replace(/[^ACGTUNRYMKSWHBVD.\-]/gi, 'N');
-            } else {
-                processedSeq = seqObj.seq.replace(/[^A-Za-z.\-]/g, 'X');
-            }
+            let processedSeq = seqObj.seq.replace(/[^A-Za-z.*\-]/g, isNucleic ? 'N' : 'X');
             processedSeq = processedSeq.replace(/\./g, '-');
             while (processedSeq.length < maxLen) {
                 processedSeq += '-';
