@@ -4,7 +4,10 @@
 //
 //   node tests/correctness/run.js
 //   CHECK_FILTER=consensus node tests/correctness/run.js
+const fs = require('fs');
+const path = require('path');
 const { start } = require('../lib/static-server');
+const ROOT = path.join(__dirname, '..', '..');
 const { launch, loadFasta } = require('../lib/browser');
 
 const CHECKS = [];
@@ -20,6 +23,20 @@ async function openText(page, name, text) {
     seqs: state.seqs.map(s => s.seq),
     message: document.getElementById('statusMessage')?.textContent || document.getElementById('message')?.textContent || '',
   }));
+}
+
+// Open bytes through the file picker and wait for the final status message
+async function openBytes(page, name, buffer) {
+  await page.setInputFiles('#fileInput', { name, mimeType: 'application/octet-stream', buffer });
+  let msg = '';
+  for (let i = 0; i < 40; i++) {
+    await page.waitForTimeout(250);
+    msg = await page.evaluate(() => (document.getElementById('statusMessage') || {}).innerText || '');
+    if (msg && !/^(Scanning|Parsing|Loading|Reading|Detected|Decoding|Fetching)/i.test(msg.trim())) break;
+  }
+  return page.evaluate((msg) => ({
+    names: state.seqs.map(s => s.header), seqs: state.seqs.map(s => s.seq), message: msg,
+  }), msg);
 }
 
 // ---------- consensus ----------
@@ -215,6 +232,127 @@ check('NEXUS: quoted names with spaces and comments still work', async (page) =>
   const r = await openText(page, 't.nex', nexus('datatype=dna', "'Homo sapiens' ACGT [c;omment]\n'it''s' TTGG", 'ntax=2 nchar=4'));
   const ok = r.names[0] === 'Homo_sapiens' && r.seqs[0] === 'ACGT' && r.seqs[1] === 'TTGG';
   return { pass: ok, detail: JSON.stringify(r) };
+});
+
+// ---------- PHYLIP ----------
+
+check('PHYLIP: a stale header length is reported and names keep their residues', async (page) => {
+  const r = await openBytes(page, 't.phy', Buffer.from('2 10\nalpha ACGTACGT\nbeta  ACGAACGA\n'));
+  const ok = JSON.stringify(r.names) === '["alpha","beta"]' && r.seqs[0] === 'ACGTACGT' && /PHYLIP header says 10 columns/.test(r.message);
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+check('PHYLIP: position numbers at line ends are not residues', async (page) => {
+  const r = await openBytes(page, 't.phy', Buffer.from('2 8\nseqA ACGT ACGT 8\nseqB TTTT GGGG 8\n'));
+  return { pass: r.names[0] === 'seqA' && r.seqs[0] === 'ACGTACGT' && r.seqs[1] === 'TTTTGGGG', detail: JSON.stringify(r) };
+});
+
+check('PHYLIP: too few sequences for the header gives a specific error', async (page) => {
+  const r = await openBytes(page, 't.phy', Buffer.from('3 4\na ACGT\nb ACGT\n'));
+  return { pass: /PHYLIP header says 3 sequences/.test(r.message), detail: r.message };
+});
+
+check('PHYLIP: strict 10-character names still load', async (page) => {
+  const r = await openBytes(page, 't.phy', Buffer.from('2 8\nHomo sapieACGTACGT\nPan trogloTTTTGGGG\n'));
+  return { pass: r.seqs[0] === 'ACGTACGT' && r.seqs[1] === 'TTTTGGGG', detail: JSON.stringify(r) };
+});
+
+// ---------- FASTA family ----------
+
+check('A3M: lowercase insertions are expanded so rows line up', async (page) => {
+  const r = await openBytes(page, 't.a3m', Buffer.from('>q\nACDEFGHIK\n>h1\nACdeDEFGHIK\n>h2\nAC-EFGHIKw\n'));
+  const ok = JSON.stringify(r.seqs) === '["AC--DEFGHIK-","ACdeDEFGHIK-","AC---EFGHIKw"]';
+  return { pass: ok && /A3M detected/.test(r.message), detail: JSON.stringify(r) };
+});
+
+check('FASTA: unknown punctuation keeps its column (becomes N), ? is missing data', async (page) => {
+  const r = await openBytes(page, 't.fa', Buffer.from('>a\nACGT!ACGT\n>b\nACGT?ACGT\n'));
+  return { pass: r.seqs[0] === 'ACGTNACGT' && r.seqs[1] === 'ACGTNACGT', detail: JSON.stringify(r.seqs) };
+});
+
+check('FASTA: header words "#NEXUS" or "begin data" do not switch the format', async (page) => {
+  const r = await openBytes(page, 't.fa', Buffer.from('>seq1 converted from #NEXUS\nACGT\n>seq2 how to begin data analysis\nACGA\n'));
+  return { pass: JSON.stringify(r.names) === '["seq1","seq2"]' && r.seqs[1] === 'ACGA', detail: JSON.stringify(r) };
+});
+
+check('PIR/NBRF: the title line is not read as sequence and * ends the sequence', async (page) => {
+  const r = await openBytes(page, 't.pir', Buffer.from('>P1;CRAB_ANAPL\nALPHA CRYSTALLIN B CHAIN\nMDITIHNPLI\nRRPFS*\n>P1;CRAB_BOVIN\nALPHA CRYSTALLIN B CHAIN\nMDIAIHHPWI\nRRPFF*\n'));
+  const ok = JSON.stringify(r.names) === '["CRAB_ANAPL","CRAB_BOVIN"]' && r.seqs[0] === 'MDITIHNPLIRRPFS' && r.seqs[1] === 'MDIAIHHPWIRRPFF';
+  return { pass: ok, detail: JSON.stringify(r) };
+});
+
+// ---------- encodings ----------
+
+check('UTF-16LE files (Windows "Unicode") load', async (page) => {
+  const text = '>séq1\nACGT\n>seq2\nACGA\n';
+  const buf = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(text, 'utf16le')]);
+  const r = await openBytes(page, 't.fa', buf);
+  return { pass: JSON.stringify(r.names) === '["séq1","seq2"]' && r.seqs[0] === 'ACGT', detail: JSON.stringify(r) };
+});
+
+check('Latin-1 names keep their accents', async (page) => {
+  const r = await openBytes(page, 't.fa', Buffer.from('>séq1\nACGT\n>seq2\nACGA\n', 'latin1'));
+  return { pass: r.names[0] === 'séq1', detail: JSON.stringify(r.names) };
+});
+
+// ---------- Stockholm, SAM, GenBank ----------
+
+check('Stockholm: a file with two alignments says only the first is shown', async (page) => {
+  const sto = '# STOCKHOLM 1.0\na ACGT\nb ACGA\n//\n# STOCKHOLM 1.0\nc TTTT\nd TTTA\n//\n';
+  const r = await openBytes(page, 't.sto', Buffer.from(sto));
+  return { pass: r.seqs.length === 2 && /holds 2 alignments/.test(r.message), detail: JSON.stringify(r) };
+});
+
+check('SAM without header whose first read is unmapped is still SAM', async (page) => {
+  const sam = ['u1\t4\t*\t0\t0\t*\t*\t0\t0\tACGT\t*', 'r1\t0\tref\t1\t60\t4M\t*\t0\t0\tACGT\t*', 'r2\t0\tref\t3\t60\t4M\t*\t0\t0\tGTAC\t*'].join('\n');
+  const r = await openBytes(page, 't.txt', Buffer.from(sam));
+  return { pass: r.seqs.length === 3 && !/No valid sequences/.test(r.message), detail: JSON.stringify(r) };
+});
+
+check('GenBank: a feature key outside the old list (ncRNA) starts its own feature', async (page) => {
+  const gb = [
+    'LOCUS       TEST1                     12 bp    DNA     linear   SYN 01-JAN-2000',
+    'FEATURES             Location/Qualifiers',
+    '     gene            1..10',
+    '                     /gene="abc"',
+    '     ncRNA           3..8',
+    '                     /ncRNA_class="miRNA"',
+    'ORIGIN',
+    '        1 acgtacgtac gt',
+    '//', ''].join('\n');
+  await openBytes(page, 't.gb', Buffer.from(gb));
+  const f = await page.evaluate(() => state.seqs[0]._genbank.features.map(x => ({ type: x.type, loc: x.location, q: x.qualifiers })));
+  const ok = f.length === 2 && f[0].q.gene === 'abc' && f[1].type === 'ncRNA' && f[1].loc === '3..8' && f[1].q.ncRNA_class === 'miRNA';
+  return { pass: ok, detail: JSON.stringify(f) };
+});
+
+// ---------- truncated BAM / CRAM ----------
+
+async function readsAfterReference(page, name, bytes) {
+  await openBytes(page, 'htslib_ce_CHROMOSOME_II.fa', fs.readFileSync(path.join(ROOT, 'examples/real/htslib_ce_CHROMOSOME_II.fa')));
+  return openBytes(page, name, bytes);
+}
+
+check('BAM: a complete file loads all 34 reads without a truncation warning', async (page) => {
+  const r = await readsAfterReference(page, 'range.bam', fs.readFileSync(path.join(ROOT, 'examples/real/htslib_range.bam')));
+  return { pass: /Loaded 34 reads/.test(r.message) && !/truncated/.test(r.message), detail: r.message };
+});
+
+check('BAM: a truncated file says it is truncated (not "Failed to fetch")', async (page) => {
+  const full = fs.readFileSync(path.join(ROOT, 'examples/real/htslib_range.bam'));
+  const r = await readsAfterReference(page, 'range.bam', full.subarray(0, Math.floor(full.length * 2 / 3)));
+  return { pass: /truncated/.test(r.message) && !/Failed to fetch/.test(r.message), detail: r.message };
+});
+
+check('CRAM: a complete file has no truncation warning', async (page) => {
+  const r = await readsAfterReference(page, 'range.cram', fs.readFileSync(path.join(ROOT, 'examples/real/htslib_range.cram')));
+  return { pass: /Loaded 34 reads/.test(r.message) && !/truncated/.test(r.message), detail: r.message };
+});
+
+check('CRAM: a truncated file says it is truncated', async (page) => {
+  const full = fs.readFileSync(path.join(ROOT, 'examples/real/htslib_range.cram'));
+  const r = await readsAfterReference(page, 'range.cram', full.subarray(0, Math.floor(full.length * 2 / 3)));
+  return { pass: /truncated/.test(r.message), detail: r.message };
 });
 
 async function main() {

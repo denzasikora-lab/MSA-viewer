@@ -4105,10 +4105,12 @@ function _isSamInput(text) {
     }
     const nonHeader = lines.filter(l => !l.startsWith('@'));
     if (nonHeader.length === 0) return false;
-    const sample = nonHeader[0].split('\t');
-    if (sample.length < 10) return false;
-    const cigar = sample[5] || '';
-    return /^(\d+[MIDNSHP=X])+$/.test(cigar);
+    // Headerless SAM: every sampled line has the 11 mandatory tab-separated
+    // fields with a numeric FLAG and POS and a CIGAR ('*' for unmapped
+    // reads), and at least one read is mapped with a real CIGAR
+    const sample = nonHeader.slice(0, 20).map(l => l.split('\t'));
+    const samLike = f => f.length >= 11 && /^\d+$/.test(f[1]) && /^\d+$/.test(f[3]) && /^(\*|(\d+[MIDNSHP=X])+)$/.test(f[5] || '');
+    return sample.every(samLike) && sample.some(f => f[5] !== '*');
 }
 
 // CIGAR reference span (M/D/N/= operations)
@@ -4206,7 +4208,11 @@ function _parseGenBankRecord(text) {
             } else {
                 const fline = trimmed;
                 // Feature key line (starts with a keyword)
-                if (/^(source|CDS|gene|mRNA|tRNA|rRNA|misc_feature|repeat_region|STS|primer_bind|promoter|exon|intron|misc_RNA|regulatory|LTR|misc_binding|misc_signal|misc_difference|variation|misc_recomb|mobile_element|oriT|protein_bind|stem_loop|sig_peptide|mat_peptide|transit_peptide|3'UTR|5'UTR|polyA_site|D-loop|TATA_signal|RBS|enhancer|CAAT_signal|GC_signal|terminator|rep_origin|D_segment|J_segment|V_segment|C_region|N_region|S_region|gap|assembly_gap|centromere|telomere|operon|iDNA|misc_structure)\b/.test(fline)) {
+                // A feature key starts in column 6 (qualifiers and their
+                // continuation lines start in column 22), so any key - ncRNA,
+                // tmRNA, modified_base, ... - is recognised by its indent
+                const indent = line.length - line.replace(/^ +/, '').length;
+                if (indent >= 5 && indent < 21 && /^[A-Za-z0-9_'*-]+(\s|$)/.test(fline)) {
                     flushCurrentFeature();
                     const match = fline.match(/^([A-Za-z0-9_'.-]+)\s*(.+)?/);
                     currentFeature = { type: match[1], location: match[2] || '', qualifiers: {} };
@@ -5967,7 +5973,8 @@ function parsePhylip(text) {
     const nSeqs = parseInt(hm[1]), alignLen = parseInt(hm[2]);
     if (nSeqs < 1 || alignLen < 1) return null;
     const body = lines.slice(1);
-    const strip = s => s.replace(/\s/g, '');
+    // Whitespace and position numbers some writers put at line ends are not residues
+    const strip = s => s.replace(/[\s\d]/g, '');
     const splitName = {
         relaxed: l => { const m = l.trim().match(/^(\S+)\s+(.*)$/); return m ? [m[1], strip(m[2])] : null; },
         strict: l => l.length > 10 ? [l.substring(0, 10).trim(), strip(l.substring(10))] : null
@@ -6005,14 +6012,20 @@ function parsePhylip(text) {
         () => sequential(splitName.strict), () => interleaved(splitName.strict)
     ];
     let entries = null;
-    for (const attempt of attempts) {
-        const got = attempt();
-        if (got && got.length === nSeqs && got.every(e => e.seq.length === alignLen)) { entries = got; break; }
+    const results = attempts.map(a => a());
+    entries = results.find(got => got && got.length === nSeqs && got.every(e => e.seq.length === alignLen)) || null;
+    if (!entries) {
+        // Nothing fits the header's length. Prefer a reading that gives every
+        // sequence the same length (relaxed names first), and say so: a stale
+        // header must not silently move residues into the names.
+        entries = results.find(got => got && got.length === nSeqs && got.every(e => e.seq.length === got[0].seq.length && e.seq.length > 0))
+            || interleaved(splitName.strict);
+        if (!entries || entries.length < nSeqs) {
+            throw new Error(`PHYLIP header says ${nSeqs} sequences of ${alignLen} columns, but the file does not have ${nSeqs} sequences in either sequential or interleaved layout`);
+        }
+        const lens = Array.from(new Set(entries.map(e => e.seq.length)));
+        _parseNotice = `PHYLIP header says ${alignLen} columns, but the sequences have ${lens.join('/')} - check the header line.`;
     }
-    // Nothing fits the declared length exactly: fall back to strict interleaved,
-    // and let the length-mismatch check report the damage
-    if (!entries) entries = interleaved(splitName.strict);
-    if (!entries || entries.length < nSeqs) return null;
     return entries.map(e => ({ header: e.name, fullHeader: e.name, seq: e.seq, gaplessPositions: calculateGaplessPositions(e.seq) }));
 }
 
@@ -6213,9 +6226,14 @@ function parseStockholm(text) {
     const lines = text.split(/\r?\n/);
     const seqMap = new Map();
     let inAlign = false;
-    for (const line of lines) {
-        const t = line.trim();
-        if (t === '//') break;
+    for (let li = 0; li < lines.length; li++) {
+        const t = lines[li].trim();
+        if (t === '//') {
+            // A Stockholm file may hold several alignments; say that only the first is shown
+            const more = lines.slice(li + 1).filter(l => /^# STOCKHOLM\b/.test(l.trim())).length;
+            if (more) _parseNotice = `This Stockholm file holds ${more + 1} alignments; showing the first. Split the file to view the others.`;
+            break;
+        }
         if (/^# STOCKHOLM\b/.test(t) || t.startsWith('#=GF')) { inAlign = true; continue; }
         if (t.startsWith('#=GR') || t.startsWith('#=GC') || t.startsWith('#')) continue;
         if (!inAlign || !t) continue;
@@ -6331,13 +6349,24 @@ async function readSequenceFile(file) {
             return { text: `>${header}\n${parsed.sequence}\n`, header };
         }
     }
-    const decoder = new TextDecoder('utf-8');
     const bytes = new Uint8Array(buf);
     if (bytes[0] === 0x1f && bytes[1] === 0x8b && typeof BamParser !== 'undefined') {
         // gzip or BGZF: BamParser.decompressBAM handles both single- and multi-member files
-        return { text: decoder.decode(await BamParser.decompressBAM(new Blob([bytes]))), header: null };
+        return { text: _decodeTextBytes(await BamParser.decompressBAM(new Blob([bytes]))), header: null };
     }
-    return { text: decoder.decode(buf), header: null };
+    return { text: _decodeTextBytes(bytes), header: null };
+}
+
+// Text files may be UTF-8 (with or without BOM), UTF-16 with a BOM (Windows
+// "Unicode"), or a legacy single-byte encoding; names keep their accents.
+function _decodeTextBytes(bytes) {
+    if (bytes[0] === 0xFF && bytes[1] === 0xFE) return new TextDecoder('utf-16le').decode(bytes.subarray(2));
+    if (bytes[0] === 0xFE && bytes[1] === 0xFF) return new TextDecoder('utf-16be').decode(bytes.subarray(2));
+    try {
+        return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+    } catch (_) {
+        return new TextDecoder('windows-1252').decode(bytes);
+    }
 }
 
 function parseFasta(text) {
@@ -6345,28 +6374,85 @@ function parseFasta(text) {
     const lines = text.split(/\r\n|\r|\n/);
     const seqs = [];
     let seq = '', header = '';
+    // PIR/NBRF: '>P1;name' (or F1, DL, DC, RL, RC, N1, N3, XX) is followed by
+    // a free-text title line, and the sequence ends with '*'
+    const PIR_HEADER = /^>(P1|F1|DL|DC|RL|RC|N1|N3|XX);/;
+    let pirTitleNext = false, isPir = false;
     try {
         for (let line of lines) {
             line = line.trim();
+            if (pirTitleNext) {
+                pirTitleNext = false;
+                header += line ? ' ' + line : '';
+                continue;
+            }
             if (!line || line.startsWith(';')) continue; // ';' lines are comments in Pearson FASTA
             if (line.startsWith('>')) {
                 if (header) {
-                    _pushParsedFastaSequence(seqs, header, seq);
+                    _pushParsedFastaSequence(seqs, header, isPir ? seq.replace(/\*$/, '') : seq);
                 }
                 seq = '';
-                header = line;
+                isPir = PIR_HEADER.test(line);
+                header = isPir ? '>' + line.slice(4) : line;
+                pirTitleNext = isPir;
             } else if (header) {
-                seq += line.replace(/[_?~]/g, '-').replace(/[^A-Za-z*.\-]/g, '');
+                // Whitespace and digits are layout; any other symbol is a
+                // column (unknown symbols become N/X when sanitised, so the
+                // row keeps its length). '?' is missing data, not a gap.
+                seq += line.replace(/[_~]/g, '-').replace(/[\s\d]/g, '');
             }
         }
         if (header) {
-            _pushParsedFastaSequence(seqs, header, seq);
+            _pushParsedFastaSequence(seqs, header, isPir ? seq.replace(/\*$/, '') : seq);
         }
     } catch (err) {
         console.error('Error in parseFasta:', err);
         return null;
     }
+    if (seqs.length && _looksLikeA3m(seqs)) {
+        const inserted = _expandA3mInsertions(seqs);
+        _parseNotice = `A3M detected: lowercase insertions expanded into ${inserted} insert column${inserted === 1 ? '' : 's'} so the rows line up.`;
+    }
     return seqs.length ? seqs : null;
+}
+
+// A3M (HHsuite) leaves insert states as lowercase letters without padding
+// the other rows, so rows differ in length but have the same number of match
+// columns (uppercase letters and '-').
+function _looksLikeA3m(seqs) {
+    if (seqs.length < 2) return false;
+    if (!seqs.some(s => /[a-z]/.test(s.seq))) return false;
+    if (seqs.every(s => s.seq.length === seqs[0].seq.length)) return false;
+    const matchCols = s => s.seq.replace(/[a-z.]/g, '').length;
+    const m = matchCols(seqs[0]);
+    return m > 0 && seqs.every(s => matchCols(s) === m);
+}
+
+// Pads every insert slot to its longest insertion; returns the number of
+// insert columns added. Insertions stay lowercase, padding is '-'.
+function _expandA3mInsertions(seqs) {
+    const split = seq => {
+        const slots = [''];
+        const match = [];
+        for (const c of seq) {
+            if (c >= 'a' && c <= 'z') slots[slots.length - 1] += c;
+            else if (c !== '.') { match.push(c); slots.push(''); }
+        }
+        return { slots, match };
+    };
+    const parts = seqs.map(s => split(s.seq));
+    const widths = parts[0].slots.map((_, i) => Math.max(...parts.map(p => p.slots[i].length)));
+    for (let k = 0; k < seqs.length; k++) {
+        const { slots, match } = parts[k];
+        let out = '';
+        for (let i = 0; i < slots.length; i++) {
+            out += slots[i] + '-'.repeat(widths[i] - slots[i].length);
+            if (i < match.length) out += match[i];
+        }
+        seqs[k].seq = out;
+        seqs[k].gaplessPositions = calculateGaplessPositions(out);
+    }
+    return widths.reduce((a, b) => a + b, 0);
 }
 function parseMsf(text) {
     const lines = text.trim().split(/\r?\n/);
@@ -7251,6 +7337,18 @@ function _loadCramLib() {
  * stores reads as differences from the reference, so bases are rebuilt from
  * the loaded sequence(s); reads on references that are not loaded are skipped.
  */
+// A CRAM 3 file ends with this fixed end-of-file container; without it the
+// file was cut off (CRAM 2.1 files have a different marker and are not checked)
+const CRAM3_EOF = [0x0f, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0x0f, 0xe0, 0x45, 0x4f, 0x46, 0x00, 0x00, 0x00,
+    0x00, 0x01, 0x00, 0x05, 0xbd, 0xd9, 0x4f, 0x00, 0x01, 0x00, 0x06, 0x06, 0x01, 0x00, 0x01, 0x00, 0x01, 0x00, 0xee,
+    0x63, 0x01, 0x4b];
+async function _cramIsTruncated(file) {
+    const head = new Uint8Array(await file.slice(0, 6).arrayBuffer());
+    if (head[4] !== 3 || file.size < CRAM3_EOF.length) return false;
+    const tail = new Uint8Array(await file.slice(file.size - CRAM3_EOF.length).arrayBuffer());
+    return CRAM3_EOF.some((b, i) => tail[i] !== b);
+}
+
 async function cramToSamText(file) {
     const { CramFile } = await _loadCramLib();
     const loaded = new Map();
@@ -7276,14 +7374,23 @@ async function cramToSamText(file) {
     let header = ((await cram.getHeaderText()) || '').split('\n').filter(l => l.startsWith('@'));
     if (!header.some(l => l.startsWith('@SQ'))) header = refInfo.map(r => `@SQ\tSN:${r.name}\tLN:${r.length}`);
     const out = header.slice();
-    const nContainers = await cram.containerCount();
+    let truncated = await _cramIsTruncated(file);
+    let nContainers = 0;
+    try { nContainers = await cram.containerCount(); } catch (_) { truncated = true; }
     for (let i = 0; i < nContainers; i++) {
-        const container = await cram.getContainerById(i);
-        if (!container) continue;
-        const h = await container.getHeader();
-        if (!h.numRecords) continue;
+        let container, h;
+        try {
+            container = await cram.getContainerById(i);
+            if (!container) continue;
+            h = await container.getHeader();
+        } catch (_) { truncated = true; break; }
+        if (!h || !h.numRecords) continue;
         for (const landmark of h.landmarks) {
-            for (const r of await container.getSlice(landmark).getAllRecords()) {
+            let sliceRecords;
+            try {
+                sliceRecords = await container.getSlice(landmark).getAllRecords();
+            } catch (_) { truncated = true; break; }
+            for (const r of sliceRecords) {
                 const rname = refs[r.sequenceId];
                 if (!loaded.has(rname) || r.isSegmentUnmapped()) continue;
                 const mate = r.nextSequenceId < 0 ? '*' : (r.nextSequenceId === r.sequenceId ? '=' : (refs[r.nextSequenceId] || '*'));
@@ -7293,7 +7400,8 @@ async function cramToSamText(file) {
             }
         }
     }
-    return out.join('\n');
+    const text = out.join('\n');
+    return truncated ? Object.assign(new String(text), { truncated: true }) : text;
 }
 
 async function handleBamFile(event) {
@@ -7306,16 +7414,20 @@ async function handleBamFile(event) {
         const ext = event.readsKind || file.name.split('.').pop().toLowerCase();
         let buf;
 
+        let truncated = false;
         if (ext === 'sam') {
             // SAM is plain text - parse into pseudo-buffer
             const text = await file.text();
             buf = parseSAMToBuffer(text);
         } else if (ext === 'cram') {
             showMessage('Decoding CRAM...', 0);
-            buf = parseSAMToBuffer(await cramToSamText(file));
+            const samText = await cramToSamText(file);
+            truncated = !!samText.truncated;
+            buf = parseSAMToBuffer(String(samText));
         } else {
             // BAM binary - decompress with browser's DecompressionStream
             buf = await BamParser.decompressBAM(file);
+            truncated = !!buf.truncated;
         }
 
         // Parse header (SAM pseudo-buffer or real BAM)
@@ -7373,7 +7485,9 @@ async function handleBamFile(event) {
 
         if (matchedReads.length === 0) {
             statusMessage.style.display = 'none';
-            showMessage('No reads map to the matched reference.', 3000);
+            showMessage(truncated
+                ? `${ext.toUpperCase()} file is truncated (it stops before its end-of-file marker) and no complete reads on ${matchedRef} come before the cut.`
+                : 'No reads map to the matched reference.', truncated ? 0 : 3000);
             return;
         }
 
@@ -7438,7 +7552,11 @@ async function handleBamFile(event) {
         renderAlignment();
         updateBamButtonVisibility();
         statusMessage.style.display = 'none';
-        showMessage(`Loaded ${matchedReads.length} reads on ${matchedRef} (${minPos + 1}-${maxPos})`, 2500);
+        if (truncated) {
+            showMessage(`${ext.toUpperCase()} file is truncated (it stops before its end-of-file marker): loaded the ${matchedReads.length} complete reads on ${matchedRef} (${minPos + 1}-${maxPos}); later reads are missing.`, 0);
+        } else {
+            showMessage(`Loaded ${matchedReads.length} reads on ${matchedRef} (${minPos + 1}-${maxPos})`, 2500);
+        }
 
     } catch (err) {
         statusMessage.style.display = 'none';
@@ -10718,6 +10836,12 @@ async function parseAndRender(isFromDrop = false) {
             parsed = parseSamToAlignment(inputText);
             if (!parsed) throw new Error('SAM parsing failed - check format');
             state.currentFilename = state.currentFilename || 'SAM_import';
+        } else if (/^\s*>/.test(inputText.replace(/^\uFEFF/, '')) && !/^\s*>>/.test(inputText)) {
+            // Text that starts with a '>' header is FASTA, whatever words
+            // ("#NEXUS", "begin data", "LOCUS") appear in its headers
+            parsed = parseFasta(inputText);
+            if (!parsed) throw new Error('FASTA parsing failed');
+            if (!isFromDrop) state.currentFilename = state.currentFilename || 'fasta_import';
         } else if (/^LOCUS\s+/mi.test(inputText)) {
             parsed = parseGenBank(inputText);
             if (!parsed) throw new Error('GenBank parsing failed');
@@ -10733,7 +10857,7 @@ async function parseAndRender(isFromDrop = false) {
             if (!parsed) throw new Error('Stockholm parsing failed');
             state.currentFilename = state.currentFilename || 'stockholm_import';
             showMessage('Detected Stockholm format', 1500);
-        } else if (/#nexus|#NEXUS|begin\s+data/i.test(inputText)) {
+        } else if (/^\s*#NEXUS\b/i.test(inputText.replace(/^\uFEFF/, '')) || /^\s*begin\s+(data|characters)\s*;/im.test(inputText)) {
             parsed = parseNexus(inputText);
             if (!parsed) throw new Error('NEXUS parsing failed');
             state.currentFilename = state.currentFilename || 'nexus_import';

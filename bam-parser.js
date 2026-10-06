@@ -32,11 +32,12 @@ const CIGAR_OPS = 'MIDNSHP=X';
  */
 async function decompressBAM(file) {
     const bytes = new Uint8Array(await file.arrayBuffer());
-    const blocks = splitBgzfBlocks(bytes);
-    if (!blocks) {
+    const split = splitBgzfBlocks(bytes);
+    if (!split) {
         // Not BGZF (plain single-member gzip): one stream is fine
         return gunzipBytes(bytes);
     }
+    const { blocks, truncated } = split;
     const parts = await Promise.all(blocks.map(gunzipBytes));
     let total = 0;
     for (const p of parts) total += p.length;
@@ -46,6 +47,8 @@ async function decompressBAM(file) {
         out.set(p, off);
         off += p.length;
     }
+    // A cut-off file keeps its complete blocks; the caller warns about the rest
+    if (truncated) out.truncated = true;
     return out;
 }
 
@@ -89,21 +92,28 @@ async function sniffBam(bytes) {
 }
 
 /**
- * Split a BGZF file into its gzip members. Returns null if the data is not
- * BGZF (a block header without the "BC" extra subfield).
+ * Split a BGZF file into its gzip members: { blocks, truncated }. Returns null
+ * if the data is not BGZF (the first block has no "BC" extra subfield).
+ * `truncated` is true when the file stops inside a block or does not end with
+ * the empty BGZF end-of-file block; the complete blocks before that are kept.
  */
 function splitBgzfBlocks(bytes) {
     const blocks = [];
     let off = 0;
+    let sawEof = false;
     while (off < bytes.length) {
         const bsize = bgzfBlockSize(bytes, off);
-        if (bsize <= 0 || off + bsize > bytes.length) return null;
+        if (bsize <= 0 || off + bsize > bytes.length) {
+            if (off === 0) return null;
+            return { blocks, truncated: true };
+        }
         // ISIZE (last 4 bytes) of 0 marks an empty block, e.g. the BGZF EOF marker
         const isize = new DataView(bytes.buffer, bytes.byteOffset + off + bsize - 4, 4).getUint32(0, true);
         if (isize > 0) blocks.push(bytes.subarray(off, off + bsize));
+        sawEof = isize === 0;
         off += bsize;
     }
-    return blocks;
+    return { blocks, truncated: !sawEof };
 }
 
 /**
