@@ -1327,8 +1327,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
 
   <h3 id="co-display">6.1 Consensus Display</h3>
   <p>
-    The consensus line shows the most frequent residue (or gap) at each column.
-    Toggle it with the <strong>Show consensus</strong> checkbox. Position it at the
+    The consensus line shows the most frequent residue at each column, when it is
+    frequent enough (see below). Toggle it with the <strong>Show consensus</strong> checkbox. Position it at the
     <strong>Top</strong> or <strong>Bottom</strong> of the alignment via the radio buttons.
   </p>
   <p>Keyboard shortcut: <kbd>Ctrl+B</kbd> inserts a consensus of the selected sequences below them (same as <strong>+ Consensus Below</strong>).</p>
@@ -1336,9 +1336,13 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   <h3 id="co-thresholds">6.2 Thresholds &amp; Coverage</h3>
   <table>
     <tr><th>Parameter</th><th>Meaning</th></tr>
-    <tr><td>Consensus threshold</td><td>A residue must appear in >= this % of sequences at a column to be the consensus call. Below threshold, the position shows <code>?</code></td></tr>
-    <tr><td>Minimum coverage</td><td>A column must have >= this % of non-gap characters to be included. Below coverage, the position shows <code>|</code></td></tr>
+    <tr><td>Consensus threshold</td><td>The most frequent residue is the consensus call when its count is &gt;= this % of <em>all</em> sequences, gaps included (so a column that is half gaps cannot pass a 60% threshold). Below the threshold the <strong>Fallback</strong> applies.</td></tr>
+    <tr><td>Minimum coverage</td><td>A column must have &gt;= this % of non-gap characters; otherwise the consensus shows a gap (<code>-</code>).</td></tr>
+    <tr><td>Normal / Ambiguous</td><td>When two or more residues tie for most frequent, <strong>Normal</strong> takes a definite residue over <code>N</code>/<code>X</code>, then the alphabetically first. <strong>Ambiguous</strong> gives the IUPAC code of tied nucleotides (A+G gives <code>R</code>).</td></tr>
+    <tr><td>Fallback</td><td>What a column below the threshold shows when it holds at least two different residues: <strong>Gap</strong> gives <code>-</code>; <strong>N</strong> gives <code>N</code> (<code>X</code> for protein); <strong>IUPAC</strong> gives the code of the bases present (A, C, G gives <code>V</code>), or for protein <code>B</code> (D/N), <code>Z</code> (E/Q), <code>J</code> (I/L) or <code>X</code>. A column with one residue type and many gaps shows <code>-</code>.</td></tr>
   </table>
+  <p>The consensus always counts gaps in the denominator, whatever the shading mode (All / Non-Gap) is set to.
+     <code>N</code> and <code>X</code> are counted like other residues, so a column that is mostly <code>N</code> has consensus <code>N</code>.</p>
 
   <h3 id="co-group">6.3 Group Consensus</h3>
   <p>

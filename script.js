@@ -3990,39 +3990,67 @@ function _getConsensusOptions() {
         coverageMin: clampMinCoverage(el('consensusMinCoverage')?.value) / 100,
         consType: _checkedRadioValue('consensusType', 'normal'),
         fallbackMode: (document.getElementById('consensusFallback')?.value) || 'gap',
+        isProtein: isProteinAlignment(),
     };
 }
 
+// Protein ambiguity codes for a below-threshold column: B = D/N, Z = E/Q,
+// J = I/L; anything else is X.
+function _proteinAmbiguityCode(residues) {
+    const key = Array.from(new Set(residues)).sort().join('');
+    if (key === 'DN') return 'B';
+    if (key === 'EQ') return 'Z';
+    if (key === 'IL') return 'J';
+    return 'X';
+}
+
+// Consensus character for one column.
+//  - The most frequent residue wins when its count / all rows (gaps included)
+//    reaches the threshold. Ties go to a definite residue over N/X, then
+//    alphabetically; in 'ambiguous' mode a tie between nucleotides gives
+//    their IUPAC code.
+//  - Below the threshold the fallback applies: 'gap' gives '-', 'n' gives N
+//    (X for protein) and 'iupac' gives the IUPAC code of the bases present
+//    (B/Z/J or X for protein), when at least two different residues occur.
 function _computeConsensusCharForColumn(seqArray, pos, opts) {
     const { threshold, coverageMin, consType, fallbackMode } = opts;
-    const col = seqArray.map(s => (s[pos] || '-').toUpperCase());
-    const nonGapCol = col.filter(b => b !== '-' && b !== '.');
-    if (nonGapCol.length === 0) return '-';
-    const coverage = nonGapCol.length / seqArray.length;
-    if (coverage < coverageMin) return '-';
+    const isProtein = !!opts.isProtein;
+    let rows = 0;
+    let nonGap = 0;
     const counts = {};
-    nonGapCol.forEach(b => counts[b] = (counts[b] || 0) + 1);
-    const maxCount = Math.max(...Object.values(counts));
-    const maxBases = Object.keys(counts).filter(b => counts[b] === maxCount);
-    const freq = maxCount / col.length; // denominator includes gaps for consistency with display
-    if (freq >= threshold) {
-        const stdTop = maxBases.map(b => (b === 'U' ? 'T' : b)).filter(b => ['A','C','G','T'].includes(b));
-        if (consType === 'ambiguous') {
-            if (stdTop.length >= 2) return iupacFromBases(stdTop);
-            if (stdTop.length === 1) return stdTop[0];
-            return maxBases.sort()[0];
-        }
-        const normalBases = ['A','C','G','T'].filter(b => counts[b]);
-        if (normalBases.length > 0) {
-            const maxNormal = Math.max(...normalBases.map(b => counts[b] || 0));
-            return normalBases.filter(b => (counts[b] || 0) === maxNormal).sort()[0];
-        }
-        return maxBases.sort()[0];
+    for (const s of seqArray) {
+        rows++;
+        let b = (s[pos] || '-').toUpperCase();
+        if (b === '-' || b === '.' || b === '~') continue;
+        if (!isProtein && b === 'U') b = 'T';
+        nonGap++;
+        counts[b] = (counts[b] || 0) + 1;
     }
-    const presentStd = Object.keys(counts).map(b => (b === 'U' ? 'T' : b)).filter(b => ['A','C','G','T'].includes(b));
-    const uniqueStd = Array.from(new Set(presentStd));
-    if (fallbackMode === 'iupac' && uniqueStd.length >= 2) return iupacFromBases(uniqueStd);
-    if (fallbackMode === 'n' && uniqueStd.length >= 2) return 'N';
+    if (nonGap === 0) return '-';
+    if (nonGap / rows < coverageMin) return '-';
+    let maxCount = 0;
+    for (const b in counts) if (counts[b] > maxCount) maxCount = counts[b];
+    const unknown = isProtein ? 'X' : 'N';
+    const top = Object.keys(counts).filter(b => counts[b] === maxCount).sort();
+    if (maxCount / rows >= threshold) {
+        if (top.length === 1) return top[0];
+        if (consType === 'ambiguous' && !isProtein) {
+            const std = top.filter(b => 'ACGT'.includes(b));
+            if (std.length >= 2) return iupacFromBases(std);
+        }
+        const definite = top.filter(b => b !== unknown && b !== '*');
+        return (definite.length ? definite : top)[0];
+    }
+    const present = Object.keys(counts).filter(b => b !== unknown && b !== '*');
+    if (present.length < 2) return '-';
+    if (isProtein) {
+        if (fallbackMode === 'iupac') return _proteinAmbiguityCode(present);
+        if (fallbackMode === 'n') return 'X';
+        return '-';
+    }
+    const std = present.filter(b => 'ACGT'.includes(b));
+    if (fallbackMode === 'iupac' && std.length >= 2) return iupacFromBases(std);
+    if (fallbackMode === 'n') return 'N';
     return '-';
 }
 
@@ -12213,65 +12241,9 @@ function copySelectedConsensus() {
     }
     const selectedSeqs = Array.from(state.selectedRows).map(i => state.seqs[i].seq);
     const len = Math.max(...selectedSeqs.map(s => s.length));
-    const threshold = clampConsensusPercent(el('consensusThreshold').value) / 100;
-    const consType = _checkedRadioValue('consensusType', 'normal');
-    const fallbackMode = (document.getElementById('consensusFallback')?.value) || 'gap';
-    const coverageMin = clampMinCoverage(el('consensusMinCoverage')?.value) / 100;
-    let consArr = [];
-    for (let pos = 0; pos < len; pos++) {
-        const fullCol = selectedSeqs.map(s => s[pos] || '-');
-        const nonGapCol = fullCol.filter(b => b !== '-' && b !== '.');
-        if (nonGapCol.length === 0) {
-            consArr.push('-');
-            continue;
-        }
-        // Enforce min coverage relative to selected sequences
-        const coverage = nonGapCol.length / selectedSeqs.length;
-        if (coverage < coverageMin) {
-            consArr.push('-');
-            continue;
-        }
-        const counts = {};
-        nonGapCol.forEach(b => counts[b] = (counts[b] || 0) + 1);
-        const maxCount = Math.max(...Object.values(counts));
-        const maxBases = Object.keys(counts).filter(b => counts[b] === maxCount);
-        const freq = maxCount / fullCol.length; // align with displayed consensus
-        if (freq >= threshold) {
-            if (consType === 'ambiguous') {
-                const stdTop = maxBases
-                    .map(b => (b === 'U' ? 'T' : b))
-                    .filter(b => ['A','C','G','T'].includes(b));
-                if (stdTop.length >= 2) {
-                    consArr.push(iupacFromBases(stdTop));
-                } else if (stdTop.length === 1) {
-                    consArr.push(stdTop[0]);
-                } else {
-                    consArr.push(maxBases.sort()[0]);
-                }
-            } else {
-                const normalBases = ['A','C','G','T'].filter(b => counts[b]);
-                if (normalBases.length > 0) {
-                    const maxNormal = Math.max(...normalBases.map(b => counts[b] || 0));
-                    const maxNormalBases = normalBases.filter(b => (counts[b] || 0) === maxNormal);
-                    consArr.push(maxNormalBases.sort()[0]);
-                } else {
-                    consArr.push(maxBases.sort()[0]);
-                }
-            }
-        } else {
-            const presentStd = Object.keys(counts)
-                .map(b => (b === 'U' ? 'T' : b))
-                .filter(b => ['A','C','G','T'].includes(b));
-            const uniqueStd = Array.from(new Set(presentStd));
-            if (fallbackMode === 'iupac' && uniqueStd.length >= 2) {
-                consArr.push(iupacFromBases(uniqueStd));
-            } else if (fallbackMode === 'n' && uniqueStd.length >= 2) {
-                consArr.push('N');
-            } else {
-                consArr.push('-');
-            }
-        }
-    }
+    const opts = _getConsensusOptions();
+    const consArr = [];
+    for (let pos = 0; pos < len; pos++) consArr.push(_computeConsensusCharForColumn(selectedSeqs, pos, opts));
     // By default we copy consensus without gaps, mirroring Copy Consensus behavior
     const consStr = consArr.join('');
     const gapless = consStr.replace(/-/g, '');
