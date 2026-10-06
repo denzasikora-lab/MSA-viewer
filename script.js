@@ -10601,6 +10601,11 @@ const ALIGN_CRAZY_VOLUME = 5_000_000;
 // windowed DOM renderer (renderUnifiedWindowedDom) instead of the classic
 // full-build path, without affecting the crazy-alignment dialog or the
 // Canvas auto-switch (both still gated by ALIGN_CRAZY_VOLUME).
+// Measured 2026-10 at 300 x 1,000: the full build blocks the page 2.3 s on a
+// switch to Full (1.3 s Block, 1.2 s on load); windowed it is 0.4 s with
+// similar scrolling. Lowering this to ~100,000 would remove those freezes but
+// also the Show 2D block-mask overlay, which the windowed display does not
+// support yet (renderBlockMaskOverlay), so it stays at 500,000 for now.
 const ALIGN_WINDOWED_DOM_THRESHOLD = 500_000;
 
 /** Single-pass FASTA scan: counts sequences and lengths without building seq objects. */
@@ -24931,9 +24936,18 @@ function makeBarInputGuard(bar) {
     window._syncHorizontalScrollbar = syncSizes;
     bar.addEventListener('scroll', onBarScroll, { passive: true });
     alignment.addEventListener('scroll', onAlignmentScroll, { passive: true });
-    window.addEventListener('resize', () => window.requestAnimationFrame(syncSizes));
+    // At most one re-measure per frame: syncSizes reads scrollWidth, which forces
+    // a layout, and the windowed renderer mutates the alignment many times per
+    // scroll step (each mutation used to queue its own re-measure).
+    let syncQueued = false;
+    const scheduleSync = () => {
+        if (syncQueued) return;
+        syncQueued = true;
+        window.requestAnimationFrame(() => { syncQueued = false; syncSizes(); });
+    };
+    window.addEventListener('resize', scheduleSync);
     // Only watch for actual content changes, NOT style changes (which would be triggered by zoom)
-    const mo = new MutationObserver(() => window.requestAnimationFrame(syncSizes));
+    const mo = new MutationObserver(scheduleSync);
     mo.observe(alignment, { childList: true, subtree: true, characterData: false, attributes: false });
 
     // Drag-to-pan with Pointer Events and capture for robustness

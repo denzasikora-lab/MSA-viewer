@@ -192,20 +192,27 @@
     // ---------------- names and announcements ----------------
     function hasAccessibleName(n) {
         if (n.getAttribute('aria-label') || n.getAttribute('aria-labelledby')) return true;
-        if (n.id && document.querySelector(`label[for="${CSS.escape(n.id)}"]`)) return true;
-        // a <label> names only its first control
-        const label = n.closest('label');
-        if (label && label.control === n && label.textContent.trim()) return true;
+        // n.labels: <label for> and the wrapping <label> (which names only its first control)
+        if (n.labels && Array.prototype.some.call(n.labels, l => l.textContent.trim())) return true;
         if ((n.tagName === 'BUTTON' || n.tagName === 'A') && n.textContent.trim().length > 1) return true;
         return false;
     }
 
-    function nameControls(root = document) {
-        root.querySelectorAll('button, input:not([type="hidden"]), select, textarea, a[href]').forEach(n => {
-            if (hasAccessibleName(n)) return;
-            const label = n.getAttribute('title') || n.getAttribute('placeholder') || n.dataset.label;
-            if (label) n.setAttribute('aria-label', label.trim());
-        });
+    const CONTROL = 'button, input:not([type="hidden"]), select, textarea, a[href]';
+    const named = new WeakSet();
+    function nameControls(roots) {
+        for (const root of roots) {
+            if (!root || !root.querySelectorAll) continue;
+            const list = root.matches && root.matches(CONTROL) ? [root] : [];
+            for (const n of root.querySelectorAll(CONTROL)) list.push(n);
+            for (const n of list) {
+                if (named.has(n)) continue;
+                named.add(n);
+                if (hasAccessibleName(n)) continue;
+                const label = n.getAttribute('title') || n.getAttribute('placeholder') || n.dataset.label;
+                if (label) n.setAttribute('aria-label', label.trim());
+            }
+        }
     }
 
     function setupLiveRegions() {
@@ -220,15 +227,18 @@
         setupMenus();
         setupDialogs();
         setupLiveRegions();
-        nameControls();
+        const watched = () => [document.getElementById('controls'), ...Object.keys(DIALOGS).map(id => document.getElementById(id))];
+        nameControls([...watched(), ...Array.from(document.body.children).filter(n => n.id !== 'viewer-container')]);
         // Controls added later (windows filled on open, menus built on demand).
-        // Only the menus, the windows and top-level popups are watched: the
-        // alignment itself creates thousands of nodes per render.
-        let pending = false;
-        const rename = () => {
-            if (pending) return;
-            pending = true;
-            setTimeout(() => { pending = false; nameControls(); }, 200);
+        // Only the menus, the windows and top-level popups are watched, and
+        // only the added nodes are scanned: the alignment itself creates
+        // thousands of nodes per render and scroll step.
+        let pendingRoots = [], timer = null;
+        const rename = (records) => {
+            for (const r of records) for (const n of r.addedNodes) if (n.nodeType === 1 && n.id !== 'viewer-container') pendingRoots.push(n);
+            if (pendingRoots.length && !timer) {
+                timer = setTimeout(() => { timer = null; const roots = pendingRoots; pendingRoots = []; nameControls(roots); }, 200);
+            }
         };
         const mo = new MutationObserver(rename);
         const controls = document.getElementById('controls');
