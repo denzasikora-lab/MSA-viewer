@@ -5202,6 +5202,34 @@ function _getCanvasShadePalette() {
     };
 }
 
+// Canvas cells take the colours a Full/Block cell with the same class list
+// gets from the stylesheet (read once per class list through the export
+// probe and cached until the scheme or shading colours change), so the two
+// renderers cannot disagree.
+let _canvasStyleCache = { sig: '', map: new Map(), ann: new Map() };
+function _canvasCellStyler(scheme, pal, config) {
+    const sig = scheme + '|' + Object.values(pal).join(',');
+    if (_canvasStyleCache.sig !== sig) _canvasStyleCache = { sig, map: new Map(), ann: new Map() };
+    const { map, ann } = _canvasStyleCache;
+    const noData = { hasData: false, hasValidCoverage: false };
+    let probe = null;
+    return function (base, posData) {
+        const shade = applyConservationShadeClass(base.toUpperCase(), posData || noData, config);
+        const key = shade + '|' + base;
+        let st = map.get(key);
+        if (!st) {
+            let a = ann.get(base);
+            if (a === undefined) { a = getResidueAnnotationClasses(base, RENDER_STANDARD_BASES, RENDER_AMBIGUOUS_BASES, scheme); ann.set(base, a); }
+            if (!probe) probe = _makeCellStyleProbe();
+            st = probe.style(a ? shade + ' ' + a : shade);
+            map.set(key, st);
+            // the probe is only needed while new class lists turn up
+            queueMicrotask(() => { if (probe) { probe.dispose(); probe = null; } });
+        }
+        return st;
+    };
+}
+
 function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, darkThresh, lightThresh,
                                   enableBlack, enableDark, enableLight, nameLen, stickyNames) {
     alignmentContainer.innerHTML = '';
@@ -5360,6 +5388,10 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
         // recomputed for every glyph).
         const drawScheme = getEffectiveColorScheme();
         const pal = _getCanvasShadePalette();
+        const canvasCellStyle = _canvasCellStyler(drawScheme, pal, {
+            blackThresh, darkThresh, lightThresh, enableBlack, enableDark, enableLight,
+            colorScheme: drawScheme, effectiveColorScheme: drawScheme,
+        });
 
         // Position scale (10, *, 20, * ...) - only the visible column window, same
         // generateScale() as Full/Block mode; cost is O(visible cols), not alignment length.
@@ -5398,30 +5430,11 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
             for (let p = firstCol; p <= lastCol; p++) {
                 const x = NAME_W + p * CHAR_W - ox;
                 const base = seq[p] || '-';
-                const baseUp = base.toUpperCase();
                 const pd = consPos[p];
-                const schemeStyle = getResidueSchemeStyle(base, drawScheme);
-                // Defaults match Normal mode's ".other"/".gap" CSS classes so
-                // unshaded residues render identically between the two modes.
-                let textFill = '#000';
-                let bgFill = null;
-
-                if (schemeStyle) {
-                    bgFill = schemeStyle.bg;
-                    textFill = schemeStyle.fg;
-                } else if (pd && pd.hasData && pd.hasValidCoverage) {
-                    if (baseUp !== '-' && baseUp !== '.' && pd.consensusBases && pd.consensusBases.has(baseUp)) {
-                        if (enableBlack && pd.conservation >= blackThresh) textFill = pal.blackFg, bgFill = pal.blackBg;
-                        else if (enableDark && pd.conservation >= darkThresh) textFill = pal.darkFg, bgFill = pal.darkBg;
-                        else if (enableLight && pd.conservation >= lightThresh) textFill = pal.lightFg, bgFill = pal.lightBg;
-                    } else if (baseUp === '-' || baseUp === '.') {
-                        textFill = '#888';
-                        bgFill = '#fff';
-                    }
-                } else if (baseUp === '-' || baseUp === '.') {
-                    textFill = '#888';
-                    bgFill = '#fff';
-                }
+                // Same class list and stylesheet colours as a Full/Block cell
+                const cellStyle = canvasCellStyle(base, pd);
+                let textFill = cellStyle.fg;
+                let bgFill = cellStyle.bg === '#ffffff' ? null : cellStyle.bg;
 
                 // Trim preview tint (DOM: .trim-left / .trim-right)
                 const trimmed = trim && (p <= trim.leftTrimEnd || p >= trim.rightTrimStart);
@@ -5429,11 +5442,11 @@ function _renderCanvasAlignment(len, conservationData, shadeMode, blackThresh, d
 
                 // Search hits, TSD marks, repeats, SNP letters: the same rule as the DOM
                 const ov = ovCtx.any ? residueOverlay(ovCtx, p, base) : null;
-                let variant = '';
+                let variant = cellStyle.bold ? 'b' : '';
                 if (ov) {
                     if (ov.bg) bgFill = ov.bg;
                     if (ov.fg) textFill = ov.fg;
-                    variant = (ov.bold ? 'b' : '') + (ov.italic ? 'i' : '') + (ov.sans ? 's' : '');
+                    variant = (ov.bold || cellStyle.bold ? 'b' : '') + (ov.italic ? 'i' : '') + (ov.sans ? 's' : '');
                 }
                 // Single blit from glyph cache (eliminates fillStyle+fillRect+fillStyle+fillText)
                 ctx.drawImage(_makeGlyph(base, bgFill, textFill, variant), x, y, CHAR_W, CHAR_H);
@@ -7155,8 +7168,12 @@ function _canvasScaleInterval(charW) {
 
 const CONSERVATION_MIN_COVERAGE = 0.3; // Require at least 30% non-gap sequences for coloring
 
-function _computeConservationForColumn(seqs, seqCount, pos, shadeMode) {
-    // Count bases directly without creating intermediate arrays
+function _computeConservationForColumn(seqs, seqCount, pos, shadeMode, unknownN = !isProteinAlignment()) {
+    // Count bases directly without creating intermediate arrays. Unknown
+    // residues (N/X/? in nucleotides, X/? in proteins) cover the column but are
+    // never "conserved": a masked run of N must not shade as identical.
+    // unknownN (N is unknown: a nucleotide alignment) is passed by loops so the
+    // alignment type is looked up once, not per column.
     const counts = {};
     let nonGapCount = 0;
 
@@ -7164,8 +7181,9 @@ function _computeConservationForColumn(seqs, seqCount, pos, shadeMode) {
         const rawBase = seqs[s].seq[pos] || '-';
         const base = rawBase.toUpperCase();
         if (base !== '-' && base !== '.') {
-            counts[base] = (counts[base] || 0) + 1;
             nonGapCount++;
+            if (base === 'X' || base === '?' || (unknownN && base === 'N')) continue;
+            counts[base] = (counts[base] || 0) + 1;
         }
     }
 
@@ -7196,8 +7214,9 @@ function _computeConservationForColumn(seqs, seqCount, pos, shadeMode) {
 function preCalculateConservation(seqs, len, shadeMode) {
     const conservationData = new Array(len);
     const seqCount = seqs.length;
+    const unknownN = !isProteinAlignment();
     for (let pos = 0; pos < len; pos++) {
-        conservationData[pos] = _computeConservationForColumn(seqs, seqCount, pos, shadeMode);
+        conservationData[pos] = _computeConservationForColumn(seqs, seqCount, pos, shadeMode, unknownN);
     }
     return conservationData;
 }
@@ -7209,12 +7228,13 @@ function preCalculateConservation(seqs, len, shadeMode) {
 function preCalculateConservationChunked(seqs, len, shadeMode, onDone, token) {
     const conservationData = new Array(len);
     const seqCount = seqs.length;
+    const unknownN = !isProteinAlignment();
     let pos = 0;
     function step() {
         if (token && token.cancelled) return;
         const t0 = performance.now();
         while (pos < len && (performance.now() - t0) < 8) {
-            conservationData[pos] = _computeConservationForColumn(seqs, seqCount, pos, shadeMode);
+            conservationData[pos] = _computeConservationForColumn(seqs, seqCount, pos, shadeMode, unknownN);
             pos++;
         }
         if (pos < len) {
@@ -9533,8 +9553,10 @@ function isAlignmentGapChar(ch) {
     return c === '' || c === '*' || /[-.~\s]/.test(c);
 }
 
+// Drops gaps only; '*' (stop) is a residue here as it is in coordinates
+// (calculateGaplessPositions), so ungapped copies keep internal stops
 function degapResidues(seq) {
-    return Array.from(String(seq || '')).filter(ch => !isAlignmentGapChar(ch)).join('');
+    return String(seq || '').replace(/[-.~\s]/g, '');
 }
 
 function getNucCharAt(rowIndex, pos) {
@@ -9636,7 +9658,8 @@ const AMINO_ACID_GROUP_CLASSES = {
     S: 'aa-polar', T: 'aa-polar', N: 'aa-polar', Q: 'aa-polar',
     F: 'aa-aromatic', W: 'aa-aromatic', Y: 'aa-aromatic',
     C: 'aa-special', G: 'aa-special', P: 'aa-special',
-    B: 'aa-special', Z: 'aa-special', X: 'aa-special', J: 'aa-special', O: 'aa-special', U: 'aa-special',
+    // B (D/N), Z (E/Q), J (I/L) and X are uncertain: a neutral colour, not G/P/C's
+    B: 'aa-unknown', Z: 'aa-unknown', X: 'aa-unknown', J: 'aa-unknown', O: 'aa-special', U: 'aa-special',
     '*': 'aa-stop'
 };
 const NUCLEOTIDE_ORIENTED_SCHEMES = new Set(['nucleotide', 'purine-pyrimidine', 'ambiguity']);
@@ -9648,6 +9671,7 @@ const RESIDUE_SCHEME_STYLES = {
         'aa-polar': { bg: '#8ee68e', fg: '#064906' },
         'aa-aromatic': { bg: '#8fe6ff', fg: '#07495a' },
         'aa-special': { bg: '#ffe680', fg: '#5c4600' },
+        'aa-unknown': { bg: '#dddddd', fg: '#333333' },
         'aa-stop': { bg: '#222222', fg: '#ffffff' }
     },
     'aa-jalview': {
@@ -9657,6 +9681,7 @@ const RESIDUE_SCHEME_STYLES = {
         'aa-polar': { bg: '#99e699', fg: '#064906' },
         'aa-aromatic': { bg: '#d6b3ff', fg: '#3d0b63' },
         'aa-special': { bg: '#ffff99', fg: '#555500' },
+        'aa-unknown': { bg: '#dddddd', fg: '#333333' },
         'aa-stop': { bg: '#222222', fg: '#ffffff' }
     },
     'nucleotide': {
@@ -9685,8 +9710,9 @@ const RESIDUE_SCHEME_STYLES = {
     }
 };
 const RESIDUE_SCHEME_CLASS_PRIORITY = [
-    'aa-stop', 'aa-hydrophobic', 'aa-positive', 'aa-negative', 'aa-polar', 'aa-aromatic', 'aa-special',
-    'iupac-ambiguous', 'base-R', 'base-Y', 'base-S', 'base-W', 'base-K', 'base-M', 'base-H', 'base-B', 'base-V', 'base-D',
+    'aa-stop', 'aa-hydrophobic', 'aa-positive', 'aa-negative', 'aa-polar', 'aa-aromatic', 'aa-special', 'aa-unknown',
+    // per-code colours first: the stylesheet lets base-R etc. override iupac-ambiguous
+    'base-R', 'base-Y', 'base-S', 'base-W', 'base-K', 'base-M', 'base-H', 'base-B', 'base-V', 'base-D', 'iupac-ambiguous',
     'pp-purine', 'pp-pyrimidine',
     'base-A', 'base-C', 'base-G', 'base-T', 'base-U', 'base-N'
 ];
@@ -9696,6 +9722,25 @@ let _proteinSchemeRemapWarned = false;
 let _parseNotice = '';
 
 let _proteinMemoArr = null, _proteinMemoType = null, _proteinMemoVal = false;
+// Protein when a protein-only letter (E F I J L O P Q Z) occurs, or when more
+// than 10% of the letters are not nucleotide/IUPAC codes. One masked X or a
+// '*' no longer turns a nucleotide alignment into protein.
+const _NUCLEOTIDE_LETTER = new Uint8Array(128);
+for (const ch of 'ACGTUNRYMKSWHBVDacgtunrymkswhbvd') _NUCLEOTIDE_LETTER[ch.charCodeAt(0)] = 1;
+function _alignmentLooksProtein(seqs) {
+    let letters = 0, other = 0;
+    for (const entry of seqs) {
+        const seq = entry.seq || '';
+        if (/[EFIJLOPQZefijlopqz]/.test(seq)) return true;
+        for (let i = 0; i < seq.length && letters < 2000000; i++) {
+            const c = seq.charCodeAt(i);
+            if (c >= 128 || !((c >= 65 && c <= 90) || (c >= 97 && c <= 122))) continue;
+            letters++;
+            if (!_NUCLEOTIDE_LETTER[c]) other++;
+        }
+    }
+    return letters > 0 && other / letters > 0.1;
+}
 function isProteinAlignment(seqs = state.seqs) {
     if (!seqs || seqs.length === 0) return false;
     const seqType = el('mafftSeqType')?.value;
@@ -9704,7 +9749,7 @@ function isProteinAlignment(seqs = state.seqs) {
     // canvas hot loops, so memoize by array identity (a new array is created on
     // load; edits mutate in place and never flip nucleotide/protein status).
     if (seqs === _proteinMemoArr && seqType === _proteinMemoType) return _proteinMemoVal;
-    const value = seqs.some(entry => _isProteinFastaSequence(entry.seq));
+    const value = _alignmentLooksProtein(seqs);
     _proteinMemoArr = seqs;
     _proteinMemoType = seqType;
     _proteinMemoVal = value;
@@ -9759,12 +9804,15 @@ function getResidueAnnotationClasses(base, standard = RENDER_STANDARD_BASES, amb
         classes.push('base-STOP');
     }
 
-    const isProteinScheme = colorScheme === 'aa-clustal' || colorScheme === 'aa-jalview';
-    const isAmbiguousNucleotide = !isProteinScheme && (ambiguous.has(base) || ambiguous.has(baseUp));
-    const isKnownNucleotide = standard.has(base) || standard.has(baseUp) || isAmbiguousNucleotide;
+    // Protein residues are judged as amino acids whatever the colour scheme:
+    // in the default monochrome scheme E, F, I, L, P, Q used to be flagged as
+    // non-nucleotide "artifacts" (red on pink) and M as an IUPAC code
+    const isProtein = colorScheme === 'aa-clustal' || colorScheme === 'aa-jalview' || isProteinAlignment();
+    const isAmbiguousNucleotide = !isProtein && (ambiguous.has(base) || ambiguous.has(baseUp));
+    const isKnownNucleotide = !isProtein && (standard.has(base) || standard.has(baseUp) || isAmbiguousNucleotide);
     const isAminoAcidSymbol = /^[A-Z*]$/.test(baseUp) && Boolean(AMINO_ACID_GROUP_CLASSES[baseUp]);
 
-    if (!isKnownNucleotide && !(isProteinScheme && isAminoAcidSymbol)) {
+    if (!isKnownNucleotide && !(isProtein && isAminoAcidSymbol)) {
         classes.push('artifact');
     } else if (isAmbiguousNucleotide) {
         classes.push('ambiguous', 'iupac-ambiguous');
@@ -22593,7 +22641,8 @@ function reshadeChangedColumnsInPlace(cols) {
         ? state.conservationDataCache.data.slice() // don't mutate a cache array another reader might still hold
         : null;
     if (conservationData) {
-        cols.forEach(pos => { conservationData[pos] = _computeConservationForColumn(state.seqs, seqCount, pos, shadeMode); });
+        const unknownN = !isProteinAlignment();
+        cols.forEach(pos => { conservationData[pos] = _computeConservationForColumn(state.seqs, seqCount, pos, shadeMode, unknownN); });
     } else {
         conservationData = preCalculateConservation(state.seqs, len, shadeMode);
     }
@@ -22840,7 +22889,8 @@ function patchColumnsInPlace(fromPos, oldWidth) {
         ? cache.data.slice(0, from) : null;
     let conservationData;
     if (cons) {
-        for (let pos = from; pos < len; pos++) cons[pos] = _computeConservationForColumn(state.seqs, seqCount, pos, shadeMode);
+        const unknownN = !isProteinAlignment();
+        for (let pos = from; pos < len; pos++) cons[pos] = _computeConservationForColumn(state.seqs, seqCount, pos, shadeMode, unknownN);
         conservationData = cons;
     } else {
         conservationData = preCalculateConservation(state.seqs, len, shadeMode);

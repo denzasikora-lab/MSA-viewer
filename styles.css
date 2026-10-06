@@ -2347,6 +2347,7 @@ body.edit-dragging .seq-data {
 #alignmentContainer.color-scheme-aa-clustal .seq-data .aa-aromatic { background-color: #8fe6ff !important; color: #07495a !important; }
 #alignmentContainer.color-scheme-aa-clustal .seq-data .aa-special { background-color: #ffe680 !important; color: #5c4600 !important; }
 #alignmentContainer.color-scheme-aa-clustal .seq-data .aa-stop { background-color: #222 !important; color: #fff !important; }
+#alignmentContainer.color-scheme-aa-clustal .seq-data .aa-unknown { background-color: #ddd !important; color: #333 !important; }
 
 #alignmentContainer.color-scheme-aa-jalview .seq-data .aa-hydrophobic { background-color: #ffcc99 !important; color: #5c2c00 !important; }
 #alignmentContainer.color-scheme-aa-jalview .seq-data .aa-positive { background-color: #99ccff !important; color: #06345f !important; }
@@ -2355,6 +2356,7 @@ body.edit-dragging .seq-data {
 #alignmentContainer.color-scheme-aa-jalview .seq-data .aa-aromatic { background-color: #d6b3ff !important; color: #3d0b63 !important; }
 #alignmentContainer.color-scheme-aa-jalview .seq-data .aa-special { background-color: #ffff99 !important; color: #555500 !important; }
 #alignmentContainer.color-scheme-aa-jalview .seq-data .aa-stop { background-color: #222 !important; color: #fff !important; }
+#alignmentContainer.color-scheme-aa-jalview .seq-data .aa-unknown { background-color: #ddd !important; color: #333 !important; }
 .selected .seq-name {
     background-color: var(--selected-bg) !important;
     color: #000 !important;

@@ -459,6 +459,103 @@ check('export: RTF escapes \\ { } and non-ASCII in names', async (page) => {
   return { pass: file.text.includes('a\\{b\\}\\\\c\\u233?'), detail: file.text.split('\n').find(l => l.includes('a\\{')) || file.text.slice(0, 400) };
 });
 
+// ---------- rendering ----------
+
+async function cellStyle(page, row, pos) {
+  return page.evaluate(({ row, pos }) => {
+    const span = document.querySelector(`.seq-line[data-seq-index="${row}"] .seq-data span[data-pos="${pos}"]`);
+    if (!span) return null;
+    const cs = getComputedStyle(span);
+    return { cls: span.className, bg: _cssColourToHex(cs.backgroundColor) || '#ffffff', fg: _cssColourToHex(cs.color) || '#000000' };
+  }, { row, pos });
+}
+
+async function setScheme(page, scheme) {
+  await page.evaluate(async (scheme) => { document.getElementById('colorSchemeSelect').value = scheme; await renderAlignment(); }, scheme);
+}
+
+check('rendering: conserved protein residues are shaded in monochrome, not flagged as artifacts', async (page) => {
+  await loadFasta(page, '>p1\nMEFILPQW\n>p2\nMEFILPQW\n>p3\nMEFILPQW\n');
+  await setScheme(page, 'monochrome');
+  const cells = [];
+  for (let pos = 0; pos < 8; pos++) cells.push(await cellStyle(page, 2, pos));
+  const bad = cells.filter(c => c.bg !== '#000000' || c.fg !== '#ffffff' || /artifact|ambiguous/.test(c.cls));
+  return { pass: bad.length === 0, detail: JSON.stringify(bad) };
+});
+
+check('rendering: Canvas draws the same colours as Full view (IUPAC codes, protein, gaps)', async (page) => {
+  const cases = [
+    ['ambiguity', '>n1\nARYSWKMN-A\n>n2\nARYSWKMN-A\n>n3\nACGTACGT-A\n'],
+    ['monochrome', '>p1\nMEFILPQWX-\n>p2\nMEFILPQWX-\n>p3\nMEFILPQAK-\n'],
+    ['aa-clustal', '>p1\nMEFILPQWX*\n>p2\nMEFILPQWXB\n'],
+  ];
+  const problems = [];
+  for (const [scheme, fasta] of cases) {
+    await loadFasta(page, fasta);
+    await setScheme(page, scheme);
+    await setMode(page, 'full');
+    const dom = [];
+    for (let pos = 0; pos < 10; pos++) dom.push(await cellStyle(page, 0, pos));
+    await setMode(page, 'canvas');
+    await page.waitForTimeout(300);
+    const px = await page.evaluate(() => {
+      const c = document.getElementById('alignmentCanvas');
+      const m = _canvasState.metrics;
+      const ctx = c.getContext('2d');
+      const dpr = c.width / c.clientWidth;
+      const out = [];
+      for (let pos = 0; pos < 10; pos++) {
+        const x = Math.floor((m.nameW + pos * m.charW - _canvasState.offsetX + 1) * dpr);
+        // bottom-left corner of the cell: background, below uppercase glyphs
+        const y = Math.floor((m.headerH - _canvasState.offsetY + m.charH - 2) * dpr);
+        const d = ctx.getImageData(x, y, 1, 1).data;
+        // an unshaded cell is left transparent on the white page
+        out.push(d[3] === 0 ? '#ffffff' : '#' + [d[0], d[1], d[2]].map(v => v.toString(16).padStart(2, '0')).join(''));
+      }
+      return out;
+    });
+    dom.forEach((d, pos) => { if (d && d.bg !== px[pos]) problems.push(`${scheme} col ${pos + 1}: Full ${d.bg}, Canvas ${px[pos]}`); });
+  }
+  return { pass: problems.length === 0, detail: problems.join('; ') };
+});
+
+check('rendering: a column of N (masked) is not shaded as conserved', async (page) => {
+  await loadFasta(page, '>a\nANNA\n>b\nANNA\n>c\nANNA\n');
+  await setScheme(page, 'monochrome');
+  const n = await cellStyle(page, 0, 1), a = await cellStyle(page, 0, 0);
+  return { pass: n.bg === '#ffffff' && a.bg === '#000000', detail: JSON.stringify({ n, a }) };
+});
+
+check('rendering: a column of X in a protein alignment is not shaded as conserved', async (page) => {
+  await loadFasta(page, '>a\nMXXL\n>b\nMXXL\n>c\nMXXL\n');
+  await setScheme(page, 'monochrome');
+  const x = await cellStyle(page, 0, 1);
+  return { pass: x.bg === '#ffffff', detail: JSON.stringify(x) };
+});
+
+check('rendering: X/B/Z/J get a neutral colour, not Gly/Pro/Cys\'s', async (page) => {
+  await loadFasta(page, '>p1\nGXBZJ\n>p2\nGXBZJ\n');
+  await setScheme(page, 'aa-clustal');
+  const g = await cellStyle(page, 0, 0);
+  const others = [];
+  for (let pos = 1; pos < 5; pos++) others.push(await cellStyle(page, 0, pos));
+  return { pass: others.every(o => o.bg === '#dddddd' && o.bg !== g.bg), detail: JSON.stringify({ g, others }) };
+});
+
+check('rendering: one X or * does not turn a nucleotide alignment into protein', async (page) => {
+  await loadFasta(page, '>a\nACGTXACGT\n>b\nACGT*ACGT\n>c\nACGTACGTA\n');
+  const r = await page.evaluate(() => isProteinAlignment());
+  await loadFasta(page, '>p\nMKVLAAGW\n>q\nMKVLAAGW\n');
+  const p = await page.evaluate(() => isProteinAlignment());
+  return { pass: r === false && p === true, detail: JSON.stringify({ nucleotide: r, protein: p }) };
+});
+
+check('rendering: ungapped copies keep internal stop codons (*)', async (page) => {
+  await loadFasta(page, '>a\nMK*L*-\n>b\nMKWLA-\n');
+  const r = await page.evaluate(() => degapResidues(state.seqs[0].seq));
+  return { pass: r === 'MK*L*', detail: r };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const filter = process.env.CHECK_FILTER ? process.env.CHECK_FILTER.toLowerCase() : null;
