@@ -34,6 +34,7 @@ const SUITES = [
   { name: 'clustering: multiple data sets', args: ['tests/clustering/multi_dataset.test.js'] },
   { name: 'bicluster oracle', args: ['tests/bicluster/oracle.js'] },
   { name: 'optional server security', args: ['tests/server/security.test.js'] },
+  { name: 'release version consistency', args: ['tests/meta/version.test.js'] },
   { name: 'correctness (consensus, parsers, exports, rendering)', args: ['tests/correctness/run.js'], browser: true },
   { name: 'input compatibility (examples/)', args: ['tests/compat/run.js'], browser: true },
   { name: 'functional', args: ['tests/functional/run-all.js'], browser: true },

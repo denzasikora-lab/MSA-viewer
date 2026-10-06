@@ -1,6 +1,6 @@
 {
   "name": "viewalign",
-  "version": "1.32.0",
+  "version": "1.33.0",
   "description": "ViewAlign - browser-based platform for multiple sequence alignment visualization, editing, and analysis",
   "main": "server.js",
   "scripts": {

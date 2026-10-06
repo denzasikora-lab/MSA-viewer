@@ -1,5 +1,8 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
+// RELEASE_VERSION is the release version (package.json, CITATION.cff, git tag
+// v<RELEASE_VERSION>, tests/meta/version.test.js); BUILD_TAG counts every deploy.
+const RELEASE_VERSION = '1.33.0';
 const BUILD_TAG = 'v240';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
@@ -1152,8 +1155,6 @@ const DEFAULTS = {
     colorScheme: 'monochrome'
 };
 
-const APP_VERSION = '1e8580e';
-
 const state = {
     seqs: [],
     ab1Traces: {},
@@ -1535,14 +1536,14 @@ function optionalServerInfo() {
 function updateVersionIndicator() {
     const elVersion = document.getElementById('versionIndicator');
     if (!elVersion) return;
-    elVersion.textContent = `version ${BUILD_TAG}`;
+    elVersion.textContent = `ViewAlign ${RELEASE_VERSION} (build ${BUILD_TAG})`;
     // Local script cache-bust tag (always available when served from our server)
     optionalServerInfo()
         .then(info => {
             if (!info) return;
             const local = info.buildTag || info.scriptVersion;
             if (local && local !== BUILD_TAG) {
-                elVersion.textContent = `version ${BUILD_TAG} (served js v${local})`;
+                elVersion.textContent = `ViewAlign ${RELEASE_VERSION} (build ${BUILD_TAG}, served js v${local})`;
             }
         })
         .catch(() => {});
@@ -1559,7 +1560,7 @@ function updateVersionIndicator() {
             if (!info || !info.commit) return;
             const sha = info.commit.substring(0, 7);
             const url = `https://github.com/Toki-bio/MSA-viewer/commit/${info.commit}`;
-            elVersion.innerHTML = `version ${BUILD_TAG} (<a href="${url}" target="_blank" style="color:#666;" title="Commit as of the last version.json update">${sha}</a>)`;
+            elVersion.innerHTML = `ViewAlign ${RELEASE_VERSION} (build ${BUILD_TAG}, <a href="${url}" target="_blank" style="color:#666;" title="Commit as of the last version.json update">${sha}</a>)`;
         })
         .catch(() => {});
 }
@@ -12992,7 +12993,7 @@ function _buildSnapshotPayload() {
     colourState?.mappings?.forEach((color, name) => colourMappings.push([name, color]));
     return {
         schema: SNAPSHOT_SCHEMA_VERSION,
-        appVersion: APP_VERSION,
+        appVersion: `${RELEASE_VERSION} (${BUILD_TAG})`,
         createdAt: new Date().toISOString(),
         sourceTitle: state.currentFilename || 'Alignment snapshot',
         fasta,
