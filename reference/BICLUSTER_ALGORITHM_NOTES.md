@@ -1,7 +1,7 @@
 # Block-mask algorithm: research notes for the next implementation pass
 
 **Status: research only. The shipped 2D path is extractive rectangles
-(Cluster Now + column extent), documented in `BICLUSTER_TASK.md` §7.
+(Cluster Now + column extent).
 This file is the partition attempt — do not re-implement it.**
 
 ## The problem, restated generally

@@ -8,7 +8,7 @@
  *   - work on small files (tens of rows/cols), not the 1663-col OMA file
  *
  * Ground truth from:
- *   scratch/bicluster_eye_test*.KEY.txt
+ *   tests/fixtures/clustering/bicluster_eye_test*.KEY.txt
  *   tests/fixtures/blockmask/testsets/README.md
  *   clustering_audit_walk.fa (C-stack vs G-stack)
  *
@@ -96,7 +96,7 @@ function allMatch(ids, re) { return ids.length && ids.every(id => re.test(id)); 
 
     // ---- 1. eye v1: 24x48, six groupA share C at cols 17-32 ----
     {
-        const fa = read('scratch/bicluster_eye_test.fa');
+        const fa = read('tests/fixtures/clustering/bicluster_eye_test.fa');
         const { seqs, r } = await runCluster(fa);
         lines.push('\n## eye_v1  n=' + seqs.length + ' L=' + seqs[0].seq.length);
         ok('eye_v1 small', seqs.length === 24 && seqs[0].seq.length === 48);
@@ -127,7 +127,7 @@ function allMatch(ids, re) { return ids.length && ids.every(id => re.test(id)); 
 
     // ---- 2. eye v2: same frame, groupA = C and groupB = G in the same 16 cols ----
     {
-        const fa = read('scratch/bicluster_eye_test_v2.fa');
+        const fa = read('tests/fixtures/clustering/bicluster_eye_test_v2.fa');
         const { seqs, r } = await runCluster(fa);
         lines.push('\n## eye_v2  n=' + seqs.length + ' L=' + seqs[0].seq.length);
         r.clusters.forEach((c, i) => lines.push(describeCluster(c, i)));
@@ -147,7 +147,7 @@ function allMatch(ids, re) { return ids.length && ids.every(id => re.test(id)); 
 
     // ---- 3. eye v3: C-zone cols 17-24, G-zone cols 25-32, different rows ----
     {
-        const fa = read('scratch/bicluster_eye_test_v3.fa');
+        const fa = read('tests/fixtures/clustering/bicluster_eye_test_v3.fa');
         const { seqs, r } = await runCluster(fa);
         lines.push('\n## eye_v3  n=' + seqs.length + ' L=' + seqs[0].seq.length);
         r.clusters.forEach((c, i) => lines.push(describeCluster(c, i)));
@@ -166,7 +166,7 @@ function allMatch(ids, re) { return ids.length && ids.every(id => re.test(id)); 
 
     // ---- 4. audit walk: C-stack vs G-stack ----
     {
-        const fa = read('scratch/clustering_audit_walk.fa');
+        const fa = read('tests/fixtures/clustering/clustering_audit_walk.fa');
         const { seqs, r } = await runCluster(fa);
         lines.push('\n## audit_walk  n=' + seqs.length + ' L=' + seqs[0].seq.length);
         r.clusters.forEach((c, i) => lines.push(describeCluster(c, i)));
@@ -230,7 +230,7 @@ function allMatch(ids, re) { return ids.length && ids.every(id => re.test(id)); 
 
     // ---- 7. small_singleton_test: 50x53 OMA crop the user insisted on ----
     {
-        const fa = read('scratch/small_singleton_test.fa');
+        const fa = read('tests/fixtures/clustering/small_singleton_test.fa');
         const { seqs, r } = await runCluster(fa);
         lines.push('\n## small_singleton_test  n=' + seqs.length + ' L=' + seqs[0].seq.length);
         ok('small_singleton_test is the small crop (not 1663 cols)',

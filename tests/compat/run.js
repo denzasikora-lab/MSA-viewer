@@ -1,7 +1,7 @@
 // Input-compatibility check: opens every file in examples/synthetic/,
 // examples/compat/ and examples/real/ through the real file picker in headless Chrome and compares
 // what the viewer loaded with the expected answer (expected.json in each
-// folder; synthetic/ and real/ answers come from Biopython, see scratch/build_real_expected.py).
+// folder; synthetic/ and real/ answers come from Biopython, see tools/examples/build_real_expected.py).
 //
 //   node tests/compat/run.js            # all files
 //   ONLY=phylip node tests/compat/run.js

@@ -78,11 +78,11 @@ const PLANTED_ABC = [
 const DATASETS = [
     { name: 'planted_AB', fa: PLANTED_AB, kind: 'two_types', a: /^seqA/, b: /^seqB/ },
     { name: 'planted_ABC', fa: PLANTED_ABC, kind: 'three_types' },
-    { name: 'audit_walk', rel: 'scratch/clustering_audit_walk.fa', kind: 'named_types', types: { C: /stackC|orphanC/, G: /stackG/ } },
+    { name: 'audit_walk', rel: 'tests/fixtures/clustering/clustering_audit_walk.fa', kind: 'named_types', types: { C: /stackC|orphanC/, G: /stackG/ } },
     { name: 'oma_SINE16b_realigned', rel: 'tests/fixtures/blockmask/testsets/oma_SINE16b_realigned.aln.fa', kind: 'real' },
     { name: 'mosaic_subset', rel: 'tests/fixtures/blockmask/testsets/mosaic_subset.aln.fa', kind: 'mosaic' },
     { name: 'clean_core', rel: 'tests/fixtures/blockmask/testsets/clean_core.aln.fa', kind: 'uniform' },
-    { name: 'eye_v1', rel: 'scratch/bicluster_eye_test.fa', kind: 'eye' },
+    { name: 'eye_v1', rel: 'tests/fixtures/clustering/bicluster_eye_test.fa', kind: 'eye' },
     { name: 'oma_SINE16b', rel: 'tests/fixtures/blockmask/oma_SINE16b.aln.fa', kind: 'real' },
     { name: 'kitchen_sink', rel: 'tests/fixtures/blockmask/testsets/kitchen_sink.aln.fa', kind: 'real' },
     { name: 'synth_unbalanced', rel: 'tests/fixtures/blockmask/synth_unbalanced.aln.fa', kind: 'mosaic' },

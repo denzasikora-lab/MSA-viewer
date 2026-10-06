@@ -45,7 +45,7 @@ Methods section.
 **Scroll-refresh cost is flat (~50-65ms) across a >16x range of alignment
 size** (6M to 100M residues), for both the windowed-DOM renderer and the
 Canvas renderer. This is the direct, measured result of the windowing work
-done this session (see `todo.md`'s performance section and the git history
+done this session (see the git history
 around the v177-v179 tags / `fix-large-alignment-load-hang` branch) -
 scroll cost scales with the *visible viewport*, not the *total alignment
 size*, by design. Load time does scale with total size (expected - the full

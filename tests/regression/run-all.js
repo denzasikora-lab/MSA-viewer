@@ -1417,7 +1417,7 @@ check('Highlight diffs: in-place update matches a full redraw exactly', async (p
       await mark();
       const diffCols = await page.evaluate(() => state._diffColumns ? state._diffColumns.size : 0);
       out[mode + ':' + name] = { same: inPlace.equals(redrawn), renders, diffCols };
-      if (process.env.SAVE_SHOTS && !inPlace.equals(redrawn)) { require('fs').writeFileSync(`scratch/_hd_${mode}_${name}_a.png`, inPlace); require('fs').writeFileSync(`scratch/_hd_${mode}_${name}_b.png`, redrawn); }
+      if (process.env.SAVE_SHOTS && !inPlace.equals(redrawn)) { require('fs').writeFileSync(require('path').join(require('os').tmpdir(), `_hd_${mode}_${name}_a.png`), inPlace); require('fs').writeFileSync(require('path').join(require('os').tmpdir(), `_hd_${mode}_${name}_b.png`), redrawn); }
     }
   }
   const ok = Object.values(out).every(v => v.same && v.renders === 0)

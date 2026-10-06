@@ -4,13 +4,13 @@
  * One coding MSA written in every text format the viewer detects,
  * a pairwise dot-plot pair, a protein translation, and SAM/BAM reads.
  *
- * Run: node scratch/build_synthetic_examples.js
+ * Run: node tools/examples/build_synthetic_examples.js
  */
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const OUT = path.join(__dirname, '..', 'examples', 'synthetic');
+const OUT = path.join(__dirname, '..', '..', 'examples', 'synthetic');
 
 const CODE = {
     TTT:'F',TTC:'F',TTA:'L',TTG:'L',TCT:'S',TCC:'S',TCA:'S',TCG:'S',

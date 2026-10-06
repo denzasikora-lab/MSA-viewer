@@ -1,6 +1,6 @@
 // Functional tests: each check exercises a real feature through its real
 // UI/function call path and asserts specific, correct output - not just
-// "didn't crash." See FUNCTIONAL_TESTS_PROGRESS.md for coverage status.
+// "didn't crash."
 const { start } = require('../lib/static-server');
 const { launch, makeFasta, loadFasta, loadSyntheticFasta, setMode } = require('../lib/browser');
 

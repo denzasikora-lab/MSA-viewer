@@ -4,7 +4,7 @@ const path = require('path');
 const vm = require('vm');
 const zlib = require('zlib');
 
-const root = path.join(__dirname, '..');
+const root = path.join(__dirname, '..', '..');
 const dir = path.join(root, 'examples', 'synthetic');
 const src = fs.readFileSync(path.join(root, 'script.js'), 'utf8');
 const lines = src.split(/\n/);

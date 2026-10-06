@@ -9,7 +9,7 @@ assembles the captures.
 |---|---|---|
 | `img/interface-layout.png`, `img/codon-example.png`, `img/move-slide-example.png`, `img/tree-example.png` | `examples/svk_k4.fa`, `examples/synthetic/` | `node tools/figures/build_manual_figures.js && python3 tools/figures/build_manual_figures.py` |
 | `img/dotplot-example.png` | `examples/svk_k4.fa` | `node tools/figures/build_dotplot_figure.js` |
-| `img/colour-names-example.png` | `example-colour-names.fa` | no script yet: open the file, Colour Names > Auto by Similarity (first 10 characters), screenshot |
+| `img/colour-names-example.png` | `example-colour-names.fa` | `node tools/figures/build_colour_names_figure.js` |
 
 Raw captures go to `tools/figures/_fig/` (not committed). Screenshots depend on
 the browser's fonts and version, so a regenerated image matches the committed

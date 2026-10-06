@@ -34,7 +34,7 @@ as MACSE. Do not tune or "improve" its results: any change must keep every check
 - 2026-10-04, v230 (tiled parallel version): 2,636/2,636 identical, 400/400 runs on the larger corpus (default and
   forced 48-cell tiles); the 25 genes MACSE had not finished in 15 min were aligned by MACSE without limit (13-36 min
   each) and are all identical to the port (38-228 s with 8 threads).
-- 2026-10-04, v231 (after the GLM speed audit, `reference/glm-macse-speed-audit-2026-10-04/`): 2,636/2,636 identical,
+- 2026-10-04, v231 (after a speed audit): 2,636/2,636 identical,
   400/400 larger-corpus runs, 24/24 fixtures, 60/60 random sets on every path; 4.7x MACSE on one thread, 9.0x with 8
   threads, 16.8x when the pool is kept between alignments (same machine, 24 genes).
 

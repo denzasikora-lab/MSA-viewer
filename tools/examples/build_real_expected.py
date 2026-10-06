@@ -6,7 +6,7 @@ Writes expected.json into each folder: the sequence names and sequences
 Biopython reads; for SAM, the reads on the reference the viewer shows and,
 for every read, which base belongs at which reference position (so a read
 shifted by an insertion or soft clip is caught); for BAM, what to load first.
-Run: python scratch/build_real_expected.py   (needs biopython)
+Run: python tools/examples/build_real_expected.py   (needs biopython)
 """
 import gzip
 import json
@@ -15,7 +15,7 @@ import re
 
 from Bio import AlignIO, SeqIO
 
-ROOT = os.path.join(os.path.dirname(__file__), '..', 'examples')
+ROOT = os.path.join(os.path.dirname(__file__), '..', '..', 'examples')
 
 
 def recs(records):

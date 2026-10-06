@@ -1,5 +1,5 @@
 const fs = require('fs'), KT = require('../../kmer-tree.js'), C = require('./cuts.js'), { ari } = require('./metrics.js');
-const file = process.argv[2] || 'scratch/efe.fa', MIN = +(process.argv[3] || 3);
+const file = process.argv[2] || (console.error('usage: node tests/kmer/efe-check.js <alignment.fa> [min]'), process.exit(2)), MIN = +(process.argv[3] || 3);
 const fa = fs.readFileSync(file, 'utf8').split('>').slice(1).map(b => { const l = b.split('\n'); return { header: l[0].trim(), seq: l.slice(1).join('') }; });
 const n = fa.length; console.log('sequences', n, 'minSize', MIN);
 const parts = {};

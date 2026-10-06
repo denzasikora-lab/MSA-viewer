@@ -3,7 +3,7 @@
 Each file holds the same 6 × 111 alignment as `../synthetic/synth_msa.fa` (or a stated variant),
 written the way a particular program or platform writes it. Open any file and compare it with that one alignment.
 `expected.json` lists what the viewer should load from each file; `node tests/compat/run.js` checks all of them in headless Chrome.
-Regenerate with `python scratch/build_compat_examples.py`.
+Regenerate with `python tools/examples/build_compat_examples.py`.
 
 | File | What it tests | Expected |
 |---|---|---|

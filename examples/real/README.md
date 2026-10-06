@@ -6,7 +6,7 @@ Files written by other programs and databases, downloaded on 2026-09-23 and kept
 `expected.json` holds what an independent parser reads from each file: Biopython 1.85 for alignments and
 GenBank; a few lines of plain Python for SAM (which bases belong at which reference position).
 `node tests/compat/run.js` opens every file in headless Chrome through the real file picker and compares.
-Regenerate the answers with `python scratch/build_real_expected.py`.
+Regenerate the answers with `python tools/examples/build_real_expected.py`.
 
 Reads files: open `pysam_*.sam` on their own. For `htslib_range.bam`, open `htslib_ce_CHROMOSOME_II.fa` first,
 then the BAM or `htslib_range.cram` (the same 34 reads, decoded in the browser against that reference).

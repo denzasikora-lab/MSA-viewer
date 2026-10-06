@@ -3,13 +3,13 @@
 Every file encodes the same 6 x 111 alignment as examples/synthetic/synth_msa.fa
 (or a stated variant of it), so a reviewer can open any file and compare against
 one known answer. expected.json records what the viewer should load from each.
-Run: python scratch/build_compat_examples.py
+Run: python tools/examples/build_compat_examples.py
 """
 import gzip
 import json
 import os
 
-ROOT = os.path.join(os.path.dirname(__file__), '..')
+ROOT = os.path.join(os.path.dirname(__file__), '..', '..')
 OUT = os.path.join(ROOT, 'examples', 'compat')
 os.makedirs(OUT, exist_ok=True)
 
@@ -266,7 +266,7 @@ readme = ["# Input-format edge cases", "",
           "Each file holds the same 6 × 111 alignment as `../synthetic/synth_msa.fa` (or a stated variant),",
           "written the way a particular program or platform writes it. Open any file and compare it with that one alignment.",
           "`expected.json` lists what the viewer should load from each file; `node tests/compat/run.js` checks all of them in headless Chrome.",
-          "Regenerate with `python scratch/build_compat_examples.py`.", "",
+          "Regenerate with `python tools/examples/build_compat_examples.py`.", "",
           "| File | What it tests | Expected |", "|---|---|---|"]
 for name, e in expected.items():
     if e.get('reject'):
