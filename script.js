@@ -24899,17 +24899,20 @@ function makeBarInputGuard(bar) {
     // so this bar drives that offset directly instead of the DOM scroll position.
     const isCanvasMode = () => document.getElementById('modeCanvas')?.checked;
 
+    // The bar is shown only when the alignment is wider than its viewport, like
+    // the vertical bar. Before, the thumb was always at least the viewport + 1px,
+    // so the empty start page (and any alignment that fits) showed a scrollbar
+    // whenever the bar was a pixel narrower than the alignment area. Hidden with
+    // visibility, not display, so the layout does not jump when it appears.
     function syncSizes() {
         syncing = true;
-        if (isCanvasMode()) {
-            const w = _canvasState.totalContentW || alignment.clientWidth;
-            thumb.style.width = Math.max(w, alignment.clientWidth + 1) + 'px';
-            bar.scrollLeft = _canvasState.offsetX || 0;
-        } else {
-            const w = alignment.scrollWidth || alignment.clientWidth;
-            thumb.style.width = Math.max(w, alignment.clientWidth + 1) + 'px';
-            bar.scrollLeft = alignment.scrollLeft;
-        }
+        const contentW = isCanvasMode()
+            ? (_canvasState.totalContentW || alignment.clientWidth)
+            : (alignment.scrollWidth || alignment.clientWidth);
+        const scrollable = contentW > alignment.clientWidth + 1;
+        bar.style.visibility = scrollable ? '' : 'hidden';
+        thumb.style.width = (scrollable ? contentW : 0) + 'px';
+        bar.scrollLeft = isCanvasMode() ? (_canvasState.offsetX || 0) : alignment.scrollLeft;
         syncing = false;
     }
 

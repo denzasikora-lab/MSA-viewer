@@ -556,6 +556,40 @@ check('rendering: ungapped copies keep internal stop codons (*)', async (page) =
   return { pass: r === 'MK*L*', detail: r };
 });
 
+// ---------- layout ----------
+
+async function hbar(page) {
+  return page.evaluate(() => {
+    window._syncHorizontalScrollbar && window._syncHorizontalScrollbar();
+    const bar = document.querySelector('.horizontal-scrollbar');
+    return { visible: getComputedStyle(bar).visibility !== 'hidden', overflow: bar.scrollWidth - bar.clientWidth };
+  });
+}
+
+check('layout: the empty start page shows no horizontal scrollbar', async (page) => {
+  const plain = await hbar(page);
+  // the reported case: the bar a few pixels narrower than the alignment area
+  await page.evaluate(() => { document.querySelector('.horizontal-scrollbar').style.width = 'calc(100% - 3px)'; });
+  const narrower = await hbar(page);
+  const ok = !plain.visible && plain.overflow <= 0 && !narrower.visible && narrower.overflow <= 0;
+  return { pass: ok, detail: JSON.stringify({ plain, narrower }) };
+});
+
+check('layout: an alignment that fits shows no horizontal scrollbar; a wide one does', async (page) => {
+  await loadFasta(page, '>a\nACGTACGTAC\n>b\nACGTACGTAA\n');
+  await setMode(page, 'full');
+  const fits = await hbar(page);
+  await loadFasta(page, '>a\n' + 'ACGT'.repeat(1500) + '\n>b\n' + 'ACGA'.repeat(1500) + '\n');
+  await setMode(page, 'full');
+  await page.waitForTimeout(300);
+  const wide = await hbar(page);
+  await setMode(page, 'canvas');
+  await page.waitForTimeout(300);
+  const canvas = await hbar(page);
+  const ok = !fits.visible && wide.visible && wide.overflow > 0 && canvas.visible && canvas.overflow > 0;
+  return { pass: ok, detail: JSON.stringify({ fits, wide, canvas }) };
+});
+
 async function main() {
   const { server, baseUrl } = await start();
   const filter = process.env.CHECK_FILTER ? process.env.CHECK_FILTER.toLowerCase() : null;
