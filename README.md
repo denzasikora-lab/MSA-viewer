@@ -44,6 +44,12 @@ No installation, no build step, no framework dependencies.
 **Try a starter alignment (40 SINE copies, 4 groups):**
 https://toki-bio.github.io/MSA-viewer/?url=https://toki-bio.github.io/MSA-viewer/examples/svk_k4.fa&title=SVK%20SINE%20(K1–K4)
 
+### Requirements
+A current desktop browser: Chrome or Edge 80+, Firefox 100+, Safari 15.4+. Opening
+compressed files (`.gz`, BAM) needs Firefox 113+ or Safari 16.4+. The automated tests run in
+Chromium; the viewer is keyboard-operable (Tab to a menu, Enter to open, Esc to close) and has
+a colour-blind-safe nucleotide scheme (Display menu > Colours).
+
 ### Browser only (no install)
 Use the hosted app above, or serve this folder over HTTP and open it, for example
 `python3 -m http.server 8000` then `http://localhost:8000/`. More examples: [examples/](examples/).

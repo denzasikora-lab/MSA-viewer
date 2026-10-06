@@ -395,7 +395,7 @@ check('export: cell colours equal the screen in every colour scheme', async (pag
   await loadFasta(page, '>p1\nMEFILPQWX*\n>p2\nMEFILPQWXA\n>p3\nMEFILPQAKA\n>n1\nACGTRYSWKM\n');
   const r = await page.evaluate(async () => {
     const out = [];
-    for (const scheme of ['monochrome', 'nucleotide', 'ambiguity', 'purine-pyrimidine', 'aa-clustal', 'aa-jalview']) {
+    for (const scheme of ['monochrome', 'nucleotide', 'nucleotide-cb', 'ambiguity', 'purine-pyrimidine', 'aa-clustal', 'aa-jalview']) {
       document.getElementById('colorSchemeSelect').value = scheme;
       await renderAlignment();
       const len = Math.max(...state.seqs.map(q => q.seq.length));

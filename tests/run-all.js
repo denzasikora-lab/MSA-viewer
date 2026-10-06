@@ -38,6 +38,8 @@ const SUITES = [
   { name: 'input compatibility (examples/)', args: ['tests/compat/run.js'], browser: true },
   { name: 'functional', args: ['tests/functional/run-all.js'], browser: true },
   { name: 'regression', args: ['tests/regression/run-all.js'], browser: true },
+  { name: 'accessibility (keyboard, names, axe-core)', args: ['tests/a11y/check.js'], browser: true },
+  { name: 'browser support (fallbacks, file://)', args: ['tests/browser-support/check.js'], browser: true },
   { name: 'public site (tools/build-site.sh)', args: ['tests/site/check.js'], browser: true },
 ];
 

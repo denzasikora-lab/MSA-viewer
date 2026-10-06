@@ -4,6 +4,55 @@ const BUILD_TAG = 'v240';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
+// ---- Browser compatibility ----
+// Supported: Chrome/Edge 80+, Firefox 100+ and Safari 15.4+ (reading .gz/BAM
+// files needs DecompressionStream: Firefox 113+, Safari 16.4+).
+// AbortSignal.timeout (Chrome 103, Firefox 100, Safari 16) is used by every
+// optional-server probe.
+if (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout !== 'function') {
+    AbortSignal.timeout = function (ms) {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), ms);
+        return controller.signal;
+    };
+}
+// navigator.clipboard exists only in secure contexts (https, localhost). On
+// plain http (the optional server reached over the LAN) every Copy button
+// threw; fall back to a hidden textarea and execCommand('copy').
+if (typeof navigator !== 'undefined' && !(navigator.clipboard && navigator.clipboard.writeText)) {
+    try {
+        Object.defineProperty(navigator, 'clipboard', {
+            configurable: true,
+            value: {
+                writeText(text) {
+                    return new Promise((resolve, reject) => {
+                        const ta = document.createElement('textarea');
+                        ta.value = String(text);
+                        ta.setAttribute('readonly', '');
+                        ta.style.cssText = 'position:fixed;left:-9999px;top:0;';
+                        document.body.appendChild(ta);
+                        ta.select();
+                        let ok = false;
+                        try { ok = document.execCommand('copy'); } catch (_) { ok = false; }
+                        ta.remove();
+                        ok ? resolve() : reject(new Error('Copy is not available in this browser context'));
+                    });
+                },
+                readText() { return Promise.reject(new Error('Reading the clipboard needs https or localhost')); }
+            }
+        });
+    } catch (_) { /* leave navigator as it is */ }
+}
+// Opened from disk: browsers block Web Workers and fetch() there, so the
+// tools that run in workers (MAFFT, MACSE, search, dot plots) cannot start.
+if (typeof location !== 'undefined' && location.protocol === 'file:') {
+    window.addEventListener('load', () => {
+        if (typeof showMessage === 'function') {
+            showMessage('Opened from a file (file://): viewing and editing work, but MAFFT, MACSE, sequence search, dot plots and ?url= loading need the page served over http(s) - see the README.', 0);
+        }
+    });
+}
+
 function _escapeHtml(s) {
     if (!s) return '';
     return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -202,7 +251,8 @@ function _searchEntryMotif(entry) {
     if (!v && entry.motif) v = String(entry.motif).replace(/:(fwd|rev comp|rev)$/i, '').trim();
     // Rows are searched with U read as T; a regex keeps its case, so convert u too (but not
     // an escape such as \u0041)
-    return v.replace(/(?<!\\)[Uu]/g, 'T');
+    // (callback instead of a lookbehind, which Safari before 16.4 cannot parse)
+    return v.replace(/(\\?)([Uu])/g, (m, esc) => esc ? m : 'T');
 }
 
 // Matches of one search in one degapped, upper-cased, U->T display string.
@@ -1494,7 +1544,7 @@ function updateVersionIndicator() {
             if (!info || !info.commit) return;
             const sha = info.commit.substring(0, 7);
             const url = `https://github.com/Toki-bio/MSA-viewer/commit/${info.commit}`;
-            elVersion.innerHTML = `version ${BUILD_TAG} (<a href="${url}" target="_blank" style="color:#888;" title="Commit as of the last version.json update">${sha}</a>)`;
+            elVersion.innerHTML = `version ${BUILD_TAG} (<a href="${url}" target="_blank" style="color:#666;" title="Commit as of the last version.json update">${sha}</a>)`;
         })
         .catch(() => {});
 }
@@ -9645,6 +9695,7 @@ const RENDER_AMBIGUOUS_BASES = new Set(['R','Y','M','K','S','W','H','B','V','D',
 const ALIGNMENT_COLOR_SCHEMES = new Set([
     'monochrome',
     'nucleotide',
+    'nucleotide-cb',
     'purine-pyrimidine',
     'ambiguity',
     'aa-clustal',
@@ -9662,7 +9713,7 @@ const AMINO_ACID_GROUP_CLASSES = {
     B: 'aa-unknown', Z: 'aa-unknown', X: 'aa-unknown', J: 'aa-unknown', O: 'aa-special', U: 'aa-special',
     '*': 'aa-stop'
 };
-const NUCLEOTIDE_ORIENTED_SCHEMES = new Set(['nucleotide', 'purine-pyrimidine', 'ambiguity']);
+const NUCLEOTIDE_ORIENTED_SCHEMES = new Set(['nucleotide', 'nucleotide-cb', 'purine-pyrimidine', 'ambiguity']);
 const RESIDUE_SCHEME_STYLES = {
     'aa-clustal': {
         'aa-hydrophobic': { bg: '#80b1ff', fg: '#062a5f' },
@@ -9690,6 +9741,16 @@ const RESIDUE_SCHEME_STYLES = {
         'base-G': { bg: '#ffc878', fg: '#5f3300' },
         'base-T': { bg: '#ff8c8c', fg: '#5e0505' },
         'base-U': { bg: '#ff8c8c', fg: '#5e0505' },
+        'base-N': { bg: '#d9d9d9', fg: '#333333' }
+    },
+    // Okabe-Ito colours: A, C, G and T stay distinct under the common forms of
+    // colour blindness (the default Nucleotide scheme puts green A beside red T)
+    'nucleotide-cb': {
+        'base-A': { bg: '#56b4e9', fg: '#000000' },
+        'base-C': { bg: '#e69f00', fg: '#000000' },
+        'base-G': { bg: '#f0e442', fg: '#000000' },
+        'base-T': { bg: '#cc79a7', fg: '#000000' },
+        'base-U': { bg: '#cc79a7', fg: '#000000' },
         'base-N': { bg: '#d9d9d9', fg: '#333333' }
     },
     'purine-pyrimidine': {

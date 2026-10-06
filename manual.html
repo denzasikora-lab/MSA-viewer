@@ -317,7 +317,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
 </aside>
 
 <!-- ═══ MAIN CONTENT ═══ -->
-<div id="main">
+<div id="main" role="main">
 
 <!-- ════════════════════════════════════════ -->
 <section id="getting-started">
@@ -1050,11 +1050,11 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
   </p>
   <p>
     Click <em>Show mask</em>. Rectangles are coloured
-    <span style="color:#16a34a;font-weight:bold;">green</span> conservative
+    <span style="color:#15803d;font-weight:bold;">green</span> conservative
     (high identity, all rows agree),
-    <span style="color:#f59e0b;font-weight:bold;">amber</span> mosaic (elevated
+    <span style="color:#b45309;font-weight:bold;">amber</span> mosaic (elevated
     identity but only a subset of rows share it),
-    <span style="color:#8b5cf6;font-weight:bold;">purple</span> decay slope
+    <span style="color:#6d28d9;font-weight:bold;">purple</span> decay slope
     (identity trending down over a stretch), and grey divergent flank.
     <strong>V1–V5</strong> sets squint coarseness — V1 a few big blocks, V5 many
     fine ones. Squint knobs expose the eight parameters behind the presets;
@@ -1208,11 +1208,15 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><th>Scheme</th><th>Use</th></tr>
     <tr><td>Monochrome</td><td>Conservation shading using Black/Dark/Light thresholds from the Shade menu</td></tr>
     <tr><td>Nucleotide</td><td>Distinct colours for A, C, G, T/U and N</td></tr>
+    <tr><td>Nucleotide (colour-blind safe)</td><td>A, C, G, T/U in Okabe&ndash;Ito colours (sky blue, orange, yellow, reddish purple), which stay distinct with red-green colour blindness</td></tr>
     <tr><td>Purine/Pyrimidine</td><td>Groups A/G as purines and C/T/U as pyrimidines; ambiguous bases are neutral</td></tr>
     <tr><td>Nucleotide Ambiguity</td><td>Highlights IUPAC ambiguity codes such as R, Y, S, W, K, M, B, D, H, V and N</td></tr>
     <tr><td>Amino Acid: Clustal-like</td><td>Groups amino acids by broad physico-chemical classes in a Clustal-inspired palette</td></tr>
     <tr><td>Amino Acid: Jalview-like</td><td>Groups amino acids in a Jalview-style property palette</td></tr>
   </table>
+  <p>In both amino-acid palettes the uncertain codes X, B (D/N), Z (E/Q) and J (I/L) are grey, and
+     <code>*</code> (stop) is white on black. With Monochrome shading, unknown residues (<code>N</code> in
+     nucleotides, <code>X</code> in either) never count as conserved, so masked regions stay unshaded.</p>
   <p>
     The selected colour scheme is saved in presets and snapshots. Canvas mode
     keeps its own existing high-performance colouring behaviour.

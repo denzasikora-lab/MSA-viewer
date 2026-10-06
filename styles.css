@@ -2175,14 +2175,14 @@ body.row-reorder-active .seq-name.drag-source:hover {
 
 #versionIndicator {
     font-size: 10px;
-    color: #888;
+    color: #666; /* #888 failed WCAG AA contrast on white */
     line-height: 1;
     text-align: right;
     white-space: nowrap;
     flex: 0 0 auto;
     pointer-events: auto;
 }
-#versionIndicator a { color: #888; }
+#versionIndicator a { color: #666; }
 #versionIndicator a:hover { color: #333; text-decoration: underline; }
 
 body.suppress-menu-hover #controls .menu-section.menu-open .control-group {
@@ -2325,6 +2325,14 @@ body.edit-dragging .seq-data {
 #alignmentContainer.color-scheme-nucleotide .seq-data .base-T,
 #alignmentContainer.color-scheme-nucleotide .seq-data .base-U { background-color: #ff8c8c !important; color: #5e0505 !important; }
 #alignmentContainer.color-scheme-nucleotide .seq-data .base-N { background-color: #d9d9d9 !important; color: #333 !important; }
+
+/* Okabe-Ito: distinct under the common forms of colour blindness */
+#alignmentContainer.color-scheme-nucleotide-cb .seq-data .base-A { background-color: #56b4e9 !important; color: #000 !important; }
+#alignmentContainer.color-scheme-nucleotide-cb .seq-data .base-C { background-color: #e69f00 !important; color: #000 !important; }
+#alignmentContainer.color-scheme-nucleotide-cb .seq-data .base-G { background-color: #f0e442 !important; color: #000 !important; }
+#alignmentContainer.color-scheme-nucleotide-cb .seq-data .base-T,
+#alignmentContainer.color-scheme-nucleotide-cb .seq-data .base-U { background-color: #cc79a7 !important; color: #000 !important; }
+#alignmentContainer.color-scheme-nucleotide-cb .seq-data .base-N { background-color: #d9d9d9 !important; color: #333 !important; }
 
 #alignmentContainer.color-scheme-purine-pyrimidine .seq-data .pp-purine { background-color: #ffe9a8 !important; color: #6b4500 !important; }
 #alignmentContainer.color-scheme-purine-pyrimidine .seq-data .pp-pyrimidine { background-color: #cbe7ff !important; color: #06466d !important; }
@@ -4110,3 +4118,28 @@ table.stats-mx.heat td:hover { outline: 2px solid #111; outline-offset: -2px; }
 }
 .ge-gather:hover { background: #eef3f8; color: #1a5aa0; }
 .ge-text-btn.ge-on { background: #fff3cd; border-color: #e0b84a; color: #7a5b00; }
+
+
+/* ---- Accessibility ---- */
+.visually-hidden {
+    position: absolute !important;
+    width: 1px; height: 1px;
+    margin: -1px; padding: 0; border: 0;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+}
+/* Keyboard focus is always visible (sliders and some fields removed their outline) */
+:focus-visible {
+    outline: 2px solid #1565c0 !important;
+    outline-offset: 1px;
+}
+.menu-section > .section-header:focus-visible {
+    outline-offset: -2px;
+}
+@media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}

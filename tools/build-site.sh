@@ -13,7 +13,7 @@ mkdir -p "$OUT"
 
 APP_FILES=(
   index.html manual.html styles.css version.json .nojekyll
-  script.js ab1-parser.js bam-parser.js block-bicluster.js block-mask.js
+  script.js a11y.js ab1-parser.js bam-parser.js block-bicluster.js block-mask.js
   chromatogram-viewer.js cluster.js kmer-tree.js peel.js realign-region.js tree-draw.js
   mafft-wasm.js mafft-worker.js disttbfast.js disttbfast.wasm
   blast-worker.js doter-worker.js doter-word-worker.js

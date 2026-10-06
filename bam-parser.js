@@ -53,6 +53,9 @@ async function decompressBAM(file) {
 }
 
 async function gunzipBytes(bytes) {
+    if (typeof DecompressionStream === 'undefined') {
+        throw new Error('Reading compressed files (.gz, BAM) needs a newer browser: Chrome/Edge 80+, Firefox 113+ or Safari 16.4+.');
+    }
     const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
     return new Uint8Array(await new Response(stream).arrayBuffer());
 }

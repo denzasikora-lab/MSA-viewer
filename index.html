@@ -12,7 +12,7 @@
     <script src="mafft-wasm.js"></script>
 </head>
 <body>
-    <div id="controls">
+    <div id="controls" role="region" aria-label="Menus">
         <div class="control-row" style="justify-content: flex-start; align-items: center; gap: 2px; flex-wrap: nowrap;">
             <!-- ACTUAL BUTTONS -->
             <div class="menu-section side-section" id="input-section">
@@ -258,6 +258,7 @@
                                 <select id="colorSchemeSelect" style="font-size:10px;padding:0 2px;height:18px;" title="Residue color scheme for the alignment">
                                     <option value="monochrome" selected>Monochrome</option>
                                     <option value="nucleotide">Nucleotide</option>
+                                    <option value="nucleotide-cb">Nucleotide (colour-blind safe)</option>
                                     <option value="purine-pyrimidine">Purine/Pyrimidine</option>
                                     <option value="ambiguity">Nucleotide Ambiguity</option>
                                     <option value="aa-clustal">Amino Acid: Clustal-like</option>
@@ -519,7 +520,7 @@
                             <div class="cluster-block">
                                 <div class="cluster-block-title" title="Draws rectangles over stretches where a subset of rows share a local pattern. This is a separate overlay from name and letter colours. Show 2D never changes row order; Group rows does.">2D analysis</div>
                                 <div class="cluster-actions">
-                                    <button id="biclusterComputeButton" style="flex: 1; background: #0d9488; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Draw row × column rectangles. If groups exist, each rectangle is tagged as supporting a group, sitting inside one, or disagreeing.">Show 2D</button>
+                                    <button id="biclusterComputeButton" style="flex: 1; background: #0f766e; color: white; border: none; border-radius: 2px; cursor: pointer;" title="Draw row × column rectangles. If groups exist, each rectangle is tagged as supporting a group, sitting inside one, or disagreeing.">Show 2D</button>
                                     <button id="biclusterClearButton" title="Remove the 2D rectangle overlay. Name and letter colours stay until you Clear them in k-mer groups or Diagnostic SNPs.">Clear</button>
                                     <button id="biclusterGroupRowsButton" title="Click a colored rectangle to stack those sequences (including scattered copies). Undoable.">Group rows</button>
                                 </div>
@@ -953,7 +954,8 @@
         <span style="font-size: 10px; color: #666; user-select: none;">v menu</span>
     </div>
     
-    <div id="viewer-container">
+    <div id="viewer-container" role="main" aria-label="Alignment">
+        <h1 class="visually-hidden">ViewAlign multiple sequence alignment viewer</h1>
         <div id="alignmentContainer">Paste MSF or FASTA into the box and click Load, or drop a file.</div>
         <div class="vertical-scrollbar">
             <div class="vertical-scrollbar-thumb"></div>
@@ -1282,7 +1284,7 @@ B: -</pre>
                     </div>
                     <div class="rf-row">
                         <span class="rf-label">TSD</span>
-                        <label title="Length range of the duplication">length <input type="number" id="tsdMinLen" value="4" min="2" max="30" class="rf-num"> – <input type="number" id="tsdMaxLen" value="20" min="2" max="50" class="rf-num"> bp</label>
+                        <label title="Length range of the duplication">length <input type="number" id="tsdMinLen" aria-label="Minimum duplication length" value="4" min="2" max="30" class="rf-num"> – <input type="number" id="tsdMaxLen" aria-label="Maximum duplication length" value="20" min="2" max="50" class="rf-num"> bp</label>
                         <label title="Maximum fraction of mismatched bases between the two copies">max mismatch <input type="number" id="tsdMaxDiv" value="20" min="0" max="50" class="rf-num"> %</label>
                     </div>
                 </div>
@@ -1371,6 +1373,7 @@ B: -</pre>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
     <script src="script.js?v=288"></script>
+    <script src="a11y.js?v=1"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>
