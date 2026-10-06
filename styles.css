@@ -336,7 +336,9 @@ html {
     z-index: 9999;
     border-radius: 0 4px 4px 4px;
     margin: 0;
-    max-height: 85vh; /* Increased to prevent scrollbar for typical menus */
+    /* The window height below the menu bar (85vh left a scrollbar for a few
+       pixels on 720-768px screens) */
+    max-height: calc(100vh - 44px);
     overflow-y: auto; /* Only vertical scrolling when truly needed */
     overflow-x: visible; /* Allow horizontal content to be visible */
     will-change: display;

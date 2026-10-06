@@ -41,6 +41,7 @@ const SUITES = [
   { name: 'regression', args: ['tests/regression/run-all.js'], browser: true },
   { name: 'accessibility (keyboard, names, axe-core)', args: ['tests/a11y/check.js'], browser: true },
   { name: 'browser support (fallbacks, file://)', args: ['tests/browser-support/check.js'], browser: true },
+  { name: 'layout: no stray scrollbars', args: ['tests/layout/stray-scrollbars.test.js'], browser: true },
   { name: 'public site (tools/build-site.sh)', args: ['tests/site/check.js'], browser: true },
 ];
 
