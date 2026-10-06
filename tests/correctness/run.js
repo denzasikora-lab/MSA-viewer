@@ -8,7 +8,7 @@ const fs = require('fs');
 const path = require('path');
 const { start } = require('../lib/static-server');
 const ROOT = path.join(__dirname, '..', '..');
-const { launch, loadFasta } = require('../lib/browser');
+const { launch, loadFasta, loadSyntheticFasta, setMode } = require('../lib/browser');
 
 const CHECKS = [];
 function check(name, fn) { CHECKS.push({ name, fn }); }
@@ -353,6 +353,110 @@ check('CRAM: a truncated file says it is truncated', async (page) => {
   const full = fs.readFileSync(path.join(ROOT, 'examples/real/htslib_range.cram'));
   const r = await readsAfterReference(page, 'range.cram', full.subarray(0, Math.floor(full.length * 2 / 3)));
   return { pass: /truncated/.test(r.message), detail: r.message };
+});
+
+// ---------- exports ----------
+
+// Run an export and capture the file it would download
+async function captureExport(page, fnName) {
+  return page.evaluate(async (fnName) => {
+    let file = null;
+    window._downloadBlob = async (blob, name) => { file = { name, text: await blob.text() }; };
+    await window[fnName]();
+    for (let i = 0; i < 100 && !file; i++) await new Promise(r => setTimeout(r, 50));
+    return file;
+  }, fnName);
+}
+
+// RTF -> plain text lines (drops control words and groups)
+function rtfLines(rtf) {
+  const body = rtf.replace(/^\{\\rtf1[\s\S]*?\\f0\\fs18\n/, '').replace(/\}\s*$/, '');
+  return body.split('\\line').map(l => l.replace(/\n/g, '').replace(/\\[a-z]+-?\d* ?/g, '').replace(/[{}]/g, ''));
+}
+
+check('export: full SVG of a windowed alignment holds every residue (600 x 1000)', async (page) => {
+  await loadSyntheticFasta(page, 600, 1000);
+  await setMode(page, 'full');
+  const file = await captureExport(page, 'exportFullAlignmentAsSvg');
+  if (!file) return { pass: false, detail: 'no file' };
+  // residue runs are the <text> elements with an x list that are not the ruler (#666666) or names (x="2")
+  let residues = 0;
+  for (const m of file.text.matchAll(/<text x="([^"]+)"[^>]*fill="(#[0-9a-f]{6})"[^>]*>([^<]*)<\/text>/g)) {
+    if (m[1] === '2' || m[2] === '#666666') continue;
+    residues += m[3].length;
+  }
+  // every residue, plus the consensus row when it is shown
+  const consensusShown = await page.evaluate(() => document.getElementById('showConsensus').checked);
+  const want = 600000 + (consensusShown ? 1000 : 0);
+  return { pass: residues === want, detail: `${residues} cells in the SVG (want ${want}), ${(file.text.length / 1e6).toFixed(1)} MB` };
+});
+
+check('export: cell colours equal the screen in every colour scheme', async (page) => {
+  await loadFasta(page, '>p1\nMEFILPQWX*\n>p2\nMEFILPQWXA\n>p3\nMEFILPQAKA\n>n1\nACGTRYSWKM\n');
+  const r = await page.evaluate(async () => {
+    const out = [];
+    for (const scheme of ['monochrome', 'nucleotide', 'ambiguity', 'purine-pyrimidine', 'aa-clustal', 'aa-jalview']) {
+      document.getElementById('colorSchemeSelect').value = scheme;
+      await renderAlignment();
+      const len = Math.max(...state.seqs.map(q => q.seq.length));
+      const config = getSequenceRenderConfig();
+      const cons = preCalculateConservation(state.seqs, len, config.shadeMode);
+      const probe = _makeCellStyleProbe();
+      for (const span of document.querySelectorAll('.seq-line[data-seq-index] .seq-data span[data-pos]')) {
+        const row = +span.closest('.seq-line').dataset.seqIndex;
+        if (!(row >= 0)) continue;
+        const pos = +span.dataset.pos;
+        const st = probe.style(_exportCellClass(state.seqs[row].seq[pos] || '-', cons[pos], config));
+        const cs = getComputedStyle(span);
+        const bg = _cssColourToHex(cs.backgroundColor) || '#ffffff', fg = _cssColourToHex(cs.color) || '#000000';
+        if (bg !== st.bg || fg !== st.fg) out.push(`${scheme} row ${row} pos ${pos} '${span.textContent}': screen ${bg}/${fg}, export ${st.bg}/${st.fg}`);
+      }
+      probe.dispose();
+    }
+    return out;
+  });
+  return { pass: r.length === 0, detail: r.slice(0, 5).join('; ') + (r.length > 5 ? ` (+${r.length - 5})` : '') };
+});
+
+check('export: RTF ruler, consensus and sequences start in the same column', async (page) => {
+  await loadFasta(page, '>alpha\nACGTACGTACGTACGTACGTA\n>beta\nACGTACGTACGTACGTACGTA\n>gamma\nACGAACGTACGTACGTACGTT\n');
+  await page.evaluate(async () => {
+    document.getElementById('showConsensus').checked = true;
+    document.getElementById('blockSizeSlider').value = 100;
+    await renderAlignment();
+  });
+  const file = await captureExport(page, 'exportAlignmentAsRtf');
+  const lines = rtfLines(file.text).filter(l => l.trim());
+  const nameLen = await page.evaluate(() => effectiveNameLength());
+  const scale = await page.evaluate(() => generateScale(21, 10, 0));
+  const want = [
+    ' '.repeat(nameLen + 1) + scale,
+    'Consensus'.padEnd(nameLen).substring(0, nameLen) + ' ' + 'ACGTACGTACGTACGTACGTA',
+    'alpha'.padEnd(nameLen) + ' ' + 'ACGTACGTACGTACGTACGTA',
+    'beta'.padEnd(nameLen) + ' ' + 'ACGTACGTACGTACGTACGTA',
+    'gamma'.padEnd(nameLen) + ' ' + 'ACGAACGTACGTACGTACGTT',
+  ];
+  const got = lines.slice(0, 5).map((l, i) => i === 1 ? l.toUpperCase() : l);
+  const ok = JSON.stringify(got) === JSON.stringify(want.map((l, i) => i === 1 ? l.toUpperCase() : l));
+  return { pass: ok, detail: JSON.stringify({ got, want }) };
+});
+
+check('export: RTF gives shaded cells their text colour (white on black)', async (page) => {
+  await loadFasta(page, '>a\nACGT\n>b\nACGT\n>c\nACGT\n');
+  await page.evaluate(async () => { document.getElementById('colorSchemeSelect').value = 'monochrome'; await renderAlignment(); });
+  const file = await captureExport(page, 'exportAlignmentAsRtf');
+  const table = file.text.match(/\{\\colortbl;([^}]*)\}/)[1].split(';').filter(Boolean);
+  const idx = c => table.indexOf(c) + 1;
+  const black = idx('\\red0\\green0\\blue0'), white = idx('\\red255\\green255\\blue255');
+  const ok = black > 0 && white > 0 && file.text.includes(`\\chcbpat${black}\\cb${black}\\cf${white}`);
+  return { pass: ok, detail: JSON.stringify({ table, sample: file.text.slice(file.text.indexOf('\\chcbpat'), file.text.indexOf('\\chcbpat') + 60) }) };
+});
+
+check('export: RTF escapes \\ { } and non-ASCII in names', async (page) => {
+  await loadFasta(page, '>a{b}\\cé\nACGT\n>d\nACGT\n');
+  await page.evaluate(() => { document.getElementById('nameLengthNoLimit').checked = true; });
+  const file = await captureExport(page, 'exportAlignmentAsRtf');
+  return { pass: file.text.includes('a\\{b\\}\\\\c\\u233?'), detail: file.text.split('\n').find(l => l.includes('a\\{')) || file.text.slice(0, 400) };
 });
 
 async function main() {

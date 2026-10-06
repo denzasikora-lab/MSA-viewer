@@ -1874,7 +1874,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><th>Format</th><th>Use</th><th>Notes</th></tr>
     <tr><td>FASTA</td><td>Downstream tools</td><td>Full alignment or selected sequences only</td></tr>
     <tr><td>RTF</td><td>Microsoft Word</td><td>Monospace, per-residue shading, scale ruler, consensus line</td></tr>
-    <tr><td>SVG</td><td>Publication figures</td><td>Vector graphics - viewport or full alignment</td></tr>
+    <tr><td>SVG</td><td>Publication figures</td><td>Vector graphics. <em>Viewport</em> saves what is on screen, overlays included; <em>Full</em> draws every sequence and column from the data in the screen's colours (ruler, names, consensus; search and annotation overlays are not included), in any view mode</td></tr>
     <tr><td>Newick (<code>.nwk</code>)</td><td>Phylogenetics tools</td><td>UPGMA or Neighbor-Joining tree with branch lengths, whichever the Tree window last built</td></tr>
     <tr><td>Standalone HTML</td><td>Sharing</td><td>Self-contained HTML snapshot page with embedded alignment</td></tr>
     <tr><td>New tab</td><td>Quick copy</td><td>Selected sequences as plain FASTA text in a new browser tab (<kbd>Alt+T</kbd>)</td></tr>
@@ -1882,8 +1882,11 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><td>Copy Columns</td><td>Clipboard</td><td>FASTA of selected columns (<kbd>Ctrl+Shift+V</kbd>)</td></tr>
   </table>
   <p>
-    RTF export uses Courier New 9pt with per-residue background colours matching
-    the current shading scheme, a scale ruler every 10 columns, and the consensus line.
+    RTF export uses Courier New 9pt, wraps the alignment into blocks of the Block-mode width,
+    and gives every residue the background and text colour it has on screen (conservation
+    shading or the residue colour scheme). The scale ruler and the consensus line start in the
+    same column as the sequences. Shading uses Word's character shading, so any colour is kept
+    exactly (highlighting would limit it to 16 colours).
   </p>
 
   <h3 id="ac-colour-names">9.11 Colour Names</h3>

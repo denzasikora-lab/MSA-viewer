@@ -13389,6 +13389,93 @@ function _isTransparentCssColor(color) {
     return c === 'transparent' || c === 'rgba(0, 0, 0, 0)' || c === 'rgba(0,0,0,0)';
 }
 
+// ---- Export colours ----
+// Exports built from the data rather than from the cells on screen (full SVG,
+// RTF) take each cell's colours from the stylesheet itself: a hidden line in
+// the alignment container is given the cell's class list once per distinct
+// list, so an export always matches what the screen shows for that cell.
+function _cssColourToHex(c) {
+    const m = String(c || '').match(/rgba?\(\s*(\d+)[,\s]+(\d+)[,\s]+(\d+)(?:[,\s/]+([\d.]+))?/);
+    if (!m) return null;
+    if (m[4] !== undefined && parseFloat(m[4]) === 0) return null; // transparent
+    return '#' + [m[1], m[2], m[3]].map(v => Number(v).toString(16).padStart(2, '0')).join('');
+}
+
+function _makeCellStyleProbe() {
+    setAlignmentColorSchemeClass();
+    const line = document.createElement('div');
+    line.style.cssText = 'position:absolute;visibility:hidden;left:-10000px;top:0;pointer-events:none;';
+    const data = document.createElement('div');
+    data.className = 'seq-data';
+    const span = document.createElement('span');
+    data.appendChild(span);
+    line.appendChild(data);
+    alignmentContainer.appendChild(line);
+    const cache = new Map();
+    return {
+        // { bg, fg, bold } for a residue cell (or a consensus-row cell)
+        style(cls, consensusRow = false) {
+            const key = (consensusRow ? 'c|' : 'r|') + cls;
+            let v = cache.get(key);
+            if (!v) {
+                line.className = consensusRow ? 'seq-line consensus-line' : 'seq-line';
+                span.className = cls;
+                const cs = getComputedStyle(span);
+                v = {
+                    bg: _cssColourToHex(cs.backgroundColor) || '#ffffff',
+                    fg: _cssColourToHex(cs.color) || '#000000',
+                    bold: (parseInt(cs.fontWeight, 10) || 400) >= 600,
+                };
+                cache.set(key, v);
+            }
+            return v;
+        },
+        dispose() { line.remove(); }
+    };
+}
+
+// The class list a residue cell gets on screen, without selection highlights
+function _exportCellClass(base, posData, config) {
+    const baseUp = (base || '-').toUpperCase();
+    const shade = applyConservationShadeClass(baseUp, posData || { hasData: false, hasValidCoverage: false }, config);
+    const ann = getResidueAnnotationClasses(base, RENDER_STANDARD_BASES, RENDER_AMBIGUOUS_BASES, config.effectiveColorScheme);
+    return ann ? shade + ' ' + ann : shade;
+}
+
+// Layout shared by the full SVG and the RTF export: blocks of columns (the
+// Block-mode width, or the whole alignment in Full mode for the SVG), each
+// with a position ruler, the consensus row where the screen shows it, and
+// one line per sequence.
+function _exportLayout({ wrapAlways = false } = {}) {
+    const len = Math.max(...state.seqs.map(q => q.seq.length));
+    const blockSlider = parseInt(el('blockSizeSlider')?.value, 10) || 60;
+    const blockMode = !!el('modeBlocks')?.checked;
+    const blockWidth = Math.max(1, (blockMode || wrapAlways) ? blockSlider : len);
+    const config = getSequenceRenderConfig();
+    const conservation = preCalculateConservation(state.seqs, len, config.shadeMode);
+    const showConsensus = !!el('showConsensus')?.checked;
+    const consensus = showConsensus ? computeConsensusForSequences(state.seqs.map(q => q.seq)) : '';
+    const consensusPosition = _checkedRadioValue('consensusPosition', 'top');
+    const threshold = clampConsensusPercent(el('consensusThreshold').value) / 100;
+    const nameLen = effectiveNameLength();
+    const blocks = [];
+    for (let start = 0; start < len; start += blockWidth) blocks.push([start, Math.min(len, start + blockWidth)]);
+    return { len, blockWidth, blocks, config, conservation, consensus, consensusPosition, threshold, nameLen };
+}
+
+// Cells of one line between columns [start, end): runs of equal style
+function _exportRuns(text, start, end, styleAt) {
+    const runs = [];
+    for (let pos = start; pos < end; pos++) {
+        const st = styleAt(pos);
+        const ch = text[pos] || '-';
+        const last = runs[runs.length - 1];
+        if (last && last.st === st) last.text += ch;
+        else runs.push({ st, text: ch, start: pos });
+    }
+    return runs;
+}
+
 function _exportAlignmentAsSvg(mode = 'viewport') {
     if (!alignmentContainer) {
         showMessage('Alignment container not found.', 3000);
@@ -13398,6 +13485,9 @@ function _exportAlignmentAsSvg(mode = 'viewport') {
         showMessage('Load an alignment first.', 3000);
         return;
     }
+    // The whole alignment is drawn from the data: in windowed views most rows
+    // and columns are not in the DOM, so walking the cells exported a fraction
+    if (mode === 'full') { _exportFullAlignmentSvgFromData(); return; }
     // This walks the rendered residue spans, which Canvas and Reads never create. Without
     // this guard the export silently produced an empty file - and Canvas engages by itself
     // above 150,000 residues, so it failed exactly on the alignments most worth exporting.
@@ -13482,6 +13572,87 @@ function _exportAlignmentAsSvg(mode = 'viewport') {
     showMessage(fullMode ? 'Full alignment exported as SVG.' : 'Visible viewport exported as SVG.', 2500);
 }
 
+// Full-alignment SVG built from the data with the screen's colours (see
+// _makeCellStyleProbe); works in every view mode, including windowed views.
+function _exportFullAlignmentSvgFromData() {
+    const L = _exportLayout();
+    const fontSize = parseFloat(getComputedStyle(alignmentContainer).fontSize) || 13;
+    const mctx = document.createElement('canvas').getContext('2d');
+    mctx.font = `${fontSize}px "Courier New", monospace`;
+    const charW = mctx.measureText('M').width || fontSize * 0.6;
+    const lineH = Math.ceil(fontSize * 1.35);
+    const nameW = (L.nameLen + 1) * charW;
+    const probe = _makeCellStyleProbe();
+    const out = [];
+    let y = 0;
+    const font = `font-family="'Courier New', Courier, monospace" font-size="${fontSize}px"`;
+    const xs = (start, from, n) => Array.from({ length: n }, (_, k) => (nameW + (from - start + k) * charW).toFixed(2)).join(' ');
+    const baseline = () => (y + lineH - Math.max(2, lineH * 0.22)).toFixed(2);
+    const drawCells = (text, start, end, styleAt, consensusRow) => {
+        for (const run of _exportRuns(text, start, end, styleAt)) {
+            const st = probe.style(run.st, consensusRow);
+            const x = nameW + (run.start - start) * charW;
+            if (st.bg !== '#ffffff') out.push(`<rect x="${x.toFixed(2)}" y="${y}" width="${(run.text.length * charW).toFixed(2)}" height="${lineH}" fill="${st.bg}"/>`);
+            out.push(`<text x="${xs(start, run.start, run.text.length)}" y="${baseline()}" fill="${st.fg}"${st.bold ? ' font-weight="bold"' : ''} ${font}>${_escapeXmlText(run.text)}</text>`);
+        }
+    };
+    const drawName = (name, colour = '#000000', bold = true) => {
+        out.push(`<text x="2" y="${baseline()}" fill="${colour}"${bold ? ' font-weight="bold"' : ''} ${font} xml:space="preserve">${_escapeXmlText(name)}</text>`);
+    };
+    const consensusLine = (start, end) => {
+        const shown = Array.from({ length: L.len }, (_, p) => (p >= start && p < end) ? consensusDisplayBase(L.consensus[p] || '-', p, L.threshold) : '-').join('');
+        drawName('Consensus', '#555555');
+        drawCells(shown, start, end, p => getResidueAnnotationClasses(L.consensus[p] || '-'), true);
+        y += lineH;
+    };
+    try {
+        for (const [start, end] of L.blocks) {
+            const scale = generateScale(end - start, 10, start);
+            out.push(`<text x="${xs(start, start, scale.length)}" y="${baseline()}" fill="#666666" ${font} xml:space="preserve">${_escapeXmlText(scale)}</text>`);
+            y += lineH;
+            if (L.consensus && L.consensusPosition === 'top') consensusLine(start, end);
+            for (const q of state.seqs) {
+                drawName((q.header || '').substring(0, L.nameLen));
+                drawCells(q.seq, start, end, p => _exportCellClass(q.seq[p] || '-', L.conservation[p], L.config), false);
+                y += lineH;
+            }
+            if (L.consensus && L.consensusPosition === 'bottom') consensusLine(start, end);
+            y += lineH; // blank line between blocks
+        }
+    } finally {
+        probe.dispose();
+    }
+    const width = Math.ceil(nameW + L.blockWidth * charW + charW);
+    const height = Math.max(lineH, y);
+    const title = _escapeXmlText(state.currentFilename || 'alignment');
+    const svg = [
+        `<?xml version="1.0" encoding="UTF-8"?>`,
+        `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+        `<title>${title} full alignment export</title>`,
+        `<rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>`,
+        ...out,
+        `</svg>`
+    ].join('\n');
+    _downloadBlob(new Blob([svg], { type: 'image/svg+xml;charset=utf-8' }),
+        `${_safeExportBaseName()}_full.svg`);
+    showMessage(`Full alignment exported as SVG (${state.seqs.length} sequences x ${L.len} columns).`, 3000);
+}
+
+function _safeExportBaseName() {
+    return (state.currentFilename || 'alignment').replace(/[^a-z0-9._-]+/gi, '_').replace(/^_+|_+$/g, '') || 'alignment';
+}
+
+function _downloadBlob(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
 function exportVisibleViewportAsSvg() {
     _exportAlignmentAsSvg('viewport');
 }
@@ -13492,141 +13663,80 @@ async function exportFullAlignmentAsSvg() {
         'one element per residue - large alignments make large files');
 }
 
-// GeneDoc-style RTF export with per-residue conservation shading
+// Escape text for RTF: \ { } and characters outside ASCII (as \uN?)
+function _rtfEscape(text) {
+    let out = '';
+    for (const ch of String(text)) {
+        const code = ch.codePointAt(0);
+        if (ch === '\\' || ch === '{' || ch === '}') out += '\\' + ch;
+        else if (code < 0x80) out += ch;
+        else if (code <= 0xffff) out += `\\u${code > 0x7fff ? code - 0x10000 : code}?`;
+        else {
+            const hi = Math.floor((code - 0x10000) / 0x400) + 0xd800, lo = ((code - 0x10000) % 0x400) + 0xdc00;
+            out += `\\u${hi - 0x10000}?\\u${lo - 0x10000}?`;
+        }
+    }
+    return out;
+}
+
+// GeneDoc-style RTF export: blocks of the Block-mode width, a ruler and the
+// consensus row aligned with the sequences, and each cell in the colours the
+// screen gives it (shading or residue colour scheme, text colour included).
+// Character shading (\chcbpat) is used rather than \highlight, which Word
+// limits to 16 fixed colours.
 function exportAlignmentAsRtf() {
     if (!state.seqs || state.seqs.length === 0) {
         showMessage('Load an alignment first.', 3000);
         return;
     }
-
-    const len = Math.max(...state.seqs.map(s => s.seq.length));
-    const shadeMode = document.querySelector('input[name="shadeMode"]:checked')?.value || 'all';
-    const conservation = preCalculateConservation(state.seqs, len, shadeMode);
-    const blackThresh = parseInt(el('blackSlider')?.value || 90) / 100;
-    const darkThresh = parseInt(el('darkSlider')?.value || 70) / 100;
-    const lightThresh = parseInt(el('lightSlider')?.value || 50) / 100;
-    const enableBlack = el('enableBlack')?.checked !== false;
-    const enableDark = el('enableDark')?.checked !== false;
-    const enableLight = el('enableLight')?.checked !== false;
-
-    // Collect unique colors from rendered spans for accurate RTF color table
-    const colorMap = new Map();
-    const seqColors = [];
-    const consColors = [];
-    const defaultColor = '#ffffff';
-    colorMap.set(defaultColor, 0); // index 0 = white
-
-    const getColorIdx = (hex) => {
-        const k = (hex || defaultColor).toLowerCase();
-        if (!colorMap.has(k)) colorMap.set(k, colorMap.size);
-        return colorMap.get(k);
+    const L = _exportLayout({ wrapAlways: true });
+    const probe = _makeCellStyleProbe();
+    const colours = new Map(); // hex -> colour table index (1-based; 0 = auto)
+    const ci = hex => { if (!colours.has(hex)) colours.set(hex, colours.size + 1); return colours.get(hex); };
+    const body = [];
+    const pad = (text, n) => text.length >= n ? text.substring(0, n) : text + ' '.repeat(n - text.length);
+    const cells = (text, start, end, styleAt, consensusRow) => {
+        let line = '';
+        for (const run of _exportRuns(text, start, end, styleAt)) {
+            const st = probe.style(run.st, consensusRow);
+            const bg = ci(st.bg), fg = ci(st.fg);
+            line += `{\\chshdng0\\chcbpat${bg}\\cb${bg}\\cf${fg}${st.bold ? '\\b' : ''} ${_rtfEscape(run.text)}}`;
+        }
+        return line;
     };
-
-    // The shading decision is delegated to the same function the on-screen renderer uses,
-    // so the exported document cannot drift from the display. The previous code read
-    // cons.count, cons.best and cons.baseCounts - none of which preCalculateConservation
-    // returns - so every cell fell through to white and the export carried no shading.
-    const renderConfig = getSequenceRenderConfig();
-    const shadeColour = {
-        black: el('blackColorPicker')?.value || '#000000',
-        dark: el('darkColorPicker')?.value || '#555555',
-        light: el('lightColorPicker')?.value || '#cccccc'
-    };
-    const NO_POS_DATA = { hasData: false, hasValidCoverage: false };
-
-    // Pre-compute colors for each position in each sequence
-    for (let i = 0; i < state.seqs.length; i++) {
-        const rowColors = [];
-        const seq = state.seqs[i].seq;
-        for (let pos = 0; pos < len; pos++) {
-            const baseUp = (seq[pos] || '-').toUpperCase();
-            const cls = applyConservationShadeClass(baseUp, conservation[pos] || NO_POS_DATA, renderConfig);
-            rowColors.push(getColorIdx(shadeColour[cls] || defaultColor));
+    try {
+        for (const [start, end] of L.blocks) {
+            const scale = generateScale(end - start, 10, start);
+            body.push(`{\\cf${ci('#666666')} ${' '.repeat(L.nameLen + 1)}${_rtfEscape(scale)}}\\line`);
+            const consensusLine = () => {
+                const shown = Array.from({ length: L.len }, (_, p) => (p >= start && p < end) ? consensusDisplayBase(L.consensus[p] || '-', p, L.threshold) : '-').join('');
+                body.push(`{\\b\\cf${ci('#555555')} ${_rtfEscape(pad('Consensus', L.nameLen))} }` +
+                    cells(shown, start, end, p => getResidueAnnotationClasses(L.consensus[p] || '-'), true) + '\\line');
+            };
+            if (L.consensus && L.consensusPosition === 'top') consensusLine();
+            for (let i = 0; i < state.seqs.length; i++) {
+                const q = state.seqs[i];
+                const name = pad(q.header || `Seq${i + 1}`, L.nameLen);
+                body.push(`{\\b ${_rtfEscape(name)} }` +
+                    cells(q.seq, start, end, p => _exportCellClass(q.seq[p] || '-', L.conservation[p], L.config), false) + '\\line');
+            }
+            if (L.consensus && L.consensusPosition === 'bottom') consensusLine();
+            body.push('\\line');
         }
-        seqColors.push(rowColors);
+    } finally {
+        probe.dispose();
     }
-
-    // Consensus colors. consSeq is computed once here and reused when the line is written;
-    // it used to be recomputed inside that loop, once per column, over every sequence.
-    const showConsensus = el('showConsensus')?.checked;
-    let consSeq = '';
-    if (showConsensus) {
-        consSeq = computeConsensusForSequences(state.seqs.map(s => s.seq));
-        for (let pos = 0; pos < len; pos++) {
-            consColors.push(getColorIdx('#e8e8e8')); // light gray for consensus
-        }
-    }
-
-    // Build RTF
-    const rtfParts = [];
-    rtfParts.push('{\\rtf1\\ansi\\deff0');
-    rtfParts.push('{\\fonttbl{\\f0\\fmodern\\fprq1 Courier New;}}');
-
-    // Color table
-    rtfParts.push('{\\colortbl;');
-    const sortedColors = [...colorMap.entries()].sort((a, b) => a[1] - b[1]);
-    for (const [hex] of sortedColors) {
-        if (hex === defaultColor) continue; // already added as ;
-        const r = parseInt(hex.slice(1, 3), 16);
-        const g = parseInt(hex.slice(3, 5), 16);
-        const b = parseInt(hex.slice(5, 7), 16);
-        rtfParts.push(`\\red${r}\\green${g}\\blue${b};`);
-    }
-    rtfParts.push('}');
-
-    rtfParts.push('\\f0\\fs18'); // Courier New, 9pt
-
-    // Scale ruler
-    const rulerParts = [];
-    for (let pos = 1; pos <= len; pos++) {
-        if (pos % 10 === 0) {
-            const s = String(pos);
-            rulerParts.push(s);
-        } else if (pos % 10 === 1) {
-            rulerParts.push(' ');
-        }
-    }
-    const ruler = rulerParts.join('');
-    rtfParts.push(`\\b ${ruler}\\b0\\line`);
-
-    // Consensus line
-    if (showConsensus) {
-        let consLine = '';
-        for (let pos = 0; pos < len; pos++) {
-            const ci = consColors[pos] || 0;
-            const ch = consSeq[pos] || '-';
-            consLine += `{\\highlight${ci} ${ch}}`;
-        }
-        rtfParts.push(`\\b Consensus\\b0\\line`);
-        rtfParts.push(`${consLine}\\line`);
-    }
-
-    // Sequences
-    const nameLen = effectiveNameLength();
-    for (let i = 0; i < state.seqs.length; i++) {
-        const name = (state.seqs[i].header || `Seq${i + 1}`).padEnd(nameLen).substring(0, nameLen);
-        let seqLine = '';
-        for (let pos = 0; pos < len; pos++) {
-            const ci = seqColors[i][pos] || 0;
-            const ch = state.seqs[i].seq[pos] || '-';
-            seqLine += `{\\highlight${ci} ${ch}}`;
-        }
-        rtfParts.push(`${name} ${seqLine}\\line`);
-    }
-
-    rtfParts.push('}');
-    const rtf = rtfParts.join('\n');
-
-    const blob = new Blob([rtf], { type: 'application/rtf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    const safeName = (state.currentFilename || 'alignment').replace(/[^a-z0-9._-]+/gi, '_');
-    a.href = url;
-    a.download = `${safeName || 'alignment'}.rtf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 2000);
+    const table = [...colours.entries()].sort((x, y) => x[1] - y[1]).map(([hex]) =>
+        `\\red${parseInt(hex.slice(1, 3), 16)}\\green${parseInt(hex.slice(3, 5), 16)}\\blue${parseInt(hex.slice(5, 7), 16)};`).join('');
+    const rtf = [
+        '{\\rtf1\\ansi\\deff0',
+        '{\\fonttbl{\\f0\\fmodern\\fprq1 Courier New;}}',
+        `{\\colortbl;${table}}`,
+        '\\f0\\fs18',
+        ...body,
+        '}'
+    ].join('\n');
+    _downloadBlob(new Blob([rtf], { type: 'application/rtf' }), `${_safeExportBaseName()}.rtf`);
     showMessage('Alignment exported as RTF (open in Word)!', 2500);
 }
 
