@@ -156,7 +156,10 @@ async function testRealSequences() {
   console.log('\n=== TEST 2: Real SINE sequences ===');
 
   // Load real sequences
-  const raw = fs.readFileSync(path.join(__dirname, 'snake_gekko_SINEs_cons.fas'), 'utf8');
+  // Real SINE consensus sequences (not in the repository; pass your own file)
+  const sineFile = process.env.SINE_FASTA || path.join(__dirname, 'snake_gekko_SINEs_cons.fas');
+  if (!fs.existsSync(sineFile)) { console.log(`  skipped: set SINE_FASTA to a FASTA of SINE consensus sequences (${sineFile} not found)`); return; }
+  const raw = fs.readFileSync(sineFile, 'utf8');
   const allSeqs = parseFasta(raw);
 
   // Pick 5 diverse sequences (Heno, sq1ej, sq1ej1, sq1ej2, sq1ej4)

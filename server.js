@@ -125,13 +125,9 @@ function loadDbRegistry() {
     } catch (e) {
         console.error('Failed to load DB registry:', e.message);
     }
-    // Default databases bundled with the viewer
-    return {
-        'SINEBase.nr95': { path: path.join(__dirname, 'SINEBase.nr95.fa'), desc: 'SINEBase non-redundant (95%)' },
-        'RepBase_filtered': { path: path.join(__dirname, 'RepBase_filtered.bnk'), desc: 'RepBase filtered' },
-        'snake_gekko_SINEs': { path: path.join(__dirname, 'snake_gekko_SINEs_cons.fas'), desc: 'Snake & Gekko SINEs' },
-        'tua_DL_ASuh_JGrau_repeat': { path: path.join(__dirname, 'tua_DL_ASuh_JGrau_repeat.fa'), desc: 'Tuatara repeats' }
-    };
+    // No databases are bundled (RepBase may not be redistributed; add your own
+    // FASTA files from the Search panel or in blast_dbs.json)
+    return {};
 }
 
 function saveDbRegistry(registry) {

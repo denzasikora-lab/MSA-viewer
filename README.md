@@ -109,10 +109,9 @@ see Security Notes below.
 
 ## Sequence databases (optional server)
 
-The optional server offers local FASTA files as search databases; add your own from the
-Search panel. RepBase is licensed by GIRI and may not be redistributed: obtain it from GIRI
-and register it yourself. See `THIRD_PARTY_NOTICES.md` for the database files in this
-repository and their status.
+The optional server offers local FASTA files as search databases; none are bundled, so add
+your own from the Search panel. RepBase is licensed by GIRI and may not be redistributed:
+obtain it from GIRI and register it yourself (see `THIRD_PARTY_NOTICES.md`).
 
 ## Snapshot Storage (GitHub Pages)
 

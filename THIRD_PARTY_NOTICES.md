@@ -39,10 +39,9 @@ itself, including any change to it, stays under CeCILL 2.1.
 ## Sequence databases for the optional server
 
 The optional server (`server.js`) can offer local FASTA files as search
-databases. RepBase is licensed by the Genetic Information Research Institute
-(GIRI) and may not be redistributed, so no RepBase file is part of this
-repository or the public site: obtain RepBase from GIRI under its licence and
-register it with the server yourself. Other database files in the repository
-root (`SINEBase.nr95.fa`, `snake_gekko_SINEs_cons.fas`,
-`tua_DL_ASuh_JGrau_repeat.fa`) are used only by the optional server and are
-not published on the GitHub Pages site.
+databases; none are bundled. RepBase is licensed by the Genetic Information
+Research Institute (GIRI) and may not be redistributed: obtain it from GIRI
+under its licence and register it with the server yourself (Search panel, or
+`blast_dbs.json`). The database files earlier versions of this repository
+carried (RepBase_filtered.bnk, SINEBase.nr95.fa, snake_gekko_SINEs_cons.fas,
+tua_DL_ASuh_JGrau_repeat.fa) have been removed.

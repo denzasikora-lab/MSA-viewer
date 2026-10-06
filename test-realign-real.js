@@ -133,7 +133,10 @@ function rebuildOtherRow(seq, lay, extra) {
 
 async function main() {
   // ---------- load first 5 real SINE consensus sequences from repo ----------
-  const raw = fs.readFileSync(path.join(__dirname, 'snake_gekko_SINEs_cons.fas'), 'utf8');
+  // Real SINE consensus sequences (not in the repository; pass your own file)
+  const sineFile = process.env.SINE_FASTA || path.join(__dirname, 'snake_gekko_SINEs_cons.fas');
+  if (!fs.existsSync(sineFile)) { console.log(`  skipped: set SINE_FASTA to a FASTA of SINE consensus sequences (${sineFile} not found)`); return; }
+  const raw = fs.readFileSync(sineFile, 'utf8');
   const allSeqs = parseFasta(raw);
   const seqs = allSeqs.slice(0, 5);
   console.log(`Loaded ${seqs.length} real SINE sequences: ${seqs.map(s=>s.name.split(/\s/)[0]).join(', ')}`);

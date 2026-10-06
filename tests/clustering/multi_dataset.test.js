@@ -89,7 +89,9 @@ const DATASETS = [
     { name: 'decay_slope', rel: 'tests/fixtures/blockmask/testsets/decay_slope.aln.fa', kind: 'real' },
     { name: 'simple_repeat', rel: 'tests/fixtures/blockmask/testsets/simple_repeat.aln.fa', kind: 'real' },
     { name: 'svk_k4_subset', rel: 'tests/fixtures/clustering/svk_k4_subset.fa', kind: 'svk4' },
-    { name: 'snake_gekko', rel: 'snake_gekko_SINEs_cons.fas', kind: 'unaligned' },
+    // unaligned SINE copies: the SVK subset with its gaps removed (the snake/gecko
+    // consensus file used before is no longer in the repository)
+    { name: 'svk_unaligned', fa: read('tests/fixtures/clustering/svk_k4_subset.fa').split('\n').map(l => l.startsWith('>') ? l : l.replace(/[-.]/g, '')).join('\n'), kind: 'unaligned' },
     { name: 'real_homologous_ends', rel: 'tests/fixtures/blockmask/testsets/real_homologous_ends.aln.fa', kind: 'real' }
 ];
 

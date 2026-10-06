@@ -66,3 +66,8 @@ _site/
 
 # Raw captures written by tools/figures/build_manual_figures.js
 tools/figures/_fig/
+
+# Sequence databases: not redistributed (see THIRD_PARTY_NOTICES.md)
+SINEBase.nr95.fa
+snake_gekko_SINEs_cons.fas
+*.bnk
