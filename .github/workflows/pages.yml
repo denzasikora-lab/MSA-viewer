@@ -1,4 +1,4 @@
-# Deploys the repository root to GitHub Pages on every push to main, and on demand
+# Deploys the public site (tools/build-site.sh) to GitHub Pages on every push to main, and on demand
 # (Actions > Deploy to GitHub Pages > Run workflow). Replaces the automatic
 # "deploy from a branch" build, which stopped being queued on pushes on 2026-10-04.
 # Settings > Pages > Source must be "GitHub Actions" for this to publish.
@@ -27,8 +27,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      # Publish only the viewer, manual, examples and licences (see the
+      # allowlist in tools/build-site.sh), not the whole repository
+      - name: Assemble the public site
+        run: tools/build-site.sh _site
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: .
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4

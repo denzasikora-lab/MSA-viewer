@@ -140,9 +140,13 @@ serves this machine:
 
 ## Licence
 
-ViewAlign is released under the MIT License (`LICENSE`). The MACSE port (`macse-align.js`, `macse-worker.js`,
-`macse-dp-wasm.js`; Ranwez et al. 2011, 2018) is distributed under MACSE's CeCILL 2.1 licence (`LICENSE-MACSE`). It runs
-in its own worker and talks to the rest of ViewAlign only by messages.
+ViewAlign is released under the MIT License (`LICENSE`), except the MACSE port (`macse-align.js`, `macse-worker.js`,
+`macse-dp-wasm.js`; Ranwez et al. 2011, 2018), which is under MACSE's CeCILL 2.1 licence (`LICENSE-MACSE`). The port
+runs in its own worker and talks to the rest of ViewAlign only by messages. The in-browser MAFFT (`disttbfast.*`) is
+under MAFFT's BSD licence (`LICENSE-MAFFT`). `THIRD_PARTY_NOTICES.md` lists every bundled component and data set with
+its licence.
+
+The GitHub Pages site publishes only the files listed in `tools/build-site.sh` (viewer, manual, examples, licences).
 
 ## Support
 
