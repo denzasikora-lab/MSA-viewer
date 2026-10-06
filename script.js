@@ -1516,13 +1516,28 @@ function _getDragIndicatorEl() {
     return indicator;
 }
 
+// The optional server (server.js) is looked for once, with /api/viewer-info;
+// the other /api calls made on load wait for that answer. On the static site
+// (GitHub Pages) and from file:// there is no server, so nothing is requested
+// (each probe used to log a 404 in the console on every page load).
+let _optionalServerProbe = null;
+function optionalServerInfo() {
+    if (!_optionalServerProbe) {
+        const staticHost = location.protocol === 'file:' || /\.github\.io$/i.test(location.hostname);
+        _optionalServerProbe = staticHost ? Promise.resolve(null)
+            : fetch('/api/viewer-info', { signal: AbortSignal.timeout(3000) })
+                .then(r => r.ok ? r.json() : null)
+                .catch(() => null);
+    }
+    return _optionalServerProbe;
+}
+
 function updateVersionIndicator() {
     const elVersion = document.getElementById('versionIndicator');
     if (!elVersion) return;
     elVersion.textContent = `version ${BUILD_TAG}`;
     // Local script cache-bust tag (always available when served from our server)
-    fetch('/api/viewer-info')
-        .then(r => r.ok ? r.json() : null)
+    optionalServerInfo()
         .then(info => {
             if (!info) return;
             const local = info.buildTag || info.scriptVersion;
@@ -1606,6 +1621,7 @@ function _buildServerButtons(servers) {
 
 async function checkSshServer() {
     try {
+        if (!(await optionalServerInfo())) return; // static site: no SSH
         const resp = await fetch('/api/ssh-servers', { signal: AbortSignal.timeout(2000) });
         if (resp.ok) {
             _sshServerAvailable = true;
@@ -13377,6 +13393,7 @@ async function refreshSnapshotList(silent = false) {
 
     try {
         // Local server mode: dynamic directory listing
+        if (!(await optionalServerInfo())) throw new Error('no local server');
         const apiResp = await fetch('/api/snapshots', { signal: AbortSignal.timeout(4000) });
         if (apiResp.ok) {
             const data = await apiResp.json();

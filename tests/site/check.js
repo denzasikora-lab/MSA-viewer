@@ -81,9 +81,10 @@ async function main() {
     const page = await browser.newPage();
     const errors = [];
     page.on('pageerror', e => errors.push(e.message));
-    const missing = [];
+    const missing = [], api = [];
     page.on('response', r => {
-      if (r.status() === 404 && !r.url().includes('/api/')) missing.push(r.url().replace(base, ''));
+      if (r.url().includes('/api/')) api.push(r.url().replace(base, ''));
+      else if (r.status() === 404) missing.push(r.url().replace(base, ''));
     });
     await page.goto(`${base}/index.html?url=${encodeURIComponent(base + '/examples/svk_k4.fa')}`, { waitUntil: 'networkidle' });
     await page.waitForFunction(() => window.state && state.seqs && state.seqs.length === 40, null, { timeout: 15000 }).catch(() => {});
@@ -93,6 +94,7 @@ async function main() {
     check('built site runs MAFFT in its worker', typeof aligned === 'string' && /^>a/m.test(aligned) && aligned.includes('-'), String(aligned).slice(0, 120));
     check('no page errors on the built site', errors.length === 0, errors.join(' | '));
     check('no missing files requested by the built site', missing.length === 0, missing.join(', '));
+    check('without the optional server only one /api probe is made', api.length <= 1, api.join(', '));
   } finally {
     await browser.close();
     server.close();
