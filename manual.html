@@ -1246,8 +1246,8 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     stop completed by polyadenylation of the mRNA, as GenBank notes it) shows a stop over those bases. A BED
     feature counts as a CDS when its description column starts with <code>CDS</code>, or, without a
     description, when its name is not a tRNA, rRNA, origin or control-region name. Loading an annotation
-    that looks mitochondrial (tRNAs, rRNAs, ND/COX/ATP/CYTB) while the code is Standard switches the
-    <strong>Code</strong> to Vertebrate Mito and says so. <strong>Copy AA</strong> and <strong>Save AA</strong>
+    that looks mitochondrial (tRNAs, rRNAs, ND/COX/ATP/CYTB: at least 10 such features, or every feature,
+    as in a one-gene file) while the code is Standard switches the <strong>Code</strong> to Vertebrate Mito and says so. <strong>Copy AA</strong> and <strong>Save AA</strong>
     then give one record per sequence and gene, each read in the gene's direction. A codon with IUPAC
     ambiguity letters translates to the amino acid all its readings share (<code>CCN</code> = P), else X.
     Checked against GenBank: the 13 CDS of NC_069019.1 translate exactly to the record's own
@@ -1277,7 +1277,7 @@ img { max-width: 100%; border: 1px solid var(--border); border-radius: 4px; marg
     <tr><th>Feature</th><th>Visual</th></tr>
     <tr><td>Translation track</td><td>A row under each sequence. Each codon is a box over its own three bases, coloured by amino-acid class (hydrophobic blue, aromatic teal, positive red, negative purple, polar green, G orange, P yellow), with the letter over the middle base. Hover a box for the codon and its columns. With <strong>Frame: All 3</strong>, three rows labelled frame 1-3; the best frame's label is bold</td></tr>
     <tr><td>In-frame stop codons</td><td>Red box with <code>*</code> in the track; the three bases are bold red on pink</td></tr>
-    <tr><td>Frameshifts</td><td>The translation skips gaps, so a gap matters only if it puts a sequence's codons out of step with the other sequences. At each column the reference codon position is the one most sequences have there; where a sequence's position relative to it changes, a red <code>!</code> marks the gap before it (or, for an extra base in that sequence, a red edge on its codon box). Hover it for the columns and the direction. So a base present in one sequence flags that sequence only, not every sequence with a gap opposite it. Gaps before a sequence starts or after it ends never count</td></tr>
+    <tr><td>Frameshifts</td><td>The translation skips gaps, so a gap matters only if it puts a sequence's codons out of step with the other sequences. At each column the reference codon position is the one most sequences have there; where a sequence's position relative to it changes, a red <code>!</code> marks the gap before it (or, for an extra base in that sequence, a red edge on its codon box). Hover it for the columns and the direction. So a base present in one sequence flags that sequence only, not every sequence with a gap opposite it. Gaps before a sequence starts or after it ends never count. <strong>Frameshifts vs: Row 1</strong> (next to Code) uses the first sequence's own codon position instead of the most common one: use it when row 1 is a trusted reference and many rows share an indel it does not have (for example, a family of nuclear pseudogene copies aligned with the real gene), where the majority rule would mark the real genes instead</td></tr>
     <tr><td>Synonymous mutations</td><td>Thin green underline - amino acid unchanged relative to the first sequence</td></tr>
     <tr><td>Non-synonymous mutations</td><td>Thicker red underline - amino acid changed</td></tr>
   </table>

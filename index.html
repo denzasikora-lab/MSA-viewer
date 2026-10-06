@@ -240,6 +240,11 @@
                                     <option value="21">Trematode Mito</option>
                                     <option value="22">Scenedesmus</option>
                                 </select>
+                                <label for="codonFsRef" style="font-size:10px;color:#555;" title="What a frameshift is judged against">Frameshifts vs</label>
+                                <select id="codonFsRef" style="font-size:10px;padding:0 2px;height:18px;" title="Most rows: the codon position most sequences have at each column. Row 1: the first sequence's own codon position (use when row 1 is a trusted reference and many rows share an indel, e.g. pseudogene copies)">
+                                    <option value="majority" selected>Most rows</option>
+                                    <option value="row1">Row 1</option>
+                                </select>
                             </div>
                             <div style="display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;">
                                 <span style="font-size:10px;font-weight:bold;width:70px;text-align:right;">Letters</span>
@@ -1365,7 +1370,7 @@ B: -</pre>
     <script src="ab1-parser.js?v=1"></script>
     <script src="chromatogram-viewer.js?v=1"></script>
     <script src="realign-region.js?v=2"></script>
-    <script src="script.js?v=287"></script>
+    <script src="script.js?v=288"></script>
     <script src="tree-draw.js?v=165"></script>
     <script src="block-mask.js?v=1"></script>
     <script src="block-bicluster.js?v=17"></script>

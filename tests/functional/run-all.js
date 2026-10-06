@@ -807,6 +807,40 @@ check('Codon analysis by gene (oracle): the 13 CDS of mitogenome NC_069019.1 tra
     return { pass: true, detail: `${compared} CDS identical to GenBank (start codons normalised), 4 polyA-completed stops, 4 overlapping genes on lane 2, gapped row mapped, NNN codon = X, per-gene AA FASTA` };
 });
 
+check('Codon analysis: "Frameshifts vs Row 1" marks the rows that share an indel, not the reference they outnumber', async (page) => {
+    // Row 1 (reference) and one more real copy of a 30-nt CDS; three "pseudogene" rows share one extra base after nt 12.
+    // The majority rule takes the three rows' codon phase and marks the two real rows; Row 1 mode marks the three.
+    const cds = 'ATGAAACCCGGGTTTAAACCCGGGTTTTAA';
+    const real = cds.slice(0, 12) + '-' + cds.slice(12), copy = cds.slice(0, 12) + 'A' + cds.slice(12);
+    await loadFasta(page, `>ref\n${real}\n>real2\n${real}\n>copy1\n${copy}\n>copy2\n${copy}\n>copy3\n${copy}\n`);
+    const run = mode => page.evaluate((mode) => new Promise(res => {
+        document.getElementById('codonCode').value = '1';
+        document.getElementById('codonFrame').value = '0';
+        document.getElementById('codonFsRef').value = mode;
+        const cb = document.getElementById('codonAnalysis');
+        if (!cb.checked) { cb.checked = true; cb.dispatchEvent(new Event('change')); }
+        else document.getElementById('codonFsRef').dispatchEvent(new Event('change'));
+        setTimeout(() => res(state._codonData.frameShifts.map(f => f.length)), 700);
+    }), mode);
+    const maj = await run('majority'), row1 = await run('row1');
+    const ok = maj[0] > 0 && maj[1] > 0 && maj.slice(2).every(x => x === 0) && row1[0] === 0 && row1[1] === 0 && row1.slice(2).every(x => x > 0);
+    return { pass: ok, detail: `frameshift marks per row (ref, real2, copy1-3): most rows ${JSON.stringify(maj)}, row 1 ${JSON.stringify(row1)}` };
+});
+
+check('Annotation: a one-gene mitochondrial BED switches the code to Vertebrate Mito; a one-gene other BED does not', async (page) => {
+    await loadFasta(page, '>ref\nATGAAACCCGGGTTTAAACCCGGGTTTTAA\n>b\nATGAAACCCGGGTTTAAACCCGGGTTTTAA\n');
+    const r = await page.evaluate(() => {
+        const sel = document.getElementById('codonCode');
+        sel.value = '1';
+        setAnnotation('ref\t0\t30\tmyGene\t0\t+\t0\t30\t0\t1\t30\t0\tCDS: myGene', 'other.bed');
+        const other = sel.value;
+        sel.value = '1';
+        setAnnotation('ref\t0\t30\tCOX1\t0\t+\t0\t30\t0\t1\t30\t0\tCDS: COX1', 'cox1.bed');
+        return { other, cox1: sel.value };
+    });
+    return { pass: r.other === '1' && r.cox1 === '2', detail: `code after one-gene BED: myGene ${r.other}, COX1 ${r.cox1}` };
+});
+
 async function main() {
     const { server, baseUrl } = await start();
     const results = [];

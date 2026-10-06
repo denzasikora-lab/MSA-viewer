@@ -1,6 +1,6 @@
 // ============================================================================
 // ViewAlign - browser-based multiple sequence alignment viewer & editor
-const BUILD_TAG = 'v239';
+const BUILD_TAG = 'v240';
 // Sentinel row index for consensus-line nucleotide selection (not in state.seqs).
 const CONSENSUS_ROW_INDEX = -1;
 
@@ -4631,8 +4631,14 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
         }
     }
 
-    _markRelativeFrameshifts(phase, frameShifts, len);
+    _markRelativeFrameshifts(phase, frameShifts, len, _codonFsRefMode());
     return { phase, stops, frameShifts, synNonSyn, aaSeq, refIdx, frameOffset };
+}
+
+// What frameshifts are judged against (Display > Codon "Frameshifts vs"): 'majority' = the codon
+// position most rows have at each column (default); 'row1' = the first row's codon position
+function _codonFsRefMode() {
+    return document.getElementById('codonFsRef')?.value === 'row1' ? 'row1' : 'majority';
 }
 
 // Frameshifts are judged against the other sequences, not by a gap's own length. The
@@ -4644,8 +4650,17 @@ function _computeCodonAnalysis(seqs, len, frameOffset) {
 // base, and the most common position is held by at least half of them). A row's offset is
 // its own codon position minus the reference; where the offset changes, that row's frame
 // has shifted relative to the others. It is marked once, over the stretch where it happened.
-function _markRelativeFrameshifts(phase, frameShifts, len) {
+// mode 'row1': the reference codon position is the first row's own, at every column where
+// row 1 has a base. The majority rule fails when many rows share an indel the first row (a
+// trusted reference) does not have, e.g. a family of nuclear pseudogene copies aligned with
+// the real gene: the majority's phase then wins and the real genes get the marks.
+function _markRelativeFrameshifts(phase, frameShifts, len, mode) {
     const n = phase.length;
+    if (mode === 'row1' && n) {
+        const refPhase = Int8Array.from(phase[0], p => (p >= 0 ? p : -1));
+        _markOffsetChanges(phase, frameShifts, len, refPhase);
+        return;
+    }
     const cover = new Int32Array(len + 1);
     const counts = new Int32Array(len * 3);
     for (let i = 0; i < n; i++) {
@@ -4670,6 +4685,12 @@ function _markRelativeFrameshifts(phase, frameShifts, len) {
         if (top * 2 < bases) continue;
         refPhase[c] = a === top ? 0 : b === top ? 1 : 2;
     }
+    _markOffsetChanges(phase, frameShifts, len, refPhase);
+}
+
+// Mark, in every row, the places where its codon position relative to refPhase changes
+function _markOffsetChanges(phase, frameShifts, len, refPhase) {
+    const n = phase.length;
     for (let i = 0; i < n; i++) {
         const ph = phase[i];
         let prevOffset = -1, lastCol = -1;
@@ -6706,10 +6727,12 @@ function setAnnotation(text, sourceName) {
     }
     state.annot = { text: String(text), sourceName, trackName: parsed.trackName, features: parsed.features, skippedLines: parsed.skipped };
     // A mitochondrial gene set (tRNAs, rRNAs, ND/COX/ATP/CYTB) with the Standard code
-    // still selected: switch to the vertebrate mitochondrial code, and say so
+    // still selected: switch to the vertebrate mitochondrial code, and say so. A whole
+    // mitogenome has many such features; a single-gene file (one COX1 feature) counts when
+    // every feature in it has a mitochondrial gene name
     const mt = parsed.features.filter(f => /^(trn|tRNA|ND\d|NAD\d|COX\d|CO[123]\b|ATP[68]|CYTB|COB\b|12S|16S|rrn|control region|D-loop|OL$)/i.test(f.name)).length;
     const codeSel = el('codonCode');
-    if (mt >= 10 && codeSel && codeSel.value === '1') {
+    if ((mt >= 10 || mt === parsed.features.length) && codeSel && codeSel.value === '1') {
         codeSel.value = '2';
         showMessageAfterRender('Annotation looks mitochondrial: genetic code set to Vertebrate Mito (Display > Code)', 5000);
     }
@@ -21865,6 +21888,9 @@ function attachUIListeners() {
 
     const codonFrame = el('codonFrame');
     if (codonFrame) codonFrame.addEventListener('change', debounceRender);
+
+    const codonFsRef = el('codonFsRef');
+    if (codonFsRef) codonFsRef.addEventListener('change', debounceRender);
 
     document.querySelectorAll('#codonFrameSwitch input[name="codonFrameQuick"]').forEach(r => {
         r.addEventListener('change', () => {
