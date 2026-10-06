@@ -6,20 +6,95 @@ const os = require('os');
 const app = express();
 
 app.use(express.json({ limit: '10mb' }));
-app.use((req, res, next) => {
-    const origin = req.get('origin') || '';
-    const allowed = ['http://localhost:3000', 'http://127.0.0.1:3000', 'http://localhost', 'http://127.0.0.1'];
-    const extraOrigin = process.env.CORS_ORIGIN;
-    if (extraOrigin) allowed.push(extraOrigin);
-    if (allowed.includes(origin) || !origin) {
-        res.header('Access-Control-Allow-Origin', origin || '*');
+
+// ============ ACCESS CONTROL ============
+// The server reads local files and runs SSH/samtools on behalf of the page, so
+// it must only take orders from the viewer itself:
+//  - it listens on loopback unless HOST says otherwise;
+//  - the Host header must be localhost, an IP literal or a name listed in
+//    ALLOWED_HOSTS (stops DNS-rebinding pages from reaching it by name);
+//  - /api requests sent by another site's page are refused (CSRF), using
+//    Sec-Fetch-Site and Origin; curl and the viewer's own page pass;
+//  - the routes that read files or reach SSH servers answer only clients on
+//    this machine unless ALLOW_REMOTE_FILE_ACCESS=1.
+const PORT = Number(process.env.PORT) || 3000;
+const HOST = process.env.HOST || '127.0.0.1';
+const CORS_ORIGINS = new Set(['http://localhost:' + PORT, 'http://127.0.0.1:' + PORT]);
+if (process.env.CORS_ORIGIN) CORS_ORIGINS.add(process.env.CORS_ORIGIN);
+const ALLOWED_HOSTS = new Set(['localhost']);
+for (const h of [process.env.TAILSCALE_IP, ...(process.env.ALLOWED_HOSTS || '').split(',')]) {
+    if (h && h.trim()) ALLOWED_HOSTS.add(h.trim().toLowerCase());
+}
+const ALLOW_REMOTE_FILE_ACCESS = process.env.ALLOW_REMOTE_FILE_ACCESS === '1';
+
+function hostnameOf(hostHeader) {
+    const h = String(hostHeader || '').toLowerCase();
+    if (h.startsWith('[')) return h.slice(0, h.indexOf(']') + 1);
+    return h.replace(/:\d+$/, '');
+}
+
+function isAllowedHost(hostHeader) {
+    const h = hostnameOf(hostHeader);
+    if (!h) return false;
+    if (ALLOWED_HOSTS.has(h)) return true;
+    // IP literals cannot be re-pointed by DNS, so they are safe to accept
+    return /^\d{1,3}(\.\d{1,3}){3}$/.test(h) || /^\[[0-9a-f:.]+\]$/.test(h);
+}
+
+function isLoopbackClient(req) {
+    if (req.headers['x-forwarded-for'] || req.headers['x-real-ip']) return false;
+    const a = req.socket.remoteAddress || '';
+    return a === '127.0.0.1' || a === '::1' || a === '::ffff:127.0.0.1';
+}
+
+function isCrossSiteRequest(req) {
+    const origin = req.get('origin');
+    if (origin && !CORS_ORIGINS.has(origin)) {
+        let originHost = '';
+        try { originHost = new URL(origin).host.toLowerCase(); } catch (_) { return true; }
+        if (originHost !== String(req.headers.host || '').toLowerCase()) return true;
     }
+    const site = req.get('sec-fetch-site');
+    if (site && site !== 'same-origin' && site !== 'none' && !(origin && CORS_ORIGINS.has(origin))) return true;
+    return false;
+}
+
+app.use((req, res, next) => {
+    if (!isAllowedHost(req.headers.host)) {
+        return res.status(403).type('text/plain').send('Host not allowed. Add it to ALLOWED_HOSTS to use this name.');
+    }
+    const origin = req.get('origin') || '';
+    if (CORS_ORIGINS.has(origin)) res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Headers', 'Content-Type');
-    res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
     if (req.method === 'OPTIONS') return res.sendStatus(200);
+    if (req.path.startsWith('/api/') && isCrossSiteRequest(req)) {
+        return res.status(403).json({ error: 'Cross-site request refused' });
+    }
     next();
 });
-app.use(express.static('.')); // Serve static files from current directory
+
+// Routes that read local files or reach configured SSH servers
+const FILE_ACCESS_ROUTES = new Set(['/api/local-cat', '/api/bam2sam', '/api/ssh-cat', '/api/ssh-ls',
+    '/api/ssh-poll-file', '/api/queue-file', '/api/poll-file']);
+app.use((req, res, next) => {
+    if (FILE_ACCESS_ROUTES.has(req.path) && !ALLOW_REMOTE_FILE_ACCESS && !isLoopbackClient(req)) {
+        return res.status(403).json({ error: 'File and SSH access is limited to this machine (set ALLOW_REMOTE_FILE_ACCESS=1 to change)' });
+    }
+    next();
+});
+
+// Never serve private configuration, logs or the server source
+const PRIVATE_STATIC = /(^|\/)(ssh-servers\.json|blast_dbs\.json|server\.js|\.env[^/]*|[^/]*\.log|[^/]*\.out)$/i;
+app.use((req, res, next) => {
+    let p = req.path;
+    try { p = decodeURIComponent(p); } catch (_) { return res.sendStatus(400); }
+    if (PRIVATE_STATIC.test(p) || p.split('/').some(seg => seg.startsWith('.') && seg !== '.well-known')) {
+        return res.sendStatus(404);
+    }
+    next();
+});
+app.use(express.static(__dirname, { dotfiles: 'deny' }));
 
 app.get('/api/viewer-info', (req, res) => {
     let scriptVersion = '?';
@@ -37,7 +112,6 @@ app.get('/api/viewer-info', (req, res) => {
     res.json({ root: __dirname, scriptVersion, buildTag });
 });
 
-const PORT = 3000;
 
 // ============ BLAST DATABASE REGISTRY ============
 const DB_REGISTRY_FILE = path.join(__dirname, 'blast_dbs.json');
@@ -583,7 +657,7 @@ app.post('/api/blast-all', (req, res) => {
 // IMPORTANT — `url` is REQUIRED and MUST stay in this response:
 // The actual search UI (script.js runBlastSearch -> blast-worker.js) never calls
 // blastn/makeblastdb — it's a client-side JS search engine that fetches each
-// database's raw FASTA directly over HTTP (served by `express.static('.')` below)
+// database's raw FASTA directly over HTTP (served by the `express.static` handler at the top of this file)
 // and indexes/searches it in a Web Worker. `url` is the only thing that tells the
 // worker where to fetch from. `formatted`/`.nhr` below relates ONLY to the separate,
 // currently-unused server-side /api/blast REST route (real blastn) — it has nothing
@@ -833,23 +907,53 @@ function getPlinkBaseArgs(server) {
     return args;
 }
 
-// Build ssh arg array for a given server; routes through 'via' server when needed
-function buildSshCatArgs(serverKey, filePath) {
+// Remote paths go through one shell (direct) or two (jump host), so they are
+// limited to characters that are inert inside single quotes and that the
+// jump host's double quotes pass through unchanged: letters (any script),
+// digits, space and _ @ % + = : , . / ~ -. No quotes, $, `, \, newlines or
+// redirections, no '..' segment, and no leading '-'.
+const SAFE_REMOTE_PATH = /^[\p{L}\p{N}_@%+=:,./~ -]+$/u;
+function remotePathError(p) {
+    if (typeof p !== 'string' || !p) return 'Missing path';
+    if (p.length > 4096) return 'Path too long';
+    if (!SAFE_REMOTE_PATH.test(p)) return 'Invalid characters in path';
+    if (p.split('/').includes('..')) return 'Path traversal not allowed';
+    if (p.startsWith('-')) return 'Invalid path';
+    return null;
+}
+
+// Quote a path checked by remotePathError for a POSIX shell, keeping a
+// leading ~ outside the quotes so the remote shell still expands it.
+function shellQuoteRemotePath(p) {
+    if (p === '~') return '~';
+    if (p.startsWith('~/')) return "~/'" + p.slice(2) + "'";
+    return "'" + p + "'";
+}
+
+// Build the plink argument array that runs `command` (already quoted) on a
+// configured server, routing through its 'via' jump server when needed.
+function buildSshArgs(serverKey, command) {
     const srv = SSH_SERVERS[serverKey];
     if (!srv) return null;
-    const escaped = filePath.replace(/"/g, '\\"');
     const port = srv.port || 22;
     if (!srv.via) {
         const args = getPlinkBaseArgs(srv);
         if (port !== 22) args.push('-P', port.toString());
-        args.push(`${srv.user}@${srv.host}`, `cat "${escaped}"`);
+        args.push(`${srv.user}@${srv.host}`, command);
         return args;
     }
-    // Route through jump server: local → via → target
+    // Route through jump server: local → via → target. `command` holds no
+    // double quotes, $, ` or \, so wrapping it in double quotes passes it to
+    // the target unchanged.
     const via = SSH_SERVERS[srv.via];
+    if (!via) return null;
     const innerPortArgs = port !== 22 ? ` -p ${port}` : '';
-    const innerCmd = `ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new${innerPortArgs} ${srv.user}@${srv.host} "cat \\"${escaped}\\""`;
+    const innerCmd = `ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new${innerPortArgs} ${srv.user}@${srv.host} "${command}"`;
     return [...getPlinkBaseArgs(via), `${via.user}@${via.host}`, innerCmd];
+}
+
+function buildSshCatArgs(serverKey, filePath) {
+    return buildSshArgs(serverKey, `cat -- ${shellQuoteRemotePath(filePath)}`);
 }
 
 function stripBanner(stdout) {
@@ -875,8 +979,8 @@ app.get('/api/queue-file', (req, res) => {
     const filePath  = req.query.file;
     if (!filePath)  return res.status(400).json({ error: 'Missing file' });
     if (!serverKey || !SSH_SERVERS[serverKey]) return res.status(400).json({ error: 'Unknown server' });
-    if (/[;|&`$(){}\\]/.test(filePath)) return res.status(400).json({ error: 'Invalid path' });
-    if (filePath.includes('..')) return res.status(400).json({ error: 'Path traversal not allowed' });
+    const pathErr = remotePathError(filePath);
+    if (pathErr) return res.status(400).json({ error: pathErr });
     _queuedFile = { server: serverKey, file: filePath, ts: Date.now() };
     console.log(`Queued: [${serverKey}] ${filePath}`);
     res.json({ ok: true });
@@ -924,6 +1028,7 @@ app.get('/api/ssh-poll-file', (req, res) => {
     child.stdout.on('data', (d) => { stdout += d.toString(); });
     child.stderr.on('data', (d) => { stderr += d.toString(); });
     child.on('close', (code) => {
+        if (res.headersSent) return;
         if (code !== 0) {
             const message = stderr.trim() || `plink exited with code ${code}`;
             console.error(`[POLL] ${serverKey} failed: ${message}`);
@@ -955,7 +1060,7 @@ app.get('/api/ssh-poll-file', (req, res) => {
         console.log(`[POLL] Returning queued file: ${filePath}`);
         res.json({ queued: true, server: serverKey, file: filePath });
     });
-    child.on('error', (err) => res.status(500).json({ error: `SSH failed: ${err.message}` }));
+    child.on('error', (err) => { if (!res.headersSent) res.status(500).json({ error: `SSH failed: ${err.message}` }); });
 });
 
 app.get('/api/ssh-cat', (req, res) => {
@@ -964,8 +1069,8 @@ app.get('/api/ssh-cat', (req, res) => {
     console.log(`[SSH-CAT] Fetching file: ${filePath} from ${serverKey}`);
     if (!filePath)  return res.status(400).json({ error: 'Missing "file" query parameter' });
     if (!SSH_SERVERS[serverKey]) return res.status(400).json({ error: `Unknown server: ${serverKey}` });
-    if (/[;|&`$(){}\\]/.test(filePath)) return res.status(400).json({ error: 'Invalid characters in file path' });
-    if (filePath.includes('..')) return res.status(400).json({ error: 'Path traversal not allowed' });
+    const pathErr = remotePathError(filePath);
+    if (pathErr) return res.status(400).json({ error: pathErr });
 
     const sshArgs = buildSshCatArgs(serverKey, filePath);
     if (!sshArgs) return res.status(400).json({ error: 'Bad server config' });
@@ -975,11 +1080,12 @@ app.get('/api/ssh-cat', (req, res) => {
     child.stdout.on('data', (d) => { stdout += d.toString(); });
     child.stderr.on('data', (d) => { stderr += d.toString(); });
     child.on('close', (code) => {
+        if (res.headersSent) return;
         if (code !== 0) return res.status(500).json({ error: stderr.trim() || `SSH exited with code ${code}` });
         if (!stdout.trim()) return res.status(404).json({ error: 'File is empty or not found' });
         res.json({ content: stripBanner(stdout), file: filePath, server: serverKey });
     });
-    child.on('error', (err) => res.status(500).json({ error: `SSH failed: ${err.message}` }));
+    child.on('error', (err) => { if (!res.headersSent) res.status(500).json({ error: `SSH failed: ${err.message}` }); });
 });
 
 // Read a file directly off the machine running this server (distinct from
@@ -989,9 +1095,40 @@ app.get('/api/ssh-cat', (req, res) => {
 // the same trust boundary, not a new one - it exists so pasting a local
 // path into the main input box can be resolved without a file-picker
 // round-trip, mirroring how a URL paste is resolved via plain fetch().
+// Local paths the server may read: under LOCAL_FILE_ROOTS (separated by the
+// platform's path delimiter; default the server folder and the home folder),
+// after resolving symlinks, and never inside a hidden folder or file such as
+// ~/.ssh, ~/.aws or ~/.gnupg.
+const LOCAL_FILE_ROOTS = (process.env.LOCAL_FILE_ROOTS
+    ? process.env.LOCAL_FILE_ROOTS.split(path.delimiter)
+    : [__dirname, os.homedir()]).filter(Boolean).map(r => {
+        try { return fs.realpathSync(path.resolve(r)); } catch (_) { return path.resolve(r); }
+    });
+
+// Returns { path } for a readable local file inside the roots, or { status, error }
+function resolveLocalFile(filePath) {
+    if (typeof filePath !== 'string' || !filePath) return { status: 400, error: 'Missing file path' };
+    if (filePath.startsWith('-')) return { status: 400, error: 'Invalid path' };
+    let real;
+    try {
+        real = fs.realpathSync(path.resolve(filePath));
+    } catch (err) {
+        if (err.code === 'ENOENT') return { status: 404, error: 'File not found: ' + filePath };
+        return { status: 500, error: 'Failed to read file: ' + err.message };
+    }
+    const root = LOCAL_FILE_ROOTS.find(r => real === r || real.startsWith(r.endsWith(path.sep) ? r : r + path.sep));
+    if (!root) return { status: 403, error: 'Path is outside the folders this server may read (LOCAL_FILE_ROOTS)' };
+    const rel = path.relative(root, real);
+    if (rel.split(path.sep).some(seg => seg.startsWith('.'))) {
+        return { status: 403, error: 'Hidden files and folders are not served' };
+    }
+    return { path: real };
+}
+
 app.get('/api/local-cat', (req, res) => {
-    const filePath = req.query.file;
-    if (!filePath) return res.status(400).json({ error: 'Missing "file" query parameter' });
+    const resolved = resolveLocalFile(req.query.file);
+    if (resolved.error) return res.status(resolved.status).json({ error: resolved.error });
+    const filePath = resolved.path;
     console.log(`[LOCAL-CAT] Fetching file: ${filePath}`);
     try {
         const stat = fs.statSync(filePath);
@@ -1009,70 +1146,58 @@ app.get('/api/local-cat', (req, res) => {
 app.get('/api/ssh-ls', (req, res) => {
     const dirPath   = req.query.dir || '~';
     const serverKey = req.query.server || 'default';
-    if (/[;|&`$(){}\\]/.test(dirPath)) return res.status(400).json({ error: 'Invalid characters in path' });
-    if (dirPath.includes('..')) return res.status(400).json({ error: 'Path traversal not allowed' });
+    const pathErr = remotePathError(dirPath);
+    if (pathErr) return res.status(400).json({ error: pathErr });
     if (!SSH_SERVERS[serverKey]) return res.status(400).json({ error: `Unknown server: ${serverKey}` });
 
-    const escaped   = dirPath.replace(/"/g, '\\"');
-    const srv       = SSH_SERVERS[serverKey];
-    const baseArgs  = getPlinkBaseArgs(srv);
-    let sshArgs;
-    if (!srv.via) {
-        const port = srv.port || 22;
-        sshArgs = [...baseArgs];
-        if (port !== 22) sshArgs.push('-P', port.toString());
-        sshArgs.push(`${srv.user}@${srv.host}`, `ls -1p "${escaped}"`);
-    } else {
-        const via = SSH_SERVERS[srv.via];
-        const port = srv.port || 22;
-        const innerPortArgs = port !== 22 ? ` -p ${port}` : '';
-        const innerCmd = `ssh -T -o BatchMode=yes -o StrictHostKeyChecking=accept-new${innerPortArgs} ${srv.user}@${srv.host} "ls -1p \\"${escaped}\\""`;
-        sshArgs = [...getPlinkBaseArgs(via), `${via.user}@${via.host}`, innerCmd];
-    }
+    const sshArgs = buildSshArgs(serverKey, `ls -1p -- ${shellQuoteRemotePath(dirPath)}`);
+    if (!sshArgs) return res.status(400).json({ error: 'Bad server config' });
 
     const child = spawn('plink', sshArgs, { timeout: 10000 });
     let stdout = '', stderr = '';
     child.stdout.on('data', (d) => { stdout += d.toString(); });
     child.stderr.on('data', (d) => { stderr += d.toString(); });
     child.on('close', (code) => {
+        if (res.headersSent) return;
         if (code !== 0) return res.status(500).json({ error: stderr.trim() || `ls failed` });
         const entries = stdout.trim().split('\n').filter(Boolean);
         res.json({ dir: dirPath, entries });
     });
-    child.on('error', (err) => res.status(500).json({ error: `SSH failed: ${err.message}` }));
+    child.on('error', (err) => { if (!res.headersSent) res.status(500).json({ error: `SSH failed: ${err.message}` }); });
 });
 
 // ============ BAM/CRAM → SAM CONVERSION ============
 app.post('/api/bam2sam', (req, res) => {
     const { bamPath, region } = req.body;
     if (!bamPath) return res.status(400).json({ error: 'Missing bamPath' });
-    // Path traversal guard
-    if (/[;|&`$(){}\\]/.test(bamPath)) return res.status(400).json({ error: 'Invalid path' });
-    if (bamPath.includes('..')) return res.status(400).json({ error: 'Path traversal not allowed' });
+    const resolved = resolveLocalFile(bamPath);
+    if (resolved.error) return res.status(resolved.status).json({ error: resolved.error });
 
     try {
         const args = ['view', '-h'];
         if (region && /^[\w.-]+:\d+-\d+$/.test(region)) args.push(region);
-        args.push(bamPath);
+        args.push(resolved.path);
 
         const child = spawn('samtools', args, { timeout: 30000, maxBuffer: 100 * 1024 * 1024 });
         let stdout = '', stderr = '';
         child.stdout.on('data', d => { stdout += d.toString(); });
         child.stderr.on('data', d => { stderr += d.toString(); });
         child.on('close', code => {
+            if (res.headersSent) return;
             if (code !== 0) return res.status(500).json({ error: stderr || 'samtools failed' });
             res.json({ success: true, sam: stdout });
         });
-        child.on('error', err => res.status(500).json({ error: err.message }));
+        child.on('error', err => { if (!res.headersSent) res.status(500).json({ error: err.message }); });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+app.listen(PORT, HOST, () => {
     const tailscaleIp = process.env.TAILSCALE_IP || '';
-    const tailscaleMsg = tailscaleIp ? `  (also on Tailscale ${tailscaleIp}:${PORT})` : '';
+    const tailscaleMsg = tailscaleIp && HOST !== '127.0.0.1' ? `  (also on Tailscale ${tailscaleIp}:${PORT})` : '';
     console.log(`ViewAlign server running on http://localhost:${PORT}${tailscaleMsg}`);
+    if (HOST === '127.0.0.1') console.log('Listening on this machine only (set HOST=0.0.0.0 to accept other machines).');
     initializeDatabases();
     loadDbCache();
 });

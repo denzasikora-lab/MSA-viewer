@@ -119,6 +119,20 @@ For short, stable links on GitHub Pages:
 
 ## Security Notes
 
+The optional server reads local files and runs SSH on your behalf, so by default it only
+serves this machine:
+
+- It listens on `127.0.0.1`. Set `HOST=0.0.0.0` to accept other machines (LAN, Tailscale);
+  the port is `PORT` (default 3000).
+- Requests must use `localhost`, an IP address, or a name listed in `ALLOWED_HOSTS`
+  (comma-separated), which blocks DNS-rebinding pages.
+- `/api` requests sent by another web site's page are refused.
+- Loading local paths and SSH files works only for clients on the same machine unless
+  `ALLOW_REMOTE_FILE_ACCESS=1`. Local paths must lie under `LOCAL_FILE_ROOTS`
+  (default: the ViewAlign folder and your home folder) and never inside hidden folders
+  such as `~/.ssh`.
+- `ssh-servers.json`, `blast_dbs.json`, logs and `server.js` are never served.
+- Remote paths may contain letters, digits, spaces and `_ @ % + = : , . / ~ -` only.
 - SSH uses key-based auth (no passwords)
 - Queue file at `/tmp/.msa_viewer_queue` must be world-writable (666)
 - All file transfers encrypted over SSH

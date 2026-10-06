@@ -21,3 +21,4 @@ node tests/clustering/multi_dataset.test.js
 node tests/bicluster/oracle.js
 node tests/regression/run-all.js
 node tests/compat/run.js
+node tests/server/security.test.js
