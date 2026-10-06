@@ -3,7 +3,7 @@
 // event handler is confirmed to dispatch to the same internal call - see
 // each check's comment). Exits 0 if all pass, 1 if any fail. Meant to be
 // used both by a human (`node tests/regression/run-all.js`) and as a
-// BROWSER_CHECK_CMD target from aider-loop.sh (see AIDER-PLAYBOOK.md).
+// target of tests/run-all.js.
 const { start } = require('../lib/static-server');
 const { launch, makeFasta, loadFasta, loadSyntheticFasta, setMode } = require('../lib/browser');
 

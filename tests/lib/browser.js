@@ -1,7 +1,6 @@
-// Shared headless-Chrome launch helper for the test suite. Drives the
-// system-installed Chrome directly via playwright-core (no browser
-// download) - see AIDER-PLAYBOOK.md / CLAUDE.md global rules for why this
-// pattern is used instead of a full Playwright install.
+// Shared headless-Chrome launch helper for the test suite. Drives an
+// installed Chrome/Chromium directly via playwright-core, so the tests never
+// download a browser (no full Playwright install needed).
 const { chromium } = require('playwright-core');
 
 const CHROME_CANDIDATES = [

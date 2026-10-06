@@ -6,10 +6,21 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "node tests/regression/run-all.js",
-    "test:benchmark": "node tests/benchmark/run-all.js"
+    "test": "node tests/run-all.js",
+    "test:quick": "node tests/run-all.js --quick",
+    "test:benchmark": "node tests/benchmark/run-all.js",
+    "build:site": "bash tools/build-site.sh"
   },
-  "keywords": ["msa", "alignment", "sequence", "blast", "mafft", "bioinformatics", "viewer", "editor"],
+  "keywords": [
+    "msa",
+    "alignment",
+    "sequence",
+    "blast",
+    "mafft",
+    "bioinformatics",
+    "viewer",
+    "editor"
+  ],
   "author": "",
   "license": "MIT",
   "homepage": "https://toki-bio.github.io/MSA-viewer/",

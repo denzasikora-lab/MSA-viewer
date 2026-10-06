@@ -1,0 +1,26 @@
+# Runs every test suite (tests/run-all.js) on each push and pull request.
+# The browser suites use the Google Chrome that GitHub's Ubuntu runners
+# include (/usr/bin/google-chrome, found by tests/lib/browser.js).
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - name: Run all suites
+        run: npm test

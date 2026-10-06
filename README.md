@@ -44,8 +44,13 @@ No installation, no build step, no framework dependencies.
 **Try a starter alignment (40 SINE copies, 4 groups):**
 https://toki-bio.github.io/MSA-viewer/?url=https://toki-bio.github.io/MSA-viewer/examples/svk_k4.fa&title=SVK%20SINE%20(K1–K4)
 
-### Browser (HTML only)
-Open `index.html` in any modern browser. Supports local file upload. More examples: [examples/](examples/).
+### Browser only (no install)
+Use the hosted app above, or serve this folder over HTTP and open it, for example
+`python3 -m http.server 8000` then `http://localhost:8000/`. More examples: [examples/](examples/).
+
+Opening `index.html` directly from disk (`file://`) shows and edits alignments, but browsers
+block Web Workers and file fetches there, so MAFFT, MACSE, sequence search, dot plots and
+`?url=` loading need the page served over HTTP(S).
 
 ### Server Mode (Recommended)
 ```bash
@@ -63,7 +68,7 @@ Enables:
 See **[REMOTE_PUSH_TO_LOAD_GUIDE.md](REMOTE_PUSH_TO_LOAD_GUIDE.md)** for comprehensive setup instructions including:
 - Configuring remote servers
 - Installing MC menu entries
-- Troubleshooting SS connections
+- Troubleshooting SSH connections
 
 ### Quick Example
 
@@ -82,26 +87,24 @@ v   View in MSA viewer
 
 ## Configuration
 
-Edit `server.js` to add or modify SSH servers:
-```javascript
-const SSH_SERVERS = {
-    'myserver': {
-        label: 'My Lab Server',
-        user: 'username',
-        host: 'server.example.com',
-        via: null  // or 'gateway' for jump host
-    }
-};
+SSH servers are listed in `ssh-servers.json` (not committed; copy `ssh-servers.example.json`):
+```json
+{
+    "myserver": { "label": "My Lab Server", "user": "username", "host": "server.example.com", "port": 22, "via": null },
+    "inner":    { "label": "Behind gateway", "user": "username", "host": "10.0.0.5", "via": "myserver" }
+}
 ```
+`via` names another entry to use as a jump host. The SSH key is `~/.ssh/id_ed25519`
+(`id_ed25519.ppk` on Windows) unless `SSH_KEY_PATH` is set. Other settings (`PORT`, `HOST`,
+`ALLOWED_HOSTS`, `LOCAL_FILE_ROOTS`, `ALLOW_REMOTE_FILE_ACCESS`) are environment variables;
+see Security Notes below.
 
-## Demo Sequences
+## Sequence databases (optional server)
 
-Includes sample SINE sequences:
-- **RepBase.bnk**: ~49K SINE elements
-- **RepBase_filtered.bnk**: Filtered high-confidence elements
-- **SINEBase.nr95**: Non-redundant collection
-- **tua_DL_ASuh_JGrau_repeat.fa**: Custom repeat FASTA
-- Custom Anolis sequences
+The optional server offers local FASTA files as search databases; add your own from the
+Search panel. RepBase is licensed by GIRI and may not be redistributed: obtain it from GIRI
+and register it yourself. See `THIRD_PARTY_NOTICES.md` for the database files in this
+repository and their status.
 
 ## Snapshot Storage (GitHub Pages)
 

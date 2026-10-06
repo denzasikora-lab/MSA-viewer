@@ -886,7 +886,9 @@ let SSH_SERVERS = {};
 try {
     const srvPath = path.join(__dirname, 'ssh-servers.json');
     if (fs.existsSync(srvPath)) {
-        SSH_SERVERS = JSON.parse(fs.readFileSync(srvPath, 'utf8'));
+        // Keys starting with '_' (notes) and non-object values are not servers
+        SSH_SERVERS = Object.fromEntries(Object.entries(JSON.parse(fs.readFileSync(srvPath, 'utf8')))
+            .filter(([k, v]) => !k.startsWith('_') && v && typeof v === 'object'));
         console.log(`Loaded ${Object.keys(SSH_SERVERS).length} SSH server(s) from ssh-servers.json`);
     } else {
         console.log('No ssh-servers.json found — SSH features disabled. Copy ssh-servers.example.json to ssh-servers.json to configure.');
