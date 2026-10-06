@@ -8,7 +8,9 @@ const fs = require('fs');
 const path = require('path');
 
 const ROOT = path.join(__dirname, '..', '..');
-const PORT = process.env.TEST_SERVER_PORT ? Number(process.env.TEST_SERVER_PORT) : 3193;
+// TEST_SERVER_PORT fixes the port; by default the OS picks a free one, so
+// suites can run side by side.
+const PORT = process.env.TEST_SERVER_PORT ? Number(process.env.TEST_SERVER_PORT) : 0;
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json', '.wasm': 'application/wasm' };
 
 function start() {
@@ -24,7 +26,10 @@ function start() {
         res.end(data);
       });
     });
-    server.listen(PORT, () => resolve({ server, port: PORT, baseUrl: `http://localhost:${PORT}` }));
+    server.listen(PORT, () => {
+      const port = server.address().port;
+      resolve({ server, port, baseUrl: `http://localhost:${port}` });
+    });
   });
 }
 

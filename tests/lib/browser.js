@@ -7,6 +7,13 @@ const { chromium } = require('playwright-core');
 const CHROME_CANDIDATES = [
   'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+  '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+  '/Applications/Chromium.app/Contents/MacOS/Chromium',
+  '/opt/pw-browsers/chromium',
+  '/usr/bin/google-chrome',
+  '/usr/bin/google-chrome-stable',
+  '/usr/bin/chromium',
+  '/usr/bin/chromium-browser',
 ];
 
 function findChrome() {
@@ -16,7 +23,7 @@ function findChrome() {
   for (const p of CHROME_CANDIDATES) {
     if (fs.existsSync(p)) return p;
   }
-  throw new Error('No local Chrome/Edge install found at expected paths - see tests/lib/browser.js CHROME_CANDIDATES');
+  throw new Error('No local Chrome/Chromium/Edge found - set BROWSER_PATH=<executable> (see tests/lib/browser.js CHROME_CANDIDATES)');
 }
 
 async function launch() {
