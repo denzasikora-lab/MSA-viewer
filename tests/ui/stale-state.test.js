@@ -70,6 +70,22 @@ const SNAP = () => ({
   check(!s.codon, 'protein file: codon analysis switched off');
   check(!/requires a nucleotide/.test(s.message), `protein file: no codon warning ("${s.message}")`);
 
+  // 4. text typed or pasted after opening a file is not labelled with that file's name
+  const header = () => page.evaluate(() => document.getElementById('sourceInfo').textContent);
+  await open('examples/svk_k4.fa');
+  await page.evaluate(() => document.getElementById('loadButton').click());   // reload, box unchanged
+  await page.waitForTimeout(800);
+  check(/svk_k4\.fa/.test(await header()), 'Load with the box unchanged keeps the file name');
+  await page.evaluate(() => {
+    const box = document.getElementById('fastaInput');
+    box.value = '>a\nACGTACGT\n>b\nACGAACGT\n';
+    box.dispatchEvent(new Event('input', { bubbles: true }));   // what typing or pasting fires
+    document.getElementById('loadButton').click();
+  });
+  await page.waitForTimeout(800);
+  const h = await header();
+  check(!/svk_k4/.test(h) && /2 seq/.test(h), `pasted text not labelled svk_k4.fa ("${h.slice(0, 60)}")`);
+
   check(errors.length === 0, `no page errors${errors.length ? ': ' + errors.join('; ') : ''}`);
   await browser.close(); server.close();
   console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed');

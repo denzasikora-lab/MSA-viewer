@@ -21541,6 +21541,13 @@ function initializeAppUI() {
         });
     });
 
+    // Text typed or pasted by the user is not the file loaded before: forget its name
+    // (loading a file sets the box from code, which fires no 'input' event)
+    fastaInput?.addEventListener('input', () => {
+        state.currentFilename = '';
+        state.currentFilePath = '';
+    });
+
     fastaInput?.addEventListener('paste', () => {
         setTimeout(() => {
             parseAndRender(false);
