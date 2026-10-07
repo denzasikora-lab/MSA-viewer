@@ -18,6 +18,29 @@ check('loads without console errors', async (page) => {
   return { pass: true };
 });
 
+check('FASTA preamble beyond 200 lines preserves raw preflight sizing', async (page) => {
+  const errors = [];
+  page.on('pageerror', e => errors.push(e.message));
+  const fasta = 'A:\n'.repeat(201)
+    + '>seq0\nACGTACGT\n>seq1\nACGTACGT\n>short\nACGTACG\n';
+
+  await loadFasta(page, fasta);
+  const result = await page.evaluate(() => ({
+    sequences: state.seqs.map(s => s.seq),
+    nSeqs: state.alignmentIndex?.nSeqs,
+    maxLen: state.alignmentIndex?.maxLen,
+    totalResidues: state.alignmentIndex?.totalResidues,
+  }));
+
+  // Padding creates 24 cells, but preflight must retain the original 23.
+  const pass = errors.length === 0
+    && result.sequences.join(',') === 'ACGTACGT,ACGTACGT,ACGTACG-'
+    && result.nSeqs === 3
+    && result.maxLen === 8
+    && result.totalResidues === 23;
+  return { pass, detail: JSON.stringify({ ...result, pageErrors: errors }) };
+});
+
 check('mode switching: full/block/canvas all render rows', async (page) => {
   await loadFasta(page, makeFasta(20, 500));
   for (const mode of ['full', 'block', 'canvas']) {
