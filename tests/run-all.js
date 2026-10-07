@@ -44,6 +44,7 @@ const SUITES = [
   { name: 'layout: no stray scrollbars', args: ['tests/layout/stray-scrollbars.test.js'], browser: true },
   { name: 'layout: toolbar items never overlap', args: ['tests/layout/toolbar.test.js'], browser: true },
   { name: 'ui: no stale overlays after load or realign', args: ['tests/ui/stale-state.test.js'], browser: true },
+  { name: 'ui: menus and windows (clipped text, Tree window, Load anyway)', args: ['tests/ui/menus-windows.test.js'], browser: true },
   { name: 'public site (tools/build-site.sh)', args: ['tests/site/check.js'], browser: true },
 ];
 

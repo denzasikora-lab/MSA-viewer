@@ -10825,7 +10825,9 @@ function showLargeAlignmentDialog(stats, classification, context = 'load') {
         backdrop.appendChild(dialog);
         document.body.appendChild(backdrop);
 
+        let started = false;
         const finish = (choice) => {
+            if (started && choice !== 'proceed') return;
             backdrop.remove();
             document.removeEventListener('keydown', onKey);
             resolve(choice);
@@ -10835,7 +10837,19 @@ function showLargeAlignmentDialog(stats, classification, context = 'load') {
         };
         document.addEventListener('keydown', onKey);
         content.querySelector('#alignLoadCancel').addEventListener('click', () => finish('cancel'));
-        content.querySelector('#alignLoadProceed').addEventListener('click', () => finish('proceed'));
+        content.querySelector('#alignLoadProceed').addEventListener('click', (e) => {
+            // The load that follows can block the page for seconds, and the dialog's removal is
+            // not painted until it ends: say it is working, let that paint, then go on
+            const btn = e.currentTarget;
+            if (btn.disabled) return;
+            btn.disabled = true;
+            btn.textContent = isModeSwitch ? 'Switching…' : 'Loading…';
+            btn.style.cursor = 'progress';
+            content.querySelector('#alignLoadCancel').disabled = true;
+            backdrop.style.cursor = 'progress';
+            started = true;   // no Esc or backdrop cancel once started
+            requestAnimationFrame(() => setTimeout(() => finish('proceed'), 0));
+        });
         backdrop.addEventListener('click', (e) => {
             if (e.target === backdrop) finish('cancel');
         });

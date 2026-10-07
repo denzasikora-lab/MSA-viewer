@@ -282,10 +282,6 @@ html {
     align-items: stretch;
 }
 
-#actions-controls .action-section-order .button-group {
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-}
-
 #actions-controls .button-group button {
     width: 100%;
     min-width: 0;
@@ -3636,6 +3632,12 @@ table.stats-mx th.hl, table.stats-mx th.hl span { background: #fff3b0; color: #0
     border-bottom: 1px solid #e2e5e8;
     border-radius: 8px 8px 0 0;
     flex-shrink: 0;
+}
+/* Tree window: fits the screen and scrolls inside, the title bar (with Close) staying on top */
+#treeBuilderDialog > .win-titlebar {
+    position: sticky;
+    top: calc(-1 * var(--win-pad, 16px));
+    z-index: 3;
 }
 .win-titlebar h2, .win-titlebar h3 { margin: 0; font-size: 14px; font-weight: 650; color: #222; }
 .win-close {
