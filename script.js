@@ -8300,16 +8300,12 @@ function ensureClearReadsButton() {
     btn.id = 'clearReadsButton';
     btn.type = 'button';
     btn.textContent = 'Clear reads';
-    btn.style.cssText = 'font-size:11px;padding:2px 8px;margin-left:4px;cursor:pointer;'
+    btn.style.cssText = 'font-size:10px;height:18px;padding:0 8px;cursor:pointer;white-space:nowrap;'
         + 'border:1px solid #999;border-radius:3px;background:#f0f0f0;display:none;';
     btn.addEventListener('click', clearReadsData);
-    const bamBtn = document.getElementById('openBamToolbarButton');
-    if (bamBtn && bamBtn.parentNode) {
-        bamBtn.parentNode.insertBefore(btn, bamBtn.nextSibling);
-    } else {
-        const controls = document.getElementById('controls');
-        if (controls) controls.appendChild(btn);
-    }
+    const row = document.getElementById('modeRow');
+    if (row) row.appendChild(btn);
+    else document.getElementById('controls')?.appendChild(btn);
     return btn;
 }
 
@@ -11229,16 +11225,35 @@ function ensureCanvasModeNotice() {
     let notice = document.getElementById('canvasModeNotice');
     if (notice) return notice;
     const quickSwitch = document.getElementById('quickModeSwitch');
-    const shortcuts = document.getElementById('shortcuts-section');
-    if (!quickSwitch || !shortcuts || !quickSwitch.parentNode) return null;
+    if (!quickSwitch || !quickSwitch.parentNode) return null;
     notice = document.createElement('span');
     notice.id = 'canvasModeNotice';
     notice.className = 'canvas-mode-chip';
     notice.title = 'Canvas mode is view-only. Switch to Full or Block to edit sequences or select columns (Ctrl+Alt+click).';
     notice.textContent = `Canvas ${SYM.sep} view-only`;
-    quickSwitch.parentNode.insertBefore(notice, shortcuts);
+    quickSwitch.parentNode.insertBefore(notice, quickSwitch.nextSibling);
     return notice;
 }
+
+// The mode row (second toolbar row) is shown only while one of its controls is
+// visible. Watches its children, so every place that shows or hides one is covered.
+function syncModeRow() {
+    const row = document.getElementById('modeRow');
+    if (!row) return;
+    const any = [...row.children].some(c => !c.hidden && getComputedStyle(c).display !== 'none');
+    if (row.hidden === !any) return;
+    row.hidden = !any;
+}
+(function watchModeRow() {
+    const row = document.getElementById('modeRow');
+    if (!row || typeof MutationObserver === 'undefined') return;
+    let queued = false;
+    new MutationObserver(() => {
+        if (queued) return;
+        queued = true;
+        Promise.resolve().then(() => { queued = false; syncModeRow(); });
+    }).observe(row, { childList: true, subtree: true, attributes: true, attributeFilter: ['style', 'class', 'hidden'] });
+})();
 
 function syncQuickModeSwitch() {
     const map = { modeSingle: 'qmSingle', modeBlocks: 'qmBlocks', modeCanvas: 'qmCanvas', modeReads: 'qmReads' };
@@ -11264,6 +11279,7 @@ function syncQuickModeSwitch() {
     setCanvasNoticeVisible(!!isCanvasMode);
     const readsToggle = ensureReadsDisplayToggle();
     if (readsToggle) readsToggle.style.display = isReadsMode ? 'flex' : 'none';
+    syncModeRow();
     syncSearchControlsAvailability();
 }
 

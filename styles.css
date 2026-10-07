@@ -145,12 +145,30 @@ html {
 }
 
 .standard-menu-group {
-    flex: 1 1 auto;
+    flex: 1 0 auto;               /* never narrower than its menus: they would be drawn over each other */
     display: flex;
     justify-content: flex-start;
     gap: 10px;
     align-items: center;
     min-width: 220px;
+}
+
+/* Menu row: wraps (rather than overlapping) on a window too narrow for it */
+#menuRow {
+    flex-wrap: wrap;
+    row-gap: 2px;
+}
+
+/* Second row: the controls of the current mode (view switch, Canvas notice, codon frame,
+   reads). Shown by script.js only while one of them is visible. */
+.mode-row {
+    flex-wrap: wrap;
+    gap: 6px;
+    padding-top: 2px;
+    padding-bottom: 1px;
+}
+.mode-row[hidden] {
+    display: none;
 }
 
 /* Prevent side-section headers from stretching full width */

@@ -13,7 +13,7 @@
 </head>
 <body>
     <div id="controls" role="region" aria-label="Menus">
-        <div class="control-row" style="justify-content: flex-start; align-items: center; gap: 2px; flex-wrap: nowrap;">
+        <div class="control-row menu-row" id="menuRow" style="justify-content: flex-start; align-items: center; gap: 2px;">
             <!-- ACTUAL BUTTONS -->
             <div class="menu-section side-section" id="input-section">
                 <div class="section-header" data-section="input">
@@ -777,28 +777,6 @@
                 </div>
             </div>
 
-            <div class="quick-mode-switch" id="quickModeSwitch" title="Display mode: Full / Block / Canvas / Reads">
-                <input type="radio" name="quickMode" id="qmSingle" data-target="modeSingle" title="Full mode"><label for="qmSingle">Full</label>
-                <input type="radio" name="quickMode" id="qmBlocks" data-target="modeBlocks" title="Block mode"><label for="qmBlocks">Block</label>
-                <input type="radio" name="quickMode" id="qmCanvas" data-target="modeCanvas" title="Canvas mode (large alignments, view-only)"><label for="qmCanvas">Canvas</label>
-                <input type="radio" name="quickMode" id="qmReads" data-target="modeReads" title="Reads mode (mapped SAM/BAM data)"><label for="qmReads" id="qmReadsLabel" style="display:none;">Reads</label>
-            </div>
-
-            <span id="canvasModeNotice" class="canvas-mode-chip" title="Canvas mode is view-only. Switch to Full or Block to edit sequences or select columns (Ctrl+Alt+click).">Canvas | view-only</span>
-
-            <div class="codon-mode-panel" id="codonModePanel" hidden title="Reading frame: which alignment column starts the first codon (Pos 1 = column 1)">
-                <span class="codon-panel-label">Codon</span>
-                <div class="codon-frame-switch" id="codonFrameSwitch">
-                    <input type="radio" name="codonFrameQuick" id="cfPos1" value="0" title="Read codons starting at alignment column 1"><label for="cfPos1" title="Read codons starting at alignment column 1">Pos 1</label>
-                    <input type="radio" name="codonFrameQuick" id="cfPos2" value="1" title="Read codons starting at alignment column 2"><label for="cfPos2" title="Read codons starting at alignment column 2">Pos 2</label>
-                    <input type="radio" name="codonFrameQuick" id="cfPos3" value="2" title="Read codons starting at alignment column 3"><label for="cfPos3" title="Read codons starting at alignment column 3">Pos 3</label>
-                    <input type="radio" name="codonFrameQuick" id="cfAuto" value="auto" checked title="Auto: the genes of the annotation track when it has CDS features, else the frame with most ATG starts and fewest stops"><label for="cfAuto" title="Auto: the genes of the annotation track when it has CDS features, else the frame with most ATG starts and fewest stops">Auto</label>
-                    <input type="radio" name="codonFrameQuick" id="cfGenes" value="genes" hidden title="Each annotated CDS in its own frame and strand"><label for="cfGenes" hidden title="Each annotated CDS in its own frame and strand">Genes</label>
-                </div>
-                <button type="button" class="codon-panel-btn" onclick="copyAATranslation()" title="Copy amino acid translation(s) as FASTA">Copy AA</button>
-                <button type="button" class="codon-panel-btn" onclick="downloadAATranslation()" title="Download amino acid translation(s) as FASTA">Save AA</button>
-            </div>
-
             <div class="menu-section menu-align-right" id="shortcuts-section">
                 <div class="section-header" data-section="shortcuts">
                     <span title="Keyboard shortcuts (hover to view)">Keys</span>
@@ -921,6 +899,31 @@
                      from BUILD_TAG. Keep in sync with BUILD_TAG or it silently rots. -->
                 <div id="versionIndicator">version v179</div>
                 <div id="sourceInfo">No file loaded</div>
+            </div>
+        </div>
+        <!-- Controls of the current mode (view switch outside Full/Block, Canvas notice, codon
+             frame, reads). Their own row, shown only when one is visible, so they never crowd the menus. -->
+        <div class="control-row mode-row" id="modeRow" hidden>
+            <div class="quick-mode-switch" id="quickModeSwitch" title="Display mode: Full / Block / Canvas / Reads">
+                <input type="radio" name="quickMode" id="qmSingle" data-target="modeSingle" title="Full mode"><label for="qmSingle">Full</label>
+                <input type="radio" name="quickMode" id="qmBlocks" data-target="modeBlocks" title="Block mode"><label for="qmBlocks">Block</label>
+                <input type="radio" name="quickMode" id="qmCanvas" data-target="modeCanvas" title="Canvas mode (large alignments, view-only)"><label for="qmCanvas">Canvas</label>
+                <input type="radio" name="quickMode" id="qmReads" data-target="modeReads" title="Reads mode (mapped SAM/BAM data)"><label for="qmReads" id="qmReadsLabel" style="display:none;">Reads</label>
+            </div>
+
+            <span id="canvasModeNotice" class="canvas-mode-chip" title="Canvas mode is view-only. Switch to Full or Block to edit sequences or select columns (Ctrl+Alt+click).">Canvas | view-only</span>
+
+            <div class="codon-mode-panel" id="codonModePanel" hidden title="Reading frame: which alignment column starts the first codon (Pos 1 = column 1)">
+                <span class="codon-panel-label">Codon</span>
+                <div class="codon-frame-switch" id="codonFrameSwitch">
+                    <input type="radio" name="codonFrameQuick" id="cfPos1" value="0" title="Read codons starting at alignment column 1"><label for="cfPos1" title="Read codons starting at alignment column 1">Pos 1</label>
+                    <input type="radio" name="codonFrameQuick" id="cfPos2" value="1" title="Read codons starting at alignment column 2"><label for="cfPos2" title="Read codons starting at alignment column 2">Pos 2</label>
+                    <input type="radio" name="codonFrameQuick" id="cfPos3" value="2" title="Read codons starting at alignment column 3"><label for="cfPos3" title="Read codons starting at alignment column 3">Pos 3</label>
+                    <input type="radio" name="codonFrameQuick" id="cfAuto" value="auto" checked title="Auto: the genes of the annotation track when it has CDS features, else the frame with most ATG starts and fewest stops"><label for="cfAuto" title="Auto: the genes of the annotation track when it has CDS features, else the frame with most ATG starts and fewest stops">Auto</label>
+                    <input type="radio" name="codonFrameQuick" id="cfGenes" value="genes" hidden title="Each annotated CDS in its own frame and strand"><label for="cfGenes" hidden title="Each annotated CDS in its own frame and strand">Genes</label>
+                </div>
+                <button type="button" class="codon-panel-btn" onclick="copyAATranslation()" title="Copy amino acid translation(s) as FASTA">Copy AA</button>
+                <button type="button" class="codon-panel-btn" onclick="downloadAATranslation()" title="Download amino acid translation(s) as FASTA">Save AA</button>
             </div>
         </div>
         <div id="editToolPanel" class="edit-tool-panel" hidden>
