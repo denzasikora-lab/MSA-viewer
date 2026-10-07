@@ -10718,13 +10718,9 @@ function scanAlignmentText(text) {
         || t.includes('!!AA_MULTIPLE_ALIGNMENT')
         || t.includes('!!NA_MULTIPLE_ALIGNMENT');
     if (isMsf) return scanMsfIndex(text);
-    if (t[0] === '>') return scanFastaIndex(text);
-    // Handle leading garbage before first '>' (e.g., MAFFT version banner):
-    // scan first 200 lines for a FASTA header
-    const firstLines = t.split(/\r?\n/).slice(0, 200);
-    if (firstLines.some(l => l.startsWith('>'))) return scanFastaIndex(text);
-    // Raw sequence (no headers)
-    if (/^[A-Za-z*.\-]+$/m.test(firstLines[0] || '')) return scanFastaIndex(text);
+    if (/^\s*>/m.test(text)) return scanFastaIndex(text);
+    const firstLine = t.split(/\r\n|\r|\n/, 1)[0];
+    if (/^[A-Za-z*.\-]+$/.test(firstLine)) return scanFastaIndex(text);
     return null;
 }
 
