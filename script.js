@@ -8928,6 +8928,38 @@ function clearBlockMask() {
     if (typeof _updateInstrumentStatus === 'function') _updateInstrumentStatus();
 }
 
+// Results computed on the columns of the alignment as it was: 2D blocks and group colours (whose
+// exclusive/shared features are column positions). A realignment or a different file makes
+// them wrong, so they are dropped instead of being drawn over the new columns. Returns true when
+// something was cleared; the caller renders.
+function _dropColumnAnalyses() {
+    const had = !!(state.blockMask || state._biclusterRaw || state.clusterResults || state.clusterTypeRows);
+    state.blockMask = null;
+    state._biclusterRaw = null;
+    state._blockMaskPreset = null;
+    state.clusterPaintSuspended = false;
+    state.clusterResults = null;
+    state.clusterMap = null;
+    state._clusterCharMap = null;
+    state.clusterSource = null;
+    state.clusterSourceLabel = null;
+    state.clusterTypeRows = null;
+    if (!had) return false;
+    const status = el('blockMaskStatus');
+    if (status) status.textContent = '';
+    if (typeof updateClusteringStatus === 'function') updateClusteringStatus('');
+    if (typeof _updateInstrumentStatus === 'function') _updateInstrumentStatus();
+    if (typeof _geOnGroupsCleared === 'function') _geOnGroupsCleared();
+    return true;
+}
+
+// After a realignment: drop them and say so (after the realign's own message)
+function _dropColumnAnalysesAfterRealign() {
+    if (_dropColumnAnalyses()) {
+        setTimeout(() => showMessage('Groups and 2D blocks cleared: the alignment changed. Run them again to recalculate.', 4500), 400);
+    }
+}
+
 // Longest run of consecutive indices / group size, in the ORIGINAL mask row
 // order (which mirrors MAFFT's similarity ordering). A low value means the
 // group crosscuts that ordering - real localized mosaic, or noise - and is
@@ -11020,6 +11052,7 @@ async function parseAndRender(isFromDrop = false) {
             state.currentFilePath = '';
         }
         _clearClusterTrimState();
+        _dropColumnAnalyses();
         // Clear any loaded reads - they belong to the previous reference
         bamState = {
             reads: [],
@@ -11042,6 +11075,14 @@ async function parseAndRender(isFromDrop = false) {
         }
 
         state.seqs = parsed;
+
+        // Codon analysis left on from a nucleotide file: turn it off quietly for a protein one
+        // (otherwise every render repeats "Codon analysis requires a nucleotide alignment")
+        const codonBox = document.getElementById('codonAnalysis');
+        if (codonBox?.checked && isProteinAlignment(parsed)) {
+            codonBox.checked = false;
+            state._lastAnnouncedCodonFrame = null;
+        }
 
         // If pre-parse scan failed (e.g., leading garbage before first '>'),
         // compute alignment index from parsed sequences so windowed DOM kicks in
@@ -19495,6 +19536,7 @@ async function realignSelectedBlock(opts) {
             };
         });
         state.selectedColumns.clear();
+        if (result.aligned) _dropColumnAnalysesAfterRealign();
         renderAlignment();
         const bits = [];
         if (result.aligned) bits.push('Region realigned');
@@ -19631,6 +19673,7 @@ async function realignAll() {
         state.selectedRows.clear();
         state.selectedColumns.clear();
         state.selectedNucs.clear();
+        _dropColumnAnalysesAfterRealign();
         renderAlignment();
         const msgs = [`Aligned ${state.seqs.length} sequences successfully!`];
         if (flippedNames.size > 0) msgs.push(`RC'd: ${[...flippedNames].join(', ')}`);
@@ -19849,6 +19892,7 @@ async function addSequencesJustAdd() {
             } else {
                 state.seqs = workingSeqs;
             }
+            _dropColumnAnalysesAfterRealign();
         } catch (err) {
             console.error('Add-to-consensus alignment failed:', err);
             showMessage(`Add-to-consensus alignment failed: ${err.message}`, 4000);
@@ -20134,6 +20178,7 @@ function addSequencesAndAlign() {
         state.selectedRows.clear();
         state.selectedColumns.clear();
         state.selectedNucs.clear();
+        _dropColumnAnalysesAfterRealign();
         renderAlignment();
         showMessage(`Aligned ${state.seqs.length} sequences successfully!`, 2000);
     }).catch(err => {
